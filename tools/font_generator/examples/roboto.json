@@ -1,0 +1,23 @@
+{
+  "font": "../../font_probe/fonts/Roboto.ttf",
+  "provenance": {
+    "source": "Existing font_probe asset; original download URL unverified",
+    "license": "SIL OFL 1.1 (embedded font metadata)",
+    "expected_sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134"
+  },
+  "settings": {
+    "size_px": 16,
+    "axes": {
+      "wght": 400,
+      "wdth": 100
+    },
+    "hinting": "auto_fallback",
+    "output_bits": 1,
+    "mono_threshold": 96,
+    "gray_gamma": 1.0,
+    "characters": " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:;!?%\u00b0+-/()",
+    "missing_glyphs": "error",
+    "kerning": true,
+    "metric_rounding": "subpixel"
+  }
+}

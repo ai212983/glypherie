@@ -1,0 +1,6 @@
+/tools/*/target
+/tools/*/out
+/tools/**/__pycache__/
+tools/font_probe/.venv/
+**/*.py[cod]
+.DS_Store

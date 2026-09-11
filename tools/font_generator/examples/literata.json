@@ -1,0 +1,23 @@
+{
+  "font": "../../font_probe/fonts/Literata.ttf",
+  "provenance": {
+    "source": "Existing font_probe asset; original download URL unverified",
+    "license": "SIL OFL 1.1 (embedded font metadata)",
+    "expected_sha256": "b41138c9373112f32abb589cc22e8674b06ed4048b0c513be922bdd26f274440"
+  },
+  "settings": {
+    "size_px": 16,
+    "axes": {
+      "wght": 400,
+      "opsz": 16
+    },
+    "hinting": "auto_fallback",
+    "output_bits": 1,
+    "mono_threshold": 96,
+    "gray_gamma": 1.0,
+    "characters": " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:;!?%\u00b0+-/()",
+    "missing_glyphs": "error",
+    "kerning": true,
+    "metric_rounding": "subpixel"
+  }
+}

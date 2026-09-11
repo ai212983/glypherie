@@ -1,0 +1,104 @@
+"""Independent equations and native adapter boundaries for the source-led profile."""
+from pathlib import Path
+import tempfile
+import unittest
+import freetype as ft
+import numpy as np
+from fontTools.ttLib import TTFont
+from fontTools.ttLib.tables._g_l_y_f import GlyphCoordinates
+from fontTools.ttLib.tables.ttProgram import Program
+from shamir_constraints import relation
+from shamir_baseline_solver import resolve_baseline, evaluate_baseline, compile_baseline
+from test_shamir_prototype import fixture
+
+
+class BaselineSolverTests(unittest.TestCase):
+    def test_independent_near_parallel_lines_survive(self):
+        n = np.array([1., .001]); n /= np.linalg.norm(n)
+        cs = [relation('Abs', 0, [1,0], value=100, round=False),
+              relation('Abs', 0, n, value=101, round=False)]
+        graph = resolve_baseline([[0,0]], cs)
+        self.assertEqual(graph['rejected'], [])
+        fitted, _ = evaluate_baseline(graph, [[0,0]], 16, 1000)
+        np.testing.assert_allclose(fitted[0] @ np.array([[1,0],n]).T, [1.6,1.616])
+        self.assertGreater(fitted[0,1], 10)
+
+    def test_parallel_rejected_but_metric_priority_preserved(self):
+        graph = resolve_baseline([[0,0]], [relation('Abs',0,[1,0],value=10),
+            relation('PAbs',0,[1,0],value=20,metric=True)])
+        self.assertEqual(graph['rejected'][0]['constraint']['value'],10)
+        fitted,_=evaluate_baseline(graph,[[0,0]],100,1000)
+        self.assertEqual(fitted[0,0],2)
+
+    def test_signed_rounding_zero_distance_and_original_ratio(self):
+        points=[[0,0],[100,0],[25,0],[0,20]]
+        cs=[relation('Abs',0,[1,0],value=-50),relation('Abs',1,[1,0],value=250),
+            relation('Ratio',2,[1,0],[0,1],None),relation('Dist',3,[1,0],[0],0)]
+        graph=resolve_baseline(points,cs)
+        fitted,_=evaluate_baseline(graph,points,10,1000)
+        np.testing.assert_allclose(fitted[:,0],[-1,3,0,-1])
+
+    def test_explicit_signed_distances_and_ratio_parameters_are_equations(self):
+        points=[[0,0],[100,0],[25,0],[50,0]]
+        for kind in ('Dist','PDist'):
+            graph=resolve_baseline(points,[relation('Abs',0,[1,0],value=200,round=False),
+                relation(kind,1,[1,0],[0],-25,round=False)])
+            fitted,_=evaluate_baseline(graph,points,20,1000)
+            self.assertEqual(fitted[1,0],3.5)
+        for kind in ('Ratio','PRatio'):
+            graph=resolve_baseline(points,[relation('Abs',0,[1,0],value=0,round=False),
+                relation('Abs',1,[1,0],value=100,round=False),
+                relation(kind,2,[1,0],[0,1],1.5)])
+            fitted,_=evaluate_baseline(graph,points,20,1000)
+            self.assertEqual(fitted[2,0],3.)
+
+    def test_cycle_removes_lowest_priority_participating_relation(self):
+        graph=resolve_baseline([[0,0],[10,10]],[
+            relation('Dist',0,[1,0],[1],-10),relation('PDist',1,[0,1],[0],10)])
+        self.assertEqual([r['constraint']['id'] for r in graph['rejected']],[0])
+        self.assertEqual(graph['order'],[0,1])
+        evaluate_baseline(graph,[[0,0],[10,10]],16,1000)
+
+    def test_unavailable_ratio_and_empty_outline_report_boundaries(self):
+        graph=resolve_baseline([[0,0],[0,10],[5,5]],[],[0,1])
+        self.assertTrue(any(c.get('default_reason')=='no distinct projected reference pair' for c in graph['constraints']))
+        empty=resolve_baseline([],[])
+        assembly,meta=compile_baseline(empty,[],16,1000)
+        self.assertEqual(meta['native_points_px'],[])
+        self.assertIn('IF[ ]',assembly)
+        with self.assertRaisesRegex(ValueError,'signed32'):
+            evaluate_baseline(resolve_baseline([[0,0]],[relation('Abs',0,[1,0],value=1e12)]),[[0,0]],16,1000)
+
+    def test_native_cardinal_export_and_other_size_gate(self):
+        points=[[100,0],[500,0],[500,700],[100,700]]
+        n=np.array([1.,.001]);n/=np.linalg.norm(n)
+        graph=resolve_baseline(points,[relation('Abs',0,[1,0],value=100,round=False),
+            relation('Abs',0,n,value=100.03,round=False)])
+        assembly,meta=compile_baseline(graph,points,16,1000)
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'baseline.ttf';fixture(path);font=TTFont(path)
+            g=font['glyf']['A'];g.coordinates=GlyphCoordinates(points);g.program=Program()
+            g.program.fromAssembly(assembly);font['maxp'].maxStackElements=32;font.save(path)
+            face=ft.Face(str(path));face.set_pixel_sizes(0,16)
+            face.load_char('A',ft.FT_LOAD_NO_BITMAP|ft.FT_LOAD_NO_AUTOHINT|ft.FT_LOAD_TARGET_MONO|ft.FT_LOAD_PEDANTIC)
+            np.testing.assert_array_equal(np.asarray(face.glyph.outline.points)/64,meta['native_points_px'])
+            face.set_pixel_sizes(0,18)
+            face.load_char('A',ft.FT_LOAD_NO_BITMAP|ft.FT_LOAD_NO_AUTOHINT|ft.FT_LOAD_TARGET_MONO|ft.FT_LOAD_PEDANTIC)
+            hinted=np.asarray(face.glyph.outline.points)
+            # Compare with an empty program under identical hinting flags:
+            # disabling hinting also changes phantom-point bearing rounding.
+            g.program.fromAssembly([]);font.save(path)
+            plain=ft.Face(str(path));plain.set_pixel_sizes(0,18)
+            plain.load_char('A',ft.FT_LOAD_NO_BITMAP|ft.FT_LOAD_NO_AUTOHINT|ft.FT_LOAD_TARGET_MONO|ft.FT_LOAD_PEDANTIC)
+            np.testing.assert_array_equal(hinted,plain.glyph.outline.points)
+
+    def test_invalid_inputs_fail_explicitly(self):
+        for cs in ([relation('Ratio',0,[1,0],[1],.2)],
+                   [relation('Abs',0,[1,0],value=float('nan'))],
+                   [relation('PRatio',0,[1,0],[1,2],float('inf'))]):
+            with self.subTest(cs=cs),self.assertRaises(ValueError):
+                resolve_baseline([[0,0],[1,1],[2,2]],cs)
+        with self.assertRaises(ValueError):compile_baseline(resolve_baseline([],[]),[],1.5,1000)
+
+
+if __name__=='__main__':unittest.main()
