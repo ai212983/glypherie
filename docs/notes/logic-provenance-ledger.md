@@ -325,7 +325,12 @@ unsatisfied).
   not have — no flippable flag exists, so the flag stands
   as recorded divergence. Tie-break experiment if ever
   wanted: nearest-rounding for unanchored x-max extents
-  under oracle gate.
+  under oracle gate. Corroborated 2026-09-25: ss3-20 O
+  shows the identical rigid +1px right-side shift (source
+  12.26px, upstream/fitted 13.0, joint clean, all stages
+  pass) — same pre-joint ceiling, same no-action. ss3-20
+  9 shows only 4 unstructured px against W=7 splits
+  (noise floor, no action).
 - Cap anchors, pulls, redirects
   (`vote_cap_anchor`, `_cap_redirect`, `_cap_abs_redirect`):
   REPLACED 2026-09-15 with cap heights as ordinary CVT
