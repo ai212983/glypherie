@@ -281,6 +281,53 @@ class CapSoftPullTests(unittest.TestCase):
         self.assertEqual(pulled, [])
 
 
+class FlatTopCollapseTests(unittest.TestCase):
+    def rows(self, apex, flat=507.0, flat_round=True, apex_std=False):
+        flat_row = dict(id=0, kind='PAbs', point=1, sources=[],
+                        normal=[0, 1], value=flat, round=flat_round)
+        apex_row = dict(id=1, kind='PAbs', point=2, sources=[],
+                        normal=[0, 1], value=apex, extent='max')
+        if apex_std:
+            apex_row['width_standardized'] = True
+        return apex_row, [flat_row, apex_row]
+
+    def test_arch_apex_collapses_to_flat_integer(self):
+        # literata-16 m: arch 521u over stem-flat 507u at
+        # 16px/1000em takes 8, not the outward 9.
+        from joint_stroke_fit import _flat_top_collapse
+        apex, cs = self.rows(521.0)
+        self.assertEqual(_flat_top_collapse(apex, cs, 0.016), 8)
+
+    def test_no_flat_keeps_ceiling(self):
+        # Round crowns without a same-glyph flat (ss3-18 'o'
+        # shape) are untouched by construction.
+        from joint_stroke_fit import _flat_top_collapse
+        apex = dict(id=1, kind='PAbs', point=2, sources=[],
+                    normal=[0, 1], value=521.0, extent='max')
+        self.assertIsNone(_flat_top_collapse(apex, [apex], 0.016))
+
+    def test_beyond_band_keeps_ceiling(self):
+        from joint_stroke_fit import _flat_top_collapse
+        apex, cs = self.rows(600.0)
+        self.assertIsNone(_flat_top_collapse(apex, cs, 0.016))
+
+    def test_noop_collapse_abstains(self):
+        # Apex already ceilings to the flat integer: no record.
+        from joint_stroke_fit import _flat_top_collapse
+        apex, cs = self.rows(495.0, flat=490.0)
+        self.assertIsNone(_flat_top_collapse(apex, cs, 0.016))
+
+    def test_standardized_and_unrounded_guards(self):
+        from joint_stroke_fit import _flat_top_collapse
+        apex, cs = self.rows(521.0, apex_std=True)
+        self.assertIsNone(_flat_top_collapse(apex, cs, 0.016))
+        apex2, cs2 = self.rows(521.0, flat_round=False)
+        self.assertIsNone(_flat_top_collapse(apex2, cs2, 0.016))
+        plain = dict(id=1, kind='PAbs', point=2, sources=[],
+                     normal=[0, 1], value=521.0)
+        self.assertIsNone(_flat_top_collapse(plain, cs2, 0.016))
+
+
 class WithholdSpanTests(unittest.TestCase):
     # Pins exact-equality span semantics (relative 1e-6 dust
     # tolerance). A 1px cut-in band was tried

@@ -315,6 +315,68 @@ def _cap_abs_redirect(constraint, cap_table, scale, design_points=None,
     return float(entry['target_px']), entry
 
 
+# Relative band above a glyph's own flat top inside which an arch apex
+# counts as its overshoot (literata m/n arch 521u over stem-flat 507u
+# is 2.76%; cap/ascender gaps stay out at 5.5%+, same scale argument
+# as CAP_BAND_TOL). WHY-calibrated, oracle-gated; no source gives a
+# number, only the collapse rule itself (GF VTT variable guide, MS
+# VTT autohinting guide).
+FLAT_TOP_BAND_REL = 0.03
+
+
+def _flat_top_collapse(constraint, cs, scale):
+    """Same-glyph flat-top integer for an overshoot Abs row, else None.
+
+    VTT overshoot-inheritance shape in miniature: an arch apex
+    overshooting the glyph's own flat top takes the flat's integer
+    instead of the solver's outward ceiling — at these sizes the
+    overshoot cannot show. No font-wide vote: the zone is the
+    glyph's own flat, so round crowns without a flat (ss3-18 'o')
+    and rows already standardized to table entries keep their
+    values by construction. Returns the integer target, or None
+    when there is no in-band flat, the flat is unrounded, or the
+    collapse equals the natural ceiling (no-op).
+    """
+    import math
+    if constraint.get('kind') not in ('Abs', 'PAbs'):
+        return None
+    if _extent_sense(constraint) != 'max':
+        return None
+    if constraint.get('width_standardized'):
+        return None
+    try:
+        design = float(constraint.get('value', 0))
+    except (TypeError, ValueError):
+        return None
+    flat = None
+    for row in cs:
+        if row.get('kind') not in ('Abs', 'PAbs'):
+            continue
+        if list(row.get('normal', [])) != [0.0, 1.0]:
+            continue
+        if not row.get('round', True):
+            continue
+        if row.get('width_standardized'):
+            # Rewritten entry integers, not source flats.
+            continue
+        try:
+            f = float(row.get('value', 0))
+        except (TypeError, ValueError):
+            continue
+        if f <= 0 or f >= design:
+            continue
+        if (design - f) / f > FLAT_TOP_BAND_REL:
+            continue
+        if flat is None or f > flat:
+            flat = f
+    if flat is None:
+        return None
+    target = int(_round_pixel(flat * scale))
+    if target == math.ceil(design * scale - 1e-9):
+        return None
+    return target
+
+
 def standardize_hard_widths(record, cs, protected, hard_values, scale,
                              yrange, pins=None, design_points=None,
                              ends=None):
@@ -361,8 +423,14 @@ def standardize_hard_widths(record, cs, protected, hard_values, scale,
             redirected = _cap_abs_redirect(c, ctable, scale,
                                            design_points, ends)
             if redirected is None:
-                continue
-            target, _entry = redirected
+                # No table entry matched: same-glyph overshoot
+                # collapse before natural rounding.
+                collapsed = _flat_top_collapse(c, cs, scale)
+                if collapsed is None:
+                    continue
+                target = collapsed
+            else:
+                target, _entry = redirected
             new_value = math.copysign(
                 target, float(hard_values[pos]) or 1.0)
             if abs(hard_values[pos] - new_value) < 1e-9:

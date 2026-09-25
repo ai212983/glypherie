@@ -182,7 +182,32 @@ unsatisfied).
   recur. Status: WHY + oracle-gated; class key is
   design-units-only, so a future face holding 93u rows that
   must stay down narrows it (premise probe is the
-  instrument). Ship decision pending.
+  instrument). Shipped 2026-09-25 (eabdb0b).
+- Same-glyph overshoot collapse (`_flat_top_collapse` in the
+  joint substitution Abs branch, v32): TRIED 2026-09-25.
+  An extent-max Abs row within 3% above the glyph's own
+  rounded flat top takes the flat's integer instead of the
+  outward ceiling. Rule sourced (GF VTT variable guide:
+  overshoot CVTs forced equal to flat CVTs at small sizes;
+  MS VTT autohinting guide: round cap made equal to square
+  cap); the 3% number is WHY (covers observed 2.76%,
+  excludes 5.5%+ gaps), oracle-gated. A font-wide flat-x
+  vote was measured and REJECTED first: literata's biggest
+  sub-cap cluster is 557u (82 members, not the 507 flat)
+  and ss3 shows a four-way near-tie (478/490/510/522) —
+  plurality would crown the wrong line, and zones are
+  designer-declared, not histogram-recoverable. The
+  same-glyph shape needs no vote and protects settled
+  ss3-18 'o' structurally (round crown, no flat in glyph).
+  Full-regen census vs v31: status moves 0; pixel moves
+  only literata-14 r, literata-16 m/n, literata-18 p,
+  literata-20 n/p; roboto/ss3 zero. Oracle: m/n flip to
+  APPROVE (C 11→5, 6→3); settled, evidence, and all 36
+  watch cases byte-identical; lit14 r improves (C 6→4);
+  lit18 p / lit20 n/p drift ±2-4px inside UNSETTLED
+  territory (witnesses disagree W=13-38 there). h/l do NOT
+  move: their residue is shoulders/phase, not tops — a
+  separate mechanism, queued next. Ship decision pending.
 - Cap anchors, pulls, redirects
   (`vote_cap_anchor`, `_cap_redirect`, `_cap_abs_redirect`):
   REPLACED 2026-09-15 with cap heights as ordinary CVT
