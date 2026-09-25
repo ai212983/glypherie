@@ -271,6 +271,39 @@ unsatisfied).
   is inverted, which is why agreement failures are possible
   at all. Stage-agreement hardening (+ ascender zones, with
   h/l inside) is the queued project.
+- Bake-time cap-entry normalization (v35): REJECTED,
+  reverted to v34 uncommitted 2026-09-25. Hypothesis was a
+  bake-vs-joint skew behind literata S baking 12 rows vs
+  C/G/O/Q 11 (identical crown rows). Instrumented run
+  disproved it: bake table and joint redirect agree exactly
+  (all five crowns redirect to the entry integer, no
+  conflict-retries). The normalize rewrote the shared vote
+  instead of mirroring anything: S pixels unchanged on all
+  faces while 53/57 moved glyphs drifted FARTHER from
+  settled, knocking settled-exact capitals off by up to
+  47px (literata-20 X/A/M/H). Oracle battery 48/48
+  identical — it cannot see exact→drifted, so a zero-drift
+  guard on settled-exact glyphs is queued. Standing result:
+  no bake/joint skew exists; the S excess lives
+  downstream of the entry pin (see crown-plateau pins).
+- Crown-plateau pins (`_pin_crown_plateau`, v36):
+  SHIPPED 2026-09-25 (e6483fd). The S excess is a
+  floating raster peak: the entry redirect pins one Abs
+  row per crown, but literata-16 S's peak (pts 45-47,
+  11.53px) sits off the redirected row (pt 51) under pure
+  Ratio governance and lights a stray 1px top row. Design
+  ties at the plateau (five points at exactly 12.0px
+  pre-fit) take the same entry integer through the existing
+  ResYAnchor pin path (sourced: VTT anchors attach points,
+  plural, to CVT entries). Dust is float-noise cover only
+  (1e-6, ledger dust class); contour-size guard carried
+  over from the Abs redirect; points with protected
+  vertical rows and glyphs with no pinned crown are
+  untouched by construction. Full-regen census vs v34: 0
+  status moves, sole pixel mover literata-16 S (h 12→11,
+  top [1,6,7]→[6,7,7]). Oracle: S evidence REJECT-flag→
+  APPROVE (C 9→7, W=8), rest byte-identical. Pinned by 5
+  new CrownPlateauTests.
 - Cap anchors, pulls, redirects
   (`vote_cap_anchor`, `_cap_redirect`, `_cap_abs_redirect`):
   REPLACED 2026-09-15 with cap heights as ordinary CVT
