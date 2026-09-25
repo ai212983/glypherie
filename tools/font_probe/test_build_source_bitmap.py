@@ -466,5 +466,38 @@ class ExportAgreementTests(unittest.TestCase):
                     self.assertIn(f'{key}-{code}-x{output_mod.ENLARGE}.png', page)
 
 
+class VerifyAgainstTests(unittest.TestCase):
+    def test_clean_output_passes(self):
+        from unittest import mock
+        from build_source_bitmap import verify_zero_drift
+        same = {'f-16': {'A': frozenset({(0, 0)})}}
+        with mock.patch('check_zero_drift.load_dir',
+                        return_value=same):
+            report = verify_zero_drift('new', 'settled', 'base')
+        self.assertEqual(report['violations'], [])
+
+    def test_drifted_output_raises(self):
+        from unittest import mock
+        from build_source_bitmap import verify_zero_drift
+        exact = {'f-20': {'H': frozenset({(0, 0)})}}
+        drifted = {'f-20': {'H': frozenset({(5, 5)})}}
+        with mock.patch('check_zero_drift.load_dir',
+                        side_effect=[exact, exact, drifted]):
+            with self.assertRaises(ValueError):
+                verify_zero_drift('new', 'settled', 'base')
+
+    def test_waived_drift_passes(self):
+        from unittest import mock
+        from build_source_bitmap import verify_zero_drift
+        exact = {'f-20': {'H': frozenset({(0, 0)})}}
+        drifted = {'f-20': {'H': frozenset({(5, 5)})}}
+        with mock.patch('check_zero_drift.load_dir',
+                        side_effect=[exact, exact, drifted]):
+            report = verify_zero_drift(
+                'new', 'settled', 'base',
+                waive={'f-20 H': 'intentional, oracle-approved'})
+        self.assertEqual(report['violations'], [])
+
+
 if __name__ == '__main__':
     unittest.main()

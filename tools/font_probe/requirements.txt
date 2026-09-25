@@ -1,0 +1,12 @@
+# Pinned 2026-09-25 from the working venv (python 3.14). The suite
+# imports scipy and vttcompilepy unconditionally; without them two
+# modules fail at collection. skia-pathops was installed from a
+# local wheel file in this environment; the PyPI release of the
+# same version should serve fresh installs.
+fonttools==4.65.0
+freetype-py==2.5.1
+numpy==2.5.3
+pillow==12.3.0
+scipy==1.18.1
+skia-pathops==0.9.2
+vttcompilepy==0.0.1.13

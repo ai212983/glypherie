@@ -149,6 +149,10 @@ class Pipeline:
     def close(self):
         shutil.rmtree(self.work, ignore_errors=True)
 
+    def verify_against(self, settled_dir, base_dir, waive=None):
+        """Zero-drift release gate for this pipeline's output."""
+        return verify_zero_drift(self.output, settled_dir, base_dir, waive)
+
     def use_input(self, path):
         """Record a generation input; refuse historical output checkpoints.
 
@@ -1013,6 +1017,33 @@ class Pipeline:
         return counts
 
 
+def verify_zero_drift(output_dir, settled_dir, base_dir, waive=None):
+    """Release gate: settled-exact glyphs stay settled-exact.
+
+    Compares the freshly generated ``output_dir`` against BASE (last
+    shipped) with SETTLED as the reference (see
+    ``check_zero_drift``). Returns the audit report; raises
+    ValueError on unwaived violations so a drifting regen cannot
+    ship quietly. Waivers are ``"face char": reason`` mappings (or
+    a JSON file path); intentional oracle-approved moves go there.
+    """
+    import json as _json
+    from check_zero_drift import audit_drift, load_dir
+    waivers = {}
+    if waive is not None:
+        waivers = waive if isinstance(waive, dict) else \
+            _json.loads(Path(waive).read_text())
+    report = audit_drift(load_dir(settled_dir), load_dir(base_dir),
+                         load_dir(output_dir), waivers)
+    for face, char, _old, dist in report['violations']:
+        print(f'DRIFT {face} {char!r}: settled-exact moved {dist}px')
+    if report['violations']:
+        raise ValueError(
+            f"{len(report['violations'])} settled-exact glyphs drifted; "
+            'waive explicitly or fix before shipping')
+    return report
+
+
 def face_key(name, size):
     return f'{name}-{size}'
 
@@ -1034,9 +1065,12 @@ def _json_default(value):
     return str(value)
 
 
-def main(output=None):
+def main(output=None, settled=None, base=None, waive=None):
     pipeline = Pipeline(output or HERE / 'out' / OUTPUT_NAME)
-    return pipeline.run()
+    counts = pipeline.run()
+    if settled is not None and base is not None:
+        pipeline.verify_against(settled, base, waive)
+    return counts
 
 
 if __name__ == '__main__':
