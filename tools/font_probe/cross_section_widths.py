@@ -4,8 +4,9 @@ Samples retain source edge interpolation weights as the outline moves. This is
 not an Eulerian section at a fixed world height, or a paper-conformance claim.
 """
 import itertools
+import math
 import numpy as np
-from shamir_baseline_solver import _round_pixel
+from shamir_baseline_solver import _round_pixel, _thin_stem_up
 
 
 def section(points, ends, flags, feature):
@@ -89,7 +90,14 @@ def fit(points, ends, flags, record, scale):
         matrix[row] = 0
         for i, w in weights.items():
             matrix[row, 2*i:2*i+2] = w*np.asarray(f['normal'])
-        target = _round_pixel(f['width']*scale)
+        # Same up-exception as the solver Dist rows this replaces; a
+        # different rule here would reintroduce the skew the v28
+        # alignment removes.
+        _w = f['width']*scale
+        if _thin_stem_up(float(f['width']), f.get('normal', ()), _w):
+            target = math.copysign(math.ceil(abs(_w)), _w)
+        else:
+            target = _round_pixel(_w)
         if target <= 0:
             raise ValueError('rounded cross-section collapses')
         rhs[row] = target

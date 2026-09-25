@@ -7,11 +7,12 @@ for missing coordinates and substitute anchored equal-projection distance chains
 on a stall. No cycle deletions, Ratio inversions or baseline builder changes.
 """
 from itertools import combinations
+import math
 
 import numpy as np
 from audit_shamir_segment_conflicts import diagnose, equations, solve
 from shamir_baseline_solver import DETERMINANT_EPSILON, evaluate_baseline
-from shamir_baseline_solver import _round_pixel, _is_y_extent
+from shamir_baseline_solver import _round_pixel, _thin_stem_up, _is_y_extent
 
 
 class Unsupported(ValueError):
@@ -42,7 +43,16 @@ def projected_anchors(constraints, scale, width_table=None):
                     and c.get('value')):
                 return _table_lookup(width_table, abs(float(c['value'])))
             value = c['value']*scale
-            return _round_pixel(value) if c.get('round', True) else value
+            if not c.get('round', True):
+                return value
+            # Same rule as the solver's Dist right-hand side: derived
+            # anchors are proof-path consequences of the retained
+            # equations, so any rounder skew here re-trips the
+            # directed-vs-dense check.
+            if _thin_stem_up(float(c['value']), c.get('normal', ()),
+                             value):
+                return math.copysign(math.ceil(abs(value)), value)
+            return _round_pixel(value)
         known = {anchor['point']: (_abs_rhs(anchor, scale), [root])}
         pending = [anchor['point']]
         while pending:

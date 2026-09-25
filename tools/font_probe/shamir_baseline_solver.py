@@ -122,6 +122,32 @@ def _round_pixel(value):
     return math.copysign(math.floor(abs(value)+.5), value)
 
 
+# Design-width classes (font units) with a targeted up-exception on
+# horizontal non-extent Dist rows: rows integer rounding would drop
+# but SROUND-threshold-5/8 would lift (scaled frac in [3/8, 1/2))
+# ceil instead of rounding to nearest. Ledger WHY (VTT-delta shape:
+# per-case override of the default rounding; ttfautohint rationale:
+# keep thin features from vanishing at small sizes). 93u is the
+# shared literata arch-side class (1.488px at 16px/1000em); no
+# roboto or source-sans-3 row holds it, and no loop-participating
+# row fires it, both verified by premise probe 2026-09-25.
+_THIN_STEM_UP_UNITS = frozenset({93})
+
+
+def _thin_stem_up(design_units, normal, scaled):
+    """True when a horizontal Dist row takes the up-exception."""
+    try:
+        nx, ny = float(normal[0]), float(normal[1])
+    except (TypeError, IndexError, ValueError):
+        return False
+    if abs(abs(nx) - 1.0) > 1e-9 or abs(ny) > 1e-9:
+        return False
+    if design_units not in _THIN_STEM_UP_UNITS:
+        return False
+    frac = abs(scaled) - math.floor(abs(scaled))
+    return 0.375 <= frac < 0.5
+
+
 def abs_row_map(constraints):
     """Index Abs/PAbs rows by (point, normal) for extent source lookup."""
     rows = {}
@@ -207,7 +233,8 @@ def _dist_rhs(c, scale, abs_rows):
 
     Vertical extent rows round the design total outward (maxima ceil,
     minima floor), preserving the raster extent; every other distance
-    keeps round-to-nearest. Reversal never commutes with outward rounding
+    keeps round-to-nearest except targeted up-exception rows (see
+    ``_thin_stem_up``). Reversal never commutes with outward rounding
     the way nearest rounding does (orient forbids it for rounded rows).
     Outward sense follows spec RUTG/RDTG (see ``_abs_rhs``); the
     extent-flagged choice itself is ledger WHY.
@@ -217,6 +244,8 @@ def _dist_rhs(c, scale, abs_rows):
         return value
     sense = _extent_sense(c)
     if sense is None:
+        if _thin_stem_up(float(c['value']), c.get('normal', ()), value):
+            return math.copysign(math.ceil(abs(value)), value)
         return _round_pixel(value)
     out = math.ceil if sense == 'max' else math.floor
     adjust = -_EXTENT_EPS if sense == 'max' else _EXTENT_EPS

@@ -112,31 +112,77 @@ unsatisfied).
   both witnesses broadly, so the values stand. Code comment
   cites RUTG/RDTG since 2026-09-15 (`_abs_rhs`/`_dist_rhs`).
 - Non-extent Dist rounding (integer-nearest in `_dist_rhs`):
-  SOURCED-VOCABULARY, BLOCKED 2026-09-25. The 1px stems
-  behind four settled-against glyphs (literata-16 m W=5
-  C=29, n W=3 C=18, h W=2 C=22, l W=0 C=14: shared 93u =
-  1.488px rounds to 1px while raw scan conversion covers
-  2px) would resolve to 1.5px under spec RTDG ("distances
-  are rounded to the closest half or integer pixel",
-  vendored truetype-instruction-set-otspec184.md), while
-  the settled-thin ss3-18 `[` (62u = 1.116px) stays 1.0
-  under the same rule. VTT rounds link distances per the
-  child knot's method, default half-grid (`Rounding deltaR
-  = rthg`, TTGenerator.cpp Link). Tried 2026-09-25 and
-  reverted same day: half-grid leaves a 0.5px cycle gap in
-  the roboto-14 R closed loop, tripping prototype's
+  SOURCED-VOCABULARY (spec default round_state is round to
+  grid; MS hinting tutorial: "The default setting is 'round
+  to grid'"), production state since the v27 revert of
+  2026-09-25. The 1px stems behind four settled-against
+  glyphs (literata-16 m W=5 C=29, n W=3 C=18, h W=2 C=22,
+  l W=0 C=14: shared 93u = 1.488px rounds to 1px while raw
+  scan conversion covers 2px) stay 1px under it. History:
+  half-grid tried and reverted 2026-09-25 (0.5px cycle gap
+  in the roboto-14 R closed loop, tripping prototype's
   directed-vs-dense check
   (`test_closed_loop_falls_back_to_unstandardized`,
   residual 0.5 on plain Dist rows) — integer rounding is
   what closes that loop, and `correct()` lets the
-  AssertionError propagate (regen crash). Reopen only with
-  orient loop-slack handling that keeps the R-loop test
-  green; a PDist-only scope was rejected as sourceless
-  (VTT applies the default to both MDRP/MIRP paths).
-  Confirmed fundamental 2026-09-25 (not fixture staleness):
-  fresh production roboto-14 R records under half-grid also
-  fail `correct()` with the same AssertionError, which
-  `geometric()` does not catch (full-regen abort).
+  AssertionError propagate (regen crash). Confirmed
+  fundamental (not fixture staleness): fresh production
+  roboto-14 R records under half-grid also fail `correct()`
+  with the same AssertionError, which `geometric()` does
+  not catch (full-regen abort). A PDist-only scope was
+  rejected as sourceless (VTT applies the default to both
+  MDRP/MIRP paths).
+- SROUND-threshold-5/8 for non-extent Dist (cutpoint 3/8,
+  round up iff frac >= 3/8): TRIED as v30, VETOED
+  2026-09-25, production reverted to integer-nearest above.
+  Targets improved (m C=29→12, n 18→7, h 22→4) but nothing
+  flipped to APPROVE; costs were gate-recognized losses:
+  settled roboto-14 `[` APPROVE lost, roboto-20 `[` newly
+  flagged, production coverage dropped. VALUE REFILED
+  2026-09-25 (was: fit to 4 settled points): the cutpoint
+  is published. ttfautohint docs (Lemberg, v1.6 §2.3.5):
+  "Normally, ttfautohint rounds the x height to the pixel
+  grid, with a slight preference for rounding up (to use
+  the terminology of TrueType's 'Super Round' bytecode
+  instruction, the threshold is 5/8px)". Spec SROUND adds
+  the threshold then truncates, so 5/8 = round up iff frac
+  >= 3/8 — exactly the v30 rule; spec section "Super
+  ROUND", MS OpenType 1.9.1 instruction set (verified
+  against the live spec 2026-09-25). SCOPE LIMITS:
+  documented for x-heights, NOT stem widths (ttfautohint
+  snaps stems to standard widths instead); transfer to
+  horizontal stem Dist rows is project inference. Its WHY
+  (small-size legibility: keep thin features from
+  vanishing) matches the m/n/h/l complaint. Counter-
+  practice: VTT/MS move the 1→2px transition per font per
+  size via delta exceptions (MS tutorial "Functions and
+  delta hints" DeltaC; VTT "Fixing rasterization issues":
+  "we can override at what size a 1 pixel stem becomes 2
+  pixels") — default rounding + targeted overrides, not a
+  global cutpoint shift. Next: targeted up-exceptions on
+  the integer default (VTT shape, ttfautohint rationale).
+- Targeted up-exception (93u horizontal class, `_thin_stem_up`
+  in `_dist_rhs` + `projected_anchors` + cross-section
+  targets, closure-catch diagnostic): TRIED as v31,
+  2026-09-25. Premise probe: zero 93u rows on any roboto or
+  ss3 face (R loop + all settled witnesses untouched by
+  construction); literata-14/18/20 93u rows sit outside the
+  [3/8, 1/2) band (no-ops); only literata-16 fires (22 rows
+  on 17 glyphs). Full-regen census vs v27: status moves 0;
+  pixel moves exactly the predicted 15 literata-16 glyphs,
+  zero elsewhere (roboto-18 o / roboto-20 6 show 1/64px
+  native_points wobble with identical pixels — regen
+  instability across runs, pre-existing, pixels unaffected).
+  Oracle (48 cases, v27 control rerun): settled +
+  evidence + all 36 watch cases byte-identical; only the 4
+  target lines move, all closer (m C 29→11, n 18→6, h
+  22→4, l 14→3), still REJECT-flagged on the documented
+  top-row artifact (separate mechanism). No settled loss,
+  no new flag, no coverage drop — the v30 vetoes do not
+  recur. Status: WHY + oracle-gated; class key is
+  design-units-only, so a future face holding 93u rows that
+  must stay down narrows it (premise probe is the
+  instrument). Ship decision pending.
 - Cap anchors, pulls, redirects
   (`vote_cap_anchor`, `_cap_redirect`, `_cap_abs_redirect`):
   REPLACED 2026-09-15 with cap heights as ordinary CVT

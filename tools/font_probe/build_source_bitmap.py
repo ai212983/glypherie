@@ -362,6 +362,15 @@ class Pipeline:
                 except (ValueError, Unsupported) as exc:
                     outcomes[char] = dict(status='unsupported', reason=str(exc))
                     continue
+                except AssertionError as exc:
+                    # Directed-vs-dense closure trip (see
+                    # docs/notes/loop-slack-design.md): a glyph whose
+                    # loop does not close under the active rounding
+                    # is held visibly instead of aborting the regen
+                    # (VTT bail-out pattern precedent in the ledger).
+                    outcomes[char] = dict(status='failed',
+                                          reason=f'closure trip held: {exc}')
+                    continue
                 font['cvt '].values.extend(cvts)
                 glyph = font['glyf'][cmap[code]]
                 glyph.program = Program()

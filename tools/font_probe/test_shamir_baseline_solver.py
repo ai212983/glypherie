@@ -123,6 +123,33 @@ class ExtentRoundingTests(unittest.TestCase):
         fitted, _ = evaluate_baseline(resolve_baseline(pts,cs),pts,16,2048)
         self.assertEqual(fitted[0,1],11.0)
 
+    def test_thin_stem_up_exception(self):
+        # 93u horizontal @16px/1000em = 1.488px (frac .488, in the
+        # up-band) ceils to 2px; the exception class gate keeps the
+        # settled 62u bracket member (1.116px @18px) at 1px.
+        from shamir_baseline_solver import _thin_stem_up
+        self.assertTrue(_thin_stem_up(93, [1, 0], 1.488))
+        self.assertTrue(_thin_stem_up(93.0, [-1, 0], 1.488))
+        self.assertFalse(_thin_stem_up(62, [1, 0], 1.116))
+        self.assertFalse(_thin_stem_up(93, [1, 0], 1.302))
+        self.assertFalse(_thin_stem_up(93, [1, 0], 1.674))
+        self.assertFalse(_thin_stem_up(92, [1, 0], 1.472))
+        self.assertFalse(_thin_stem_up(93, [0, 1], 1.488))
+        self.assertFalse(_thin_stem_up(93, None, 1.488))
+
+    def test_thin_stem_up_moves_dist_rhs(self):
+        # End to end through evaluate_baseline: the 93u arch-side
+        # fixture resolves 2px, the 62u bracket fixture stays 1px.
+        for value, size, want in ((93, 16, 2.0), (62, 18, 1.0)):
+            pts = [[value, 0], [0, 0]]
+            cs = [relation('Abs', 1, [0, 1], value=0, round=False),
+                  relation('Dist', 0, [1, 0], [1], value),
+                  relation('Abs', 0, [0, 1], value=0, round=False),
+                  relation('Abs', 1, [1, 0], value=0, round=False)]
+            fitted, _ = evaluate_baseline(
+                resolve_baseline(pts, cs), pts, size, 1000)
+            self.assertEqual(fitted[0, 0], want)
+
     def test_extent_flag_directions(self):
         # Shared rows carry min/max explicitly instead of metric roles.
         pts = [[376,1456],[376,0]]
