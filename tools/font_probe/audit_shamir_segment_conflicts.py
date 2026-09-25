@@ -44,6 +44,14 @@ def solve(matrix, values):
     recovery = None
     try:
         points, _, rank, _ = np.linalg.lstsq(matrix, values, rcond=None)
+        # Exact-zero columns are unconstrained coordinates whose
+        # minimum-norm value is zero; newer LAPACK drivers leave
+        # ~1e-15 dust there, so restore the invariant by
+        # construction instead of asserting bitwise zeros.
+        inactive = ~np.any(matrix != 0, axis=0)
+        if inactive.any():
+            points = np.array(points, copy=True)
+            points[inactive] = 0.0
     except np.linalg.LinAlgError:
         active = np.any(matrix != 0, axis=0)
         if active.all() or not active.any():

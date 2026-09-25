@@ -78,7 +78,9 @@ class L1Tests(unittest.TestCase):
         feats = [{"kind": "stem", "groups": [0, 1],
                   "width": 2.2, "length": 8.0}]
         cur = pts + np.array([0.1, 0.0])
-        cur[1, 0] += 0.13  # asymmetric current: no exact-symmetry pin.
+        # Asymmetric current that survives int-pixel rounding (the
+        # no-op gate compares rounded pixels): no exact-symmetry pin.
+        cur[1, 0] += 0.9
         r = F.fit(pts, ends, flags, 1.0, groups, feats, cur, raster)
         self.assertIn(r["status"], ("ok", "no-op"))
         for b in r["audit"]["boundaries"]:
@@ -116,6 +118,10 @@ class SymmetryTests(unittest.TestCase):
     def test_h_supports_x_t_not_y(self):
         pts, ends, flags, groups, feats = h_glyph()
         cur = pts.copy()
+        # Break y-symmetry pixel-visibly so the solver runs; the
+        # x-support assertion below needs relationships, which the
+        # symmetric-current no-op gate would preempt.
+        cur[2, 1] += 0.6
         r = F.fit(pts, ends, flags, 1.0, groups, feats, cur, raster)
         sym = [x["axis"] for x in r["audit"]["relationships"]
                if x.get("type") == "symmetry"]
@@ -144,7 +150,12 @@ class OwnershipTests(unittest.TestCase):
         feats = [{"kind": "stem", "groups": [0, 1],
                   "width": 2.0, "length": 8.0}]
         own = {(0, 0): 0.0, (1, 0): 5.0}  # forces width 5 vs target 2
-        r = F.fit(pts, ends, flags, 1.0, groups, feats, pts.copy(),
+        # Pixel-asymmetric current so the fit runs far enough to
+        # meet the ownership conflict (a symmetric current takes
+        # the no-op gate first); the width-5-vs-2 conflict stands.
+        cur = pts.copy()
+        cur[3, 1] += 0.7
+        r = F.fit(pts, ends, flags, 1.0, groups, feats, cur,
                   raster, ownership=own)
         self.assertEqual(r["status"], "held")
         self.assertIn("protected", r["reason"])
@@ -172,7 +183,9 @@ class LevelsTests(unittest.TestCase):
     def test_h_many_levels_actual_fit(self):
         pts, ends, flags, groups, feats = h_glyph()
         cur = pts.copy()
-        cur[1, 0] += 0.3  # split current on inner left boundary
+        # Split current on inner left boundary, pixel-visibly (0.3
+        # rounds back to symmetric and takes the no-op gate).
+        cur[1, 0] += 0.6
         r = F.fit(pts, ends, flags, 1.0, groups, feats, cur, raster)
         # split current on pinned axis must hold, not silently fit
         if r["status"] == "held":

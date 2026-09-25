@@ -231,6 +231,13 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(agg["max_final_err_original"], 3.0)
 
     def test_fresh_output_guard(self):
+        # The guard refuses existing output dirs; the named
+        # investigation dir is git-ignored scratch that may not
+        # exist on a fresh checkout, so ensure the refusal path
+        # itself is what gets exercised.
+        from pathlib import Path
+        Path("out/paired-vector-investigation-v1").mkdir(
+            parents=True, exist_ok=True)
         rc = E.main(["--output", "out/paired-vector-investigation-v1"])
         self.assertEqual(rc, 2)
 
