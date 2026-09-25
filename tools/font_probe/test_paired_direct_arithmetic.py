@@ -198,6 +198,113 @@ def test_shallow_native_matches_ref():
           out["res_runtime"]["s5"])
 
 
+def test_direct_solver_consumes_moved_parent():
+    # Dependency-graph check for the direct solver (plan Phase 2, B12
+    # "direct-solver dependencies"): the pair's shared parent is moved by
+    # a real preceding native op -- IP between SCFS-moved anchors, per
+    # Shamir 2003 section 3.6 dependency order -- and GC[0] captures its
+    # CURRENT 26.6 position (Microsoft TT spec: GC[0] reads current,
+    # GC[1] reads original) for the direct-solve terms. The direct solve
+    # itself remains our documented translation choice, not a recovered
+    # paper implementation (see shamir-native-paired-arithmetic.md).
+    # FreeType execution is the oracle; the integer simulate() reference
+    # never enters native bytecode.
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphCoordinates
+    from fontTools.ttLib.tables.ttProgram import Program
+    import freetype as ft
+    from experiment_paired_direct_arithmetic import (
+        ACC_SLOTS, PSLOT, SX, SY, axis_asm, simulate,
+    )
+    n1, n2 = [0.6, 0.8], [-0.6, 0.8]
+    # Parent P starts at FU (1,0). A1 is SCFS-moved to raw 300, so IP
+    # places P at ratio (64-0)/(192-0) = 1/3: 300/3 = 100 raw exactly
+    # (1.5625px, off-grid by construction).
+    pm_cur = [[100 / 64.0, 0.0, 1], [100 / 64.0, 0.0, 1]]
+    maximum = [0]
+    prog = simulate([n1, n2], pm_cur, [1.0, 2.0],
+                    [False, False], [1, 1], maximum)
+    # Points: 0=child, 1=parent, 2/3=IP anchors, 4/5=accumulators.
+    asm = push(1) + ["SZPS[ ]"] + push(1) + ["SLOOP[ ]"]
+    asm += ["SVTCA[1]"] + push(3, 300) + ["SCFS[ ]"]
+    asm += (["SVTCA[1]"] + push(2) + ["SRP1[ ]"] + push(3)
+            + ["SRP2[ ]"] + push(1) + ["IP[ ]"])
+    asm += (["SVTCA[1]"] + push(1) + ["GC[0]"]
+            + push(PSLOT[(0, 0)]) + ["SWAP[ ]", "WS[ ]"])
+    asm += (["SVTCA[0]"] + push(1) + ["GC[0]"]
+            + push(PSLOT[(0, 1)]) + ["SWAP[ ]", "WS[ ]"])
+    for row in (0, 1):
+        terms = [(k, PSLOT[a] if k == "p" else a, c)
+                 for k, a, c in prog["qaxes"][row]]
+        asm += axis_asm(terms, [False, False], prog["split"],
+                        ACC_SLOTS[row])
+        asm += push(SX if row == 0 else SY) + ["SWAP[ ]", "WS[ ]"]
+    asm += ["SVTCA[1]"] + push(0, SX) + ["RS[ ]", "SCFS[ ]"]
+    asm += ["SVTCA[0]"] + push(0, SY) + ["RS[ ]", "SCFS[ ]"]
+    asm += ["SVTCA[1]"] + push(4, ACC_SLOTS[0]) + ["RS[ ]", "SCFS[ ]"]
+    asm += ["SVTCA[1]"] + push(5, ACC_SLOTS[1]) + ["RS[ ]", "SCFS[ ]"]
+    prog_obj = Program()
+    prog_obj.fromAssembly(asm)
+    fb = FontBuilder(1000, isTTF=True)
+    fb.setupGlyphOrder([".notdef", "A"])
+    fb.setupCharacterMap({65: "A"})
+    g = Glyph()
+    g.numberOfContours = 1
+    g.coordinates = GlyphCoordinates(
+        [(0, 0), (1, 0), (0, 0), (3, 0), (0, 0), (0, 0)])
+    g.endPtsOfContours = [5]
+    g.flags = [1] * 6
+    g.program = prog_obj
+    empty = Glyph()
+    empty.numberOfContours = 0
+    empty.coordinates = GlyphCoordinates([])
+    empty.endPtsOfContours = []
+    empty.flags = []
+    empty.program = Program()
+    fb.setupGlyf({".notdef": empty, "A": g})
+    fb.setupHorizontalMetrics({"A": (4000, 0), ".notdef": (4000, 0)})
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable({"familyName": "P", "styleName": "R",
+                       "uniqueFontIdentifier": "P", "fullName": "P R",
+                       "psName": "P-R"})
+    fb.setupOS2(sTypoAscender=800, sTypoDescender=-200,
+                usWinAscent=800, usWinDescent=200)
+    fb.setupPost()
+    fb.setupMaxp()
+    mp = fb.font["maxp"]
+    mp.maxStackElements = max(int(getattr(mp, "maxStackElements", 0)), 32)
+    mp.maxStorage = max(int(getattr(mp, "maxStorage", 0)), 16)
+    mp.maxZones = max(int(getattr(mp, "maxZones", 0)), 2)
+    buf = io.BytesIO()
+    fb.save(buf)
+    flags = (ft.FT_LOAD_NO_BITMAP | ft.FT_LOAD_NO_AUTOHINT
+             | ft.FT_LOAD_TARGET_MONO | ft.FT_LOAD_PEDANTIC)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "c.ttf"
+        path.write_bytes(buf.getvalue())
+        face = ft.Face(str(path))
+        face.set_pixel_sizes(0, 1000)
+        face.load_char("A", flags)
+        pts = [(int(p[0]), int(p[1]))
+               for p in face.glyph.outline.points]
+    check("IP moved parent to (100,0), off original (64,0)",
+          pts[1] == (100, 0), pts[1])
+    check("chained child == current-parent reference",
+          (pts[0][0], pts[0][1]) == tuple(prog["ref_q6"]),
+          (pts[0], prog["ref_q6"]))
+    check("chained accumulators match bit-for-bit",
+          [pts[4][0], pts[5][0]] == prog["acc14"],
+          ([pts[4][0], pts[5][0]], prog["acc14"]))
+    # Sensitivity: the float-ideal solution from ORIGINAL parents must
+    # differ, proving current-state (not original/float) consumption.
+    b0 = [n1[0] * 1.0 + 1.0, n2[0] * 1.0 + 2.0]
+    s0 = cramer(n1, b0[0], n2, b0[1])
+    gap = max(abs(pts[0][0] / 64.0 - s0[0]),
+              abs(pts[0][1] / 64.0 - s0[1]))
+    check("moved-parent solution differs from original-parent float "
+          "solution by > 1/64px", gap > 1 / 64.0, (gap, s0))
+
+
 def test_zero_det_rejects():
     s = syn("syn-zero-det")
     try:
@@ -343,6 +450,160 @@ def test_review_guards():
             check(mode + " corpus fails explicitly", rc == 1 and not report["audit_complete"])
 
 
+def test_domain_bound_accepts_fitting_domain():
+    # Execution-domain range contract: domain_bound() lifts the static
+    # per-fixture check to worst-case magnitudes over a declared domain
+    # (max |parent 26.6|, max |scalar Q14|). A fitting domain passes and
+    # covers the observed fixture maximum.
+    from experiment_paired_direct_arithmetic import domain_bound, simulate
+    s = syn("syn-signed-dist")
+    normals, pm, d, rnd, src_ids, _ = freeze_pair(
+        s["cons"], s["parents"], s["scale"])
+    maximum = [0]
+    prog = simulate(normals, pm, d, rnd, src_ids, maximum)
+    bound = domain_bound(normals, src_ids, rnd, 128000, 16384 * 2000)
+    check("domain bound covers fixture max",
+          bound >= prog["maxabs"], (bound, prog["maxabs"]))
+    check("domain bound within signed32", bound <= 2 ** 31 - 1, bound)
+    maximum2 = [0]
+    prog2 = simulate(normals, pm, d, rnd, src_ids, maximum2,
+                     domain=(128000, 16384 * 2000))
+    check("simulate accepts fitting domain",
+          prog2["ref_q6"] == prog["ref_q6"],
+          (prog2["ref_q6"], prog["ref_q6"]))
+
+
+def test_domain_bound_rejects_beyond_fixture():
+    # A near-parallel pair fits its single fixture (zero scalars) but its
+    # domain-wide worst case overflows signed32: compile-time Reject with
+    # a "domain" reason, never a silent runtime overflow. This is why the
+    # projection/freedom support gate must stay for any arithmetic path.
+    import math
+    from experiment_paired_direct_arithmetic import domain_bound, simulate
+    eps = math.radians(0.05)
+    cons = [{"kind": "Abs", "normal": [1.0, 0.0],
+             "sources": [], "value": 0.0, "round": True},
+            {"kind": "Abs", "normal": [math.cos(eps), math.sin(eps)],
+             "sources": [], "value": 0.0, "round": True}]
+    normals, pm, d, rnd, src_ids, _ = freeze_pair(cons, [None, None], 1.0)
+    maximum = [0]
+    prog = simulate(normals, pm, d, rnd, src_ids, maximum)
+    check("near-parallel zero fixture fits", prog["ref_q6"] == [0, 0],
+          prog["ref_q6"])
+    try:
+        domain_bound(normals, src_ids, rnd, 64000, 16384 * 100)
+    except Reject as e:
+        check("domain rejects beyond-fixture overflow",
+              "domain" in str(e), str(e))
+    else:
+        raise AssertionError("domain overflow was accepted")
+    try:
+        simulate(normals, pm, d, rnd, src_ids, [0],
+                 domain=(64000, 16384 * 100))
+    except Reject as e:
+        check("simulate enforces domain", "domain" in str(e), str(e))
+    else:
+        raise AssertionError("simulate accepted out-of-domain pair")
+
+
+def test_scalable_cvt_capture_multi_size():
+    # Scalable target capture: CVT-held scalars, one program shape, run at
+    # 8/16/20ppem (UPM 1000). Every design value is a multiple of 125fu so
+    # each size scales onto the 26.6 grid exactly (probed RCVT behavior):
+    # the float reference is then exact and any deviation is real error.
+    # FreeType execution is the oracle; no per-size scalar constants enter
+    # the capture/solve bytecode.
+    from experiment_paired_direct_arithmetic import run_scalable
+    cons = [{"kind": "Dist", "normal": [0.6, 0.8], "sources": [11],
+             "value": 125, "round": True},
+            {"kind": "Dist", "normal": [-0.6, 0.8], "sources": [17],
+             "value": 250, "round": True}]
+    parents_fu = [[125, 250], [375, 125]]
+    outs = {}
+    for ppem in (8, 16, 20):
+        outs[ppem] = run_scalable(cons, parents_fu, [125, 250],
+                                  upm=1000, ppem=ppem)
+    for ppem, out in outs.items():
+        check("ppem %d native==ref" % ppem,
+              out["native_q6"] == out["ref_q6"],
+              (ppem, out["native_q6"], out["ref_q6"]))
+        check("ppem %d res_runtime<=1/64" % ppem,
+              out["res_runtime"] <= 1 / 64.0, out["res_runtime"])
+        check("ppem %d err_runtime<=1/64" % ppem,
+              out["err_runtime"] <= 1 / 64.0, out["err_runtime"])
+    check("child scales with size (not baked)",
+          outs[8]["native_q6"] != outs[20]["native_q6"],
+          (outs[8]["native_q6"], outs[20]["native_q6"]))
+    tails = [out["asm"][out["setup_len"]:] for out in outs.values()]
+    check("capture+solve asm identical across sizes",
+          tails[0] == tails[1] == tails[2],
+          [len(t) for t in tails])
+
+
+def test_scalable_unrounded_runtime_split():
+    # The runtime q6/r14 split (RQSLOT/RRSLOT/SUB path) executes correctly:
+    # exact on-grid inputs give r=0 (nonzero residuals stay covered by the
+    # baked-fixture unrounded test) while native==ref proves the plumbing.
+    from experiment_paired_direct_arithmetic import run_scalable
+    cons = [{"kind": "Abs", "normal": [1.0, 0.0],
+             "sources": [], "value": 250, "round": False},
+            {"kind": "Abs", "normal": [0.0, 1.0],
+             "sources": [], "value": 125, "round": False}]
+    out = run_scalable(cons, [None, None], [250, 125], upm=1000, ppem=16)
+    check("unrounded scalable native==ref",
+          out["native_q6"] == out["ref_q6"],
+          (out["native_q6"], out["ref_q6"]))
+    check("unrounded scalable native==[256,128]",
+          out["native_q6"] == [256, 128], out["native_q6"])
+
+
+def test_graphics_state_preamble_and_vector_domination():
+    # Graphics-state guarantee, audited from emitted bytes (both builders):
+    # an explicit preamble establishes zones/loop/reference points first;
+    # every GC/SCFS is dominated by an SVTCA naming its axis; no
+    # reference-point-dependent op appears, so the pinned RP init suffices.
+    from experiment_paired_direct_arithmetic import (
+        establish_state_asm, run_scalable,
+    )
+    pre = establish_state_asm()
+    for name in ("SZPS[ ]", "SLOOP[ ]", "SRP0[ ]", "SRP1[ ]", "SRP2[ ]"):
+        check("preamble contains " + name, name in pre, pre)
+    check("zones established before reference points",
+          pre.index("SZPS[ ]") < pre.index("SRP0[ ]"), pre)
+
+    def audit(asm, tag):
+        check(tag + " starts with preamble",
+              asm[:len(pre)] == pre, asm[:len(pre) + 2])
+        axes = []
+        cur = None
+        for op in asm:
+            if op in ("SVTCA[0]", "SVTCA[1]"):
+                cur = int(op[6])
+            elif op in ("GC[0]", "GC[1]", "SCFS[ ]"):
+                check(tag + " op has vector state", cur is not None, op)
+                axes.append(cur)
+            elif op in ("MIRP[ ]", "MDRP[ ]", "ALIGNRP[ ]", "IP[ ]"):
+                raise AssertionError(tag + " has RP-dependent op " + op)
+        n_gc = sum(1 for op in asm if op in ("GC[0]", "GC[1]"))
+        n_par = n_gc // 2
+        check(tag + " even GC pairs", n_gc == 2 * n_par, n_gc)
+        # harness setup alternates x,y per parent; captures alternate x,y
+        # per parent; child x,y; both acc writes x.
+        check(tag + " vector pattern",
+              axes == [1, 0] * (2 * n_par) + [1, 0, 1, 1], axes)
+
+    s = syn("syn-signed-dist")
+    _, fixture_asm, _, _ = run_case(s["cons"], s["parents"], s["scale"])
+    audit(fixture_asm, "fixture")
+    out = run_scalable(
+        [{"kind": "Dist", "normal": [0.6, 0.8], "sources": [11],
+          "value": 125, "round": True},
+         {"kind": "Dist", "normal": [-0.6, 0.8], "sources": [17],
+          "value": 250, "round": True}],
+        [[125, 250], [375, 125]], [125, 250], upm=1000, ppem=16)
+    audit(out["asm"], "scalable")
+
+
 if __name__ == "__main__":
     test_review_guards()
     test_half_away_ties()
@@ -354,6 +615,12 @@ if __name__ == "__main__":
     test_signed_dist_hand_solution()
     test_shared_parent_combination()
     test_shallow_native_matches_ref()
+    test_direct_solver_consumes_moved_parent()
+    test_domain_bound_accepts_fitting_domain()
+    test_domain_bound_rejects_beyond_fixture()
+    test_scalable_cvt_capture_multi_size()
+    test_scalable_unrounded_runtime_split()
+    test_graphics_state_preamble_and_vector_domination()
     test_zero_det_rejects()
     test_overflow_rejects_despite_cancelling_final()
     test_reference_solution_absent_from_bytecode()

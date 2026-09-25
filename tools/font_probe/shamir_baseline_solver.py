@@ -122,6 +122,123 @@ def _round_pixel(value):
     return math.copysign(math.floor(abs(value)+.5), value)
 
 
+def abs_row_map(constraints):
+    """Index Abs/PAbs rows by (point, normal) for extent source lookup."""
+    rows = {}
+    for c in constraints:
+        if c['kind'] in ('Abs', 'PAbs'):
+            rows.setdefault((c['point'], tuple(c['normal'])), c)
+    return rows
+
+
+_EXTENT_EPS = 1e-9
+
+
+def _extent_sense(constraint):
+    """'max'/'min' when this row determines a vertical extent, else None.
+
+    Metric bounds follow the construction invariant (Abs on the minimum
+    end, Dist on the maximum); explicitly flagged rows carry their own
+    direction. Only +y rows participate.
+    """
+    if list(constraint.get('normal', [])) != [0.0, 1.0]:
+        return None
+    flag = constraint.get('extent')
+    if flag in ('min', 'max'):
+        return flag
+    if constraint.get('metric_role') != 'glyph-y-bound':
+        return None
+    # A bare True predates directional flags; fall back to kind inference.
+    kind = constraint['kind'].removeprefix('P')
+    if kind == 'Abs':
+        return 'min'
+    if kind == 'Dist':
+        return 'max'
+    return None
+
+
+def _is_y_extent(constraint):
+    return _extent_sense(constraint) is not None
+
+
+def _abs_rhs(c, scale):
+    """Self-contained right-hand side for an Abs/PAbs row.
+
+    Per-edge outward round states follow the TrueType round-state
+    vocabulary (spec RUTG/RDTG via SROUND: tops/rights round up,
+    bottoms/lefts round down); minima/maxima here are the +y
+    specialization of that rule. No paper parent for the y-extent
+    choice itself (see ledger WHY).
+    """
+    value = float(c['value']) * scale
+    if not c.get('round', True):
+        return value
+    sense = _extent_sense(c)
+    if sense == 'max':
+        return math.ceil(value - _EXTENT_EPS)
+    if sense == 'min':
+        # Overshoot suppression, not outward flooring: sub-baseline
+        # fractions snap to the zone edge (roboto-14 '0' -0.137px to
+        # 0, matching native), while descenders and flats round
+        # neutrally like every other row. Flooring overshoots adds a
+        # raster row native hinting never renders; features floating
+        # above the baseline keep legacy flooring.
+        if value <= 0:
+            return _round_pixel(value)
+        return math.floor(value + _EXTENT_EPS)
+    return _round_pixel(value)
+
+
+def _source_fit(abs_row, scale):
+    """(design, fitted) source position for an extent Dist row.
+
+    Reads the source's own Abs row, so sequential, simultaneous, and
+    diagnostic builds ceil the same total. Returns (None, None) when
+    the source has no Abs row.
+    """
+    if abs_row is None:
+        return None, None
+    design = float(abs_row['value']) * scale
+    return design, _abs_rhs(abs_row, scale)
+
+
+def _dist_rhs(c, scale, abs_rows):
+    """Right-hand side for a Dist/PDist row.
+
+    Vertical extent rows round the design total outward (maxima ceil,
+    minima floor), preserving the raster extent; every other distance
+    keeps round-to-nearest. Reversal never commutes with outward rounding
+    the way nearest rounding does (orient forbids it for rounded rows).
+    Outward sense follows spec RUTG/RDTG (see ``_abs_rhs``); the
+    extent-flagged choice itself is ledger WHY.
+    """
+    value = float(c['value']) * scale
+    if not c.get('round', True):
+        return value
+    sense = _extent_sense(c)
+    if sense is None:
+        return _round_pixel(value)
+    out = math.ceil if sense == 'max' else math.floor
+    adjust = -_EXTENT_EPS if sense == 'max' else _EXTENT_EPS
+    key = lambda p: (p, tuple(c['normal']))
+    if c.get('reversed'):
+        # Unreached in production (orient never reverses rounded extent
+        # rows); kept exact for the metric case, nearest otherwise.
+        if c.get('extent') not in (None, True):
+            return _round_pixel(value)
+        design_a, fitted_a = _source_fit(abs_rows.get(key(c['point'])), scale)
+        if fitted_a is None:
+            return _round_pixel(value)
+        return fitted_a - math.ceil(design_a - value - _EXTENT_EPS)
+    sources = c.get('sources', [])
+    if not sources:
+        return out(value + adjust)
+    design_s, fitted_s = _source_fit(abs_rows.get(key(sources[0])), scale)
+    if fitted_s is None:
+        return out(value + adjust)
+    return out(design_s + value + adjust) - fitted_s
+
+
 def evaluate_baseline(graph, points, ppem, em):
     """Solve §3.2 equations; quantize only at export.
 
@@ -140,6 +257,11 @@ def evaluate_baseline(graph, points, ppem, em):
     by_point = {}
     for c in graph['constraints']:
         by_point.setdefault(c['point'], []).append(c)
+    # Selected rows win; retained-but-unselected rows fill gaps so extent
+    # totals match the diagnostic oracle built from the full set.
+    abs_rows = abs_row_map(graph['constraints'])
+    for key, row in abs_row_map(graph.get('retained_abs_rows', [])).items():
+        abs_rows.setdefault(key, row)
     done = set()
     for p in graph['order']:
         group = by_point[p]
@@ -151,15 +273,10 @@ def evaluate_baseline(graph, points, ppem, em):
             if not set(sources).issubset(done):
                 raise ValueError('baseline point order precedes a dependency')
             if kind in ('Abs', 'PAbs'):
-                value = float(c['value']) * scale
-                if c.get('round', True):
-                    value = _round_pixel(value)
+                value = _abs_rhs(c, scale)
             elif kind in ('Dist', 'PDist'):
                 a = sources[0]
-                distance = float(c['value']) * scale
-                if c.get('round', True):
-                    distance = _round_pixel(distance)
-                value = float(fitted[a] @ n) + distance
+                value = float(fitted[a] @ n) + _dist_rhs(c, scale, abs_rows)
             elif kind in ('Ratio', 'PRatio'):
                 a, b = sources
                 t = float(c['value'])

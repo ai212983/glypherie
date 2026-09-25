@@ -34,12 +34,29 @@ Scale sequence (documented, exact):
   MUL/DIV return, ADD/SUB, and final-round addition is checked against
   +/-(2^31-1) before any fixture is built.  A violation REJECTS the case;
   it is inventoried, never passed, and is not a runtime protection claim.
+  domain_bound() lifts the same check to worst-case magnitudes over a
+  declared execution domain (max |parent 26.6|, max |scalar Q14|);
+  simulate(..., domain=(max_pq, max_d14)) enforces it.  The bound sums
+  absolute worst-case terms, so it is conservative: it ignores
+  non-exact cancellation.  Exact combined-zero terms stay zero because
+  combination precedes quantization.
+  The scalable builder (build_scalable/run_scalable) replaces baked
+  per-size scalar constants with CVT reads: RCVT size-scales the font-unit
+  scalar at runtime, native arithmetic converts it to Q14, and the
+  capture/solve bytecode carries no per-size constants.  Parents remain
+  harness-placed per size (preceding-dependency results) and are only
+  READ via cardinal GC before the child moves, per the native parent
+  contract (current 26.6 state).  Every program starts with
+  establish_state_asm(): glyph zone, loop count, and pinned reference
+  points; projection/freedom vectors are set inline before each
+  axis-dependent op and audited from the emitted bytes.
 
 Corpus: tools/font_probe/out/paired-native-iteration-v2/cases/*.json
 (kind == "corpus", 124 pairs).  No compiler/production edits.
 """
 
 import argparse
+import array
 import hashlib
 import io
 import json
@@ -61,10 +78,14 @@ INT32 = 2 ** 31 - 1
 
 # Storage slots in the fixture. 0/1 hold final Q6 results; 2..5 hold the
 # captured parent coordinates; 6/7 hold rounded-scalar Q values.
+# The scalable path additionally uses 10/11 for runtime unrounded q6 parts
+# and 12/13 for runtime unrounded r14 residuals (maxStorage stays >= 16).
 SX, SY = 0, 1
 ACC_SLOTS = (8, 9)
 PSLOT = {(0, 0): 2, (0, 1): 3, (1, 0): 4, (1, 1): 5}
 QSLOT = {0: 6, 1: 7}
+RQSLOT = {0: 10, 1: 11}
+RRSLOT = {0: 12, 1: 13}
 
 
 class Reject(Exception):
@@ -184,6 +205,76 @@ def checked(v, maximum, what):
     return int(v)
 
 
+def establish_state_asm():
+    """Explicit graphics-state preamble for every emitted program.
+
+    Glyph zone on all zone pointers, loop count 1, and reference points
+    pinned to deterministic values.  Projection/freedom vectors are set
+    inline before each axis-dependent op (never inherited); the program
+    contains no reference-point-dependent op (no MIRP/MDRP/ALIGNRP/IP),
+    so the pinned RP init suffices.  Audited from emitted bytes by the
+    focused graphics-state test.
+    """
+    return (push(1) + ["SZPS[ ]"] + push(1) + ["SLOOP[ ]"]
+            + push(0) + ["SRP0[ ]"] + push(1) + ["SRP1[ ]"]
+            + push(2) + ["SRP2[ ]"])
+
+
+def domain_bound(normals, src_ids, rnd, max_pq, max_d14):
+    """Worst-case intermediate magnitudes over the declared execution domain.
+
+    max_pq bounds |parent 26.6| and max_d14 bounds |scalar Q14| anywhere in
+    the domain (both non-negative ints).  Mirrors simulate()'s quantization
+    (half-away coefficients, trunc q6 split, half-away MUL, trunc DIV) with
+    worst-case magnitudes, then sums absolute term maxima per axis plus the
+    final-round addition.  Raises Reject("domain range: ...") when any
+    coefficient or the accumulated worst case exceeds signed32; otherwise
+    returns the worst-case magnitude (an int <= INT32).
+
+    Conservative by construction: term maxima are summed without
+    cancellation (exact combined-zero terms stay zero because combination
+    precedes quantization, as in compile_terms).  Callers declare the
+    domain from their supported ppem/UPM range; bounds observed at one
+    size never authorize another.
+    """
+    if int(max_pq) < 0 or int(max_d14) < 0:
+        raise Reject("domain range: negative domain maximum")
+    max_pq, max_d14 = int(max_pq), int(max_d14)
+    if max_d14 + 8192 > INT32:
+        raise Reject("domain range: scalar round add %d exceeds signed32"
+                     % (max_d14 + 8192))
+    winv = inverse2(normals[0], normals[1])
+    pm = [[0.0, 0.0, s] if s is not None else [None, None, None]
+          for s in src_ids]
+    axes, _ = compile_terms(normals, pm, rnd, winv)
+    worst = 0
+    for terms in axes:
+        acc = 0
+        for kind, aux, c in terms:
+            c14 = half_away(c * 16384)
+            if abs(c14) > INT32:
+                raise Reject("domain range: coeff c14=%d exceeds signed32"
+                             % c14)
+            if kind == "p":
+                t = (abs(c14) * max_pq + 32) // 64
+            elif rnd[aux]:
+                prow = (max_d14 + 8192) // 16384
+                t = (abs(c14) * (64 * prow) + 32) // 64
+            else:
+                q = max_d14 // 256
+                r = 255  # |r14| < 256 by construction
+                t1 = (abs(c14) * q + 32) // 64
+                m2 = (abs(c14) * r + 32) // 64
+                t = t1 + (m2 * 64) // 16384
+            acc += t
+        acc += 128  # final-round addition, as in simulate()
+        worst = max(worst, acc)
+    if worst > INT32:
+        raise Reject("domain range: worst-case intermediate %d exceeds "
+                     "signed32" % worst)
+    return worst
+
+
 def compile_terms(normals, pm, rnd, winv):
     """Expand x/y into combined parent + scalar terms (float coefficients).
 
@@ -223,14 +314,18 @@ def compile_terms(normals, pm, rnd, winv):
     return axes, order
 
 
-def simulate(normals, pm, d, rnd, src_ids, maximum):
+def simulate(normals, pm, d, rnd, src_ids, maximum, domain=None):
     """Static checked integer simulation; returns reference + program data.
 
     Raises Reject on any out-of-range intermediate.  No cancellation-based
     safety: every MUL/DIV/ADD and the final-round addition is checked.
     pm entries are [x, y, src] or [None, None, None].
+    domain=(max_pq, max_d14) additionally enforces the worst-case
+    execution-domain bound via domain_bound() before fixture checks.
     """
     winv = inverse2(normals[0], normals[1])
+    if domain is not None:
+        domain_bound(normals, src_ids, rnd, domain[0], domain[1])
     # parent 26.6 quanta (fixture setup values; native reads these via GC)
     pq = []
     for p in pm:
@@ -342,6 +437,62 @@ def scalar_asm(j, d14, rnd):
             + push(4096) + ["MUL[ ]"] + push(QSLOT[j]) + ["SWAP[ ]", "WS[ ]"])
 
 
+def scalar_prep_asm(j, cvt_index, rnd):
+    """Runtime scalar preparation from the font CVT (scalable capture).
+
+    RCVT[cvt_index] size-scales the integer font-unit scalar at runtime
+    (probed: exact multiples round-trip exactly; other values round to
+    the 26.6 grid).  MUL by 16384 converts q6 to Q14 exactly, then the
+    same signed-round (rounded) or trunc-split (unrounded) sequences as
+    the fixture path store QSLOT[j] or RQSLOT[j]/RRSLOT[j].  Leaves
+    nothing on the stack and carries no per-size constants.
+    """
+    asm = push(cvt_index) + ["RCVT[ ]"] + push(16384) + ["MUL[ ]"]
+    if rnd:
+        asm += (["DUP[ ]", "ABS[ ]"] + push(8192) + ["ADD[ ]"]
+                + push(1048576) + ["DIV[ ]", "SWAP[ ]"] + push(0)
+                + ["LT[ ]", "IF[ ]", "NEG[ ]", "EIF[ ]"]
+                + push(4096) + ["MUL[ ]"] + push(QSLOT[j])
+                + ["SWAP[ ]", "WS[ ]"])
+    else:
+        # [d14] -> q=trunc(d14/256) stored, r=d14-256*q stored.
+        # DIV truncates toward zero exactly like math.trunc in simulate().
+        asm += (["DUP[ ]"] + push(16384) + ["DIV[ ]"]
+                + push(RQSLOT[j]) + ["SWAP[ ]", "WS[ ]"]
+                + push(RQSLOT[j]) + ["RS[ ]"] + push(16384) + ["MUL[ ]"]
+                + ["SUB[ ]"]
+                + push(RRSLOT[j]) + ["SWAP[ ]", "WS[ ]"])
+    return asm
+
+
+def axis_asm_cvt(terms, rnd, accumulator_slot):
+    """Native code for one axis; storage-reading scalar variant.
+
+    Identical to axis_asm() except unrounded scalar parts come from the
+    runtime RQSLOT/RRSLOT storage (written by scalar_prep_asm) instead of
+    baked pushes.  Rounded scalars and parent terms already read storage.
+    """
+    asm, first = [], True
+    for kind, aux, c14 in terms:
+        if kind == "p":
+            frag = push(aux) + ["RS[ ]"] + push(c14) + ["MUL[ ]"]
+        elif rnd[aux]:
+            frag = push(QSLOT[aux]) + ["RS[ ]"] + push(c14) + ["MUL[ ]"]
+        else:
+            frag = (push(RQSLOT[aux]) + ["RS[ ]"] + push(c14) + ["MUL[ ]"]
+                    + push(RRSLOT[aux]) + ["RS[ ]"] + push(c14)
+                    + ["MUL[ ]"] + push(16384) + ["DIV[ ]", "ADD[ ]"])
+        asm += frag
+        if not first:
+            asm += ["ADD[ ]"]
+        first = False
+    asm += ["DUP[ ]"] + push(accumulator_slot) + ["SWAP[ ]", "WS[ ]"]
+    asm += (["DUP[ ]", "ABS[ ]"] + push(128) + ["ADD[ ]"] + push(16384)
+            + ["DIV[ ]", "SWAP[ ]"] + push(0)
+            + ["LT[ ]", "IF[ ]", "NEG[ ]", "EIF[ ]"])
+    return asm
+
+
 def build_fixture(prog, rnd):
     """Assemble the standalone 1:1 (UPM1000/ppem1000) cardinal fixture."""
     from fontTools.fontBuilder import FontBuilder
@@ -351,7 +502,7 @@ def build_fixture(prog, rnd):
     order = prog["order"]
     n_par = len(order)
     n_pts = 3 + n_par
-    asm = push(1) + ["SZPS[ ]"] + push(1) + ["SLOOP[ ]"]
+    asm = establish_state_asm()
     # Fixture setup only: place parents at exact 26.6 quanta (outline
     # coordinates are integers, so fractional 26.6 needs SCFS).  The
     # evaluator below only READS these through cardinal GC.
@@ -426,6 +577,173 @@ def build_fixture(prog, rnd):
     buf = io.BytesIO()
     fb.save(buf)
     return buf.getvalue(), asm, len(code)
+
+
+def build_scalable(prog, rnd, cvt_index, parent_q, cvt_values, upm=1000):
+    """Assemble the scalable variant: CVT-held scalars, GC parent capture.
+
+    prog is simulate() output; rnd the per-equation rounding flags;
+    cvt_index[j] the CVT slot holding equation j's integer font-unit
+    scalar; parent_q[s] the harness 26.6 placement [qx, qy] for distinct
+    parent slot s (preceding-dependency results, one placement per size);
+    cvt_values the integer font-unit CVT contents.  The program captures
+    parents via cardinal GC and scalars via RCVT before moving the child;
+    the capture/solve bytecode carries no per-size constants.  Layout,
+    tail, and checks mirror build_fixture(); returns (bytes, asm, len).
+    """
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.ttLib.tables._g_l_y_f import Glyph, GlyphCoordinates
+    from fontTools.ttLib.tables.ttProgram import Program
+    from fontTools.ttLib.tables._c_v_t import table__c_v_t
+    order = prog["order"]
+    n_par = len(order)
+    n_pts = 3 + n_par
+    asm = establish_state_asm()
+    # Harness setup only (per-size preceding-dependency results).
+    for s in range(n_par):
+        asm += (["SVTCA[1]"] + push(1 + s, parent_q[s][0]) + ["SCFS[ ]"])
+        asm += (["SVTCA[0]"] + push(1 + s, parent_q[s][1]) + ["SCFS[ ]"])
+    setup_len = len(asm)
+    # capture parents through cardinal GC before moving the child
+    for s in range(n_par):
+        asm += (["SVTCA[1]"] + push(1 + s) + ["GC[0]"]
+                + push(PSLOT[(s, 0)]) + ["SWAP[ ]", "WS[ ]"])
+        asm += (["SVTCA[0]"] + push(1 + s) + ["GC[0]"]
+                + push(PSLOT[(s, 1)]) + ["SWAP[ ]", "WS[ ]"])
+    # runtime scalar preparation from the CVT (no baked d14)
+    for j in (0, 1):
+        asm += scalar_prep_asm(j, cvt_index[j], rnd[j])
+    for row in (0, 1):
+        terms = []
+        for kind, aux, c14 in prog["qaxes"][row]:
+            if kind == "p":
+                terms.append(("p", PSLOT[aux], c14))
+            else:
+                terms.append(("s", aux, c14))
+        asm += axis_asm_cvt(terms, rnd, ACC_SLOTS[row])
+        asm += push(SX if row == 0 else SY) + ["SWAP[ ]", "WS[ ]"]
+    asm += (["SVTCA[1]"] + push(0, SX) + ["RS[ ]", "SCFS[ ]"])
+    asm += (["SVTCA[0]"] + push(0, SY) + ["RS[ ]", "SCFS[ ]"])
+    # Auxiliary outline coordinates expose the unrounded native Q14 integers.
+    for row, slot in enumerate(ACC_SLOTS):
+        asm += ["SVTCA[1]"] + push(1 + n_par + row, slot) + ["RS[ ]", "SCFS[ ]"]
+    prog_obj = Program()
+    prog_obj.fromAssembly(asm)
+    code = prog_obj.getBytecode()
+    if len(code) >= 65536:
+        raise Reject("program length %d exceeds maxp limit" % len(code))
+    check = Program()
+    check.fromBytecode(code)
+    if not any(s.startswith("SCFS[ ]") for s in check.getAssembly()):
+        raise Reject("assembly round-trip lost SCFS")
+
+    fb = FontBuilder(int(upm), isTTF=True)
+    fb.setupGlyphOrder([".notdef", "A"])
+    fb.setupCharacterMap({65: "A"})
+    coords = [(0, 0)] * n_pts
+    g = Glyph()
+    g.numberOfContours = 1
+    g.coordinates = GlyphCoordinates(coords)
+    g.endPtsOfContours = [n_pts - 1]
+    g.flags = [1] * n_pts
+    g.program = prog_obj
+    empty = Glyph()
+    empty.numberOfContours = 0
+    empty.coordinates = GlyphCoordinates([])
+    empty.endPtsOfContours = []
+    empty.flags = []
+    empty.program = Program()
+    fb.setupGlyf({".notdef": empty, "A": g})
+    cvt = table__c_v_t()
+    cvt.values = array.array("h", [int(v) for v in cvt_values])
+    fb.font["cvt "] = cvt
+    fb.setupHorizontalMetrics({"A": (4000, 0), ".notdef": (4000, 0)})
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable({"familyName": "P", "styleName": "R",
+                       "uniqueFontIdentifier": "P", "fullName": "P R",
+                       "psName": "P-R"})
+    fb.setupOS2(sTypoAscender=800, sTypoDescender=-200,
+                usWinAscent=800, usWinDescent=200)
+    fb.setupPost()
+    fb.setupMaxp()
+    mp = fb.font["maxp"]
+    mp.maxStackElements = max(int(getattr(mp, "maxStackElements", 0)), 32)
+    mp.maxStorage = max(int(getattr(mp, "maxStorage", 0)), 16)
+    mp.maxZones = max(int(getattr(mp, "maxZones", 0)), 2)
+    mp.maxSizeOfInstructions = max(int(getattr(mp, "maxSizeOfInstructions",
+                                               0)), len(code))
+    buf = io.BytesIO()
+    fb.save(buf)
+    return buf.getvalue(), asm, len(code), setup_len
+
+
+def run_scalable(cons, parents_fu, cvt_fu, upm=1000, ppem=16, domain=None):
+    """Scalable driver: font-unit design inputs, one run at one size.
+
+    cons[j]["value"] must equal cvt_fu[j] as an integer font-unit scalar:
+    the reference path and the native CVT path then consume the same
+    design scalar (Reject on mismatch or non-integer values, matching the
+    exact-integer CVT contract).  parents_fu[j] is [x_fu, y_fu] or None
+    and must agree with the equation kind.  Executes the scalable program
+    at ppem and checks native output against the runtime-input reference
+    exactly.  Returns a dict with native_q6, ref_q6, res_runtime,
+    err_runtime, asm, setup_len, font_bytes, and prog.
+    """
+    if len(cons) != 2 or len(parents_fu) != 2 or len(cvt_fu) != 2:
+        raise Reject("scalable run needs exactly two equations")
+    for j in (0, 1):
+        v = float(cons[j].get("value"))
+        if v != int(v):
+            raise Reject("scalable CVT needs integer font-unit scalar, "
+                         "got %r" % (cons[j].get("value"),))
+        if int(v) != int(cvt_fu[j]):
+            raise Reject("equation %d value %d differs from CVT %d"
+                         % (j, int(v), int(cvt_fu[j])))
+        if int(cvt_fu[j]) < -32768 or int(cvt_fu[j]) > 32767:
+            raise Reject("CVT value %d outside signed16" % int(cvt_fu[j]))
+    scale = float(ppem) / float(upm)
+    parents_model = [None if p is None
+                     else [float(p[0]) * scale, float(p[1]) * scale]
+                     for p in parents_fu]
+    normals, pm, d, rnd, src_ids, _b0 = freeze_pair(cons, parents_model,
+                                                   scale)
+    maximum = [0]
+    prog = simulate(normals, pm, d, rnd, src_ids, maximum, domain)
+    parent_q = [list(prog["pq"][prog["parent_eq"][s]])
+                for s in range(len(prog["order"]))]
+    font_bytes, asm, _plen, setup_len = build_scalable(
+        prog, rnd, [0, 1], parent_q, [int(v) for v in cvt_fu], upm)
+    pts = run_native(font_bytes, ppem)
+    need = 3 + len(prog["order"])
+    if len(pts) != need:
+        raise RuntimeError("native returned %d points, need %d" % (len(pts),
+                                                              need))
+    native_q6 = [int(pts[0][0]), int(pts[0][1])]
+    if native_q6 != prog["ref_q6"]:
+        raise Exception("unexpected: scalable native/reference mismatch "
+                        "native=%r ref=%r" % (native_q6, prog["ref_q6"]))
+    # runtime-input reference (mirrors run_case stages S2/S5)
+    pqf = [None if p[0] is None else [half_away(p[0] * 64) / 64.0,
+                                      half_away(p[1] * 64) / 64.0]
+           for p in pm]
+    s_used = [float(prog["prow"][j]) if rnd[j]
+              else prog["d14"][j] / 16384.0 for j in (0, 1)]
+    b2 = []
+    for j in (0, 1):
+        if pqf[j] is None:
+            b2.append(s_used[j])
+        else:
+            b2.append(normals[j][0] * pqf[j][0] + normals[j][1] * pqf[j][1]
+                      + s_used[j])
+    s2 = cramer(normals[0], b2[0], normals[1], b2[1])
+    s5 = [native_q6[0] / 64.0, native_q6[1] / 64.0]
+    res = max(abs(normals[j][0] * s5[0] + normals[j][1] * s5[1] - b2[j])
+              for j in (0, 1))
+    err = max(abs(s5[k] - s2[k]) for k in (0, 1))
+    return {"native_q6": native_q6, "ref_q6": list(prog["ref_q6"]),
+            "res_runtime": res, "err_runtime": err, "asm": asm,
+            "setup_len": setup_len, "font_bytes": font_bytes, "prog": prog,
+            "max_intermediate": prog["maxabs"]}
 
 
 def run_case(cons, parents_model, scale):

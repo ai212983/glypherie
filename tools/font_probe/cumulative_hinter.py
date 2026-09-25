@@ -1,6 +1,6 @@
 """Stage-owned coordinate constraints for the Python integration experiment."""
 import numpy as np
-from geometric_candidate import correct, finish
+from geometric_candidate import correct, finish, TabledGeometry
 from joint_stroke_fit import fit
 from shared_stem_hinter import fit as shared_fit, Unsupported
 from vtt_serif_experiment import detect as serif_roles
@@ -30,7 +30,11 @@ def claim(owners, points, axes, fitted, stage):
 
 def prepare(data, record, center_fit=None):
     source = np.asarray(data.points)*data.ppem/data.em
-    result = correct(data, center_fit=center_fit) if center_fit is not None else correct(data)
+    table = record.get('width_table')
+    if table is not None:
+        data = TabledGeometry(data.points, data.ends, data.flags, data.ppem,
+                              data.em, data.constraints, data.members, table)
+    result = correct(data, center_fit=center_fit)
     _, _, baseline = finish(result, data, 0)
     baseline = np.round(np.asarray(baseline)*64)/64
     recovered, order = recover_order(data.points,baseline,data.ends,data.flags,record,data.ppem/data.em)

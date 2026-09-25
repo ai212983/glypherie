@@ -47,6 +47,7 @@ Further reading:
   The method requires model descriptions and shape variants.
 
 - [Hersch, Font Rasterization: The State of the Art (1993)](https://lspwww.epfl.ch/publications/typography/frsa.pdf)
+  ([local copy](fonts/papers/hersch-1993-font-rasterization-survey.pdf))
   surveys scan conversion and grid fitting. Sections 5–6 (printed pp. 90–99) cover
   shared stroke widths, symmetry-axis placement and diagonal border constraints.
   Figure 25 fits parallel diagonal borders to an integer horizontal separation.
@@ -97,6 +98,7 @@ Further reading:
   for coupled constraints. Its stopping rules include a movement tolerance and
   an iteration cap; termination alone does not establish an accurate solution.
 - [Turner & Lemberg, Real-Time Grid Fitting of Typographic Outlines (2003)](https://www.tug.org/TUGboat/tb24-3/lemberg.pdf)
+  ([local copy](fonts/papers/turner-lemberg-2003-grid-fitting.pdf))
   describes segment grouping, mutual-best stem pairing, serif relationships,
   round/flat classification, font-wide alignment zones and ordered fitting.
   Opposite contour directions are one part of this system. The paper explicitly

@@ -80,7 +80,7 @@ def assemble_member_graph(points, accepted_reduced, attachments, references=(),
 
 def evaluate_member_graph(graph, points, ppem, em):
     """Solve every selected equation; reject singular or inconsistent completion."""
-    from shamir_baseline_solver import DECISIONS, _round_pixel
+    from shamir_baseline_solver import DECISIONS, _abs_rhs, _dist_rhs, abs_row_map
     if not np.isfinite(ppem) or not np.isfinite(em) or ppem <= 0 or em <= 0:
         raise ValueError('member solver requires positive finite ppem and em')
     points = np.asarray(points, float).reshape(-1, 2)
@@ -90,14 +90,18 @@ def evaluate_member_graph(graph, points, ppem, em):
         raise ValueError('member equations must supply two coordinates per point')
     matrix, values = np.zeros((size, size)), np.zeros(size)
     scale = ppem / em
+    abs_rows = abs_row_map(constraints)
+    for key, row in abs_row_map(graph.get('retained_abs_rows', [])).items():
+        abs_rows.setdefault(key, row)
     for row, c in enumerate(constraints):
         n = np.asarray(c['normal'], float)
         p = c['point']
         matrix[row, 2*p:2*p+2] += n
         kind, sources = c['kind'], c['sources']
-        if kind in ('Abs', 'PAbs', 'Dist', 'PDist'):
-            value = float(c['value']) * scale
-            values[row] = _round_pixel(value) if c.get('round', True) else value
+        if kind in ('Abs', 'PAbs'):
+            values[row] = _abs_rhs(c, scale)
+        elif kind in ('Dist', 'PDist'):
+            values[row] = _dist_rhs(c, scale, abs_rows)
             if sources:
                 a = sources[0]
                 matrix[row, 2*a:2*a+2] -= n

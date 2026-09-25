@@ -17,7 +17,7 @@ from opposing_terminals import detect as opposing_roles, fit as fit_opposing
 
 STAGES = ('reorientation', 'parent-anchor', 'serifs', 'coordinated-terminals', 'paired-terminal')
 _FIELDS = {'kind','point','normal','sources','value','round','default','default_reason',
-           'feature','segment_owner','metric','metric_role','id','depends_on'}
+           'feature','segment_owner','metric','metric_role','extent','id','depends_on'}
 
 
 def equation(raw):
@@ -45,13 +45,24 @@ class Geometry:
         object.__setattr__(self,'members',tuple(equation(c) for c in self.members))
 
 
+@dataclass(frozen=True, slots=True)
+class TabledGeometry(Geometry):
+    """Geometry carrying a shared stem-width table (CVT analogue).
+
+    Kept off the base record so the identity-free correction boundary
+    keeps its exact shape; only stage-owned code constructs this.
+    """
+    width_table: object = None
+
+
 def correct(data, center_fit=None):
-    if type(data) is not Geometry:
+    if not isinstance(data, Geometry):
         raise TypeError('correction requires Geometry')
     points = np.asarray(data.points, float)
     record = dict(graph=dict(constraints=[equation(c) for c in data.constraints],
                   baseline_execution=dict(model_points_px=points.tolist(), ppem=data.ppem, em=data.em)),
-                  attachment_resolution=[dict(constraint=equation(c)) for c in data.members])
+                  attachment_resolution=[dict(constraint=equation(c)) for c in data.members],
+                  width_table=getattr(data, 'width_table', None))
     oriented = prototype(record)
     parent = experiment(oriented, points, data.ppem, data.em, False)
     before = np.asarray(parent['graph']['baseline_execution']['model_points_px'])

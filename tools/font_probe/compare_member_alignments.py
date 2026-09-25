@@ -177,7 +177,7 @@ def main():
             for suffix in ('candidate.ttf', 'bitmap.json'):
                 path = REFERENCE / f'{key}-{suffix}'
                 refs[output.repo_relative(path)] = digest(path)
-            generated, rejected, _, _ = pipe.run_key(face, size)
+            generated, rejected, _, _, _, _ = pipe.run_key(face, size)
             generation.extend(generated); failures.extend(rejected)
             cases, admission = compare_key(pipe, key, size, generated)
             rows.extend(cases); admissions[key] = admission

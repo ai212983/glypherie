@@ -178,6 +178,45 @@ class NativeFixtureTests(unittest.TestCase):
         self.assertTrue(any("integer" in r for r in reasons))
 
 
+class DirectTests(unittest.TestCase):
+    def _build_all_direct(self, static, target, chars, **kw):
+        _fixture_font(target, "AB")
+        return {"records": {"A": {"graph": _graph(TRI)},
+                            "B": {"graph": _graph(TRI)}}}
+
+    def test_direct_run_records_lowering_and_domain(self):
+        # Opt-in direct audit on small fixtures: integer Abs/Abs pairs
+        # lower direct, the declared domain holds post-execution, and the
+        # report carries the lowering evidence.
+        out = _fresh_output(self)
+        target = out / "run"
+        with mock.patch.object(A, "CHARS", "AB"), mock.patch.object(
+                A, "build_font", side_effect=self._build_all_direct):
+            rep = A.run(target, families=["roboto"], sizes=[14],
+                        allow_direct=True)
+        self.assertTrue(rep["config"]["allow_direct"])
+        self.assertTrue(rep["audit_complete"], rep["failures"])
+        self.assertEqual(rep["direct"]["cases"], 2)
+        self.assertEqual(rep["direct"]["points"], 6)
+        self.assertEqual(rep["direct"]["domain_exceeded"], 0)
+        self.assertEqual(rep["direct"]["skip_reasons"], {})
+        by_char = {c["char"]: c for b in rep["builds"]
+                   if isinstance(b, dict) and "cases" in b
+                   for c in b["cases"]}
+        self.assertEqual(by_char["A"]["lowering"], [0, 1, 2])
+        self.assertEqual(by_char["B"]["lowering"], [0, 1, 2])
+        self.assertFalse(by_char["A"]["domain_exceeded"])
+
+    def test_direct_domain_helper_and_reason_bucket(self):
+        d = A._direct_domain_for_case(
+            [[100.0, -200.0]], {"constraints": [{"value": 200}]}, 1000, 14)
+        self.assertEqual(d, (180 + 512, 45876))
+        self.assertEqual(
+            A._stable_reason(
+                "non-integer font-unit scalar 1.5 (exact CVT contract)"),
+            "non-integer scalar (exact CVT contract)")
+
+
 class RunTests(unittest.TestCase):
     def _run_small(self, build_side_effect):
         out = _fresh_output(self)

@@ -57,6 +57,8 @@ def fixture_bytes(points, asm, cvt_vals):
     prog.fromAssembly(asm)
     g.program = prog
     f['maxp'].maxStackElements = 64
+    # Storage slots 0..13 back the opt-in direct lowering (harmless otherwise).
+    f['maxp'].maxStorage = max(int(f['maxp'].maxStorage or 0), 16)
     f['maxp'].maxSizeOfInstructions = max(f['maxp'].maxSizeOfInstructions, len(prog.getBytecode()))
     import io
     buf = io.BytesIO()

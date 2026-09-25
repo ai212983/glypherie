@@ -16,6 +16,41 @@ class BaselineGeometryTests(unittest.TestCase):
         self.assertEqual(len(prepare([contour],1000,baseline=True)['points']),4)
         self.assertEqual(len(contour),5)
 
+    def test_preparation_log_counts_removals_and_insertions(self):
+        # B01 substitution boundary (prepare() interior): the log reports
+        # exactly what the baseline merge and extremum-subdivision steps
+        # remove and add. Upstream OutlinePen drops and downstream
+        # recognize() discards are outside this log.
+        rect = polygon([(0, 0), (5, 0), (10, 0), (10, 10), (0, 10)])
+        plain = prepare([rect], 1000)
+        self.assertEqual(plain['preparation_log']['removed_collinear_joins'], 0)
+        self.assertEqual(plain['preparation_log']['inserted_extrema'], 0)
+        merged = prepare([rect], 1000, baseline=True)
+        self.assertEqual(merged['preparation_log']['removed_collinear_joins'], 1)
+        self.assertEqual(merged['preparation_log']['inserted_extrema'], 0)
+        # Shallow real corners survive with a zero removal count.
+        shallow = polygon([(0, 0), (5, .0001), (10, 0), (10, 10), (0, 10)])
+        log = prepare([shallow], 1000, baseline=True)['preparation_log']
+        self.assertEqual(log['removed_collinear_joins'], 0)
+        # Seam rotation must not change the removal count.
+        rotated = polygon([(5, 0), (10, 0), (10, 10), (0, 10), (0, 0)])
+        self.assertEqual(
+            prepare([rotated], 1000, baseline=True)['preparation_log'],
+            merged['preparation_log'])
+
+    def test_preparation_log_partitions_inserted_extrema(self):
+        # One quadratic arch gains exactly one inserted extremum whose
+        # piece t_ranges partition [0, 1].
+        arch = [[(0, 0), (50, 50), (100, 0)]]
+        model = prepare([arch], 1000, baseline=True)
+        self.assertEqual(model['preparation_log']['inserted_extrema'], 1)
+        self.assertEqual(model['preparation_log']['removed_collinear_joins'], 0)
+        ranges = sorted(tuple(s['t_range']) for s in model['segments'])
+        self.assertEqual(ranges[0][0], 0)
+        self.assertEqual(ranges[-1][1], 1)
+        for (_, hi), (lo, _) in zip(ranges, ranges[1:]):
+            self.assertEqual(hi, lo)
+
     def test_contour_start_does_not_hide_redundancy(self):
         contour=polygon([(5,0),(10,0),(10,10),(0,10),(0,0)])
         result=merge_collinear_lines(contour)

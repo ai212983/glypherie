@@ -82,6 +82,59 @@ class TestNativeRef(unittest.TestCase):
         px = (np.asarray(raw, float) / 64.0).tolist()
         self.assertEqual(px, [[2.0, 0.0], [10.0, 4.0], [6.0, 2.0], [2.0, 14.0]])
 
+    def test_oblique_movement_cross_talk_bound(self):
+        # Verifies oblique movement (sequence-verification note in
+        # shamir-native-translation.md): the second native operation moves
+        # along freedom perpendicular to the other relation's normal, so
+        # exact arithmetic preserves the first projection; fixed-point
+        # execution retains a small residual, at most 0.00625px in this
+        # matrix, with the x-first pair preserving x exactly. FreeType
+        # execution is the oracle; compiler metadata only locates the
+        # prefix boundaries.
+        bound = 0.00625
+        for key in ("paired", "swapped-order", "rotated"):
+            _, pts, chosen = next(t for t in self.graphs() if t[0] == key)
+            pts = [list(map(float, p)) for p in pts]
+            g = schedule(np.asarray(pts, float),
+                         {k: list(v) for k, v in chosen.items()}, [], [])
+            nasm, nmeta = compile_native(g, pts)
+            pair = [o for o in nmeta["operations"] if o["point"] == 2]
+            self.assertEqual(len(pair), 2, key)
+            o1, o2 = pair
+            n1 = np.asarray(o1["normal_float"], float)
+            n1 = n1 / np.linalg.norm(n1)
+            cvt = list(nmeta["cvt"]) or [0]
+            for ppem in PPEMS:
+                c1, _, _ = run_ft_raw(pts, nasm[:o1["assembly_end"]], ppem, cvt)
+                c2, _, _ = run_ft_raw(pts, nasm[:o2["assembly_end"]], ppem, cvt)
+                move = (np.asarray(c2, float) - np.asarray(c1, float))[2] / 64.0
+                xtalk = float(move @ n1)
+                self.assertLessEqual(abs(xtalk), bound + 1e-9, (key, ppem, xtalk))
+                if key == "paired":
+                    self.assertEqual(xtalk, 0.0, (key, ppem))
+
+    def test_oblique_operation_order_changes_output(self):
+        # Locks the sequence-note observation: identical model equations in
+        # opposite group order execute differently at 14/18px and agree at
+        # 16/20/125px. Any movement-semantics change must revisit this.
+        _, p2, c2 = next(t for t in self.graphs() if t[0] == "paired")
+        _, p3, c3 = next(t for t in self.graphs() if t[0] == "swapped-order")
+        p2 = [list(map(float, p)) for p in p2]
+        p3 = [list(map(float, p)) for p in p3]
+        g2 = schedule(np.asarray(p2, float), {k: list(v) for k, v in c2.items()}, [], [])
+        g3 = schedule(np.asarray(p3, float), {k: list(v) for k, v in c3.items()}, [], [])
+        a2, m2 = compile_native(g2, p2)
+        a3, m3 = compile_native(g3, p3)
+        for ppem in PPEMS:
+            r2, _, _ = run_ft_raw(p2, a2, ppem, list(m2["cvt"]) or [0])
+            r3, _, _ = run_ft_raw(p3, a3, ppem, list(m3["cvt"]) or [0])
+            if ppem in (14, 18):
+                self.assertFalse(np.array_equal(np.asarray(r2), np.asarray(r3)),
+                                 (ppem, r2, r3))
+            else:
+                self.assertTrue(np.array_equal(np.asarray(r2), np.asarray(r3)),
+                                (ppem, r2, r3))
+
     def test_order_difference_reported(self):
         _, p2, c2 = next(t for t in self.graphs() if t[0] == "paired")
         _, p3, c3 = next(t for t in self.graphs() if t[0] == "swapped-order")
@@ -157,6 +210,167 @@ class TestNativeRef(unittest.TestCase):
             compile_native(pair(n_reject), pts)
         n_ok = [0.95, math.sqrt(1 - 0.95 ** 2)]
         compile_native(pair(n_ok), pts)
+
+    def test_direct_lowering_matches_prototype_execution(self):
+        # Integration: allow_direct=True lowers an eligible pair with the
+        # direct 2x2 solve; executed child coordinates equal the isolated
+        # prototype's run_scalable output for the same equations at every
+        # size. FreeType execution is the oracle on both sides.
+        from experiment_paired_direct_arithmetic import run_scalable
+        # Point 0 is a fractional anchor (sequential-forced: a single-point
+        # outline yields no FreeType points); point 1 is the direct pair.
+        pts = [[100.5, 200.5], [200.0, 100.0]]
+        chosen = {0: [relation("Abs", 0, list(X), value=100.5, round=False, id=1),
+                      relation("Abs", 0, list(Y), value=200.5, round=False, id=2)],
+                  1: [relation("PAbs", 1, list(X), value=200, round=True, id=3),
+                      relation("PAbs", 1, list(N), value=100, round=True, id=4)]}
+        g = schedule(np.asarray(pts, float),
+                     {k: list(v) for k, v in chosen.items()}, [], [])
+        domain = (128000, 16384 * 2000)
+        nasm, nmeta = compile_native(g, pts, allow_direct=True,
+                                     direct_domain=domain)
+        self.assertEqual([o.get("kind") for o in nmeta["operations"]],
+                         ["Abs", "Abs", "DirectPair"])
+        self.assertEqual(nmeta["operations"][2]["detail"]["lowering"],
+                         "direct")
+        self.assertEqual(nmeta["direct"]["lowered"], [1])
+        cons = [{"kind": "PAbs", "normal": list(X), "sources": [],
+                 "value": 200, "round": True},
+                {"kind": "PAbs", "normal": list(N), "sources": [],
+                 "value": 100, "round": True}]
+        for ppem in PPEMS:
+            nraw, _, _ = run_ft_raw(pts, nasm, ppem,
+                                    list(nmeta["cvt"]) or [0])
+            rout = run_scalable(cons, [None, None], [200, 100],
+                                upm=1000, ppem=ppem)
+            self.assertEqual([int(nraw[1][0]), int(nraw[1][1])],
+                             rout["native_q6"], (ppem, nraw, rout))
+
+    def test_direct_lowering_with_parents_matches_prototype(self):
+        # The parent-term path (missed by the parentless parity test):
+        # a shared-parent Dist pair with mixed rounding flags executes
+        # identically to the prototype's run_scalable at every size.
+        from experiment_paired_direct_arithmetic import run_scalable
+        pts = [[125.0, 250.0], [375.0, 125.0]]
+        chosen = {0: [relation("Abs", 0, list(X), value=125.0, round=False, id=1),
+                      relation("Abs", 0, list(Y), value=250.0, round=False, id=2)],
+                  1: [relation("Dist", 1, list(N), sources=[0], value=50.0,
+                                round=True, id=3),
+                      relation("Dist", 1, list(N2), sources=[0], value=-275.0,
+                                round=True, id=4)]}
+        g = schedule(np.asarray(pts, float),
+                     {k: list(v) for k, v in chosen.items()}, [], [])
+        domain = (128000, 16384 * 2000)
+        nasm, nmeta = compile_native(g, pts, allow_direct=True,
+                                     direct_domain=domain)
+        self.assertEqual([o.get("kind") for o in nmeta["operations"]],
+                         ["DirectPair", "DirectPair"])
+        self.assertEqual(nmeta["direct"]["lowered"], [0, 1])
+        cons0 = [{"kind": "Abs", "normal": list(X), "sources": [],
+                  "value": 125, "round": False},
+                 {"kind": "Abs", "normal": list(Y), "sources": [],
+                  "value": 250, "round": False}]
+        cons1 = [{"kind": "Dist", "normal": list(N), "sources": [0],
+                  "value": 50, "round": True},
+                 {"kind": "Dist", "normal": list(N2), "sources": [0],
+                  "value": -275, "round": True}]
+        for ppem in (8, 16, 20):
+            nraw, _, _ = run_ft_raw(pts, nasm, ppem,
+                                    list(nmeta["cvt"]) or [0])
+            r0 = run_scalable(cons0, [None, None], [125, 250],
+                              upm=1000, ppem=ppem)
+            r1 = run_scalable(cons1, [[125, 250], [125, 250]], [50, -275],
+                              upm=1000, ppem=ppem)
+            self.assertEqual([int(nraw[0][0]), int(nraw[0][1])],
+                             r0["native_q6"], (ppem, nraw, r0))
+            self.assertEqual([int(nraw[1][0]), int(nraw[1][1])],
+                             r1["native_q6"], (ppem, nraw, r1))
+            self.assertLessEqual(r1["res_runtime"], 1 / 64.0, (ppem, r1))
+            self.assertLessEqual(r1["err_runtime"], 1 / 64.0, (ppem, r1))
+
+    def test_direct_off_by_default_and_needs_domain(self):
+        pts = [[200.0, 100.0]]
+        chosen = {0: [relation("PAbs", 0, list(X), value=200, round=True, id=1),
+                      relation("PAbs", 0, list(N), value=100, round=True, id=2)]}
+        g = schedule(np.asarray(pts, float),
+                     {k: list(v) for k, v in chosen.items()}, [], [])
+        _, bmeta = compile_native(g, pts)
+        self.assertEqual(len([o for o in bmeta["operations"]
+                              if o["point"] == 0]), 2)
+        self.assertTrue(all(o.get("kind") != "DirectPair"
+                            for o in bmeta["operations"]))
+        self.assertFalse(bmeta["direct"]["allowed"])
+        _, smeta = compile_native(g, pts, allow_direct=True)
+        self.assertEqual(len([o for o in smeta["operations"]
+                              if o["point"] == 0]), 2)
+        self.assertEqual(smeta["direct"]["lowered"], [])
+        self.assertTrue(any("domain" in s["reason"]
+                            for s in smeta["direct"]["skipped"]),
+                        smeta["direct"])
+
+    def test_direct_fallback_paths(self):
+        domain = (128000, 16384 * 2000)
+        # Fractional Abs scalar: valid sequentially, ineligible for direct
+        # (exact-integer CVT contract) -> sequential fallback + record.
+        pts = [[100.5, 200.0]]
+        chosen = {0: [relation("Abs", 0, list(X), value=100.5, round=False, id=1),
+                      relation("Abs", 0, list(Y), value=200.0, round=False, id=2)]}
+        g = schedule(np.asarray(pts, float),
+                     {k: list(v) for k, v in chosen.items()}, [], [])
+        nasm, nmeta = compile_native(g, pts, allow_direct=True,
+                                     direct_domain=domain)
+        self.assertEqual(len([o for o in nmeta["operations"]
+                              if o["point"] == 0]), 2)
+        self.assertEqual(nmeta["direct"]["lowered"], [])
+        self.assertTrue(any("integer" in s["reason"]
+                            for s in nmeta["direct"]["skipped"]),
+                        nmeta["direct"])
+        run_ft_raw(pts, nasm, 20, list(nmeta["cvt"]) or [0])
+        # Near-parallel pair: below the 1/16 support gate for direct AND
+        # for the sequential per-op gate -> raises, never silently accepted.
+        eps = math.radians(0.05)
+        nn = [math.cos(eps), math.sin(eps)]
+        pts2 = [[0.0, 0.0], [100.0, 50.0]]
+        chosen2 = {0: [relation("Abs", 0, list(X), value=0.0, round=False, id=1),
+                       relation("Abs", 0, list(Y), value=0.0, round=False, id=2)],
+                   1: [relation("PDist", 1, nn, sources=[0], value=10,
+                                round=True, id=3),
+                       relation("PAbs", 1, list(X), value=100, round=True, id=4)]}
+        g2 = schedule(np.asarray(pts2, float),
+                      {k: list(v) for k, v in chosen2.items()}, [], [])
+        with self.assertRaises(UnsupportedNativeTranslation):
+            compile_native(g2, pts2, allow_direct=True,
+                           direct_domain=domain)
+        # Domain violation with valid gates -> sequential fallback + record.
+        pts3 = [[200.0, 100.0]]
+        chosen3 = {0: [relation("PAbs", 0, list(X), value=200, round=True, id=1),
+                       relation("PAbs", 0, list(N), value=100, round=True, id=2)]}
+        g3 = schedule(np.asarray(pts3, float),
+                      {k: list(v) for k, v in chosen3.items()}, [], [])
+        _, m3 = compile_native(g3, pts3, allow_direct=True,
+                               direct_domain=(2 ** 31 - 1, 2 ** 31 - 1))
+        self.assertEqual(len([o for o in m3["operations"]
+                              if o["point"] == 0]), 2)
+        self.assertEqual(m3["direct"]["lowered"], [])
+        self.assertTrue(any("domain" in s["reason"]
+                            for s in m3["direct"]["skipped"]),
+                        m3["direct"])
+
+    def test_direct_bound_matches_prototype(self):
+        # The compiler's re-implemented domain bound must agree exactly
+        # with the prototype's: independent implementation, shared contract.
+        from experiment_paired_direct_arithmetic import domain_bound
+        from shamir_native_translation import direct_domain_bound
+        cases = [([[1.0, 0.0], [0.0, 1.0]], [None, None], [True, True]),
+                 ([[0.6, 0.8], [-0.6, 0.8]], [11, 17], [True, False]),
+                 ([[0.6, 0.8], [-0.6, 0.8]], [5, 5], [True, True])]
+        for normals, srcs, rnd in cases:
+            for max_pq, max_d14 in ((128000, 16384 * 2000),
+                                    (64000, 16384 * 100)):
+                self.assertEqual(
+                    direct_domain_bound(normals, srcs, rnd, max_pq, max_d14),
+                    domain_bound(normals, srcs, rnd, max_pq, max_d14),
+                    (normals, srcs, rnd, max_pq, max_d14))
 
     def test_malformed_graphs(self):
         pts = [[100, 0], [500, 200], [300, 100], [100, 700]]

@@ -27,11 +27,20 @@ import math
 
 import numpy as np
 
+from shamir_constraints import push_integer
 from shamir_prototype import push
 
 NATIVE_DOT_CUTOFF = 1.0 / 16.0
 _F214 = 16384
 _EPS32 = 32 * np.finfo(float).eps
+_INT32 = 2 ** 31 - 1
+
+_DIRECT_KINDS = ("Abs", "Dist", "PAbs", "PDist")
+_DIRECT_PS = {(0, 0): 2, (0, 1): 3, (1, 0): 4, (1, 1): 5}
+_DIRECT_QS = {0: 6, 1: 7}
+_DIRECT_RQS = {0: 10, 1: 11}
+_DIRECT_RRS = {0: 12, 1: 13}
+_DIRECT_STORAGE_REQUIRED = 14
 
 CITED_SOURCES = [
     "Shamir2003 Table I, section 4.1, Fig.9: https://doi.org/10.1145/636886.636887"
@@ -93,12 +102,316 @@ def _is_exact_int(v):
     return (isinstance(v, (int, np.integer)) and not isinstance(v, (bool, np.bool_)))
 
 
-def compile_native(graph, points):
+class _DirectSkip(Exception):
+    """Internal: keep the point on the sequential lowering; reason recorded."""
+
+
+def _half_away(x):
+    """Round half away from zero to int (mirrors the isolated prototype)."""
+    xf = float(x)
+    if xf >= 0:
+        return int(math.floor(xf + 0.5))
+    return int(math.ceil(xf - 0.5))
+
+
+def _plain(vec):
+    return [float(vec[0]), float(vec[1])]
+
+
+def _domain_worst(n0, n1, src, rnd, max_pq, max_d14):
+    """Worst-case intermediate magnitudes over the declared execution domain.
+
+    Independent re-implementation of the isolated prototype's domain bound
+    (experiment_paired_direct_arithmetic.domain_bound): same term
+    combination, same half-away coefficients, same trunc split, same
+    conservative absolute-sum accumulation. Cross-checked by
+    test_direct_bound_matches_prototype. Raises _DirectSkip on violation.
+    Plain floats throughout so coefficient bits match the prototype.
+    """
+    if int(max_pq) < 0 or int(max_d14) < 0:
+        raise _DirectSkip("domain range: negative domain maximum")
+    max_pq, max_d14 = int(max_pq), int(max_d14)
+    if max_d14 + 8192 > _INT32:
+        raise _DirectSkip("domain range: scalar round add %d exceeds signed32"
+                          % (max_d14 + 8192))
+    det = n0[0] * n1[1] - n0[1] * n1[0]
+    if det == 0.0:
+        raise _DirectSkip("domain range: singular pair (zero determinant)")
+    winv = [[n1[1] / det, -n0[1] / det], [-n1[0] / det, n0[0] / det]]
+    slot_of, order = {}, []
+    for j in (0, 1):
+        if src[j] is not None and src[j] not in slot_of:
+            slot_of[src[j]] = len(order)
+            order.append(src[j])
+    if len(order) > 2:
+        raise _DirectSkip("domain range: more than two distinct parents")
+    worst = 0
+    for row in (0, 1):
+        terms = []
+        if src[0] is not None and src[0] == src[1]:
+            cx = winv[row][0] * n0[0] + winv[row][1] * n1[0]
+            cy = winv[row][0] * n0[1] + winv[row][1] * n1[1]
+            terms.append(("p", cx))
+            terms.append(("p", cy))
+        else:
+            for j in (0, 1):
+                if src[j] is None:
+                    continue
+                nj = n0 if j == 0 else n1
+                terms.append(("p", winv[row][j] * nj[0]))
+                terms.append(("p", winv[row][j] * nj[1]))
+        for j in (0, 1):
+            terms.append(("s", winv[row][j], rnd[j]))
+        acc = 0
+        for t in terms:
+            if t[0] == "p":
+                c14 = _half_away(t[1] * _F214)
+                if abs(c14) > _INT32:
+                    raise _DirectSkip("domain range: coeff c14=%d exceeds signed32" % c14)
+                acc += (abs(c14) * max_pq + 32) // 64
+            else:
+                _, c, is_rnd = t
+                c14 = _half_away(c * _F214)
+                if abs(c14) > _INT32:
+                    raise _DirectSkip("domain range: coeff c14=%d exceeds signed32" % c14)
+                if is_rnd:
+                    prow = (max_d14 + 8192) // _F214
+                    acc += (abs(c14) * (64 * prow) + 32) // 64
+                else:
+                    q = max_d14 // 256
+                    t1 = (abs(c14) * q + 32) // 64
+                    m2 = (abs(c14) * 255 + 32) // 64
+                    acc += t1 + (m2 * 64) // _F214
+        acc += 128
+        worst = max(worst, acc)
+    if worst > _INT32:
+        raise _DirectSkip("domain range: worst-case intermediate %d exceeds signed32" % worst)
+    return worst
+
+
+def direct_domain_bound(normals, src_ids, rnd, max_pq, max_d14):
+    """Public domain-bound contract shared with the isolated prototype.
+
+    Returns the worst-case intermediate magnitude (int <= 2**31-1), or
+    raises UnsupportedNativeTranslation on violation. normals are two
+    (x, y) direction rows; src_ids holds a parent id or None per row;
+    rnd holds the per-row rounding flags.
+    """
+    n0 = [float(normals[0][0]), float(normals[0][1])]
+    n1 = [float(normals[1][0]), float(normals[1][1])]
+    try:
+        return _domain_worst(n0, n1, list(src_ids), [bool(r) for r in rnd],
+                             max_pq, max_d14)
+    except _DirectSkip as e:
+        raise UnsupportedNativeTranslation(
+            [dict(point=-1, constraint_id=None, reason=str(e))])
+
+
+def _direct_terms(n0, n1, src, winv):
+    """Per-axis term lists [(kind, aux, coeff)] mirroring the prototype's
+    compile_terms: shared parents combined BEFORE quantization; aux is a
+    (slot, xy) key for parents or the equation index for scalars."""
+    slot_of, order = {}, []
+    for j in (0, 1):
+        if src[j] is not None and src[j] not in slot_of:
+            slot_of[src[j]] = len(order)
+            order.append(src[j])
+    if len(order) > 2:
+        raise _DirectSkip("more than two distinct parents")
+    axes = []
+    for row in (0, 1):
+        terms = []
+        if src[0] is not None and src[0] == src[1]:
+            s = slot_of[src[0]]
+            cx = winv[row][0] * n0[0] + winv[row][1] * n1[0]
+            cy = winv[row][0] * n0[1] + winv[row][1] * n1[1]
+            terms.append(("p", (s, 0), cx))
+            terms.append(("p", (s, 1), cy))
+        else:
+            for j in (0, 1):
+                if src[j] is None:
+                    continue
+                s = slot_of[src[j]]
+                nj = n0 if j == 0 else n1
+                terms.append(("p", (s, 0), winv[row][j] * nj[0]))
+                terms.append(("p", (s, 1), winv[row][j] * nj[1]))
+        for j in (0, 1):
+            terms.append(("s", j, winv[row][j]))
+        axes.append(terms)
+    return axes, order
+
+
+def _scalar_prep_frag(cvt_index, j, rnd_j):
+    """Runtime scalar preparation from the CVT (mirrors the prototype's
+    scalar_prep_asm): RCVT size-scales the integer font-unit scalar, MUL
+    by 16384 converts q6 to Q14 exactly, then the signed-round (rounded)
+    or trunc-split (unrounded) sequence stores QSLOT/RQSLOT/RRSLOT."""
+    asm = push_integer(cvt_index) + ["RCVT[ ]"] + push_integer(16384) + ["MUL[ ]"]
+    if rnd_j:
+        asm += (["DUP[ ]", "ABS[ ]"] + push_integer(8192) + ["ADD[ ]"]
+                + push_integer(1048576) + ["DIV[ ]", "SWAP[ ]"] + push_integer(0)
+                + ["LT[ ]", "IF[ ]", "NEG[ ]", "EIF[ ]"]
+                + push_integer(4096) + ["MUL[ ]"] + push_integer(_DIRECT_QS[j])
+                + ["SWAP[ ]", "WS[ ]"])
+    else:
+        asm += (["DUP[ ]"] + push_integer(16384) + ["DIV[ ]"]
+                + push_integer(_DIRECT_RQS[j]) + ["SWAP[ ]", "WS[ ]"]
+                + push_integer(_DIRECT_RQS[j]) + ["RS[ ]"] + push_integer(16384)
+                + ["MUL[ ]"] + ["SUB[ ]"]
+                + push_integer(_DIRECT_RRS[j]) + ["SWAP[ ]", "WS[ ]"])
+    return asm
+
+
+def _axis_frag(terms, rnd):
+    """One axis of the direct solve (mirrors the prototype's axis_asm_cvt):
+    parent/rounded-scalar terms read storage, unrounded parts read the
+    runtime RQSLOT/RRSLOT storage; leaves the rounded Q6 value on stack."""
+    asm, first = [], True
+    for kind, aux, c14 in terms:
+        if kind == "p":
+            # aux is already the storage slot number (mapped by the caller,
+            # mirroring the prototype's axis_asm_cvt contract).
+            frag = push_integer(aux) + ["RS[ ]"] + push_integer(c14) + ["MUL[ ]"]
+        elif rnd[aux]:
+            frag = (push_integer(_DIRECT_QS[aux]) + ["RS[ ]"] + push_integer(c14)
+                    + ["MUL[ ]"])
+        else:
+            frag = (push_integer(_DIRECT_RQS[aux]) + ["RS[ ]"] + push_integer(c14)
+                    + ["MUL[ ]"] + push_integer(_DIRECT_RRS[aux]) + ["RS[ ]"]
+                    + push_integer(c14) + ["MUL[ ]"] + push_integer(16384)
+                    + ["DIV[ ]", "ADD[ ]"])
+        asm += frag
+        if not first:
+            asm += ["ADD[ ]"]
+        first = False
+    # Final point rounded once to 26.6 (signed half-away, mirroring the
+    # prototype). No accumulator exposure: compiler fonts carry no spare
+    # points, so the rounded value stays on the stack for the caller.
+    asm += (["DUP[ ]", "ABS[ ]"] + push_integer(128) + ["ADD[ ]"] + push_integer(16384)
+            + ["DIV[ ]", "SWAP[ ]"] + push_integer(0)
+            + ["LT[ ]", "IF[ ]", "NEG[ ]", "EIF[ ]"])
+    return asm
+
+
+def _emit_direct_point(p, group, pts, cvt_id, domain):
+    """Emit the direct 2x2 solve for one eligible point.
+
+    Raises _DirectSkip when the pair is not direct-supported (the caller
+    keeps the sequential lowering and records the reason). Mirrors the
+    isolated prototype's construction: GC parent capture, CVT scalar
+    preparation, storage-based axis solve, cardinal SCFS application.
+    """
+    for c in group:
+        if c.get("kind") not in _DIRECT_KINDS:
+            raise _DirectSkip("kind %r is not direct-supported" % (c.get("kind"),))
+    n0 = _plain(_asvec(group[0].get("normal")))
+    n1 = _plain(_asvec(group[1].get("normal")))
+    det = n0[0] * n1[1] - n0[1] * n1[0]
+    if det == 0.0:
+        raise _DirectSkip("pair determinant is exactly zero")
+    if abs(det) < NATIVE_DOT_CUTOFF:
+        raise _DirectSkip("pair determinant %.5f < 1/16 (native support gate)"
+                          % abs(det))
+    rnd, src = [], []
+    for j, c in enumerate(group):
+        nj = n0 if j == 0 else n1
+        v = c.get("value")
+        if not _is_int_fu(v):
+            raise _DirectSkip("non-integer font-unit scalar %r (exact CVT contract)"
+                              % (v,))
+        rnd.append(bool(c.get("round", True)))
+        ar = {"Abs": 0, "PAbs": 0, "Dist": 1, "PDist": 1}[c.get("kind")]
+        s = [int(x) for x in c.get("sources", [])]
+        if len(s) != ar:
+            raise _DirectSkip("wrong arity for %s" % c.get("kind"))
+        kind = c.get("kind")
+        if kind == "Abs":
+            expected = n0[0] * pts[p][0] + n0[1] * pts[p][1] if j == 0 else \
+                n1[0] * pts[p][0] + n1[1] * pts[p][1]
+            if abs(float(v) - expected) > _EPS32 * max(1.0, abs(expected), abs(float(v))):
+                raise _DirectSkip("Abs value differs from original projection")
+            src.append(None)
+        elif kind == "PAbs":
+            src.append(None)
+        else:
+            s0 = s[0]
+            if kind == "Dist":
+                ex = nj[0] * (pts[p][0] - pts[s0][0]) + nj[1] * (pts[p][1] - pts[s0][1])
+                if abs(float(v) - ex) > _EPS32 * max(1.0, abs(ex), abs(float(v))):
+                    raise _DirectSkip("Dist value differs from original projected distance")
+            src.append(s0)
+    winv = [[n1[1] / det, -n0[1] / det], [-n1[0] / det, n0[0] / det]]
+    axes, order = _direct_terms(n0, n1, src, winv)
+    bound = _domain_worst(n0, n1, src, rnd, domain[0], domain[1])
+    qaxes = []
+    for terms in axes:
+        qt = []
+        for kind, aux, c in terms:
+            qt.append((kind, aux, _half_away(c * _F214)))
+        qaxes.append(qt)
+    frag = []
+    for s_idx, sid in enumerate(order):
+        frag += (["SVTCA[1]"] + push_integer(sid) + ["GC[0]"]
+                 + push_integer(_DIRECT_PS[(s_idx, 0)]) + ["SWAP[ ]", "WS[ ]"])
+        frag += (["SVTCA[0]"] + push_integer(sid) + ["GC[0]"]
+                 + push_integer(_DIRECT_PS[(s_idx, 1)]) + ["SWAP[ ]", "WS[ ]"])
+    cvt_indices = []
+    for j in (0, 1):
+        idx = cvt_id(int(float(group[j].get("value"))))
+        cvt_indices.append(idx)
+        frag += _scalar_prep_frag(idx, j, rnd[j])
+    for row in (0, 1):
+        terms = []
+        for kind, aux, c14 in qaxes[row]:
+            if kind == "p":
+                terms.append(("p", _DIRECT_PS[aux], c14))
+            else:
+                terms.append(("s", aux, c14))
+        frag += _axis_frag(terms, rnd)
+        if row == 0:
+            frag += ["SVTCA[1]"] + push_integer(p) + ["SWAP[ ]", "SCFS[ ]"]
+        else:
+            frag += ["SVTCA[0]"] + push_integer(p) + ["SWAP[ ]", "SCFS[ ]"]
+    detail = {"lowering": "direct",
+              "constraint_ids": [int(group[0]["id"]), int(group[1]["id"])],
+              "domain_bound": bound,
+              "domain": [int(domain[0]), int(domain[1])],
+              "cvt_indices": cvt_indices,
+              "rounded": rnd,
+              "storage_required": _DIRECT_STORAGE_REQUIRED}
+    return frag, detail
+
+
+def compile_native(graph, points, allow_direct=False, direct_domain=None):
     """Compile a complete point-DAG graph to native TrueType assembly.
 
     Returns (assembly, metadata). Raises UnsupportedNativeTranslation.
+
+    allow_direct=True additionally permits the direct 2x2 solve lowering
+    for eligible point pairs (Abs/Dist/PAbs/PDist only, integer font-unit
+    scalars, pair determinant >= 1/16, execution-domain bound fits).
+    direct_domain=(max_parent_q6, max_scalar_q14) declares the execution
+    domain the direct bound is enforced over; without it every point
+    keeps the sequential lowering. Ineligible points keep the sequential
+    lowering with the reason recorded under metadata["direct"]["skipped"];
+    nothing falls back silently. The default call is byte-identical to
+    the sequential-only compiler.
     """
     diags = []
+    domain = None
+    if allow_direct and direct_domain is not None:
+        try:
+            max_pq, max_d14 = direct_domain
+        except (TypeError, ValueError):
+            raise UnsupportedNativeTranslation(
+                [dict(point=-1, constraint_id=None,
+                      reason="direct_domain must be a (max_parent_q6, max_scalar_q14) pair")])
+        if not _is_exact_int(max_pq) or not _is_exact_int(max_d14) \
+                or int(max_pq) < 0 or int(max_d14) < 0:
+            raise UnsupportedNativeTranslation(
+                [dict(point=-1, constraint_id=None,
+                      reason="direct_domain maxima must be non-negative integers")])
+        domain = (int(max_pq), int(max_d14))
 
     def reject(point, cid, reason):
         diags.append(dict(point=point, constraint_id=cid, reason=str(reason)))
@@ -233,6 +546,14 @@ def compile_native(graph, points):
         metadata = dict(
             cvt=[],
             operations=[],
+            direct=dict(
+                allowed=bool(allow_direct),
+                domain=[int(domain[0]), int(domain[1])] if domain is not None else None,
+                lowered=[],
+                skipped=[],
+                max_storage_required=0,
+                status="sequential lowering for all points",
+            ),
             empty_outline=True,
             n_points=0,
             status=("empty outline no-op: zero contours, no instructions; "
@@ -268,8 +589,37 @@ def compile_native(graph, points):
                 + push(0) + ["SMD[ ]", "FLIPOFF[ ]"])
     operations = []
     diags = []
+    direct_lowered = []
+    direct_skipped = []
     for p in order:  # point completion order preserved
         group = grouped[p]  # given group order preserved
+        if allow_direct:
+            if domain is None:
+                direct_skipped.append(dict(
+                    point=p,
+                    reason="direct requested but no direct_domain declared; "
+                           "sequential lowering kept"))
+            else:
+                try:
+                    frag, detail = _emit_direct_point(p, group, pts, cvt_id,
+                                                      domain)
+                except _DirectSkip as e:
+                    direct_skipped.append(dict(point=p, reason=str(e)))
+                else:
+                    start = len(assembly)
+                    assembly += frag
+                    end = len(assembly)
+                    operations.append(dict(
+                        point=p,
+                        constraint_ids=[int(c["id"]) for c in group],
+                        kind="DirectPair",
+                        normal_float=[_tolist(_asvec(group[0].get("normal"))),
+                                      _tolist(_asvec(group[1].get("normal")))],
+                        assembly_start=start, assembly_end=end,
+                        assembly_end_inclusive=end - 1,
+                        detail=detail))
+                    direct_lowered.append(p)
+                    continue
         for slot, c in enumerate(group):
             other = _asvec(group[1 - slot]["normal"])
             cur = _asvec(c["normal"])
@@ -383,6 +733,16 @@ def compile_native(graph, points):
     metadata = dict(
         cvt=list(cvt),
         operations=operations,
+        direct=dict(
+            allowed=bool(allow_direct),
+            domain=[int(domain[0]), int(domain[1])] if domain is not None else None,
+            lowered=list(direct_lowered),
+            skipped=[dict(s) for s in direct_skipped],
+            max_storage_required=(_DIRECT_STORAGE_REQUIRED if direct_lowered else 0),
+            status=("direct 2x2 lowering active for points %s; storage slots 0..13 required"
+                    % direct_lowered if direct_lowered else
+                    "sequential lowering for all points"),
+        ),
         support_policy=dict(
             state=["SZPS[1]", "SLOOP[1]", "RTG", "SCVTCI[32767]", "SSWCI[0]", "SSW[0]",
                    "SMD[0]", "FLIPOFF"],

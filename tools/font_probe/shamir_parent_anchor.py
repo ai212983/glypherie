@@ -47,6 +47,8 @@ def experiment(previous, points, size, em, rounded):
         graph = orient(retained, len(points))
     except Unsupported:
         graph = orient(retained+projected_anchors(retained, size/em), len(points))
+    graph['retained_abs_rows'] = [c for c in retained
+                                  if c['kind'] in ('Abs', 'PAbs')]
     fitted, metadata = evaluate_baseline(graph, points, size, em)
     residual = float(np.max(abs(matrix@fitted.ravel()-rhs)))
     delta = float(np.max(abs(fitted-np.asarray(oracle['points_px']))))

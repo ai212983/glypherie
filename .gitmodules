@@ -1,0 +1,3 @@
+[submodule "docs/reference/VisualTrueType"]
+	path = docs/reference/VisualTrueType
+	url = https://github.com/microsoft/VisualTrueType.git

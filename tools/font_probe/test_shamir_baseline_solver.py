@@ -101,4 +101,76 @@ class BaselineSolverTests(unittest.TestCase):
         with self.assertRaises(ValueError):compile_baseline(resolve_baseline([],[]),[],1.5,1000)
 
 
+class ExtentRoundingTests(unittest.TestCase):
+    def test_y_extent_bounds_round_outward(self):
+        # Roboto-16 I: cap 1456u = 11.375px. Native bytecode rounds the top
+        # to 12, keeping 12 raster rows; nearest would give 11.
+        pts = [[376,1456],[376,0]]
+        cs = [relation('Abs',1,[0,1],value=0,metric=True,metric_role='glyph-y-bound'),
+              relation('Dist',0,[0,1],[1],1456,metric=True,metric_role='glyph-y-bound'),
+              relation('Abs',0,[1,0],value=376,round=False),
+              relation('Abs',1,[1,0],value=376,round=False)]
+        fitted, _ = evaluate_baseline(resolve_baseline(pts,cs),pts,16,2048)
+        self.assertEqual(fitted[1,1],0.0)
+        self.assertEqual(fitted[0,1],12.0)
+
+    def test_interior_y_keeps_nearest(self):
+        pts = [[376,1456],[376,0]]
+        cs = [relation('Abs',1,[0,1],value=0,round=False),
+              relation('Dist',0,[0,1],[1],1456),
+              relation('Abs',0,[1,0],value=376,round=False),
+              relation('Abs',1,[1,0],value=376,round=False)]
+        fitted, _ = evaluate_baseline(resolve_baseline(pts,cs),pts,16,2048)
+        self.assertEqual(fitted[0,1],11.0)
+
+    def test_extent_flag_directions(self):
+        # Shared rows carry min/max explicitly instead of metric roles.
+        pts = [[376,1456],[376,0]]
+        cs = [relation('PAbs',1,[0,1],value=0,extent='min'),
+              relation('PDist',0,[0,1],[1],1456,extent='max'),
+              relation('Abs',0,[1,0],value=376,round=False),
+              relation('Abs',1,[1,0],value=376,round=False)]
+        fitted, _ = evaluate_baseline(resolve_baseline(pts,cs),pts,16,2048)
+        self.assertEqual(fitted[1,1],0.0)
+        self.assertEqual(fitted[0,1],12.0)
+
+    def test_sub_baseline_overshoot_suppressed(self):
+        # Roboto-14 '0': bottom overshoot -20u = -0.137px. Flooring
+        # adds a raster row native hinting never renders; nearest
+        # snaps it to the zone edge (0). Native bottom is exactly 0.
+        pts = [[376,0],[376,-20]]
+        cs = [relation('PAbs',1,[0,1],value=-20,extent='min'),
+              relation('Abs',1,[1,0],value=376,round=False),
+              relation('Abs',0,[1,0],value=376,round=False)]
+        fitted, _ = evaluate_baseline(resolve_baseline(pts,cs),pts,14,2048)
+        self.assertEqual(fitted[1,1],0.0)
+
+    def test_reversed_extent_falls_back_to_nearest(self):
+        # Ablation pin for the orient non-reversal ban: a forced
+        # reversed extent row cannot keep outward sense (it would
+        # determine the opposite end), so the solver falls back to
+        # nearest (11, not the outward 12). orient must stall
+        # rather than emit such a row (see
+        # test_rounded_extent_dist_never_reverses).
+        from shamir_baseline_solver import _dist_rhs, abs_row_map
+        cs = [relation('Abs', 0, [1, 0], value=0),
+              relation('Abs', 0, [0, 1], value=0),
+              relation('Abs', 1, [1, 0], value=5),
+              relation('Dist', 0, [0, 1], [1], 11.375,
+                       metric_role='glyph-y-bound')]
+        rev = dict(cs[3], point=1, sources=[0], value=-11.375,
+                   reversed=True)
+        abs_rows = abs_row_map([c for c in cs if c['kind'] == 'Abs'])
+        self.assertEqual(_dist_rhs(rev, 1.0, abs_rows), -11.0)
+
+    def test_positive_minimum_keeps_floor(self):
+        # Features floating above the baseline keep legacy flooring.
+        pts = [[376,80],[376,0]]
+        cs = [relation('PAbs',1,[0,1],value=80,extent='min'),
+              relation('Abs',1,[1,0],value=376,round=False),
+              relation('Abs',0,[1,0],value=376,round=False)]
+        fitted, _ = evaluate_baseline(resolve_baseline(pts,cs),pts,14,2048)
+        self.assertEqual(fitted[1,1],0.0)
+
+
 if __name__=='__main__':unittest.main()

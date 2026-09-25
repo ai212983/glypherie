@@ -15,18 +15,20 @@ from shamir_constraints import priority
 
 
 def equations(constraints, count, scale):
+    from shamir_baseline_solver import _abs_rhs, _dist_rhs, abs_row_map
     matrix = np.zeros((len(constraints), count * 2))
     values = np.zeros(len(constraints))
+    abs_rows = abs_row_map(constraints)
     for i, c in enumerate(constraints):
         n = np.asarray(c['normal'], float)
         matrix[i, 2*c['point']:2*c['point']+2] += n
         kind = c['kind'].removeprefix('P')
-        if kind in ('Abs', 'Dist'):
-            value = c['value'] * scale
-            values[i] = np.copysign(np.floor(abs(value)+.5), value) if c.get('round', True) else value
-            if kind == 'Dist':
-                a, = c['sources']
-                matrix[i, 2*a:2*a+2] -= n
+        if kind == 'Abs':
+            values[i] = _abs_rhs(c, scale)
+        elif kind == 'Dist':
+            a, = c['sources']
+            values[i] = _dist_rhs(c, scale, abs_rows)
+            matrix[i, 2*a:2*a+2] -= n
         elif kind == 'Ratio':
             a, b = c['sources']
             matrix[i, 2*a:2*a+2] -= (1-c['value'])*n

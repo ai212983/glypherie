@@ -72,5 +72,43 @@ class PreservationTests(unittest.TestCase):
                 preserve_member_alignments=True)
 
 
+class BarUndersideTests(unittest.TestCase):
+    """Roboto T shape: followers sag without preservation, stay flat with it."""
+
+    def _bar_record(self):
+        p = np.array([[0., 0.], [5., 0.], [9., 0.], [0., 10.]])
+        cs = [dict(id=0, kind='Abs', point=0, sources=[], normal=[1, 0],
+                   value=0., metric=True),
+              dict(id=1, kind='Abs', point=0, sources=[], normal=[0, 1],
+                   value=0., metric=True),
+              dict(id=2, kind='Abs', point=3, sources=[], normal=[1, 0],
+                   value=0., metric=True),
+              dict(id=3, kind='PDist', point=3, sources=[0], normal=[0, 1],
+                   value=10.),
+              _link(4, 1, 0, [0, 1], feature='align-2'),
+              _link(5, 2, 0, [0, 1], feature='align-2')]
+        return p, dict(graph=dict(order=[0, 1, 2, 3], constraints=cs),
+                       features=[])
+
+    def test_followers_sag_without_preservation(self):
+        p, record = self._bar_record()
+        upstream = np.array([[0., 0.], [5., 2.], [9., 3.], [0., 10.]])
+        q, _ = fit(p, [3], [1, 1, 1, 1], record, 1, upstream=upstream)
+        self.assertGreater(q[1, 1], 0.5)
+        self.assertGreater(q[2, 1], 0.5)
+        self.assertNotAlmostEqual(q[1, 1], q[2, 1])
+
+    def test_whole_underside_flat_with_preservation(self):
+        p, record = self._bar_record()
+        upstream = np.array([[0., 0.], [5., 2.], [9., 3.], [0., 10.]])
+        q, audit = fit(p, [3], [1, 1, 1, 1], record, 1, upstream=upstream,
+                       preserve_member_alignments=True)
+        self.assertAlmostEqual(q[1, 1], q[0, 1])
+        self.assertAlmostEqual(q[2, 1], q[0, 1])
+        self.assertAlmostEqual(q[3, 1], 10.)
+        self.assertIn(4, audit['protected_ids'])
+        self.assertIn(5, audit['protected_ids'])
+
+
 if __name__ == '__main__':
     unittest.main()

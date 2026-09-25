@@ -9,6 +9,40 @@ def polygon(points):return [[points[i],points[(i+1)%len(points)]] for i in range
 
 
 class RecognitionTests(unittest.TestCase):
+    def test_arc_bow_widths_match_axis_projection(self):
+        # B02 pair-geometry evidence: every recognized arc/bow width equals
+        # its endpoints' axis projection within 1e-9 (the corrected
+        # projected identity, not Euclidean) across all 243 calibration
+        # outlines. Discriminates: 64 of Roboto's 151 arc/bow widths do
+        # NOT match Euclidean, so this fails on the old semantics.
+        from pathlib import Path
+        from fontTools.ttLib import TTFont
+        from compare_shamir_pipeline import CHARS
+        from shamir_geometry import from_font
+        root = Path(__file__).parent / 'fonts'
+        names = (('roboto', 'Roboto.ttf'), ('literata', 'Literata.ttf'),
+                 ('source-sans-3', 'SourceSans3.ttf'))
+        n_feat = 0
+        bad = []
+        for family, filename in names:
+            font = TTFont(str(root / filename), recalcTimestamp=False)
+            for char in CHARS:
+                model = from_font(font, char, baseline=True)
+                for feature in recognize(model)['features']:
+                    if feature['kind'] not in ('arc', 'bow'):
+                        continue
+                    n_feat += 1
+                    self.assertEqual(feature['axis'],
+                                     0 if feature['kind'] == 'bow' else 1,
+                                     (family, char, feature))
+                    a, b = (np.asarray(model['points'][p]['position'])
+                            for p in feature['points'])
+                    expected = float(abs(a[feature['axis']]
+                                         - b[feature['axis']]))
+                    if abs(feature['width'] - expected) >= 1e-9:
+                        bad.append((family, char, feature['points']))
+        self.assertGreater(n_feat, 300, 'corpus yielded no arc/bow features')
+        self.assertEqual(bad, [], bad[:5])
     def test_broken_sides_keep_gaps_out_of_support(self):
         lower=np.array([[0,0],[100,0],[100,200],[0,200]],float)
         m=prepare([polygon(lower),polygon(lower+[0,400]),polygon(lower+[50,200])],1000)

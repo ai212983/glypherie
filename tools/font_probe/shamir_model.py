@@ -14,7 +14,14 @@ from shamir_segment_fit import prepared_glyph,clusters
 from shamir_constraints import relation,resolve,compile_graph
 
 
-def feature_model(model,baseline=False):
+def feature_model(model,baseline=False,membership_fu=1):
+    """Assemble features, groups and representatives.
+
+    membership_fu is the one-font-unit tangent/control membership radius
+    (B06 coordinate-quantization assumption): native points within this
+    distance join a point's support group. Default 1 preserves behavior;
+    pass explicitly to measure radius sensitivity.
+    """
     glyph,mapping,members=prepared_glyph(model);points=np.asarray(glyph.coordinates,float).reshape(-1,2)
     parallel_dot=1-1e-12 if baseline else .999
     found=recognize(model);groups=[];features=[];eps=model['tolerances']['distance']
@@ -40,7 +47,7 @@ def feature_model(model,baseline=False):
         for pid in f.get('points',[]):
             rep=mapping[pid];support={rep}
             for seg in model['segments']:
-                if pid in (seg['start'],seg['end']):support.update(i for i in members[seg['id']] if abs(float((points[i]-points[rep])@n))<=1)
+                if pid in (seg['start'],seg['end']):support.update(i for i in members[seg['id']] if abs(float((points[i]-points[rep])@n))<=membership_fu)
             ids.append(group(support,n))
         for sid in f.get('sides',[]):
             side=found['sides'][sid];side_normal=n
@@ -67,7 +74,7 @@ def feature_model(model,baseline=False):
         for axis in map(int,p['extrema']):
             rep=mapping[p['id']];n=np.eye(2)[axis];support={rep}
             for seg in model['segments']:
-                if p['id'] in (seg['start'],seg['end']):support.update(i for i in members[seg['id']] if abs(points[i,axis]-points[rep,axis])<=1)
+                if p['id'] in (seg['start'],seg['end']):support.update(i for i in members[seg['id']] if abs(points[i,axis]-points[rep,axis])<=membership_fu)
             i=group(support,n)
             if baseline and axis==1:groups[i]['height_lookup']='-'+p['extrema']['1']
             if axis==1 and (rep in horizontal_support or p['id'] in curved_heights):
@@ -168,6 +175,20 @@ def constraints_for(model,tables,em,baseline=False):
         n=np.eye(2)[axis];add('Abs',a,n,value=float(p[a,axis]),metric=True,metric_role=role)
         if b!=a:add('Dist',b,n,[a],float(p[b,axis]-p[a,axis]),metric=True,metric_role=role)
         reps.update((a,b))
+    y_extrema=model['extrema'].get(1)
+    y_heights=None
+    if y_extrema is not None:
+        y_heights=(float(p[y_extrema[0],1]),float(p[y_extrema[1],1]))
+    def y_extent_role(point_or_height,normal,by_height=False):
+        # Extent rows are identified by height, not point identity: shared
+        # rows often sit on non-extremum corners of the same edge. Returns
+        # 'min'/'max'/None. Only +y rows participate.
+        if y_heights is None:return None
+        if list(np.asarray(normal,float))!=[0.0,1.0]:return None
+        height=point_or_height if by_height else float(p[point_or_height,1])
+        if height==y_heights[0]:return 'min'
+        if height==y_heights[1]:return 'max'
+        return None
     for i,g in enumerate(groups):
         if not g['members']:continue
         r=g['rep'];n=np.asarray(g['normal']);value=float(p[r]@n);global_value=shared(g.get('height_kind',''),value)
@@ -175,7 +196,13 @@ def constraints_for(model,tables,em,baseline=False):
             heights=[shared(kind,value) for kind in tables if kind.startswith('height-') and kind.endswith(g['height_lookup'])]
             heights=[v for v in heights if v is not None]
             if heights:global_value=min(heights,key=lambda v:abs(v-value))
-        add('PAbs' if global_value is not None else 'Abs',r,n,value=global_value if global_value is not None else value,feature=f'segment-{i}',**(dict(segment_owner=i) if baseline else {}))
+        # A row determining a vertical extent keeps the outward-rounding
+        # contract under a dedicated flag; metric_role is untouched so
+        # symmetry and coverage audits keep their vocabulary.
+        extra=dict(segment_owner=i) if baseline else {}
+        role=y_extent_role(r,n)
+        if role is not None:extra['extent']=role
+        add('PAbs' if global_value is not None else 'Abs',r,n,value=global_value if global_value is not None else value,feature=f'segment-{i}',**extra)
         reps.add(r)
         for member in sorted(g['members']-{r}):
             # A horizontal baseline link carries character-metric semantics even
@@ -188,7 +215,10 @@ def constraints_for(model,tables,em,baseline=False):
         ga,gb=f['groups'];a,b=groups[ga]['rep'],groups[gb]['rep'];n=np.asarray(f['normal'])
         if float((p[b]-p[a])@n)<0:a,b,ga,gb=b,a,gb,ga
         value=float((p[b]-p[a])@n);global_value=shared(f['kind'],value)
-        add('PDist' if global_value is not None else 'Dist',b,n,[a],global_value if global_value is not None else value,feature=f'width-{i}',**(dict(segment_owner=gb) if baseline else {}))
+        overlap=dict(segment_owner=gb) if baseline else {}
+        role=y_extent_role(b,n)
+        if role is not None:overlap['extent']=role
+        add('PDist' if global_value is not None else 'Dist',b,n,[a],global_value if global_value is not None else value,feature=f'width-{i}',**overlap)
     return candidates,attachments,reps
 
 

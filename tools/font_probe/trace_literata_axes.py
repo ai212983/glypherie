@@ -282,7 +282,7 @@ def main():
         stem_font, stem_produced = pipe.terminal_stage(
             key, size, stem_input, records, static_path, live, case_rows)
         recovery_input = pipe.overlay(key, size, 'recovery-input', stem_input, [(stem_font, stem_produced)])
-        rows, _, _, _ = pipe.export(key, size, candidate_path, recovery_input, live, case_rows)
+        rows, _, _, _, _, _ = pipe.export(key, size, candidate_path, recovery_input, live, case_rows)
         final_face = ft.Face(str(out / f'_work-{key}' / f'{key}-candidate.ttf'))
         for char in chars:
             final_native = coords(final_face, char, size)

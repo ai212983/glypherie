@@ -29,6 +29,31 @@ class ReorientationTests(unittest.TestCase):
             self.assertAlmostEqual(fitted[0, 1], .25)
             self.assertTrue(any(c['reversed'] and c['kind']=='PDist' for c in graph['constraints']))
 
+    def test_rounded_extent_dist_never_reverses(self):
+        # Outward rounding is direction-sensitive: a reversed extent row
+        # would determine the minimum end with maximum-end sense. orient
+        # must stall (the derived-anchors path handles it) rather than
+        # emit a reversed rounded extent row.
+        for extra in ({'metric_role': 'glyph-y-bound'}, {'extent': 'max'}):
+            cs = [relation('Abs', 0, [1, 0], value=0),
+                  relation('Abs', 0, [0, 1], value=0),
+                  relation('Abs', 1, [1, 0], value=5),
+                  relation('Dist', 0, [0, 1], [1], 11.375, **extra)]
+            with self.assertRaisesRegex(Unsupported, 'stalled'):
+                orient(cs, 2)
+
+    def test_unrounded_extent_dist_still_reverses(self):
+        cs = [relation('Abs', 0, [1, 0], value=0),
+              relation('Abs', 0, [0, 1], value=0),
+              relation('Abs', 1, [1, 0], value=5),
+              relation('Dist', 0, [0, 1], [1], 11.375,
+                       metric_role='glyph-y-bound', round=False)]
+        graph = orient(cs, 2)
+        self.assertTrue(any(c['reversed'] and c['kind'] == 'Dist'
+                            for c in graph['constraints']))
+        fitted, _ = evaluate_baseline(graph, np.zeros((2, 2)), 1, 1)
+        self.assertAlmostEqual(fitted[1, 1], -11.375)
+
     def test_scalar_solvable_whole_point_cycle_is_reported(self):
         cs = [relation('Abs', 0, [1, 0], value=0),
               relation('Dist', 0, [0, 1], [1], 1),

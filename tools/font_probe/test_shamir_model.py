@@ -34,6 +34,97 @@ class ModelTests(unittest.TestCase):
             font['maxp'].maxStackElements=16;font.save(path)
             face=ft.Face(str(path));self.assertEqual(residuals(face,'A',16,graph,1000),[])
 
+    def test_v_side_keeps_single_group_with_own_normal(self):
+        # B06 regression shape (Source Sans 3 V class): one physical side
+        # shared by two features keeps a single group carrying the side's
+        # own alignment normal, never a duplicate group with a feature
+        # projection normal.
+        from shamir_features import recognize
+        from shamir_geometry import unit
+        chevron = [(0, 700), (150, 0), (300, 700),
+                   (250, 700), (150, 200), (50, 700)]
+        model = prepare([polygon(chevron)], 1000)
+        side_normal = {}
+        for sid, side in enumerate(recognize(model)['sides']):
+            direction = np.asarray(side['direction'], float)
+            normal = unit(np.array([-direction[1], direction[0]]))
+            if normal[np.argmax(abs(normal))] < 0:
+                normal = -normal
+            side_normal[sid] = normal
+        groups = [g for g in feature_model(model, baseline=True)['groups']
+                  if g['members']]
+        by_side = {}
+        for group in groups:
+            for sid in group.get('source_sides', []) or []:
+                by_side.setdefault(sid, []).append(group)
+        self.assertTrue(by_side)
+        for sid, sharing in by_side.items():
+            self.assertEqual(len(sharing), 1,
+                             (sid, [g['members'] for g in sharing]))
+            dot = abs(float(np.asarray(sharing[0]['normal'])
+                            @ side_normal[sid]))
+            self.assertGreater(dot, 1 - 1e-12, (sid, sharing[0]['normal']))
+
+    def test_membership_radius_is_live_and_defaults_to_one(self):
+        # B06 one-font-unit membership: the radius knob changes attachment
+        # (strict growth here), while the default equals an explicit 1.
+        # Scope, verified adversarially: these multisets are set by the
+        # radius with recognize sides plus height/extrema support; they do
+        # not cover the transitive merge loop, collinear merging or rint.
+        from test_shamir_features import polygon
+        shape = [(0, 0), (100, 0), (100, 5), (60, 5), (60, 6), (60, 7), (0, 7)]
+        model = prepare([polygon(shape)], 1000)
+
+        def signature(m):
+            return sorted(
+                (tuple(sorted(g['members'])),
+                 tuple(np.round(np.asarray(g['normal']), 12)))
+                for g in m['groups'] if g['members'])
+
+        from shamir_model import feature_model as fm
+        narrow = fm(model, baseline=True, membership_fu=0)
+        default = fm(model, baseline=True)
+        explicit = fm(model, baseline=True, membership_fu=1)
+        self.assertEqual(sorted(len(g['members']) for g in narrow['groups']
+                                if g['members']), [2, 2, 2, 3, 4])
+        self.assertEqual(sorted(len(g['members']) for g in default['groups']
+                                if g['members']), [2, 2, 2, 3, 5])
+        self.assertEqual(signature(explicit), signature(default))
+        self.assertLess(sum(len(g['members']) for g in narrow['groups']),
+                        sum(len(g['members']) for g in default['groups']))
+
+    def test_membership_radius_one_keeps_side_uniqueness_on_calibration(self):
+        # B06 bound: at the assumed radius no physical side splits into
+        # non-parallel groups on any of the 243 calibration outlines.
+        # Measured sensitivity for the record: regrouped-vs-radius-1 glyph
+        # counts are 30 at 0, 41 at 2, 59 at 3 (side-identity merge keeps
+        # same-side uniqueness at every radius; the radius moves attachment
+        # extent, not side identity).
+        import itertools
+        from pathlib import Path
+        from fontTools.ttLib import TTFont
+        from compare_shamir_pipeline import CHARS
+        from shamir_geometry import from_font
+        from shamir_model import feature_model as fm
+        root = Path(__file__).parent / 'fonts'
+        bad = []
+        for filename in ('Roboto.ttf', 'Literata.ttf', 'SourceSans3.ttf'):
+            font = TTFont(str(root / filename), recalcTimestamp=False)
+            for char in CHARS:
+                groups = [g for g in fm(from_font(font, char, baseline=True),
+                                        baseline=True)['groups'] if g['members']]
+                by_side = {}
+                for group in groups:
+                    for sid in group.get('source_sides', []) or []:
+                        by_side.setdefault(sid, []).append(group)
+                for sid, sharing in by_side.items():
+                    for first, second in itertools.combinations(sharing, 2):
+                        dot = abs(float(np.asarray(first['normal'])
+                                        @ np.asarray(second['normal'])))
+                        if dot <= 1 - 1e-12:
+                            bad.append((filename, char, sid))
+        self.assertEqual(bad, [], bad[:5])
+
     def test_regular_stems_have_counters_and_ladder(self):
         rect=np.array([[0,0],[100,0],[100,700],[0,700]],float)
         m=feature_model(prepare([polygon(rect+[x,0]) for x in (0,200,400)],1000))

@@ -5,7 +5,10 @@ call build_font(profile="baseline", ppem=size) directly with no
 representative override or later fitting. The baseline TTF holds ORIGINAL
 prepared glyf coordinates pre-interpreter; original points/contours come
 from glyph.getCoordinates(font["glyf"]). For every graph, compile_native is
-called unmodified; rejections persist as structured diagnostics. Accepted
+called unmodified by default; --direct additionally permits the direct 2x2
+lowering for eligible pairs with a per-case declared execution domain that
+is post-checked after execution (violations inventoried as
+domain-exceeded). Rejections persist as structured diagnostics. Accepted
 graphs execute their actual native program in a fresh baseline-font copy
 under strict FreeType flags; exact coordinate match/difference against the
 baseline graph baseline_execution.native_points_px is diagnostic only.
@@ -49,8 +52,11 @@ def _stable_reason(reason):
     if ("native dot" in text
             or "normalized dot" in text
             or "not independent (determinant" in text
+            or "pair determinant" in text
             or "degenerate freedom vector" in text):
         return NEAR_PERPENDICULAR
+    if "non-integer font-unit scalar" in text:
+        return "non-integer scalar (exact CVT contract)"
     return text
 
 
@@ -184,6 +190,38 @@ def _enrich(diag, by_id, points):
     return entry
 
 
+def _direct_domain_for_case(points, graph, upm, size):
+    """Static execution-domain declaration for one direct-lowered case.
+
+    Bounds derive from exact static inputs scaled to the case size:
+    outline coordinate magnitudes bound original parent positions and
+    integer scalar magnitudes bound CVT inputs. Hinting displaces parents
+    from their originals, so max_pq carries an explicit 8px headroom;
+    scalars are fixed CVT contents and need none. The bound's SOLE purpose
+    is int32-overflow safety; every direct case is post-checked against
+    max_pq after execution and violations are inventoried as
+    domain-exceeded (never silently passed).
+    """
+    import math
+    try:
+        pts = np.asarray(points, dtype=float)
+        max_fu_coord = float(np.abs(pts).max()) if pts.size else 0.0
+    except (TypeError, ValueError):
+        max_fu_coord = 0.0
+    max_fu_scalar = 0.0
+    for c in graph.get("constraints", []):
+        try:
+            f = float(c.get("value"))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(f):
+            max_fu_scalar = max(max_fu_scalar, abs(f))
+    scale = float(size) / float(upm)
+    max_pq = int(math.ceil(64.0 * scale * max_fu_coord)) + 512
+    max_d14 = int(math.ceil(16384.0 * scale * max_fu_scalar))
+    return (max_pq, max_d14)
+
+
 def _build_native_font(baseline_path, out_path, char, assembly, cvt_vals):
     """Fresh baseline copy with target program/CVT replaced; subset to char."""
     from fontTools import subset
@@ -210,6 +248,9 @@ def _build_native_font(baseline_path, out_path, char, assembly, cvt_vals):
             font["cvt "] = cvt
             font["maxp"].maxStackElements = max(
                 int(font["maxp"].maxStackElements), 8)
+            # Storage slots 0..13 back the opt-in direct lowering.
+            font["maxp"].maxStorage = max(
+                int(font["maxp"].maxStorage or 0), 16)
             font["maxp"].maxSizeOfInstructions = max(
                 len(font["glyf"][n].program.getBytecode())
                 if hasattr(font["glyf"][n], "program") else 0
@@ -340,7 +381,7 @@ def _record(tally, result):
         tally["unexpected"] += 1
 
 
-def run(output, families=FACES, sizes=SIZES):
+def run(output, families=FACES, sizes=SIZES, allow_direct=False):
     families, sizes = _validate(families, sizes)
     output = Path(output)
     expected = len(families) * len(sizes) * len(CHARS)
@@ -367,6 +408,12 @@ def run(output, families=FACES, sizes=SIZES):
     counts = {"expected": expected, **_empty_tally()}
     family_counts = {}
     native_match = {"exact": 0, "different": 0, "max_delta_px": 0.0}
+    direct_skip_reasons = Counter()
+    direct_domain_exceeded = 0
+    direct_cases = 0
+    direct_points = 0
+    direct_exact = 0
+    direct_different = 0
     try:
         pipeline.note_sources()
         for family in families:
@@ -410,6 +457,8 @@ def run(output, families=FACES, sizes=SIZES):
                     print(f"[{key}] build FAILED", flush=True)
                     continue
                 from fontTools.ttLib import TTFont
+                with TTFont(str(target)) as _upm_font:
+                    upm = int(_upm_font["head"].unitsPerEm)
 
                 n_ok = n_no = n_bad = 0
                 summaries = []
@@ -439,8 +488,14 @@ def run(output, families=FACES, sizes=SIZES):
                                 parameter_classes_total[prm["value_class"]] += 1
                         kind_totals.update(inv["kinds"])
                         case["relations"] = inv
+                        domain = None
+                        if allow_direct:
+                            domain = _direct_domain_for_case(
+                                points, graph, upm, size)
                         try:
-                            assembly, meta = compile_native(graph, points)
+                            assembly, meta = compile_native(
+                                graph, points, allow_direct=allow_direct,
+                                direct_domain=domain)
                         except UnsupportedNativeTranslation as rej:
                             # Spaces stay unsupported: audited as rejected,
                             # never reinterpreted or given a fallback.
@@ -482,6 +537,22 @@ def run(output, families=FACES, sizes=SIZES):
                                 raise ValueError(
                                     "baseline_execution.native_points_px missing")
                             got, exp = _check_shapes(raw, expected_px, case_id)
+                            lowered = list((meta.get("direct") or {}).get(
+                                "lowered", []))
+                            case["lowering"] = [int(p) for p in lowered]
+                            for s in (meta.get("direct") or {}).get(
+                                    "skipped", []):
+                                direct_skip_reasons[_stable_reason(
+                                    s.get("reason"))] += 1
+                            domain_exceeded = False
+                            if lowered and domain is not None and len(raw):
+                                peak = int(np.abs(np.asarray(
+                                    raw, dtype=np.int64)).max())
+                                if peak > domain[0]:
+                                    domain_exceeded = True
+                            case["domain_exceeded"] = domain_exceeded
+                            if domain_exceeded:
+                                direct_domain_exceeded += 1
                             exp_raw = np.rint(exp * 64).astype(np.int64)
                             diff = int((np.rint(got).astype(np.int64)
                                         != exp_raw).any(axis=1).sum())
@@ -543,6 +614,13 @@ def run(output, families=FACES, sizes=SIZES):
                                 native_match["different"] += 1
                             native_match["max_delta_px"] = max(
                                 native_match["max_delta_px"], delta)
+                            if case["lowering"]:
+                                direct_cases += 1
+                                direct_points += len(case["lowering"])
+                                if diff == 0:
+                                    direct_exact += 1
+                                else:
+                                    direct_different += 1
                             n_ok += 1
                     except Exception as exc:  # noqa: BLE001 - unexpected
                         # Preserve audited evidence: inventory, diagnostics,
@@ -576,6 +654,9 @@ def run(output, families=FACES, sizes=SIZES):
                         "supported": case["supported"],
                         "compiler_supported": case["compiler_supported"],
                         "stage": case["stage"],
+                        "lowering": case.get("lowering", []),
+                        "domain_exceeded": bool(
+                            case.get("domain_exceeded", False)),
                         "relations": case.get("relations"),
                         "diagnostics": case.get("diagnostics", []),
                         "graph_diagnostics": case.get(
@@ -615,7 +696,8 @@ def run(output, families=FACES, sizes=SIZES):
                                                      "cleanup") for f in failures))
     report = _sanitize({
         "config": {"profile": "baseline", "families": list(families),
-                   "sizes": list(sizes), "chars": len(CHARS)},
+                   "sizes": list(sizes), "chars": len(CHARS),
+                   "allow_direct": bool(allow_direct)},
         "inputs": inputs, "provenance": dict(pipeline.provenance),
         "counts": counts, "family_counts": family_counts,
         "builds": builds,
@@ -628,6 +710,10 @@ def run(output, families=FACES, sizes=SIZES):
         "parameter_classes_total": dict(parameter_classes_total),
         "relation_kinds": dict(kind_totals),
         "native_match": native_match,
+        "direct": {"cases": direct_cases, "points": direct_points,
+                   "exact": direct_exact, "different": direct_different,
+                   "domain_exceeded": direct_domain_exceeded,
+                   "skip_reasons": dict(direct_skip_reasons)},
         "failures": failures,
         "versions": {"python": platform.python_version(),
                      "freetype": list(ft.version()),
@@ -640,6 +726,7 @@ def run(output, families=FACES, sizes=SIZES):
     print(json.dumps({"audit_complete": report["audit_complete"],
                       "counts": counts,
                       "native_match": native_match,
+                      "direct": report["direct"],
                       "top_reasons": dict(reason_cases.most_common(8)),
                       "parameter_classes_total": dict(
                           parameter_classes_total)}, indent=2))
@@ -651,8 +738,13 @@ def main(argv=None):
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--families", nargs="+", default=list(FACES))
     parser.add_argument("--sizes", nargs="+", type=int, default=list(SIZES))
+    parser.add_argument("--direct", action="store_true",
+                        help="permit the direct 2x2 lowering for eligible "
+                             "pairs (recorded per case; SCFS comparison "
+                             "stays diagnostic)")
     args = parser.parse_args(argv)
-    result = run(args.output, families=args.families, sizes=args.sizes)
+    result = run(args.output, families=args.families, sizes=args.sizes,
+                 allow_direct=args.direct)
     if not result["audit_complete"]:
         raise SystemExit("native-font coverage audit incomplete; see report")
 

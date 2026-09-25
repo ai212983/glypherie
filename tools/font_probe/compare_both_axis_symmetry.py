@@ -184,7 +184,7 @@ def _required_axes(audit):
 def run_key_proposals(pipe, name, size, out, rows, panels, records_out,
                       engine=None):
     key = f'{name}-{size}'
-    key_rows, key_failures, sections, key_changes = pipe.run_key(name, size)
+    key_rows, key_failures, sections, key_changes, _, _ = pipe.run_key(name, size)
     records = pipe.saved_records[key]
     final_path = pipe.output / f'{key}-candidate.ttf'
     face = ft.Face(str(final_path))

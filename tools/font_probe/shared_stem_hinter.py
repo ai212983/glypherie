@@ -6,8 +6,17 @@ No Microsoft compiler, hint bytecode, or fitted-reference coordinates are used.
 import copy
 import numpy as np
 from stem_widths import inherit_widths
+from stem_width_table import lookup as _table_lookup
 from feature_coordination import shared_diagonal_widths,reflected_outline,diagnostics
 from shamir_baseline_solver import evaluate_baseline
+
+
+def _shared_width(record, design_width_units, ppem, em):
+    """Cluster target with cut-in, else the previous per-glyph rounding."""
+    table = record.get('width_table')
+    if table is None:
+        return float(np.floor(design_width_units * ppem / em + .5))
+    return float(_table_lookup(table, design_width_units))
 
 
 class Unsupported(ValueError):
@@ -46,7 +55,7 @@ def fit(points, record, ppem, em, *, coordinate=False, ends=None, flags=None):
         if outer & inner:raise Unsupported('overlapping stem sides')
         source_outer=float(np.mean(p[list(outer),axis]));source_inner=float(np.mean(p[list(members[other]),axis]))
         outer_fit=float(np.floor(source_outer*ppem/em+.5))
-        width=float(np.floor(match['width']*ppem/em+.5))
+        width=_shared_width(record,match['width'],ppem,em)
         if width<=0:raise Unsupported('stem rounds to zero width')
         inner_fit=outer_fit+np.sign(source_inner-source_outer)*width
         if coordinate:

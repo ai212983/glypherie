@@ -38,6 +38,24 @@ class CrossSectionTests(unittest.TestCase):
         matrix, rhs = system(graph, 2, 1)
         np.testing.assert_allclose(np.linalg.solve(matrix, rhs), [1, 2, 4, 2])
 
+    def test_extent_dist_rows_round_outward(self):
+        # Roboto-16 I cap: the joint system's hard extent rows must ceil
+        # like every other solver, or the joint fit silently undoes the
+        # geometric cap.
+        graph = dict(constraints=[
+            dict(point=0, normal=[1, 0], kind='Abs', sources=[], value=376.,
+                 round=False),
+            dict(point=0, normal=[0, 1], kind='Abs', sources=[], value=0.,
+                 metric=True, metric_role='glyph-y-bound'),
+            dict(point=1, normal=[1, 0], kind='Abs', sources=[], value=376.,
+                 round=False),
+            dict(point=1, normal=[0, 1], kind='Dist', sources=[0],
+                 value=1456., metric=True, metric_role='glyph-y-bound')])
+        matrix, rhs = system(graph, 2, 16 / 2048)
+        solution = np.linalg.solve(matrix, rhs)
+        self.assertEqual(solution[1], 0.0)
+        self.assertEqual(solution[3], 12.0)
+
 
 if __name__ == '__main__':
     unittest.main()

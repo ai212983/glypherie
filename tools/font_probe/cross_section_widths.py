@@ -47,18 +47,23 @@ def section(points, ends, flags, feature):
 
 
 def system(graph, count, scale):
+    from shamir_baseline_solver import _abs_rhs, _dist_rhs, abs_row_map
     matrix = np.zeros((count*2, count*2)); rhs = np.zeros(count*2)
+    abs_rows = abs_row_map(graph['constraints'])
     for i, c in enumerate(graph['constraints']):
         n = np.asarray(c['normal']); j = 2*c['point']
         matrix[i, j:j+2] += n
         if c['kind'] in ('Ratio', 'PRatio'):
             for a, w in zip(c['sources'], (1-c['value'], c['value'])):
                 matrix[i, 2*a:2*a+2] -= w*n
+        elif c['kind'] in ('Abs', 'PAbs'):
+            for a in c['sources']:
+                matrix[i, 2*a:2*a+2] -= n
+            rhs[i] = _abs_rhs(c, scale)
         else:
             for a in c['sources']:
                 matrix[i, 2*a:2*a+2] -= n
-            value = c['value']*scale
-            rhs[i] = _round_pixel(value) if c.get('round', True) else value
+            rhs[i] = _dist_rhs(c, scale, abs_rows)
     return matrix, rhs
 
 

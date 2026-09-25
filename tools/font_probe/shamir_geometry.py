@@ -68,10 +68,23 @@ def merge_collinear_lines(contour):
 
 
 def prepare(contours,em,epsilon=.003,angle_tolerance=.04,baseline=False):
-    """Split exact extrema and classify joins. Tolerances are project choices."""
+    """Split exact extrema and classify joins. Tolerances are project choices.
+
+    The returned preparation_log reports exactly what the baseline merge
+    and extremum-subdivision steps inside prepare() remove and add, so
+    that part of the substitution boundary is asserted by tests, not
+    assumed. Upstream OutlinePen zero-length drops / empty-contour
+    filtering and downstream recognize() zero-length discards are outside
+    this log. No behavior change: counts are derived from before/after
+    segment counts and the inserted flags.
+    """
     segments=[];points=[];loops=[];source_id=0
+    removed_collinear_joins=0
     for contour_id,contour in enumerate(contours):
-        if baseline:contour=merge_collinear_lines(contour)
+        if baseline:
+            before=len(contour)
+            contour=merge_collinear_lines(contour)
+            removed_collinear_joins+=before-len(contour)
         loop=[]
         for controls in contour:
             p=np.asarray(controls,dtype=float);roots=[]
@@ -127,8 +140,11 @@ def prepare(contours,em,epsilon=.003,angle_tolerance=.04,baseline=False):
                     return float(u[0]*v[1]-u[1]*v[0])
                 if turn(a)*turn(b)<0:categories.append('I')
             p['categories']=categories
+    inserted_extrema=sum(1 for p in points if p.get('inserted'))
     return dict(em=em,baseline=baseline,tolerances=dict(distance=epsilon*em,angle_radians=angle_tolerance),
                 points=points,segments=segments,contours=loops,
+                preparation_log=dict(removed_collinear_joins=removed_collinear_joins,
+                                     inserted_extrema=inserted_extrema),
                 provenance='exact quadratic subdivision; component transforms resolved by fontTools BasePen')
 
 

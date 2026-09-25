@@ -67,6 +67,23 @@ class MemberPhaseTests(unittest.TestCase):
             evaluate_member_graph(graph, points, 1, 1)
 
 
+class MemberExtentRoundingTests(unittest.TestCase):
+    def test_y_extent_bounds_round_outward(self):
+        # Same Roboto-16 I case as the sequential solver: the simultaneous
+        # path must also keep the 12th raster row.
+        points = np.array([[376., 1456.], [376., 0.]])
+        reduced = [relation('Abs', 0, [1, 0], value=376., round=False),
+                   relation('Abs', 1, [1, 0], value=376., round=False),
+                   relation('Abs', 1, [0, 1], value=0., metric=True,
+                            metric_role='glyph-y-bound')]
+        attachments = [relation('Dist', 0, [0, 1], sources=[1], value=1456.,
+                                metric=True, metric_role='glyph-y-bound')]
+        graph = assemble_member_graph(points, reduced, attachments, [0, 1])
+        fitted, _ = evaluate_member_graph(graph, points, 16, 2048)
+        self.assertEqual(fitted[1, 1], 0.)
+        self.assertEqual(fitted[0, 1], 12.)
+
+
 class MemberSchedulingTests(unittest.TestCase):
     def test_point_order_preserves_equations_and_native_quantization(self):
         from shamir_baseline_solver import resolve_baseline, evaluate_baseline

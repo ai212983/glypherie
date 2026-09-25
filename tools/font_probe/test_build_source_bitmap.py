@@ -116,6 +116,113 @@ class InputGuardTests(unittest.TestCase):
                          [f'{k}-bitmap.json' for k in keys])
 
 
+class ReportPageTests(unittest.TestCase):
+    def test_grid_has_toggle_filters_and_crisp_pixels(self):
+        from source_bitmap_output import grid_page
+        cells = [
+            dict(key='roboto-14', char='A', code='u0041', status='retained',
+                 large='img/roboto-14-u0041-x8.png',
+                 native='img/roboto-14-u0041-native.png', w=8, h=10),
+            dict(key='roboto-14', char='"', code='u0022', status='changed',
+                 large='img/roboto-14-u0022-x8.png',
+                 native='img/roboto-14-u0022-native.png', w=3, h=4),
+            dict(key='literata-14', char='A', code='u0041',
+                 status='retained',
+                 large='img/literata-14-u0041-x8.png',
+                 native='img/literata-14-u0041-native.png', w=8, h=10),
+            dict(key='roboto-16', char='B', code='u0042',
+                 status='retained',
+                 large='img/roboto-16-u0042-x8.png',
+                 native='img/roboto-16-u0042-native.png', w=9, h=11),
+        ]
+        page = grid_page(cells)
+        self.assertIn('setZoom(2)', page)
+        for label in ('>1x<', '>2x<', '>8x<'):
+            self.assertIn(label, page)
+        self.assertNotIn('image-rendering', page)
+        self.assertIn('data-w="8" data-h="10"', page)
+        self.assertIn('src="img/roboto-14-u0041-native.png"', page)
+        self.assertIn('data-native="img/roboto-14-u0041-native.png"', page)
+        self.assertIn('data-large="img/roboto-14-u0041-x8.png"', page)
+        self.assertIn('dataset.large:img.dataset.native', page.replace(' ',
+                                                                        ''))
+        self.assertIn('roboto-14.html#roboto-14-u0041', page)
+        self.assertIn('&quot;', page)
+        self.assertIn('id="facefilter"', page)
+        self.assertIn('id="statusfilter"', page)
+        self.assertIn('id="textview"', page)
+        self.assertIn('toggleText', page)
+        dense = page.replace(' ', '')
+        self.assertIn('.grid.dense{display:block}', dense)
+        self.assertIn('.grid.dense.cell{display:inline;margin:01px00;'
+                      'border:none;padding:0}', dense)
+        self.assertIn('.grid.dense.cell-img{vertical-align:bottom}', dense)
+        self.assertIn('<h2>literata</h2>', page)
+        self.assertIn('<h2>roboto</h2>', page)
+        self.assertLess(page.index('<h2>literata</h2>'),
+                        page.index('<h2>roboto</h2>'))
+        self.assertIn('<h3>14px</h3>', page)
+        self.assertIn('<h3>16px</h3>', page)
+        roboto = page[page.index('<h2>roboto</h2>'):]
+        self.assertLess(roboto.index('<h3>14px</h3>'),
+                        roboto.index('<h3>16px</h3>'))
+        self.assertIn('roboto-16.html#roboto-16-u0042', page)
+
+    def test_diagnostics_groups_reasons_in_table(self):
+        from source_bitmap_output import diagnostics_page, reason_pattern
+        failures = [
+            dict(key='roboto-14', char='5',
+                 reason='geometric baseline: source displacement 5.997px '
+                        'exceeds 2px admission bound',
+                 stages={'cumulative-fit': 'rejected',
+                         'component-symmetry': 'upstream-rejected'}),
+            dict(key='roboto-16', char='T',
+                 reason='geometric baseline: source displacement 3.1px '
+                        'exceeds 2px admission bound',
+                 stages={'cumulative-fit': 'rejected'}),
+            dict(key='roboto-16', char='S',
+                 stages={'cumulative-fit': 'rejected'}),
+        ]
+        page = diagnostics_page(failures)
+        self.assertIn('3 excluded glyphs in 2 groups', page)
+        self.assertIn('source displacement #px exceeds #px admission bound',
+                      page)
+        self.assertIn('source displacement 5.997px exceeds 2px admission '
+                      'bound', page)
+        self.assertIn('rejected at cumulative-fit; downstream stages '
+                      'skipped', page)
+        self.assertIn('<table>', page)
+        self.assertNotIn('<pre>', page)
+        self.assertEqual(
+            reason_pattern('displacement 5.997px exceeds 2px bound'),
+            'displacement #px exceeds #px bound')
+
+    def test_changes_page_explains_purpose_and_attributes(self):
+        from source_bitmap_output import changes_page, change_panel
+        record = dict(advance_hmtx=[712, 100], advance_26_6=320,
+                      left=1, top=-11, width=3, height=11)
+        entry = change_panel('roboto-14', 'f', 'changed', 3, record,
+                             'img/n.png', 'img/x.png',
+                             ['stem-relative-terminals'])
+        page = changes_page([entry])
+        self.assertIn('Proposed changes awaiting approval', page)
+        self.assertIn('proposed improvements queued for approval', page)
+        self.assertIn('Changed by stem-relative-terminals; 3 pixels', page)
+
+    def test_index_dashboard_lists_faces_and_views(self):
+        from source_bitmap_output import index_page
+        page = index_page([('roboto-14', 70, 1, 3)],
+                          {'retained': 70, 'changed': 1,
+                           'upstream-rejected': 3},
+                          ['roboto-14'])
+        self.assertIn('grid.html', page)
+        self.assertIn('report.json', page)
+        self.assertNotIn('Machine report', page)
+        self.assertIn('for tooling and tests', page)
+        self.assertIn('roboto-14.html', page)
+        self.assertIn('<td>70</td>', page)
+
+
 @unittest.skipUnless((HERE / 'out/shamir-controlled/roboto-16-source.ttf').exists(),
                      'frozen source reference absent')
 class SourceRegenerationTests(unittest.TestCase):

@@ -54,7 +54,6 @@ from array import array
 from collections import Counter
 from copy import deepcopy
 from pathlib import Path
-import html
 import json
 import shutil
 import tempfile
@@ -88,6 +87,7 @@ from shamir_reorientation import Unsupported
 from shamir_representative_search import representative_override
 from shamir_segment_fit import prepared_glyph
 import source_bitmap_output as output_mod
+import stem_width_table
  
 HERE = Path(__file__).resolve().parent
 FACES = ('roboto', 'literata', 'source-sans-3')
@@ -217,6 +217,47 @@ class Pipeline:
         return target
 
     # -- stage 1: preparation, feature extraction, fitting -----------------
+
+    def cap_table(self, static_path, size, em):
+        """Per-size cap-height CVT on the spec Fig 1-12 pattern.
+
+        Extent entries measured from whole-glyph y-maxima: the
+        plurality mode (the cap line) votes the cap entry
+        exactly like a stem-width cluster (see
+        ``stem_width_table.vote_cap_anchor``), and a taller
+        maxima cluster above the cap band votes the ascender
+        entry the same way. Returns None when the font yields
+        no cap vote. Reads only the instantiated source.
+        Round variants are omitted by design (see
+        ``stem_width_table.build_cap_table``): measured
+        overshoots sit inside the entry bands with identical
+        integers.
+        """
+        maxima = Counter()
+        with TTFont(str(static_path)) as font:
+            glyf = font['glyf']
+            for name in font.getGlyphOrder():
+                glyph = glyf[name]
+                if glyph.isComposite() or not hasattr(glyph, 'coordinates'):
+                    continue
+                try:
+                    coords, _, _ = glyph.getCoordinates(glyf)
+                except Exception:
+                    continue
+                if coords:
+                    maxima[max(y for _, y in coords)] += 1
+        vote = stem_width_table.vote_cap_anchor(maxima, size, em)
+        if not vote:
+            return None
+        # No ascender vote: the above-band maxima plurality is a
+        # punctuation cluster (ss3-14: 724u, 160 members of
+        # brackets/parens), not the ascender line — ascender tops
+        # (722-734u) overlap tall punctuation (682-730u) so no
+        # height threshold splits them. Ascender treatment waits
+        # on stroke-terminal analysis (see ledger cap-CVT entry);
+        # build_cap_table keeps the asc params for that day.
+        return stem_width_table.build_cap_table(
+            vote, None, size, em)
 
     def baseline(self, key, size, static_path):
         """Regenerate constraint records from the instantiated source.
@@ -586,7 +627,9 @@ class Pipeline:
                         or list(prepared.endPtsOfContours) != list(ends):
                     raise ValueError('prepared point mapping differs')
                 after, audit = curved_width_fit(
-                    model, q, live[char]['audit']['ownership'], reconstruct_curves=True)
+                    model, q, live[char]['audit']['ownership'],
+                    reconstruct_curves=True,
+                    width_table=records[char].get('width_table'))
                 row['width_audit_' + stage] = audit
                 if not audit['new_pairs']:
                     row['stages'][stage] = 'no-match'
@@ -713,6 +756,7 @@ class Pipeline:
         to native SCFS programs for the single requested ppem.
         """
         rows, failures, expected, sections, changes = [], [], {}, [], []
+        cells, change_entries = [], []
         with TTFont(str(candidate_path)) as combined:
             cmap = combined.getBestCmap()
             included = set()
@@ -773,10 +817,19 @@ class Pipeline:
                 panel = output_mod.panel_html(
                     key, char, row['status'], delta, record, native_name, large_name)
                 sections.append(panel)
+                cells.append(dict(key=key, char=char, code=f'u{ord(char):04x}',
+                                  status=row['status'], large=large_name,
+                                  native=native_name,
+                                  w=max(1, record['width']),
+                                  h=max(1, record['height'])))
                 if delta:
                     changes.append(panel)
+                    stages, _ = output_mod.change_attribution(row)
+                    change_entries.append(output_mod.change_panel(
+                        key, char, row['status'], delta, record,
+                        native_name, large_name, stages))
         output_mod.write_face_json(self.output, key, size, records)
-        return rows, failures, sections, changes
+        return rows, failures, sections, changes, cells, change_entries
 
     # -- driver --------------------------------------------------------------
 
@@ -785,6 +838,30 @@ class Pipeline:
         key = f'{name}-{size}'
         static_path = self.instantiate(key, name, size)
         experiment_path, records = self.baseline(key, size, static_path)
+        with TTFont(str(experiment_path)) as font:
+            em = font['head'].unitsPerEm
+        width_table = stem_width_table.build_table(records, size, em)
+        # Curved-band stem uniformity (sharing, gates, hardening and
+        # arc protection) is verified at 14px, where the 1px stem
+        # target is unambiguous. Above 14px curved links claim the
+        # shared target outright (v1 hardens those sides:
+        # roboto-16 8, literata-16 O/Q) while joint arc rows take a
+        # narrow widen-only path (side widths widen up to the
+        # shared target but never narrow; spans keep the solver
+        # value) instead of the blanket plain target, which grew
+        # source-sans-3-18 o a row both oracle witnesses reject.
+        width_table['arc_sharing'] = size <= 14
+        cap_table = self.cap_table(static_path, size, em)
+        for record in records.values():
+            record['width_table'] = width_table
+            record['cap_table'] = cap_table
+        self.provenance.setdefault('cap_table', {})[key] = cap_table
+        self.provenance.setdefault('width_table', {})[key] = {
+            'clusters': [
+                {'design_mean_units': round(c['design_mean_units'], 1),
+                 'target_px': c['target_px'], 'reason': c['reason'],
+                 'members': len(c['members'])}
+                for c in width_table['clusters']]}
         candidate_path, outcomes = self.geometric(key, size, experiment_path, records)
         live, case_rows = {}, {}
         for char, outcome in outcomes.items():
@@ -854,16 +931,20 @@ class Pipeline:
         (self.output / 'img').mkdir(exist_ok=True)
         self.note_sources()
         rows, pages, changes, failures = [], [], [], []
+        cells, change_entries = [], []
         try:
             for name in FACES:
                 for size in SIZES:
                     tag = face_key(name, size)
-                    key_rows, key_failures, sections, key_changes = self.run_key(name, size)
+                    (key_rows, key_failures, sections, key_changes,
+                     key_cells, key_change_entries) = self.run_key(name, size)
                     rows.extend(key_rows)
                     failures.extend(key_failures)
                     (self.output / f'{tag}.html').write_text(header() + ''.join(sections))
-                    pages.append(f'<li><a href="{tag}.html">{tag}</a></li>')
+                    pages.append(tag)
                     changes.extend(key_changes)
+                    cells.extend(key_cells)
+                    change_entries.extend(key_change_entries)
                     print(tag, dict(Counter(r['status'] for r in key_rows)), flush=True)
         finally:
             self.close()
@@ -879,13 +960,25 @@ class Pipeline:
         (self.output / 'report.json').write_text(json.dumps(dict(
             summary=counts, cases=rows, inputs=self.inputs,
             provenance=self.provenance), indent=2, default=_json_default) + '\n')
+        face_rows = []
+        for name in FACES:
+            for size in SIZES:
+                tag = face_key(name, size)
+                face_rows.append((
+                    tag,
+                    sum(1 for r in rows
+                        if r['key'] == tag and r['status'] == 'retained'),
+                    sum(1 for r in rows
+                        if r['key'] == tag and r['status'] == 'changed'),
+                    sum(1 for r in rows
+                        if r['key'] == tag and r['status'] == 'upstream-rejected')))
+        (self.output / 'grid.html').write_text(output_mod.grid_page(cells))
         (self.output / 'index.html').write_text(
-            header() + '<p>Admitted glyphs regenerate from source fonts and configuration. '
-            'Unresolved cases are excluded from font character maps.</p><ul>' + ''.join(pages) + '</ul>')
-        (self.output / 'changes.html').write_text(header() + ''.join(changes))
+            output_mod.index_page(face_rows, counts, pages))
+        (self.output / 'changes.html').write_text(
+            output_mod.changes_page(change_entries))
         (self.output / 'diagnostics.html').write_text(
-            header() + '<pre>' + html.escape(json.dumps(failures, indent=2,
-                                                        default=_json_default)) + '</pre>')
+            output_mod.diagnostics_page(failures))
         print(counts)
         return counts
 
@@ -896,8 +989,10 @@ def face_key(name, size):
 
 def header():
     return ('<meta charset="utf-8"><style>body{font:16px sans-serif;margin:24px}img{max-width:100%}'
+            '.px{image-rendering:pixelated;image-rendering:crisp-edges}'
             '</style><h1>Source-to-bitmap specimen</h1><p><a href="index.html">Full specimen</a> · '
-            '<a href="changes.html">Approved changes</a> · '
+            '<a href="grid.html">Specimen grid</a> · '
+            '<a href="changes.html">Proposed changes</a> · '
             '<a href="diagnostics.html">Unresolved cases</a></p>')
 
 
