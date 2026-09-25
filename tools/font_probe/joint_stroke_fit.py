@@ -562,7 +562,97 @@ def standardize_hard_widths(record, cs, protected, hard_values, scale,
         cs[i] = dict(c, value=new_value / scale, width_standardized=True)
     if pins is not None and bound:
         _pin_zero_twins(cs, protected, bound, pins)
+        _pin_crown_plateau(cs, protected, bound, pins, ctable,
+                           design_points, ends, scale)
     return changes
+
+
+def _pin_crown_plateau(cs, protected, bound, pins, cap_table,
+                       design_points, ends, scale):
+    """Pin cap-plateau points floating above the entry anchor.
+
+    The entry redirect pins one Abs row per crown, but a round crown's
+    raster peak can sit on a different point governed only by Ratio
+    followers (literata-16 'S': redirected pt 51 at 11px while the
+    peak pts 45-47 floated to 11.53px and lit a stray top row).
+    Points tied with the highest absolutely-pinned crown point (up
+    to float dust) take the same entry integer through the existing
+    ResYAnchor pin path, so the whole plateau shares one raster row.
+    Only adds hard rows where none existed: points already carrying
+    a protected vertical row keep their own treatment, and glyphs
+    with no pinned crown at all are untouched. Contour-size guard
+    carried over from the Abs redirect.
+    """
+    import math
+    if not cap_table or design_points is None or not scale:
+        return
+    try:
+        arr = np.asarray(design_points, float)
+        if arr.ndim != 2 or arr.shape[1] != 2 or not len(arr):
+            return
+        if not np.all(np.isfinite(arr)):
+            return
+        top = float(np.max(arr[:, 1]))
+    except (TypeError, ValueError):
+        return
+    if not top > 0:
+        return
+    entry = _cap_table_lookup(cap_table, top)
+    if entry is None:
+        return
+    try:
+        target = float(entry['target_px'])
+    except (TypeError, ValueError):
+        return
+    guarded = set(protected)
+    covered = set()
+    for i in guarded:
+        try:
+            r = cs[i]
+        except (IndexError, TypeError):
+            continue
+        if not isinstance(r, dict) or r.get('kind') not in ('Abs', 'PAbs'):
+            continue
+        try:
+            normal = list(r.get('normal', []) or [])
+        except TypeError:
+            continue
+        if len(normal) != 2 or abs(normal[1]) < abs(normal[0]):
+            continue
+        covered.add(r.get('point'))
+    for pin in pins:
+        if isinstance(pin, dict) and pin.get('axis') == 1:
+            covered.add(pin.get('point'))
+    for point, (_, axis) in (bound or {}).items():
+        if axis == 1:
+            covered.add(point)
+    heights = []
+    for p in covered:
+        try:
+            if int(p) != p or not 0 <= int(p) < len(arr):
+                continue
+            heights.append(float(arr[int(p), 1]))
+        except (TypeError, ValueError, IndexError):
+            continue
+    if not heights:
+        return
+    anchor = max(heights)
+    floor = anchor * (1.0 - PLATEAU_DUST_REL)
+    for idx in range(len(arr)):
+        if idx in covered:
+            continue
+        try:
+            y = float(arr[idx, 1])
+        except (TypeError, ValueError):
+            continue
+        if y < floor:
+            continue
+        span = _contour_range_units(design_points, ends, idx)
+        if span is not None and span * scale < _CAP_PULL_MIN_RANGE_PX:
+            continue
+        pins.append(dict(point=idx, axis=1,
+                         value_px=math.copysign(target, y or 1.0),
+                         plateau_anchor=anchor))
 
 
 def _pin_zero_twins(cs, protected, bound, pins):
@@ -810,6 +900,13 @@ def select_member_alignments(points, flags, constraints):
 # ~2px tall at 20ppem, cap crowns belong to full-height contours.
 # (Carried over from the bespoke cap-anchor guard, same threshold.)
 _CAP_PULL_MIN_RANGE_PX = 3.0
+# Plateau ties share one raster row: design points floating within
+# this relative dust of the highest absolutely-pinned crown point
+# are the same plateau (literata-16 'S' ties five points at exactly
+# 12.0px pre-fit). Noise cover only — the same 1e-6 dust class the
+# span-sharing rule already uses; any wider reach would be a new
+# band needing its own evidence.
+PLATEAU_DUST_REL = 1e-6
 # Soft-pull window above the cap integer: geometric ceiling lifts
 # cap-band crowns at most ~1px over the entry target.
 _CAP_PULL_PX = 1.5

@@ -396,4 +396,87 @@ class WithholdSpanTests(unittest.TestCase):
             c, dict(kind='stem'), self.YRANGE))
 
 
+class CrownPlateauTests(unittest.TestCase):
+    SCALE = 0.016
+
+    def table(self, mode=701.0, target=11):
+        return {'ppem': 16, 'em': 1000, 'band_rel': 0.025,
+                'entries': [{'name': 'flat_cap', 'design_units': mode,
+                             'target_px': target, 'reason': 'test',
+                             'members': 175}]}
+
+    def standardize(self, record, cs, protected, hard, points, ends,
+                      pins):
+        from joint_stroke_fit import standardize_hard_widths
+        return standardize_hard_widths(record, cs, protected, hard,
+                                       self.SCALE, 715.0, pins,
+                                       points, ends)
+
+    def test_bare_plateau_twin_pins_to_entry(self):
+        # Crown peak on a different point than the redirected Abs
+        # row (literata-16 'S' shape): the bare tie takes the same
+        # entry integer, covered and below-anchor points are left
+        # alone.
+        record = {'cap_table': self.table()}
+        cs = [dict(id=5, kind='Abs', point=1, sources=[],
+                   normal=[0, 1], value=715.0, round=True,
+                   metric=True, extent='max')]
+        hard = [11.6]
+        points = [(0, 0), (10, 715), (20, 715), (30, 600)]
+        pins = []
+        changes = self.standardize(record, cs, [0], hard, points, [3], pins)
+        self.assertEqual(hard, [11.0])
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(len(pins), 1)
+        self.assertEqual((pins[0]['point'], pins[0]['axis'],
+                          pins[0]['value_px']), (2, 1, 11.0))
+
+    def test_no_table_no_pins(self):
+        from joint_stroke_fit import standardize_hard_widths
+        cs = [dict(id=5, kind='Abs', point=1, sources=[],
+                   normal=[0, 1], value=715.0, round=True,
+                   metric=True, extent='max')]
+        hard = [11.6]
+        pins = []
+        changes = standardize_hard_widths(
+            {}, cs, [0], hard, self.SCALE, 715.0, pins,
+            [(0, 0), (10, 715)], [1])
+        self.assertEqual(pins, [])
+        self.assertEqual(changes, [])
+
+    def test_top_outside_band_no_pins(self):
+        record = {'cap_table': self.table()}
+        cs = [dict(id=5, kind='Abs', point=1, sources=[],
+                   normal=[0, 1], value=500.0, round=True,
+                   metric=True, extent='max')]
+        hard = [8.0]
+        pins = []
+        self.standardize(record, cs, [0], hard,
+                      [(0, 0), (10, 500)], [1], pins)
+        self.assertEqual(pins, [])
+
+    def test_tiny_contour_skipped(self):
+        record = {'cap_table': self.table()}
+        cs = [dict(id=5, kind='Abs', point=1, sources=[],
+                   normal=[0, 1], value=715.0, round=True,
+                   metric=True, extent='max')]
+        hard = [11.6]
+        pins = []
+        self.standardize(record, cs, [0], hard,
+                      [(0, 0), (10, 715), (20, 715), (20, 715)],
+                      [1, 3], pins)
+        self.assertEqual(hard, [11.0])
+        self.assertEqual(pins, [])
+
+    def test_pins_none_is_safe(self):
+        record = {'cap_table': self.table()}
+        cs = [dict(id=5, kind='Abs', point=1, sources=[],
+                   normal=[0, 1], value=715.0, round=True,
+                   metric=True, extent='max')]
+        hard = [11.6]
+        self.standardize(record, cs, [0], hard,
+                      [(0, 0), (10, 715), (20, 715)], [2], None)
+        self.assertEqual(hard, [11.0])
+
+
 if __name__=='__main__':unittest.main()
