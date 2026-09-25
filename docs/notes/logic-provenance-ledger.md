@@ -304,6 +304,28 @@ unsatisfied).
   top [1,6,7]→[6,7,7]). Oracle: S evidence REJECT-flag→
   APPROVE (C 9→7, W=8), rest byte-identical. Pinned by 5
   new CrownPlateauTests.
+- Bowl outer-edge doctrine divergence (P-16 RESEARCH, no
+  action): candidate bowl right stroke sits 1px right of
+  both witnesses (7 extra + 4 missing px); D-16 shows the
+  identical shift over 8 rows, R-16 over 4 — the 107u bow
+  class moves together. Same master confirmed (xmax
+  0.577em all three); unhinted witness matches hinted, so
+  neither source nor bytecode intent is the gap. Mechanism:
+  geometric baseline ceilings the edge (9.23px→10.0, RUTG
+  extent doctrine) and the joint sees a consistent 2px bow
+  span (width-5, PDist 107u, natural round) and no-ops;
+  stem sharing cannot claim it (build_table is stems-only
+  by construction) and curved-width-links passes it as
+  consistent. Web sources consulted 2026-09-25: MS VTT
+  walkthrough hints O outer→inner with round-stroke CVT +
+  minimum distance and states bitmaps pull LEFT when
+  ambiguous (sidebearing-link compression); RUTG ceilings
+  maxima the other way. Our ceiling follows RUTG (sourced);
+  VTT's pull-left needs sidebearing-link machinery we do
+  not have — no flippable flag exists, so the flag stands
+  as recorded divergence. Tie-break experiment if ever
+  wanted: nearest-rounding for unanchored x-max extents
+  under oracle gate.
 - Cap anchors, pulls, redirects
   (`vote_cap_anchor`, `_cap_redirect`, `_cap_abs_redirect`):
   REPLACED 2026-09-15 with cap heights as ordinary CVT
