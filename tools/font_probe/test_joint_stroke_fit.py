@@ -119,6 +119,9 @@ class CapConflictRetryTests(unittest.TestCase):
     def test_conflicting_pin_falls_back_to_legacy_joint(self):
         # A cap pin contradicting hard ownership retries without
         # cap treatment instead of discarding the whole joint fit.
+        # Straddling-class entry (target 11 over design 10.2 keeps
+        # the redirect live now that metric bounds take the
+        # SROUND-threshold-5/8 cutpoint instead of the ceiling).
         from joint_stroke_fit import fit
         p = np.array([[0., 0.], [0., 10.2]])
         cs = [dict(id=0, kind='Abs', point=0, sources=[],
@@ -135,7 +138,7 @@ class CapConflictRetryTests(unittest.TestCase):
             cap_table={'ppem': 1, 'em': 1, 'band_rel': 0.025,
                        'entries': [
                            {'name': 'flat_cap', 'design_units': 10.0,
-                            'target_px': 10, 'reason': 'test',
+                            'target_px': 11, 'reason': 'test',
                             'members': 10}]})
         owners = [dict(point=1, axis=1, value=5.0)]
         before = [dict(c) for c in record['graph']['constraints']]
@@ -161,7 +164,10 @@ class CapRefitTests(unittest.TestCase):
         # A successful cap redirect must not leak into the shared
         # record: the reflection re-fit reuses the same record, and
         # standardized values left behind make the redirect a vacuous
-        # no-op (pins lost, apex floating half a pixel high).
+        # no-op (pins lost). Straddling-class entry (target 11 over
+        # design 10.2 keeps the redirect live now that metric bounds
+        # take the SROUND-threshold-5/8 cutpoint instead of the
+        # ceiling).
         from joint_stroke_fit import fit
         p = np.array([[0., 0.], [0., 10.2]])
         cs = [dict(id=0, kind='Abs', point=0, sources=[],
@@ -178,9 +184,9 @@ class CapRefitTests(unittest.TestCase):
             cap_table={'ppem': 1, 'em': 1, 'band_rel': 0.025,
                        'entries': [
                            {'name': 'flat_cap', 'design_units': 10.0,
-                            'target_px': 10, 'reason': 'test',
+                            'target_px': 11, 'reason': 'test',
                             'members': 10}]})
-        owners = [dict(point=1, axis=1, value=10.0)]
+        owners = [dict(point=1, axis=1, value=11.0)]
         before = [dict(c) for c in record['graph']['constraints']]
         q, audit = fit(p, [1], [1, 1], record, 1.0,
                        upstream=np.array([0., 0., 0., 11.]),
@@ -188,7 +194,7 @@ class CapRefitTests(unittest.TestCase):
         self.assertEqual(audit['candidate_status'], 'joint-fit')
         self.assertTrue(audit['width_standardized'])
         self.assertTrue(audit['cap_point_pins'])
-        self.assertAlmostEqual(q[1, 1], 10.0)
+        self.assertAlmostEqual(q[1, 1], 11.0)
         # The success path leaves the shared record alone, so the
         # second fit on the same record reproduces pins and values.
         self.assertEqual(record['graph']['constraints'], before)

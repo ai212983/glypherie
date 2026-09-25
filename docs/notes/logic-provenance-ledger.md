@@ -208,6 +208,69 @@ unsatisfied).
   territory (witnesses disagree W=13-38 there). h/l do NOT
   move: their residue is shoulders/phase, not tops — a
   separate mechanism, queued next. Ship decision pending.
+- Metric-inferred maxima take SROUND-5/8 (`_sround_58` in
+  `_metric_bound_rhs`, v33): TRIED 2026-09-25, HELD —
+  DO NOT SHIP as-is. Two committed pins force the shape:
+  roboto-16 I cap 1456u = 11.375 rounds UP to 12 (native
+  bytecode keeps 12 rows; test_y_extent_bounds_round_outward)
+  while literata-16 h/l ascender bound 766u = 12.256 rounds
+  DOWN to 12 (both witnesses) — plain nearest and bare ceil
+  each fail one pin, 3/8 is the only sourced step in range.
+  Explicit extent flags keep ceil; two joint fixtures moved
+  to straddling-class entries to keep redirect mechanics live
+  (same retry/no-leak assertions). Oracle: all four targets
+  APPROVE (h C 4→1, l C 3→0) plus ~10 more flips, settled +
+  evidence identical — BUT 4 coverage holds (roboto-20
+  7/T/Z, literata-14 %) via the geometric gate ("rebuild
+  differs from candidate") and 1 borderline flip
+  (roboto-14 ( APPROVE→REJECT, W=8 split witnesses).
+  Mechanism: solver/render skew — the emitted bytecode still
+  rounds these rows up while the solver predicts down; the
+  gate is correct to hold. Witnesses split on 7/T/Z tops
+  (native 14 vs autohint 15), so neither value is
+  witness-wrong, but prediction must equal render. % holds
+  via shared-table cascade with no direct flip of its own.
+  Unblocks only via compiler alignment (emit matching round
+  states for 5/8 rows; gate to zero holds) or revert to v32.
+- Shared tables into the bake (`Pipeline.stage_geometry`,
+  v34): SHIPPED candidate. The holds were never solver-vs-
+  hints: no bytecode emission exists (SCFS bakes solver values
+  verbatim), and prepare-vs-solver agree to 0.008px tableless.
+  The skew was bake-tableless vs prepare-tabled: geometric()
+  built plain Geometry (dropping the record's width_table)
+  while prepare() re-wraps TabledGeometry, diverging ~2px
+  wherever table-driven derivations differ. The bake now
+  carries the record's table (shared values determined before
+  solving everywhere: ttfautohint global-first, VTT CVT-first;
+  the TabledGeometry docstring sanctions stage-owned
+  construction). Full-regen census vs v33: zero pixel moves
+  on rendered glyphs; all 12 status moves are
+  upstream-rejected → retained (the 4 v33 holds plus 8 more:
+  roboto-14 A, roboto-16 [, literata-14 h, ss3-14 v, ss3-16
+  F/v, ss3-18 v, ss3-20 v). Oracle: battery identical to v33
+  (4/4 targets APPROVE, settled + evidence held) except the
+  restored literata-14 h now rendering (C=15 UNSETTLED,
+  W=11); restored 7/T/Z/A/[/%/F all UNSETTLED (witnesses
+  disagree); ss3-v improved vs v32 (C 20→5, 26→15, 32→15)
+  where it was already REJECT-flagged. Single adverse event
+  carried from v33: roboto-14 ( APPROVE→REJECT (C 8→10,
+  W=8 split witnesses, visual wash at the top row, indirect
+  shared-cluster cascade). Coverage 796→808 retained vs
+  v27-era. Ship decision pending.
+  REVERTED to v32 (39f450c) 2026-09-25: no source breaks the
+  7/T/Z tie (native 14 vs autohint 15 — the witnesses
+  themselves disagree; no third source adjudicates flat-cap
+  frac .22), and the planned option-C narrowing proved
+  circular (entry stamps must precede the stage-2 compile but
+  tables postdate it). One sourced architectural hint for the
+  future, not a rescue: published autohinters determine
+  shared values BEFORE per-glyph solving (ttfautohint
+  two-step: global analysis of standard widths/heights from
+  'o' first, then per-glyph; VTT CVT-first workflow; Shamir
+  single simultaneous solve) — our bake-then-reconcile order
+  is inverted, which is why agreement failures are possible
+  at all. Stage-agreement hardening (+ ascender zones, with
+  h/l inside) is the queued project.
 - Cap anchors, pulls, redirects
   (`vote_cap_anchor`, `_cap_redirect`, `_cap_abs_redirect`):
   REPLACED 2026-09-15 with cap heights as ordinary CVT

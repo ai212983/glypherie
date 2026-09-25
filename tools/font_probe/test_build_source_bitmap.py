@@ -423,6 +423,26 @@ class ExportAgreementTests(unittest.TestCase):
                     self.assertEqual(len(record['pixels']),
                                      record['width'] * record['height'])
 
+    def test_stage_geometry_carries_shared_table(self):
+        # The bake must solve the same tabled input the cumulative
+        # stage solves, or the rebuild gate trips on table-driven
+        # derivations. No fonts needed: a bare record exercises
+        # the wiring.
+        from build_source_bitmap import Pipeline
+        from geometric_candidate import Geometry, TabledGeometry
+        record = {'graph': {'constraints': []},
+                  'attachment_resolution': []}
+        plain = Pipeline.stage_geometry(record, [(0, 0)], [0], [1],
+                                        16, 1000)
+        self.assertIs(type(plain), Geometry)
+        table = {'ppem': 16, 'em': 1000, 'cut_in_px': 1, 'clusters': []}
+        record['width_table'] = table
+        tabled = Pipeline.stage_geometry(record, [(0, 0)], [0], [1],
+                                         16, 1000)
+        self.assertIs(type(tabled), TabledGeometry)
+        self.assertIs(tabled.width_table, table)
+        self.assertEqual(tabled.points, ((0, 0),))
+
     def test_specimen_pngs_are_reviewable(self):
         from PIL import Image
         import source_bitmap_output as output_mod

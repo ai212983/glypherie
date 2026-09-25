@@ -228,16 +228,66 @@ def _source_fit(abs_row, scale):
     return design, _abs_rhs(abs_row, scale)
 
 
+# SROUND-threshold-5/8 cutpoint for metric-inferred maxima: round up
+# iff the fraction reaches 3/8. The only sourced step consistent with
+# both pins: roboto-16 I cap 1456u = 11.375px rounds up to 12 (native
+# bytecode keeps 12 raster rows; pinned by
+# test_y_extent_bounds_round_outward) while literata-16 h/l ascender
+# bound 766u = 12.256px rounds down to 12 (both witnesses). Plain
+# nearest and bare ceil each fail one pin. Tiny epsilon favors the
+# boundary upward, in the rule's documented up-bias spirit.
+_THRESH_38 = 3 / 8
+_THRESH_EPS = 1e-9
+
+
+def _sround_58(value):
+    """SROUND(01:00:1001)-style round: up iff frac reaches 3/8."""
+    whole = math.floor(abs(value))
+    if abs(value) - whole >= _THRESH_38 - _THRESH_EPS:
+        whole += 1
+    return math.copysign(whole, value)
+
+
+def _metric_bound_rhs(c, scale, abs_rows):
+    """Right-hand side for a metric-inferred maximum bound row.
+
+    Same shape as the ``_dist_rhs`` max branch with the
+    SROUND-threshold-5/8 cutpoint in place of the outward ceiling
+    (see ``_dist_rhs`` for why). Explicit extent flags keep bare
+    outward rounding.
+    """
+    value = float(c['value']) * scale
+    key = lambda p: (p, tuple(c['normal']))
+    if c.get('reversed'):
+        design_a, fitted_a = _source_fit(abs_rows.get(key(c['point'])), scale)
+        if fitted_a is None:
+            return _round_pixel(value)
+        return fitted_a - _sround_58(design_a - value)
+    sources = c.get('sources', [])
+    if not sources:
+        return _sround_58(value)
+    design_s, fitted_s = _source_fit(abs_rows.get(key(sources[0])), scale)
+    if fitted_s is None:
+        return _sround_58(value)
+    return _sround_58(design_s + value) - fitted_s
+
+
 def _dist_rhs(c, scale, abs_rows):
     """Right-hand side for a Dist/PDist row.
 
     Vertical extent rows round the design total outward (maxima ceil,
     minima floor), preserving the raster extent; every other distance
     keeps round-to-nearest except targeted up-exception rows (see
-    ``_thin_stem_up``). Reversal never commutes with outward rounding
-    the way nearest rounding does (orient forbids it for rounded rows).
-    Outward sense follows spec RUTG/RDTG (see ``_abs_rhs``); the
-    extent-flagged choice itself is ledger WHY.
+    ``_thin_stem_up``). Metric-inferred maximum bound rows (no
+    explicit extent flag) round with the SROUND-threshold-5/8
+    cutpoint (see ``_sround_58``): construction scaffolding, not
+    authored links, and the only sourced step consistent with both
+    pins (roboto-16 I cap rounds 11.375 up to 12; literata-16 h/l
+    ascender bound rounds 12.256 down to 12). Explicit extent flags
+    keep bare outward rounding. Reversal never commutes with outward
+    rounding the way nearest rounding does (orient forbids it for
+    rounded rows). Outward sense follows spec RUTG/RDTG (see
+    ``_abs_rhs``); the extent-flagged choice itself is ledger WHY.
     """
     value = float(c['value']) * scale
     if not c.get('round', True):
@@ -247,6 +297,8 @@ def _dist_rhs(c, scale, abs_rows):
         if _thin_stem_up(float(c['value']), c.get('normal', ()), value):
             return math.copysign(math.ceil(abs(value)), value)
         return _round_pixel(value)
+    if sense == 'max' and c.get('extent') is None:
+        return _metric_bound_rhs(c, scale, abs_rows)
     out = math.ceil if sense == 'max' else math.floor
     adjust = -_EXTENT_EPS if sense == 'max' else _EXTENT_EPS
     key = lambda p: (p, tuple(c['normal']))

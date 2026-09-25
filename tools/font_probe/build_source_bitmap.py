@@ -328,6 +328,26 @@ class Pipeline:
 
     # -- stage 2: uniform geometric candidate ------------------------------
 
+    @staticmethod
+    def stage_geometry(record, points, ends, flags, size, em):
+        """Correction input carrying the record's shared table, if any.
+
+        The cumulative stage re-wraps plain geometry with the shared
+        table before solving; the bake must solve the same input or
+        the rebuild gate trips on table-driven derivations (the v33
+        holds: tabled prepare vs tableless bake diverged ~2px).
+        Shared values are determined before solving everywhere
+        (ttfautohint global-analysis-first; VTT CVT-first).
+        """
+        from geometric_candidate import TabledGeometry
+        data = geometric_data(record, points, ends, flags, size, em)
+        table = record.get('width_table')
+        if table is None:
+            return data
+        return TabledGeometry(data.points, data.ends, data.flags,
+                              data.ppem, data.em, data.constraints,
+                              data.members, table)
+
     def geometric(self, key, size, experiment_path, records):
         """Run the fixed correction sequence for every available record.
 
@@ -351,7 +371,8 @@ class Pipeline:
                                           reason='missing outline or constraint record')
                     continue
                 points, ends, flags = font['glyf'][cmap[code]].getCoordinates(font['glyf'])
-                data = geometric_data(records[char], points, ends, flags, size, em)
+                data = self.stage_geometry(records[char], points, ends,
+                                           flags, size, em)
                 try:
                     result = correct(data)
                     assembly, cvts, expected = finish(result, data, len(font['cvt '].values))

@@ -150,6 +150,32 @@ class ExtentRoundingTests(unittest.TestCase):
                 resolve_baseline(pts, cs), pts, size, 1000)
             self.assertEqual(fitted[0, 0], want)
 
+    def test_metric_bound_max_rounds_nearest(self):
+        # literata-16 h/l ascender bound (766u = 12.256px at
+        # 16px/1000em): metric-inferred maxima take the
+        # SROUND-threshold-5/8 cutpoint (12), while an explicit
+        # extent flag keeps the outward ceiling (13).
+        for extra, want in (({}, 12.0), ({'extent': 'max'}, 13.0)):
+            pts = [[0, 766], [0, 0]]
+            cs = [relation('PAbs', 1, [0, 1], value=0, extent='min'),
+                  relation('Dist', 0, [0, 1], [1], 766, metric=True,
+                           metric_role='glyph-y-bound', **extra),
+                  relation('Abs', 0, [1, 0], value=0, round=False),
+                  relation('Abs', 1, [1, 0], value=0, round=False)]
+            fitted, _ = evaluate_baseline(
+                resolve_baseline(pts, cs), pts, 16, 1000)
+            self.assertEqual(fitted[0, 1], want)
+
+    def test_sround_58_cutpoint(self):
+        # Up iff the fraction reaches 3/8: the I-cap pin
+        # (11.375) rounds up, the h/l bound (12.256) down.
+        from shamir_baseline_solver import _sround_58
+        self.assertEqual(_sround_58(11.375), 12.0)
+        self.assertEqual(_sround_58(12.256), 12.0)
+        self.assertEqual(_sround_58(1.374), 1.0)
+        self.assertEqual(_sround_58(1.375), 2.0)
+        self.assertEqual(_sround_58(8.336), 8.0)
+
     def test_extent_flag_directions(self):
         # Shared rows carry min/max explicitly instead of metric roles.
         pts = [[376,1456],[376,0]]
