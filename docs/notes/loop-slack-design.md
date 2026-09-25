@@ -1,7 +1,12 @@
 # Loop-slack design (orient closed-loop under RTDG rounding)
 
-Status: DESIGN, 2026-09-25. For approval before implementation.
-Unblocks the BLOCKED ledger item "Non-extent Dist rounding".
+Status: DEFERRED-STANDING since 2026-09-25 (closed out, no build).
+The half-grid RTDG default and rounder alignment were tried and
+reverted the same day; production is integer-nearest. Only part 4
+(the `geometric()` closure catch) shipped and survives. The
+cycle-sum-zeroing search below stays unbuilt until its trigger
+fires: any future `closure trip held` outcome or loop-check
+failure (v36 regen: none). Unblocks nothing while deferred.
 
 ## Problem
 

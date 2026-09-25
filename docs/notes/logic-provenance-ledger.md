@@ -314,6 +314,15 @@ unsatisfied).
   geometric baseline ceilings the edge (9.23px→10.0, RUTG
   extent doctrine) and the joint sees a consistent 2px bow
   span (width-5, PDist 107u, natural round) and no-ops;
+  tie-break RUN 2026-09-25, FAILED to approve: single-glyph
+  fitted-xmax 10.0→9.0 (nearest) on a v36 copy cuts extra
+  7→5, missing stays 4 — residual is bowl-interior shape
+  (missing column x=6..7), not edge position. No flippable
+  flag exists (no x-Abs record pins xmax; the 10.0 emerges
+  from bow-width rounding to 2px + left anchor, and R
+  11.168→11.0156 shows it is not even a uniform ceil), and
+  nearest-xmax has no paper backing. Divergence stands,
+  still no action;
   stem sharing cannot claim it (build_table is stems-only
   by construction) and curved-width-links passes it as
   consistent. Web sources consulted 2026-09-25: MS VTT
@@ -449,6 +458,21 @@ unsatisfied).
 - Reflection re-fit, conflict retry: WHY — solver-robustness
   scaffolding, on the VTT bail-out pattern (fpgm 118 bails
   where no solution exists); numerics, not hinting decisions.
+
+- roboto-14 j dot, site proof 2026-09-25: the 3-row dot
+  render is hint-program scan conversion, not a geometry
+  error. Instrumented prepare() replication (matches v36
+  report.json upstream_points exactly): source dot
+  8.647–10.090px; geometric `correct()` integer-snaps the
+  extremes to 8.0–11.0 pre-joint (0 parent_changes, no
+  terminal claim on the dot — the baseline record's
+  integer-valued equations pin the bounding box); joint
+  fit restores source-identical 1265–1476u (residuals
+  <0.07px); export + compile verbatim (changed_pixels 0,
+  native_verified). Rendered rows: candidate -11/-10/-9,
+  autohint -11, native -10 (stem agrees below; missing
+  (1,-8) is a stem-top pixel). No geometry action exists;
+  RESEARCH stays no-action with mechanism proven.
 
 ## Not hinting logic (out of scope)
 
