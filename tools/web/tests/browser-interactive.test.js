@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { chromium } from "playwright-core";
-import { build, hash, png, serve } from "./helpers.js";
+import { PNG } from "pngjs";
+import { build, fixture, hash, png, serve } from "./helpers.js";
 import { fontMetadata } from "./helpers.js";
 
 const browserPath = process.env.WEB_TEST_BROWSER ?? "/opt/google/chrome/chrome";
@@ -13,7 +14,7 @@ const browserAvailable = await fs.access(browserPath).then(() => true, () => fal
 const STUB_WASM = `
 const KNOWN = new Set(["text", "width", "height", "size_px", "axes", "hinting", "output_bits",
   "mono_threshold", "gray_gamma", "missing_glyphs", "kerning", "metric_rounding",
-  "wrap", "align", "foreground", "background", "palette"]);
+  "wrap", "align", "foreground", "background", "palette", "renderer"]);
 export default async function init() {
   globalThis.__inits = (globalThis.__inits ?? 0) + 1;
 }
@@ -28,6 +29,10 @@ export class Font {
     for (const key of Object.keys(spec)) {
       if (!KNOWN.has(key)) throw "invalid render spec: unknown field " + key;
     }
+    // Baseline-only stub build: a candidate request fails visibly, exactly
+    // like the production WASM artifact without the preview feature.
+    if (spec.renderer === "candidate") throw "candidate rendering requires the candidate Cargo feature";
+    if (spec.renderer !== undefined && spec.renderer !== "baseline" && spec.renderer !== "reference") throw "unknown renderer role";
     (globalThis.__renders ??= []).push(JSON.parse(JSON.stringify(spec)));
     const width = spec.width, height = spec.height;
     const pixels = new Uint8Array(width * height * 4);
@@ -35,7 +40,7 @@ export class Font {
       const i = (y * width + x) * 4;
       pixels[i] = (x + Math.round(spec.size_px)) % 256;
       pixels[i + 1] = (y + Math.round(spec.axes?.wght ?? 0)) % 256;
-      pixels[i + 2] = 128; pixels[i + 3] = 255;
+      pixels[i + 2] = spec.renderer === "reference" ? 138 : 128; pixels[i + 3] = 255;
     }
     return {
       width: () => width,
@@ -337,6 +342,124 @@ test("presets, custom edits, and reset work on the selected family", { skip: !br
   assert.equal(await page.locator("#interactive-alpha [data-text]").inputValue(), ALPHA_TEXT);
   assert.equal(await page.locator("#interactive-alpha [data-preset]").inputValue(), "reading");
   assert.deepEqual(errors, []);
+});
+
+test("the version role forwards with unchanged controls and the canvas reacts", { skip: !browserAvailable }, async (t) => {
+  const f = await interactiveFixture(t);
+  const { page, errors } = await launch(t, f.output);
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
+  // The fixture publication has no comparison pair, so the page ships no
+  // Version switch; inject the same switch shape to drive the live role
+  // path (the published page renders this switch from versionRoles).
+  await page.evaluate(() => {
+    const fieldset = document.createElement("fieldset");
+    fieldset.id = "renderer-role";
+    for (const role of ["baseline", "reference", "candidate"]) {
+      const input = document.createElement("input");
+      input.type = "radio"; input.name = "renderer-role"; input.value = role;
+      if (role === "baseline") input.checked = true;
+      fieldset.append(input);
+    }
+    document.body.prepend(fieldset);
+  });
+  const sum = () => page.evaluate(() => {
+    const canvas = document.querySelector("#interactive-alpha canvas");
+    const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let total = 0;
+    for (let i = 0; i < data.length; i++) total = (total + data[i]) % 4294967296;
+    return total;
+  });
+  const baselineSpec = (await renders(page)).at(-1);
+  assert.equal(baselineSpec.renderer, "baseline");
+  const baselineSum = await sum();
+
+  await page.evaluate(() => { document.querySelector('input[name="renderer-role"][value="reference"]').checked = true; });
+  await page.locator("#interactive-alpha [data-size]").fill("16");
+  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.renderer === "reference"));
+  const referenceSpec = (await renders(page)).at(-1);
+  assert.equal(referenceSpec.renderer, "reference");
+  assert.deepEqual(
+    [referenceSpec.text, referenceSpec.size_px, referenceSpec.axes, referenceSpec.output_bits],
+    [baselineSpec.text, baselineSpec.size_px, baselineSpec.axes, baselineSpec.output_bits],
+  );
+  assert.notEqual(await sum(), baselineSum);
+
+  await page.evaluate(() => { document.querySelector('input[name="renderer-role"][value="candidate"]').checked = true; });
+  const count = (await renders(page)).length;
+  await page.locator("#interactive-alpha [data-size]").fill("16");
+  await page.locator("#interactive-alpha [data-status]:visible").waitFor();
+  await assert.match(await page.locator("#interactive-alpha [data-status]").textContent(), /unavailable/);
+  assert.equal((await renders(page)).length, count);
+  assert.deepEqual(errors, []);
+});
+
+test("the published page offers the latest role against the approved baseline", async (t) => {
+  // Truecolor 4x2 comparison tile: every pixel must come from the mono
+  // palette (plus red/blue for differences) with full alpha.
+  const tile = (color) => {
+    const data = Buffer.alloc(4 * 2 * 4);
+    for (let i = 0; i < 4 * 2; i++) { data[i * 4] = 255; data[i * 4 + 1] = 255; data[i * 4 + 2] = 255; data[i * 4 + 3] = 255; }
+    if (color) { data[0] = color[0]; data[1] = color[1]; data[2] = color[2]; }
+    return PNG.sync.write({ width: 4, height: 2, data }, { colorType: 2, bitDepth: 8 });
+  };
+  const f = await fixture(t);
+  const iterId = "iteration-01-pkg";
+  await fs.cp(f.packageDir, path.join(f.root, iterId), { recursive: true });
+  const manifest = JSON.parse(await fs.readFile(path.join(f.root, iterId, "manifest.json"), "utf8"));
+  manifest.variant = {
+    ...manifest.variant, id: iterId, kind: "iteration", version: "001.01", renderer: "baseline",
+    generation_sha256: "e".repeat(64), composition_sha256: "f".repeat(64),
+  };
+  await fs.writeFile(path.join(f.root, iterId, "manifest.json"), JSON.stringify(manifest));
+  await fs.writeFile(path.join(f.root, "published.json"), JSON.stringify({
+    schema_version: "specimen-publication-v1",
+    variants: { reference: f.pointer.variant_id, "iteration-01": iterId },
+  }));
+  const images = {
+    previous: tile(null),
+    current: tile([0, 0, 0]),
+    difference: tile([224, 32, 32]),
+  };
+  const asset = (bytes) => ({ path: `assets/${hash(bytes)}.png`, sha256: hash(bytes) });
+  const comparison = {
+    schema_version: "web-glyph-comparison-v1",
+    id: "01",
+    previous: { package_id: f.pointer.variant_id, label: "Reference", generation_sha256: "a".repeat(64) },
+    current: { package_id: iterId, label: "001.01", generation_sha256: "e".repeat(64) },
+    profiles: [{ id: "mono_1bit", output_bits: 1 }],
+    families: [{
+      id: "fixture", name: "Fixture font",
+      sizes: [{
+        size_px: 16, axes: { wght: 400 },
+        canvas: { width_px: 4, height_px: 2, origin_x: 0, baseline_y: 1, padding_px: 0 },
+        glyphs: [{
+          codepoint: 65, character: "A",
+          profiles: [{
+            id: "mono_1bit", advance_px: 8,
+            previous: asset(images.previous), current: asset(images.current),
+            difference: asset(images.difference), reason: null,
+          }],
+        }],
+      }],
+    }],
+  };
+  const comparisonBytes = Buffer.from(JSON.stringify(comparison));
+  const comparisonDir = path.join(f.root, "comparisons", `01-${hash(comparisonBytes)}`);
+  await fs.mkdir(path.join(comparisonDir, "assets"), { recursive: true });
+  await fs.writeFile(path.join(comparisonDir, "manifest.json"), comparisonBytes);
+  for (const bytes of Object.values(images)) {
+    await fs.writeFile(path.join(comparisonDir, `assets/${hash(bytes)}.png`), bytes);
+  }
+  await fs.writeFile(path.join(f.root, "comparisons", "index.json"), JSON.stringify({
+    schema_version: "web-comparisons-v1",
+    comparisons: [{ id: "01", manifest: `01-${hash(comparisonBytes)}/manifest.json` }],
+  }));
+  const html = await build(f.root, f.output);
+  assert.match(html, /id="renderer-role"/);
+  assert.match(html, /value="baseline" checked/);
+  assert.match(html, /Latest approved baseline 001\.01/);
+  assert.match(html, /value="reference"/);
+  assert.match(html, /<span>Reference<\/span>/);
 });
 
 test("unavailable fonts and missing WASM degrade to a concise message", { skip: !browserAvailable }, async (t) => {

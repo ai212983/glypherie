@@ -66,7 +66,15 @@ fn stem_relative_width(pair: &Pair, metrics: &ScaledAxisMetrics, fitted_slope: f
         .filter(|w| w.scaled > 0)
         .min_by_key(|w| round((w.scaled as f64 - source_normal).abs()))
         .map(|standard| {
-            let fitted = ((standard.scaled + 32) / 64).max(1) * 64;
+            // FreeType/Skrifa stem_width preserves extra-light widths before
+            // minimum-width fitting. Project hypothesis: the diagonal's shared
+            // width transfer must use that actual policy as well, with dropout
+            // control responsible for subpixel visibility (Hersch 1993 §7).
+            let fitted = if metrics.width_metrics.is_extra_light {
+                standard.scaled
+            } else {
+                ((standard.scaled + 32) / 64).max(1) * 64
+            };
             source_normal * fitted as f64 / standard.scaled as f64
         })
         .unwrap_or(source_normal);
@@ -77,7 +85,9 @@ fn stem_relative_width(pair: &Pair, metrics: &ScaledAxisMetrics, fitted_slope: f
     // to less than 1/4 pixel. Applying that geometric guard to diagonal Mono
     // targets is an explicit project hypothesis; it avoids a second coarse
     // rounding step undoing the source/standard thickness ratio.
-    let axial = if (rounded as f64 - projected).abs() < 16.0 {
+    let axial = if metrics.width_metrics.is_extra_light {
+        projected
+    } else if (rounded as f64 - projected).abs() < 16.0 {
         rounded as f64
     } else {
         projected.max(64.0)
@@ -1059,6 +1069,52 @@ mod tests {
         assert_eq!(glyph.points[2].x - old[2].x, near);
         assert_eq!(glyph.points[4].x - old[4].x, far);
         assert!((2 * (glyph.points[3].x - old[3].x) - near - far).abs() <= 1);
+    }
+
+    #[test]
+    fn extra_light_diagonals_preserve_normal_weight_and_contrast_under_projection() {
+        // FreeType/Skrifa extra-light stems retain source width. The same
+        // shared-width ratio must preserve both thin/thick roles through
+        // reflection and steep/shallow fitted projections. Only the existing
+        // 26.6 coordinate-rounding separation margin may increase that width.
+        let mut metrics = ScaledAxisMetrics::default();
+        metrics.width_metrics.is_extra_light = true;
+        metrics
+            .widths
+            .push(super::super::super::metrics::ScaledWidth {
+                scaled: 24,
+                fitted: 24,
+            });
+        for source_slope in [-2.0_f64, -0.5, 0.5, 2.0] {
+            for fitted_slope in [-1.5_f64, -0.4, 0.4, 1.5] {
+                let mut fitted_normals = Vec::new();
+                for normal in [18.0, 30.0] {
+                    let border = Border {
+                        a: 0,
+                        b: 1,
+                        slope: source_slope,
+                        intercept: 0.0,
+                        low: 0.0,
+                        high: 640.0,
+                        direction: 1,
+                    };
+                    let pair = Pair {
+                        left: border,
+                        right: Border {
+                            direction: -1,
+                            ..border
+                        },
+                        width: normal * (1.0 + source_slope * source_slope).sqrt(),
+                    };
+                    let fitted = stem_relative_width(&pair, &metrics, fitted_slope)
+                        / (1.0 + fitted_slope * fitted_slope).sqrt();
+                    assert!(fitted >= normal && fitted <= normal + 3.0);
+                    assert!(fitted < 64.0, "extra-light stroke acquired a pixel floor");
+                    fitted_normals.push(fitted);
+                }
+                assert!((fitted_normals[1] - fitted_normals[0] - 12.0).abs() < 1e-10);
+            }
+        }
     }
 
     #[test]

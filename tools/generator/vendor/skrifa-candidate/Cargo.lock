@@ -216,7 +216,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "skrifa_iteration"
+name = "skrifa_candidate"
 version = "0.46.2"
 dependencies = [
  "bytemuck",

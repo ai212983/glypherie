@@ -1,6 +1,6 @@
 use crate::{
     fail, fixed,
-    probe::{lock_sha256, rasterize, skrifa_checksum, skrifa_version, zeno_version, FittedPen},
+    probe::{lock_sha256, skrifa_checksum, skrifa_version, zeno_version, FittedPen},
     reference::{
         ReferenceRecord, ReferenceReport, ReferenceRequest, PROFILE_GRAY_3BIT, PROFILE_MONO_1BIT,
     },
@@ -163,11 +163,12 @@ pub fn capture(
             .draw(settings, &mut pen)
             .map_err(|e| fail(format!("outline U+{:04X}: {e}", ch as u32)))?;
         let fitted = pen.into_commands();
-        let output = rasterize(&fitted, config)?;
+        let output = rasterize_enabled(&fitted, config, enabled)?;
         let advance = advances
             .advance_width(gid)
             .ok_or_else(|| fail(format!("missing advance U+{:04X}", ch as u32)))?;
         records.push(ReferenceRecord {
+            raster_policy: raster_policy(enabled),
             diagonal_pairs: adjusted.diagonal_pairs,
             codepoint: ch as u32,
             glyph_id: gid.to_u32(),

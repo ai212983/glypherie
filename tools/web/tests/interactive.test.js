@@ -161,7 +161,16 @@ test("maps control state to the exact tools/wasm render request", () => {
     text: "Ag", width: 360, height: 120, size_px: 18, axes: { wght: 700 }, hinting: "auto", output_bits: 3,
     mono_threshold: 200, gray_gamma: 2.2, missing_glyphs: "error", kerning: true, metric_rounding: "subpixel",
     wrap: "word", align: "left", foreground: [36, 40, 43, 255], background: [255, 255, 255, 255],
+    renderer: "baseline",
   });
+  const candidate = toRenderSpec({
+    text: "Ag", sizePx: 18, axes: { wght: 700 }, profile: "mono_1bit",
+    render: { mono_threshold: 200, gray_gamma: 2.2 }, width: 360, height: 120, role: "candidate",
+  });
+  assert.equal(candidate.renderer, "candidate");
+  assert.equal(candidate.output_bits, 1);
+  assert.deepEqual([candidate.text, candidate.size_px, candidate.axes],
+    [spec.text, spec.size_px, spec.axes]);
   const mono = toRenderSpec({ text: "", sizePx: 16, axes: {}, profile: "mono_1bit", width: 0.4, height: 5000 });
   assert.equal(mono.output_bits, 1);
   assert.equal(mono.width, 1);

@@ -6,6 +6,8 @@ pub mod batch;
 pub mod candidate;
 #[cfg(feature = "native-io")]
 pub mod comparison;
+#[cfg(feature = "candidate")]
+pub mod dropout;
 pub mod evaluation;
 pub mod metadata;
 /// Compatibility name for earlier diagnostic callers; renderer selection uses roles.

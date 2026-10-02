@@ -11,7 +11,7 @@
 //! A glyph texel at bitmap `(gx, gy)` lands on canvas
 //! `(pen_px + glyph.left + gx, baseline_px + glyph.top + gy)`; `pen_px` rounds
 //! the 26.6 pen with `(pen + 32).div_euclid(64)`, matching specimen placement.
-use crate::{fail, Config, Error, Glyph, MissingGlyphs};
+use crate::{fail, renderer::RendererRole, Config, Error, GeneratedFont, Glyph, MissingGlyphs};
 use std::collections::{BTreeSet, HashMap};
 
 /// Maximum canvas width or height in pixels.
@@ -139,6 +139,45 @@ pub struct RenderedText {
 /// shape, then canvas allocation. Blank requests validate settings, font,
 /// axes and palette before returning the background canvas.
 pub fn render_text(font_data: &[u8], request: &TextRenderRequest) -> Result<RenderedText, Error> {
+    render_inner(font_data, request, None)
+}
+
+/// Render bounded multi-line text with an explicit stable renderer role.
+///
+/// `Baseline` is the approved production path: shaping, metrics, kerning and
+/// bitmaps come from `generate()` unchanged, so this equals [`render_text`]
+/// bit-for-bit. `Reference` and `Candidate` keep that same `generate()` output
+/// for validation, layout, advances, kerning and metrics, and replace only
+/// each monochrome glyph's bitmap box with the role capture (`mono_1bit`;
+/// extensions `none` for reference, `diagonal-01` for candidate). Preview
+/// depths other than 1/3-bit, candidate hinting other than `Auto`, and a
+/// candidate request without the `candidate` feature fail explicitly.
+///
+/// Gray is outside the monochrome experiment: every role uses the unchanged
+/// production gray target and coverage. Published captures separately use
+/// the reference gray target; baseline and candidate agree within each target.
+pub fn render_text_with_renderer(
+    font_data: &[u8],
+    request: &TextRenderRequest,
+    role: RendererRole,
+) -> Result<RenderedText, Error> {
+    #[cfg(not(feature = "candidate"))]
+    if role == RendererRole::Candidate {
+        return Err(fail(
+            "candidate rendering requires the candidate Cargo feature",
+        ));
+    }
+    render_inner(font_data, request, Some(role))
+}
+
+/// Shared validation/layout/compositing pipeline behind [`render_text`] and
+/// [`render_text_with_renderer`]; `None` and `Some(Baseline)` both take the
+/// approved `generate()` path unchanged.
+fn render_inner(
+    font_data: &[u8],
+    request: &TextRenderRequest,
+    role: Option<RendererRole>,
+) -> Result<RenderedText, Error> {
     if !(1..=MAX_CANVAS_DIM).contains(&request.width) {
         return Err(fail("canvas width must be within 1..=4096"));
     }
@@ -150,6 +189,32 @@ pub fn render_text(font_data: &[u8], request: &TextRenderRequest) -> Result<Rend
     }
     if request.text.chars().count() > MAX_TEXT_CHARS {
         return Err(fail("text exceeds 8192 characters"));
+    }
+    // Preview roles bind to the interactive 1/3-bit profiles; anything else
+    // fails here, before any allocation, rather than rendering a nearby depth.
+    if let Some(role @ (RendererRole::Reference | RendererRole::Candidate)) = role {
+        if !matches!(request.config.output_bits, 1 | 3) {
+            return Err(fail(format!(
+                "preview role {} requires output_bits 1 or 3, got {}",
+                role_name(role),
+                request.config.output_bits
+            )));
+        }
+        match (role, request.config.hinting) {
+            (RendererRole::Candidate, crate::Hinting::Auto) => {}
+            (RendererRole::Reference, crate::Hinting::AutoFallback) => {
+                return Err(fail(format!(
+                    "preview role {} requires explicit hinting, got auto_fallback",
+                    role_name(role)
+                )));
+            }
+            (RendererRole::Candidate, other) => {
+                return Err(fail(format!(
+                    "preview role candidate requires automatic hinting, got {other:?}"
+                )));
+            }
+            _ => {}
+        }
     }
     let paragraphs = split_paragraphs(&request.text);
     let repertoire: BTreeSet<char> = request
@@ -206,6 +271,27 @@ pub fn render_text(font_data: &[u8], request: &TextRenderRequest) -> Result<Rend
         }
         Err(error) => return Err(error),
     };
+    let mut generated = generated;
+    // Preview roles reuse the approved `generate()` output above for shaping
+    // support, missing-glyph policy, metrics, advances and kerning, then swap
+    // in only the role's glyph bitmaps so layout never diverges. Baseline
+    // keeps the approved bitmaps verbatim.
+    if let Some(role @ (RendererRole::Reference | RendererRole::Candidate)) =
+        role.filter(|_| generated.config.output_bits == 1)
+    {
+        let profile = crate::reference::PROFILE_MONO_1BIT;
+        let extensions = match role {
+            RendererRole::Reference => crate::reference::EXTENSIONS_NONE,
+            _ => crate::baseline::EXTENSIONS_DIAGONAL_01,
+        };
+        let preview = crate::reference::ReferenceRequest {
+            profile: profile.to_string(),
+            extensions: extensions.to_string(),
+            settings: generated.config.clone(),
+        };
+        let report = crate::renderer::render(font_data, &preview, role)?;
+        swap_bitmaps(&mut generated, &report, role)?;
+    }
     let levels = 1u32 << generated.config.output_bits;
     let map = palette_map(&request.foreground, request.palette.as_deref(), levels)?;
     let glyphs: HashMap<u32, &Glyph> = generated.glyphs.iter().map(|g| (g.codepoint, g)).collect();
@@ -324,6 +410,45 @@ fn background_pixels(width: u32, height: u32, background: &[u8; 4]) -> Vec<u8> {
         pixels.extend_from_slice(background);
     }
     pixels
+}
+
+/// Stable lowercase role name for capability errors.
+fn role_name(role: RendererRole) -> &'static str {
+    match role {
+        RendererRole::Reference => "reference",
+        RendererRole::Baseline => "baseline",
+        RendererRole::Candidate => "candidate",
+    }
+}
+
+/// Replace only each glyph's bitmap box with the role capture's record for
+/// the same codepoint. Advances, glyph ids, metrics, kerning and the skipped
+/// set stay on the approved `generate()` output so layout is identical.
+fn swap_bitmaps(
+    generated: &mut GeneratedFont,
+    report: &crate::reference::ReferenceReport,
+    role: RendererRole,
+) -> Result<(), Error> {
+    let bitmaps: HashMap<u32, _> = report
+        .records
+        .iter()
+        .map(|record| (record.codepoint, record))
+        .collect();
+    for glyph in &mut generated.glyphs {
+        let record = bitmaps.get(&glyph.codepoint).ok_or_else(|| {
+            fail(format!(
+                "preview role {} has no bitmap for U+{:04X}",
+                role_name(role),
+                glyph.codepoint
+            ))
+        })?;
+        glyph.left = record.left;
+        glyph.top = record.top;
+        glyph.width = record.width;
+        glyph.height = record.height;
+        glyph.pixels.clone_from(&record.pixels);
+    }
+    Ok(())
 }
 
 /// Resolve the per-level color map; validates shape before canvas allocation.

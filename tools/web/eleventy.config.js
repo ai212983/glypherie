@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createSpecimenImporter } from "./lib/specimens.js";
 import { createComparisonImporter, glyphPages, removeStaleGlyphPages, validatePreviewScope } from "./lib/comparisons.js";
+import { previewRoles } from "./lib/selection.js";
 import { boundedFontFile, buildInteractive, publishInteractive } from "./lib/interactive.js";
 
 export function configureWeb(eleventyConfig, options = {}) {
@@ -15,6 +16,7 @@ export function configureWeb(eleventyConfig, options = {}) {
   let specimens;
   let comparisons = [];
   let activeComparison = null;
+  let versionRoles = null;
   eleventyConfig.addWatchTarget(path.join(specimenRoot, "published.json"));
   eleventyConfig.addWatchTarget(path.join(specimenRoot, "active.json"));
   eleventyConfig.addWatchTarget(path.join(specimenRoot, "comparisons/index.json"));
@@ -24,12 +26,17 @@ export function configureWeb(eleventyConfig, options = {}) {
   eleventyConfig.addGlobalData("specimens", () => specimens);
   eleventyConfig.addGlobalData("comparisons", () => comparisons);
   eleventyConfig.addGlobalData("activeComparison", () => activeComparison);
+  eleventyConfig.addGlobalData("versionRoles", () => versionRoles);
   eleventyConfig.addGlobalData("glyphPages", () => glyphPages(comparisons));
   eleventyConfig.on("eleventy.before", async ({ directories }) => {
     for (const obsolete of ["reviews", "review-content"]) {
       await fs.rm(path.join(path.resolve(directories.output), obsolete), { recursive: true, force: true });
     }
     specimens = await importer.load();
+    // Interactive version switch, derived from the selected publication
+    // view (never from revision numbers). Null hides the switch and keeps
+    // the renderer's approved-baseline default.
+    versionRoles = specimens.state === "ready" ? previewRoles(specimens.selection ?? null) : null;
     await importer.publish(specimens, path.resolve(directories.output));
     comparisons = await comparisonImporter.load();
     const matches = specimens.state === "ready"

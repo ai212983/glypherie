@@ -186,7 +186,12 @@ fn reported_case_has_real_constraints_and_straight_controls_are_unchanged() {
         if "HIn".contains(char::from_u32(a.codepoint).unwrap()) {
             let mut actual = serde_json::to_value(a).unwrap();
             actual.as_object_mut().unwrap().remove("diagonal_pairs");
-            assert_eq!(actual, serde_json::to_value(b).unwrap());
+            // Raster policy is now explicit provenance. These straight
+            // controls still require identical geometry, coverage and pixels.
+            actual.as_object_mut().unwrap().remove("raster_policy");
+            let mut expected = serde_json::to_value(b).unwrap();
+            expected.as_object_mut().unwrap().remove("raster_policy");
+            assert_eq!(actual, expected);
         }
         if "AVvwxyz".contains(char::from_u32(a.codepoint).unwrap()) {
             eprintln!(

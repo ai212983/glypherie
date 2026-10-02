@@ -219,6 +219,9 @@ fn renderer_identity(role: RendererRole) -> String {
     if role != RendererRole::Reference {
         digest.update(include_str!("fitting.rs").as_bytes());
     }
+    if role == RendererRole::Candidate {
+        digest.update(include_str!("dropout.rs").as_bytes());
+    }
     format!("{digest:x}", digest = digest.finalize())
 }
 

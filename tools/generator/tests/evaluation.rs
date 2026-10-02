@@ -169,6 +169,45 @@ fn layout_and_raster_integrity_failures_are_separate_from_shape_signals() {
     assert_eq!(evaluation.glyphs.len(), 1);
 }
 
+#[cfg(feature = "candidate")]
+#[test]
+fn dropout_policy_reproduces_delivered_pixels_and_keeps_independent_coverage_hard() {
+    use font_generator::reference::RasterPolicy;
+    let (mut source, mut upstream, mut candidate) = reports("mono_1bit");
+    let outline = rectangle(0.25, 0.0, 0.375, 3.0);
+    for report in [&mut source, &mut upstream, &mut candidate] {
+        replace_outline(report, outline.clone());
+    }
+    let raster = font_generator::dropout::rasterize(&outline, &Config::default()).unwrap();
+    candidate.records[0].raster_policy = RasterPolicy::CoverageDropout;
+    candidate.records[0].pixels = raster.pixels;
+    assert!(evaluate(&source, &upstream, &candidate).hard_invariants_pass);
+
+    let mut wrong_policy = candidate.clone();
+    wrong_policy.records[0].raster_policy = RasterPolicy::Coverage;
+    assert!(!evaluate(&source, &upstream, &wrong_policy).hard_invariants_pass);
+    candidate.records[0].pixels[0] ^= 1;
+    assert!(!evaluate(&source, &upstream, &candidate).hard_invariants_pass);
+
+    upstream.records[0].raster_policy = RasterPolicy::CoverageDropout;
+    assert!(evaluate(&source, &upstream, &wrong_policy)
+        .hard_failures
+        .iter()
+        .any(
+            |failure| failure.invariant == "independent rendering requires coverage raster policy"
+        ));
+}
+
+#[test]
+fn dropout_policy_cannot_be_declared_for_gray() {
+    let (source, upstream, mut candidate) = reports("gray_3bit");
+    candidate.records[0].raster_policy = font_generator::reference::RasterPolicy::CoverageDropout;
+    assert!(evaluate(&source, &upstream, &candidate)
+        .hard_failures
+        .iter()
+        .any(|failure| failure.invariant == "unsupported raster policy for this profile or build"));
+}
+
 #[test]
 fn malformed_outlines_and_buffers_report_failures_without_crashing() {
     let (source, upstream, mut candidate) = reports("mono_1bit");

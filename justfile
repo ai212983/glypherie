@@ -70,20 +70,47 @@ wasm-build out_dir="out/web":
       cp "$source" "{{out_dir}}/assets/wasm/$artifact"
     done
 
+# Build the candidate-enabled preview WASM renderer and stage it into
+# out/web/assets/wasm/. Uses the opt-in `preview` cargo feature, which enables
+# the generator's `candidate` feature; the output directory
+# (tools/wasm/pkg-web-preview/) stays separate from the production artifact
+# (tools/wasm/pkg-web/, built by `wasm-build` with default features). Set
+# FONT_WASM_PREVIEW_DIR to override the build output directory.
+wasm-build-preview out_dir="out/web":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -x tools/wasm/build.sh ]; then
+      echo "wasm-build-preview: tools/wasm/build.sh is missing or not executable." >&2
+      exit 1
+    fi
+    tools/wasm/build.sh web preview
+    wasm_dir="${FONT_WASM_PREVIEW_DIR:-tools/wasm/pkg-web-preview}"
+    mkdir -p "{{out_dir}}/assets/wasm"
+    for artifact in font_wasm.js font_wasm_bg.wasm; do
+      source="$wasm_dir/$artifact"
+      if [ ! -f "$source" ]; then
+        echo "wasm-build-preview: expected output $source was not produced." >&2
+        exit 1
+      fi
+      cp "$source" "{{out_dir}}/assets/wasm/$artifact"
+    done
+
 # Build the static website into out/web/.
 web:
     mise -C tools/web exec -- npm run build
 
 # Build, watch, and serve the website with live reload.
-preview $web_port="8903" config_path="tools/generator/specimens.json" comparison_config="tools/generator/comparisons.json": (specimens config_path) (comparisons comparison_config) (wasm-build)
+preview $web_port="8903" config_path="tools/generator/specimens.json" comparison_config="tools/generator/comparisons.json": (specimens config_path) (comparisons comparison_config) (wasm-build-preview)
     mise -C tools/web exec -- npm run dev -- --port="$web_port"
 
 # Generate and publish the configured specimen packages.
 specimens $config_path="tools/generator/specimens.json" $output_dir="out/specimens":
     cargo run --locked --manifest-path tools/generator/Cargo.toml --bin font_specimens -- "$config_path" "$output_dir"
 
-# Generate specimens and build the static website.
-preview-build config_path="tools/generator/specimens.json" comparison_config="tools/generator/comparisons.json": (specimens config_path) (comparisons comparison_config) (wasm-build) web
+# Generate specimens, stage the preview (candidate-enabled) WASM renderer, and
+# build the static website. The interactive preview always uses the preview
+# artifact; `wasm-build` remains the separate production (baseline-only) build.
+preview-build config_path="tools/generator/specimens.json" comparison_config="tools/generator/comparisons.json": (specimens config_path) (comparisons comparison_config) (wasm-build-preview) web
 
 # Rebuild the website when its sources change.
 web-watch:

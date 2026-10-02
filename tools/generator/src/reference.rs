@@ -35,6 +35,7 @@ pub struct ReferenceRequest {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ReferenceRecord {
+    pub raster_policy: RasterPolicy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagonal_pairs: Option<[u32; 3]>,
     pub codepoint: u32,
@@ -64,6 +65,14 @@ pub struct ReferenceRecord {
     pub hinted_has_overlaps: bool,
     pub hinted_lsb: Option<f32>,
     pub hinted_advance_width: Option<f32>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RasterPolicy {
+    #[default]
+    Coverage,
+    CoverageDropout,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -226,6 +235,7 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
             .advance_width(gid)
             .ok_or_else(|| fail(format!("missing advance U+{:04X}", ch as u32)))?;
         records.push(ReferenceRecord {
+            raster_policy: RasterPolicy::Coverage,
             diagonal_pairs: None,
             codepoint: ch as u32,
             glyph_id: gid.to_u32(),

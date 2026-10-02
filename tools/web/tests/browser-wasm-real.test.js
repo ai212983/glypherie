@@ -8,7 +8,7 @@ import { build, serve, webRoot } from "./helpers.js";
 
 const browserPath = process.env.WEB_TEST_BROWSER ?? "/opt/google/chrome/chrome";
 const repoRoot = path.resolve(webRoot, "../..");
-const wasmDir = process.env.FONT_WASM_WEB_DIR ?? path.join(repoRoot, "tools/wasm/pkg-web");
+const wasmDir = process.env.FONT_WASM_PREVIEW_DIR ?? path.join(repoRoot, "tools/wasm/pkg-web-preview");
 const wasmJs = path.join(wasmDir, "font_wasm.js");
 const wasmBin = path.join(wasmDir, "font_wasm_bg.wasm");
 const published = path.join(repoRoot, "out/specimens/published.json");
@@ -57,6 +57,34 @@ test("real WASM renders respond to size, axes, text, profile, zoom, and reset", 
   assert.equal(initial.height, 34);
   assert.equal(await page.locator("#interactive-roboto [data-text]").inputValue(), READING_TEXT);
   assert.equal(await page.locator("#interactive-roboto [data-preset]").inputValue(), "reading");
+
+  // Live candidate/baseline routing at the reported axes, followed by gray
+  // identity. Compare the same content/layout; no frozen pixel snapshots.
+  if (await page.locator('input[name="renderer-role"][value="candidate"]').count()) {
+    await page.locator("#interactive-roboto [data-text]").fill("a a a\nabcdefg hmnopqrsuvwxyz");
+    for (const weight of [100, 200]) {
+      await page.locator("#interactive-roboto-wght").fill(String(weight));
+      await page.locator('input[name="renderer-role"][value="baseline"]').check();
+      await page.waitForTimeout(800);
+      const baseline = await snapshot(page, "roboto");
+      await page.locator('input[name="renderer-role"][value="candidate"]').check();
+      await page.waitForTimeout(800);
+      const candidate = await snapshot(page, "roboto");
+      assert.deepEqual([candidate.width, candidate.height], [baseline.width, baseline.height]);
+      assert.notEqual(candidate.sum, baseline.sum);
+    }
+    await page.locator('.profile-options input[value="gray_3bit"]').check();
+    await page.waitForTimeout(800);
+    const candidateGray = await snapshot(page, "roboto");
+    await page.locator('input[name="renderer-role"][value="baseline"]').check();
+    await page.waitForTimeout(800);
+    assert.deepEqual(await snapshot(page, "roboto"), candidateGray);
+    await page.locator('input[name="renderer-role"][value="candidate"]').check();
+    await page.locator('.profile-options input[value="mono_1bit"]').check();
+    await page.locator("#interactive-roboto [data-reset]").click();
+    await page.waitForTimeout(800);
+    assert.deepEqual(await snapshot(page, "roboto"), initial);
+  }
 
   // Switching swaps metadata and controls; switching back restores the
   // exact render while the idle family stays untouched.

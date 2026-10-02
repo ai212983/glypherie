@@ -133,6 +133,7 @@ dependencies = [
  "sha2",
  "skrifa",
  "skrifa_baseline",
+ "skrifa_candidate",
  "unicode-general-category",
  "unicode-script",
  "zeno",
@@ -390,6 +391,14 @@ dependencies = [
 
 [[package]]
 name = "skrifa_baseline"
+version = "0.46.2"
+dependencies = [
+ "bytemuck",
+ "read-fonts",
+]
+
+[[package]]
+name = "skrifa_candidate"
 version = "0.46.2"
 dependencies = [
  "bytemuck",

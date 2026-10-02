@@ -10,10 +10,13 @@ const PAPER = [255, 255, 255, 255];
 // Exact request shape for tools/wasm RenderSpec (deny_unknown_fields:
 // text, width, height, size_px, axes, hinting, output_bits, mono_threshold,
 // gray_gamma, missing_glyphs, kerning, metric_rounding, wrap, align,
-// foreground, background, palette?). Width/height are the logical request
-// bounds: width derives from the viewport (see logicalBounds) while height
-// is a first-pass estimate corrected from the result layout below.
-export function toRenderSpec({ text, sizePx, axes, profile, render, width, height }) {
+// foreground, background, palette?, renderer?). Width/height are the logical
+// request bounds: width derives from the viewport (see logicalBounds) while
+// height is a first-pass estimate corrected from the result layout below.
+// `role` is the stable preview role ("baseline", "reference", "candidate");
+// it defaults to the approved baseline and never changes any other control,
+// so compared roles share font, size, axes and text exactly.
+export function toRenderSpec({ text, sizePx, axes, profile, render, width, height, role }) {
   return {
     text,
     width: Math.min(4096, Math.max(1, Math.ceil(width))),
@@ -31,6 +34,7 @@ export function toRenderSpec({ text, sizePx, axes, profile, render, width, heigh
     align: "left",
     foreground: [...INK],
     background: [...PAPER],
+    renderer: role ?? "baseline",
   };
 }
 
@@ -138,6 +142,12 @@ function paint(display, native, data, zoom, shown) {
 
 function currentProfile() {
   return document.querySelector('input[name="output-profile"]:checked')?.value ?? "mono_1bit";
+}
+
+// Stable preview role from the Version switch; absent switch (single-role
+// publication) keeps the approved baseline default.
+function currentRole() {
+  return document.querySelector('input[name="renderer-role"]:checked')?.value ?? "baseline";
 }
 
 function currentZoom() {
@@ -254,6 +264,7 @@ function createController(section) {
     const spec = toRenderSpec({
       ...controls, profile: currentProfile(), render: config.render,
       width, height: estimateHeight(controls.text, controls.sizePx, cap),
+      role: currentRole(),
     });
     // Coalesce repeat requests (input+change and blur-change pairs fire for
     // one edit); only a changed request reaches the renderer. Display width
@@ -286,8 +297,18 @@ function createController(section) {
         }
       }
       shown = need;
-    } catch {
-      if (token === state.generation) status(section, "Interactive render failed.");
+    } catch (error) {
+      // A rejected role (for example `candidate` on a baseline-only build)
+      // fails visibly under its own name; the previous canvas stays up but
+      // is never presented as the requested role.
+      if (token === state.generation) {
+        const message = String(error?.message ?? error ?? "");
+        status(section, /candidate/i.test(message)
+          ? "Candidate preview is unavailable in this build."
+          : spec.renderer !== "baseline"
+            ? `Interactive ${spec.renderer} preview failed.`
+            : "Interactive render failed.");
+      }
       return;
     }
     if (token !== state.generation) return;
@@ -381,8 +402,9 @@ if (typeof document !== "undefined") {
     }
     await controllerFor(id)?.activate();
   };
-  // Profile and zoom are global: only the visible family renders.
+  // Profile, version role, and zoom are global: only the visible family renders.
   document.querySelector("#output-mode")?.addEventListener("change", () => controllers.get(activeId)?.renderNow());
+  document.querySelector("#renderer-role")?.addEventListener("change", () => controllers.get(activeId)?.renderNow());
   document.querySelector("#zoom")?.addEventListener("input", () => controllers.get(activeId)?.schedule());
   // A viewport resize remeasures the display width and re-renders.
   new ResizeObserver(() => controllers.get(activeId)?.schedule()).observe(document.body);

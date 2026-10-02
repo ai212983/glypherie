@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { selectPreview } from "../lib/selection.js";
+import { previewRoles, selectPreview } from "../lib/selection.js";
 import { createSpecimenImporter } from "../lib/specimens.js";
 import { build, fixture } from "./helpers.js";
 
@@ -57,6 +57,31 @@ test("published versions override a stale active pointer; missing latest content
 test("index rejects missing or stale comparisons for the latest iteration", async (t) => {
   const f = await publishedFixture(t);
   await assert.rejects(build(f.root, f.output), /Comparison must show the selected/);
+});
+
+test("preview roles follow variant metadata, never revision numbers", () => {
+  const reference = { id: "reference", kind: "reference", version: null, renderer: "reference" };
+  const baseline = { id: "approved", kind: "iteration", version: "001.01", renderer: "baseline" };
+  for (const version of ["001.02", "002.01", "100.500"]) {
+    const candidate = { id: "working", kind: "iteration", version, renderer: "candidate" };
+    assert.deepEqual(previewRoles({ current: candidate, previous: baseline }), {
+      latest: { role: "candidate", label: version },
+      previous: { role: "baseline", label: "001.01" },
+    });
+  }
+  assert.deepEqual(previewRoles({ current: baseline, previous: reference }), {
+    latest: { role: "baseline", label: "001.01" },
+    previous: { role: "reference", label: "Reference" },
+  });
+  assert.equal(previewRoles({ current: reference, previous: null }), null);
+  assert.equal(previewRoles(null), null);
+  assert.deepEqual(previewRoles({
+    current: { id: "old", kind: "iteration", version: "000.09" },
+    previous: reference,
+  }), {
+    latest: { role: "baseline", label: "000.09" },
+    previous: { role: "reference", label: "Reference" },
+  });
 });
 
  test("renderer roles compare every working version with the approved baseline", () => {

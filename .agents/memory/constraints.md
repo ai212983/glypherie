@@ -141,3 +141,14 @@ always uses the separate approved baseline fitter source; only candidate tooling
 snapshot and one candidate copy, sharing generator/raster/output code. Promotion replaces the baseline snapshot after
 explicit acceptance and updates its version metadata. Baseline and candidate source hashes remain separate. The accepted
 001.01 preview renders the baseline against reference; a future candidate compares with that approved baseline.
+
+# Current problem (2026-10-02): Roboto light weight continuity
+
+001.02 implements the Roboto 14 px weights 200/100 continuity correction as a working candidate: outline-driven
+monochrome dropout plus extra-light diagonal width transfer using the shared horizontal standard. Foundation:
+Hersch §7 and TrueType SCANTYPE, adapted to coverage as an explicit project hypothesis. Preserve independent raw
+coverage and threshold 128; gray and disabled paths stay unchanged. Production remains approved 001.01. Candidate
+preview compares with that baseline and the interactive tester switches the same axes/text across roles.
+Low weights stay outside the weight-400 publication matrix and Attention scope. See docs/revisions/001/02-light-continuity.md
+for classification, checks, independent witnesses and pending optical assessment. 001.02 remains open until explicit
+user acceptance and an agreed disposition of remaining actions.

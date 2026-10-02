@@ -264,7 +264,13 @@ normal-corpus and broader-sweep controls remain. No test requires ink count to i
 
 ## Renderer role
 
-This source tree is the candidate fitter, independent of the other local renderer. It currently starts from accepted 001.01,
-with no newer active candidate after closure. Future experiments change this tree without editing the approved baseline.
+This source tree is the candidate fitter, independent of the other local renderer. Working 001.02 starts from accepted
+001.01 and coordinates the shared horizontal diagonal standard with its extra-light stem policy: retain subpixel
+normal weight and omit the later axial one-pixel floor when that standard is extra-light. Dropout control in the
+candidate generator supplies monochrome visibility. This ratio transfer remains a project hypothesis grounded in
+FreeType/Skrifa stem widths and Hersch §7; it is not FreeType diagonal-fitting parity. Motion, tangent, anchor,
+ownership and rounding-separation guards remain unchanged. See the
+[continuity record](../../../../docs/revisions/001/02-light-continuity.md) for validation and pending optical assessment.
+Future experiments change this tree without editing the approved baseline.
 The generator, capture adapter and raster/output stages remain shared. Reference rendering uses the separately pinned
 registry library. Revision and iteration labels are metadata; no per-iteration Cargo feature selects production.

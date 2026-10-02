@@ -28,6 +28,8 @@ fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let config = temp.path().join("comparisons.json");
     let mut selection: Value =
         serde_json::from_slice(include_bytes!("../comparisons.json")).unwrap();
+    // This fixture explicitly publishes the accepted baseline/reference pair.
+    selection["id"] = json!("01");
     selection.as_object_mut().unwrap().remove("attention");
     fs::write(&config, serde_json::to_vec(&selection).unwrap()).unwrap();
     (temp, root, config)
@@ -367,6 +369,8 @@ fn missing_previous_size_fails_without_replacing_comparison_index() {
     let index = fs::read(root.join("comparisons/index.json")).unwrap();
     let mut source: Value = serde_json::from_str(include_str!("../specimens.json")).unwrap();
     source.as_object_mut().unwrap().remove("preview_policy");
+    source["variants"].as_array_mut().unwrap().truncate(2);
+    source["defaults"]["variants"] = json!(["reference", "iteration-01"]);
     source["families"].as_array_mut().unwrap().truncate(1);
     source["families"][0]["font"] =
         json!(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fonts/Roboto.ttf"));

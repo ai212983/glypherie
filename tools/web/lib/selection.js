@@ -2,6 +2,26 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { check, fields, isId, regularFile, directory, validateManifest } from "./specimens.js";
 
+// Derive the interactive preview roles from the selected publication view:
+// the latest published variant's stable renderer role plus the role it is
+// compared against. Derived from variant metadata, never from revision
+// numbers. Returns null when there is no comparison pair (no selection or a
+// single reference-only publication), in which case the page offers no role
+// switch and the renderer default (approved baseline) applies. Roleless
+// legacy iterations predate stable roles and read as the approved baseline,
+// matching the interactive default.
+export function previewRoles(selection) {
+  if (!selection?.current) return null;
+  const roleOf = (variant) => variant.renderer
+    ?? (variant.kind === "reference" ? "reference" : "baseline");
+  const labelOf = (variant) => variant.version ?? "Reference";
+  if (!selection.previous) return null;
+  return {
+    latest: { role: roleOf(selection.current), label: labelOf(selection.current) },
+    previous: { role: roleOf(selection.previous), label: labelOf(selection.previous) },
+  };
+}
+
 export function selectPreview(variants) {
   const references = variants.filter((variant) => variant.kind === "reference");
   check(references.length <= 1, "Preview requires a unique reference variant.");

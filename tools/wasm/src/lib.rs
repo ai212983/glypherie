@@ -19,6 +19,9 @@
 //!     wrap: "word", align: "left",
 //!     foreground: [0, 0, 0, 255], background: [255, 255, 255, 255],
 //!     // palette: [[r,g,b,a], ...] // optional, exactly 1 << output_bits entries
+//!     // renderer: "baseline" // optional stable role: "baseline" (default,
+//!     //   approved output), "reference", or "candidate" (preview builds only;
+//!     //   a default build rejects it visibly instead of substituting)
 //!   });
 //!   try {
 //!     // `result.pixels()` returns a *fresh Uint8Array copy* on every call.
@@ -49,6 +52,17 @@
 //! be contradictory. Unknown spec fields (including `characters`) are rejected
 //! with an error. `text` is the only character source.
 //!
+//! ### `renderer` selects the preview role
+//!
+//! `"baseline"` (the default) renders the approved production output.
+//! `"reference"` and `"candidate"` keep that output's validation, layout,
+//! advances, kerning and metrics and replace only monochrome glyph bitmaps
+//! with the role capture. Gray keeps the production target for every role.
+//! Preview roles support 1-bit and 3-bit output; candidate uses automatic
+//! hinting. Unsupported combinations fail explicitly. The `candidate` role needs the crate's opt-in
+//! `preview` feature (the explicit preview artifact); a default production
+//! build rejects it with an error instead of rendering another role.
+//!
 //! ### Errors
 //!
 //! Failures surface as thrown JS strings carrying the generator message only
@@ -61,7 +75,7 @@
 //! API for no browser use case. Reconsider if the host needs it.
 
 use font_generator::surface::{self, HAlign, RenderedText, TextRenderRequest, WrapMode};
-use font_generator::{Config, Hinting, MetricRounding, MissingGlyphs};
+use font_generator::{renderer::RendererRole, Config, Hinting, MetricRounding, MissingGlyphs};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
@@ -161,6 +175,7 @@ fn validate_spec_keys(spec: &JsValue) -> Result<(), JsValue> {
                 | "foreground"
                 | "background"
                 | "palette"
+                | "renderer"
         ) {
             return Err(js_error(format!(
                 "invalid render spec: unknown field {key:?}"
@@ -198,7 +213,7 @@ fn default_background() -> [u8; 4] {
 /// rejects unknown JS keys, because the repertoire always comes from `text`.
 /// `deny_unknown_fields` also enforces this for native JSON deserialization.
 /// `axes` accepts plain JS objects; `metadata()` emits ordinary objects.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RenderSpec {
     text: String,
@@ -232,11 +247,14 @@ struct RenderSpec {
     background: [u8; 4],
     #[serde(default)]
     palette: Option<Vec<[u8; 4]>>,
+    /// Stable preview role; the default keeps the approved baseline path.
+    #[serde(default)]
+    renderer: RendererArg,
 }
 
 // `surface::WrapMode`/`HAlign` implement `Default` (Word/Left) but not
 // `Deserialize`, so the spec layer owns these thin defaults + conversions.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 enum WrapModeDefault {
     Clip,
@@ -245,13 +263,33 @@ enum WrapModeDefault {
     Char,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 enum AlignDefault {
     #[default]
     Left,
     Center,
     Right,
+}
+
+// Stable renderer roles only; never revision/iteration-specific values.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+enum RendererArg {
+    #[default]
+    Baseline,
+    Reference,
+    Candidate,
+}
+
+impl RendererArg {
+    fn role(self) -> RendererRole {
+        match self {
+            RendererArg::Baseline => RendererRole::Baseline,
+            RendererArg::Reference => RendererRole::Reference,
+            RendererArg::Candidate => RendererRole::Candidate,
+        }
+    }
 }
 
 /// Pure-Rust render path shared by the wasm export and native tests.
@@ -286,7 +324,13 @@ fn render_parsed(font_data: &[u8], spec: &RenderSpec) -> Result<RenderedText, St
         background: spec.background,
         palette: spec.palette.clone(),
     };
-    surface::render_text(font_data, &request).map_err(|e| e.to_string())
+    // Baseline is the approved production path; other roles reuse its
+    // validation/layout and swap only glyph bitmaps.
+    match spec.renderer {
+        RendererArg::Baseline => surface::render_text(font_data, &request),
+        role => surface::render_text_with_renderer(font_data, &request, role.role()),
+    }
+    .map_err(|e| e.to_string())
 }
 
 /// Owned result of [`Font::render`]. Free with `.free()` (see module docs).
@@ -450,6 +494,138 @@ mod tests {
             .pixels
             .chunks_exact(4)
             .any(|px| px != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn renderer_defaults_to_baseline_and_rejects_unknown_roles() {
+        let spec = minimal_spec("A", 96, 48);
+        assert_eq!(spec.renderer, RendererArg::Baseline);
+        let unknown = spec_from(json!({
+            "text": "A", "width": 96, "height": 48, "renderer": "iteration-02",
+        }));
+        assert!(
+            unknown.is_err(),
+            "iteration-specific roles must be rejected"
+        );
+    }
+
+    #[test]
+    fn baseline_render_matches_approved_surface_path() {
+        // Routing identity for the unchanged production path: the default
+        // spec must equal `surface::render_text` byte-for-byte.
+        let spec = minimal_spec("A A", 96, 48);
+        let routed = render_parsed(FIXTURE, &spec).unwrap();
+        let request = TextRenderRequest {
+            config: Config {
+                characters: " A".into(),
+                ..Default::default()
+            },
+            text: "A A".into(),
+            width: 96,
+            height: 48,
+            wrap: WrapMode::Word,
+            align: HAlign::Left,
+            foreground: [0, 0, 0, 255],
+            background: [255, 255, 255, 255],
+            palette: None,
+        };
+        let direct = surface::render_text(FIXTURE, &request).unwrap();
+        assert_eq!(routed.pixels, direct.pixels);
+        assert_eq!(routed.lines, direct.lines);
+    }
+
+    #[test]
+    fn reference_role_routes_with_shared_layout() {
+        let mut value = serde_json::to_value(minimal_spec("A A", 96, 48)).unwrap();
+        value["renderer"] = serde_json::Value::String("reference".into());
+        let spec: RenderSpec = serde_json::from_value(value).unwrap();
+        let reference = render_parsed(FIXTURE, &spec).unwrap();
+        let baseline = render_parsed(FIXTURE, &minimal_spec("A A", 96, 48)).unwrap();
+        // Same production layout; only bitmaps may differ.
+        assert_eq!(reference.lines, baseline.lines);
+        assert_eq!(reference.width, baseline.width);
+        assert_eq!(reference.height, baseline.height);
+    }
+
+    #[test]
+    fn preview_bits_and_hinting_reject_explicitly() {
+        for patch in [
+            json!({ "output_bits": 8 }),
+            json!({ "hinting": "none" }),
+            json!({ "hinting": "auto_fallback" }),
+        ] {
+            let mut value = serde_json::to_value(minimal_spec("A", 96, 48)).unwrap();
+            value["renderer"] = serde_json::Value::String("candidate".into());
+            for (key, val) in patch.as_object().unwrap() {
+                value[key] = val.clone();
+            }
+            let spec: RenderSpec = serde_json::from_value(value).unwrap();
+            assert!(
+                render_parsed(FIXTURE, &spec).is_err(),
+                "candidate must reject {patch}"
+            );
+        }
+    }
+
+    #[cfg(not(feature = "preview"))]
+    #[test]
+    fn candidate_without_preview_feature_fails_visibly() {
+        let mut value = serde_json::to_value(minimal_spec("A", 96, 48)).unwrap();
+        value["renderer"] = serde_json::Value::String("candidate".into());
+        let spec: RenderSpec = serde_json::from_value(value).unwrap();
+        let err = render_parsed(FIXTURE, &spec).unwrap_err();
+        assert!(err.contains("candidate"), "unexpected error: {err}");
+    }
+
+    #[cfg(feature = "preview")]
+    #[test]
+    fn candidate_role_reaches_candidate_capture() {
+        // Routing proof without pixel snapshots: the candidate role must go
+        // through `candidate::render` (CoverageDropout policy), not silently
+        // reuse the upstream coverage path.
+        use font_generator::reference::{RasterPolicy, ReferenceRequest};
+        let mut config = Config::default();
+        config.characters = "A".into();
+        let candidate = font_generator::renderer::render(
+            FIXTURE,
+            &ReferenceRequest {
+                profile: "mono_1bit".into(),
+                extensions: "diagonal-01".into(),
+                settings: config.clone(),
+            },
+            font_generator::renderer::RendererRole::Candidate,
+        )
+        .unwrap();
+        assert!(!candidate.records.is_empty());
+        assert!(candidate
+            .records
+            .iter()
+            .all(|record| record.raster_policy == RasterPolicy::CoverageDropout));
+        let upstream = font_generator::renderer::render(
+            FIXTURE,
+            &ReferenceRequest {
+                profile: "mono_1bit".into(),
+                extensions: "none".into(),
+                settings: config,
+            },
+            font_generator::renderer::RendererRole::Reference,
+        )
+        .unwrap();
+        assert!(upstream
+            .records
+            .iter()
+            .all(|record| record.raster_policy == RasterPolicy::Coverage));
+    }
+
+    #[cfg(feature = "preview")]
+    #[test]
+    fn candidate_with_preview_feature_renders_shared_layout() {
+        let mut value = serde_json::to_value(minimal_spec("A A", 96, 48)).unwrap();
+        value["renderer"] = serde_json::Value::String("candidate".into());
+        let spec: RenderSpec = serde_json::from_value(value).unwrap();
+        let candidate = render_parsed(FIXTURE, &spec).unwrap();
+        let baseline = render_parsed(FIXTURE, &minimal_spec("A A", 96, 48)).unwrap();
+        assert_eq!(candidate.lines, baseline.lines);
     }
 
     #[test]

@@ -90,7 +90,7 @@ fn resolve(value: Value) -> Result<Vec<font_generator::specimen_config::RenderCa
 fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let loaded = load(&root.join("specimens.json")).unwrap();
-    assert_eq!(loaded.cases.len(), 48);
+    assert_eq!(loaded.cases.len(), 72);
     assert_eq!(
         loaded.config.preview_policy.as_deref(),
         Some(Path::new("preview-policy.json"))
@@ -127,7 +127,15 @@ fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
             .count(),
         24
     );
-    assert_eq!(loaded.config.latest_variant().unwrap(), "iteration-01");
+    assert_eq!(
+        loaded
+            .cases
+            .iter()
+            .filter(|case| case.variant == "iteration-02")
+            .count(),
+        24
+    );
+    assert_eq!(loaded.config.latest_variant().unwrap(), "iteration-02");
     assert_eq!(
         loaded
             .config
@@ -135,10 +143,15 @@ fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
             .iter()
             .map(|variant| variant.id.as_str())
             .collect::<Vec<_>>(),
-        ["reference", "iteration-01"]
+        ["reference", "iteration-01", "iteration-02"]
     );
     assert_eq!(loaded.config.variants[1].version.as_deref(), Some("001.01"));
     assert_eq!(loaded.config.variants[1].extensions, "diagonal-01");
+    assert_eq!(loaded.config.variants[2].version.as_deref(), Some("001.02"));
+    assert_eq!(
+        loaded.config.variants[2].renderer(),
+        font_generator::renderer::RendererRole::Candidate
+    );
     for profile in &loaded.config.profiles {
         assert_eq!(profile.mono_threshold, 128);
         assert_eq!(profile.gray_gamma, 1.0);

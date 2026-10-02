@@ -15,7 +15,7 @@
 
 use crate::{
     probe::{rasterize, FittedCommand},
-    reference::{ReferenceRecord, ReferenceReport, PROFILE_GRAY_3BIT},
+    reference::{RasterPolicy, ReferenceRecord, ReferenceReport, PROFILE_GRAY_3BIT},
     Config,
 };
 use serde::Serialize;
@@ -77,6 +77,9 @@ pub struct ThresholdSample {
 
 #[derive(Debug, Serialize)]
 pub struct RasterDiagnostics {
+    /// Delivered pixels, distinct from hypothetical thresholdings of raw coverage.
+    pub delivered_ink_pixels: usize,
+    pub delivered_topology: Topology,
     pub coverage_area_px: f64,
     /// Hypothetical binarizations of coverage, including for gray reports.
     pub threshold_samples: Vec<ThresholdSample>,
@@ -108,6 +111,19 @@ pub fn evaluate(
     }
     if upstream.extensions != "none" || upstream.fork || upstream.implementation != "upstream" {
         push("upstream", None, "independent upstream baseline required");
+    }
+    for (name, report) in [("source", source), ("upstream", upstream)] {
+        if report
+            .records
+            .iter()
+            .any(|record| record.raster_policy != RasterPolicy::Coverage)
+        {
+            push(
+                name,
+                None,
+                "independent rendering requires coverage raster policy",
+            );
+        }
     }
     for (name, report) in [("source", source), ("candidate", candidate)] {
         if report.source_sha256 != upstream.source_sha256
@@ -341,7 +357,20 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
         gray_gamma: record.gray_gamma,
         ..Config::default()
     };
-    match rasterize(&record.fitted_commands, &config) {
+    let reproduced = match record.raster_policy {
+        RasterPolicy::Coverage => rasterize(&record.fitted_commands, &config),
+        #[cfg(feature = "candidate")]
+        RasterPolicy::CoverageDropout if record.output_bits == 1 => {
+            crate::dropout::rasterize(&record.fitted_commands, &config)
+        }
+        _ => {
+            return {
+                failures.push("unsupported raster policy for this profile or build");
+                failures
+            }
+        }
+    };
+    match reproduced {
         Ok(raster)
             if raster.pixels == record.pixels
                 && raster.coverage == record.coverage
@@ -377,6 +406,16 @@ fn diagnostics(record: &ReferenceRecord) -> RasterDiagnostics {
         Vec::new()
     };
     RasterDiagnostics {
+        delivered_ink_pixels: record.pixels.iter().filter(|&&v| v != 0).count(),
+        delivered_topology: if valid_size == record.pixels.len() as u64 && valid_size <= 4_194_304 {
+            topology(
+                &record.pixels.iter().map(|&v| v != 0).collect::<Vec<_>>(),
+                record.width as usize,
+                record.height as usize,
+            )
+        } else {
+            topology(&[], 0, 0)
+        },
         coverage_area_px: record.coverage.iter().map(|&v| f64::from(v) / 255.0).sum(),
         threshold_samples,
     }

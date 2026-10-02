@@ -1,6 +1,6 @@
 {
   "schema_version": "symbol-attention-v1",
-  "version": "001.01",
+  "version": "001.02",
   "specimens": "specimens.json",
   "symbols": [
     {
@@ -58,10 +58,9 @@
         "wght": 400
       },
       "profile": "mono_1bit",
-      "status": "accepted",
+      "status": "pending",
       "description": "Lower tail",
-      "inspection": "Mixed: check joins and weight",
-      "disposition": "User accepted all current published 001.01 quality and authorized closure and production promotion on 2026-10-02. The reviewed appearance, including this feature, is acceptable; no compensating correction is required. Acceptance records this reviewed state and allows later model volatility."
+      "inspection": "Thickening: check tail weight"
     },
     {
       "id": "literata-0051-16",
@@ -133,10 +132,9 @@
         "wght": 400
       },
       "profile": "mono_1bit",
-      "status": "accepted",
+      "status": "pending",
       "description": "Terminals",
-      "inspection": "Unchanged: check terminal weight",
-      "disposition": "User accepted all current published 001.01 quality and authorized closure and production promotion on 2026-10-02. The reviewed appearance, including this feature, is acceptable; no compensating correction is required. Acceptance records this reviewed state and allows later model volatility."
+      "inspection": "Thickening: check terminal weight"
     },
     {
       "id": "literata-0078-20",
@@ -163,10 +161,9 @@
         "wght": 400
       },
       "profile": "mono_1bit",
-      "status": "accepted",
-      "description": "Fork and terminal",
-      "inspection": "Mixed: check joins and weight",
-      "disposition": "User accepted all current published 001.01 quality and authorized closure and production promotion on 2026-10-02. The reviewed appearance, including this feature, is acceptable; no compensating correction is required. Acceptance records this reviewed state and allows later model volatility."
+      "status": "pending",
+      "description": "Upper terminals",
+      "inspection": "Thickening: check terminal weight"
     },
     {
       "id": "literata-0079-18",
@@ -251,10 +248,9 @@
         "wght": 400
       },
       "profile": "mono_1bit",
-      "status": "accepted",
-      "inspection": "Placement: check terminals",
-      "description": "Terminals",
-      "disposition": "User accepted all current published 001.01 quality and authorized closure and production promotion on 2026-10-02. The reviewed appearance, including this feature, is acceptable; no compensating correction is required. Acceptance records this reviewed state and allows later model volatility."
+      "status": "pending",
+      "inspection": "Thickening: check terminal weight",
+      "description": "Terminals"
     },
     {
       "id": "source-sans-3-0079-16",
@@ -269,6 +265,20 @@
       "inspection": "Thinning: check joins",
       "description": "Fork and terminal",
       "disposition": "User accepted all current published 001.01 quality and authorized closure and production promotion on 2026-10-02. The reviewed appearance, including this feature, is acceptable; no compensating correction is required. Acceptance records this reviewed state and allows later model volatility."
+    },
+    {
+      "id": "roboto-0078-18",
+      "family_id": "roboto",
+      "character": "x",
+      "size_px": 18,
+      "axes": {
+        "wdth": 100,
+        "wght": 400
+      },
+      "profile": "mono_1bit",
+      "status": "pending",
+      "inspection": "Thickening: check terminal weight",
+      "description": "Terminals"
     }
   ]
 }

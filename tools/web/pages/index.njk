@@ -34,6 +34,21 @@ permalink: index.html
         {% endfor %}
       </div>
     </fieldset>
+    {% if versionRoles %}
+    <fieldset class="profile-switch" id="renderer-role">
+      <legend>Version</legend>
+      <div class="profile-options">
+        <label>
+          <input type="radio" name="renderer-role" value="{{ versionRoles.latest.role }}" checked>
+          <span>Latest {% if versionRoles.latest.role == "candidate" %}candidate{% elif versionRoles.latest.role == "baseline" %}approved baseline{% else %}reference{% endif %}{% if versionRoles.latest.role != "reference" %} {{ versionRoles.latest.label }}{% endif %}</span>
+        </label>
+        <label>
+          <input type="radio" name="renderer-role" value="{{ versionRoles.previous.role }}">
+          <span>{% if versionRoles.previous.role == "baseline" %}Approved baseline {{ versionRoles.previous.label }}{% elif versionRoles.previous.role == "candidate" %}Candidate {{ versionRoles.previous.label }}{% else %}Reference{% endif %}</span>
+        </label>
+      </div>
+    </fieldset>
+    {% endif %}
     <div class="zoom-control">
       <div class="zoom-heading">
         <label for="zoom">Zoom</label>

@@ -29,6 +29,14 @@
       "hinting": "auto",
       "extensions": "diagonal-01",
       "renderer": "baseline"
+    },
+    {
+      "id": "iteration-02",
+      "kind": "iteration",
+      "version": "001.02",
+      "hinting": "auto",
+      "extensions": "diagonal-01",
+      "renderer": "candidate"
     }
   ],
   "profiles": [
@@ -54,7 +62,8 @@
     ],
     "variants": [
       "reference",
-      "iteration-01"
+      "iteration-01",
+      "iteration-02"
     ],
     "profiles": [
       "mono_1bit",

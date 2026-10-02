@@ -16,7 +16,9 @@ only after that agreement and identify the next problem from user feedback.
 The diagonal-weight problem in 001.01 is closed and accepted for production on 2026-10-02, following explicit user
 acceptance of the current quality. See the
 [iteration record](001/01-diagonal-weight.md#acceptance-and-production-promotion-2026-10-02) for the accepted scope and
-retained follow-up observations. No new iteration has been started.
+retained follow-up observations. [001.02](001/02-light-continuity.md) now records the open Roboto light-weight
+continuity correction. Its working candidate adds geometric dropout control and extra-light diagonal coordination;
+optical acceptance remains open and production stays approved 001.01.
 
 ## Index
 

@@ -45,6 +45,31 @@ fn request(config: Config, text: &str, width: u32, height: u32) -> TextRenderReq
     }
 }
 
+#[cfg(feature = "candidate")]
+#[test]
+fn mono_experiment_roles_leave_production_gray_target_and_layout_unchanged() {
+    use font_generator::{renderer::RendererRole, surface::render_text_with_renderer};
+    let data = font_bytes();
+    for weight in [100.0, 200.0, 400.0] {
+        let mut config = config_16_mono();
+        config.output_bits = 3;
+        config.size_px = 14.0;
+        config.axes.insert("wght".into(), weight);
+        let req = request(config, "aHmwxy", 180, 40);
+        let production = render_text(&data, &req).unwrap();
+        for role in [
+            RendererRole::Reference,
+            RendererRole::Baseline,
+            RendererRole::Candidate,
+        ] {
+            assert_eq!(
+                render_text_with_renderer(&data, &req, role).unwrap(),
+                production
+            );
+        }
+    }
+}
+
 fn advances(gen: &GeneratedFont) -> (HashMap<u32, i32>, HashMap<(u32, u32), i32>) {
     let glyphs = gen
         .glyphs
