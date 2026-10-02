@@ -1,0 +1,20 @@
+{
+  "name": "font-generator-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "eleventy",
+    "dev": "eleventy --serve",
+    "watch": "eleventy --watch",
+    "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "3.1.6",
+    "playwright-core": "1.63.0",
+    "pngjs": "7.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

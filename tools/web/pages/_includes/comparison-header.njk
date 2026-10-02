@@ -1,0 +1,24 @@
+<header class="page-header">
+  <div class="heading">
+    <p class="eyebrow">Font workshop</p>
+    <h1>{{ heading }}</h1>
+    <p class="variant"><span>{{ comparison.previous.label }}</span> → <span>{{ comparison.current.label }}</span></p>
+    <p><a href="{{ backUrl }}" data-preserve-controls>{{ backLabel }}</a></p>
+  </div>
+  <div class="header-controls">
+    <fieldset class="profile-switch" id="output-mode" disabled>
+      <legend>Output mode</legend>
+      <div class="profile-options">
+        {% for profile in comparison.profiles %}
+        <label><input type="radio" name="output-profile" value="{{ profile.id }}"{% if profile.id == comparison.defaultProfile %} checked{% endif %}><span>{{ profile.label }}</span></label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <div class="zoom-control">
+      <div class="zoom-heading"><label for="zoom">Zoom</label><output id="zoom-value" for="zoom">1×</output></div>
+      <input id="zoom" type="range" min="0" max="3" step="1" value="0" aria-valuetext="1×" aria-describedby="zoom-help" disabled>
+      <div class="zoom-stops" aria-hidden="true"><span>1×</span><span>2×</span><span>3×</span><span>4×</span></div>
+      <p id="zoom-help">Enlarge pixels to inspect detail.</p>
+    </div>
+  </div>
+</header>
