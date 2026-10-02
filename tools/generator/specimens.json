@@ -1,0 +1,112 @@
+{
+  "schema_version": "specimen-config-v1",
+  "characters": "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\u00b0",
+  "cards": [
+    {
+      "id": "reading",
+      "title": "Reading sample",
+      "content": "Pack my box with five dozen liquor jugs.\nminimum AVATAR To Wa"
+    },
+    {
+      "id": "numbers",
+      "title": "Numbers and symbols",
+      "content": "08:38 21.5\u00b0C 48%\n0123456789 .,;:!?+-/()"
+    }
+  ],
+  "variants": [
+    {
+      "id": "reference",
+      "kind": "reference",
+      "version": null,
+      "hinting": "auto",
+      "extensions": "none"
+    },
+    {
+      "id": "iteration-01",
+      "kind": "iteration",
+      "version": "001.01",
+      "hinting": "auto",
+      "extensions": "diagonal-01"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "mono_1bit",
+      "output_bits": 1,
+      "mono_threshold": 128,
+      "gray_gamma": 1.0
+    },
+    {
+      "id": "gray_3bit",
+      "output_bits": 3,
+      "mono_threshold": 128,
+      "gray_gamma": 1.0
+    }
+  ],
+  "defaults": {
+    "sizes": [
+      14,
+      16,
+      18,
+      20
+    ],
+    "variants": [
+      "reference",
+      "iteration-01"
+    ],
+    "profiles": [
+      "mono_1bit",
+      "gray_3bit"
+    ]
+  },
+  "families": [
+    {
+      "id": "roboto",
+      "name": "Roboto",
+      "font": "../../fonts/Roboto.ttf",
+      "provenance": {
+        "source": "Local font asset; original download URL unverified",
+        "license": "SIL OFL 1.1 (embedded font metadata)",
+        "expected_sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134"
+      },
+      "axes": {
+        "wght": 400,
+        "wdth": 100
+      }
+    },
+    {
+      "id": "literata",
+      "name": "Literata",
+      "font": "../../fonts/Literata.ttf",
+      "provenance": {
+        "source": "Local font asset; original download URL unverified",
+        "license": "SIL OFL 1.1 (embedded font metadata)",
+        "expected_sha256": "b41138c9373112f32abb589cc22e8674b06ed4048b0c513be922bdd26f274440"
+      },
+      "axes": {
+        "wght": 400,
+        "opsz": "size_px"
+      }
+    },
+    {
+      "id": "source-sans-3",
+      "name": "Source Sans 3",
+      "font": "../../fonts/SourceSans3.ttf",
+      "provenance": {
+        "source": "Local font asset; original download URL unverified",
+        "license": "SIL OFL 1.1 (embedded font metadata)",
+        "expected_sha256": "042fe2cc0b933e328410d7acbd0aa6a1873dca5aef81875f4bc214b08825c7b9"
+      },
+      "axes": {
+        "wght": 400
+      },
+      "sizes": [
+        14,
+        16,
+        18,
+        20
+      ]
+    }
+  ],
+  "preview_policy": "preview-policy.json"
+}

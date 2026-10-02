@@ -1,0 +1,23 @@
+{
+  "schema_version": "preview-policy-v1",
+  "families": {
+    "roboto": [
+      14,
+      16,
+      18,
+      20
+    ],
+    "literata": [
+      14,
+      16,
+      18,
+      20
+    ],
+    "source-sans-3": [
+      14,
+      16,
+      18,
+      20
+    ]
+  }
+}
