@@ -29,9 +29,10 @@ mise -C tools/web exec -- npm run dev -- --port=8903
 ## Latest iteration preview
 
 The index `/` always shows the latest iteration of the latest revision, selected numerically from published package
-versions. Its comparison is always with the preceding revision's latest iteration; if there is no preceding revision,
-compare with reference. Currently this means `001.01` versus reference. A stale active pointer or preview environment
-variable cannot select an older iteration on the index. Missing or stale comparison content fails the build.
+versions. A working candidate compares with the approved baseline; with no newer candidate, baseline compares with
+reference. Legacy packages without renderer roles retain their previous-revision comparison policy. Currently this means
+`001.01` versus reference. A stale active pointer or preview environment variable cannot select an older iteration on
+the index. Missing or stale comparison content fails the build.
 
 Use `just preview-build` to regenerate specimens, comparisons, and the index together. Changed symbols open aligned
 previous/current/difference pages. All visual communication goes through the web. There is no separate `/reviews/`

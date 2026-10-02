@@ -540,11 +540,14 @@ pub fn publish(config_path: &Path, root: &Path) -> Result<usize, Error> {
     for id in published.variants.values() {
         packages.insert(id.clone(), package(root, id)?);
     }
-    let (current, previous) = crate::preview_selection::select(
-        packages
-            .iter()
-            .map(|(id, package)| (id.as_str(), package.manifest.variant.version.as_deref())),
-    )?;
+    let (current, previous) =
+        crate::preview_selection::select_roles(packages.iter().map(|(id, package)| {
+            (
+                id.as_str(),
+                package.manifest.variant.version.as_deref(),
+                package.manifest.variant.renderer,
+            )
+        }))?;
     let input = |id: &str| Input {
         variant: id.into(),
         label: packages[id]

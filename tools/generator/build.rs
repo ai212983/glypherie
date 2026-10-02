@@ -22,7 +22,14 @@ fn collect(root: &Path, directory: &Path, digest: &mut Sha256) {
 }
 
 fn main() {
-    let root = Path::new("vendor/skrifa-iteration");
+    for role in ["baseline", "candidate"] {
+        renderer(role);
+    }
+}
+
+fn renderer(role: &str) {
+    let directory = format!("vendor/skrifa-{role}");
+    let root = Path::new(&directory);
     let mut digest = Sha256::new();
     for name in [
         "src",
@@ -45,7 +52,8 @@ fn main() {
         }
     }
     println!(
-        "cargo:rustc-env=SKRIFA_ITERATION_SHA256={:x}",
+        "cargo:rustc-env=SKRIFA_{}_SHA256={:x}",
+        role.to_uppercase(),
         digest.finalize()
     );
 }

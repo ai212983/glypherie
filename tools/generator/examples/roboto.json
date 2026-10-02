@@ -11,9 +11,9 @@
       "wght": 400,
       "wdth": 100
     },
-    "hinting": "auto_fallback",
+    "hinting": "auto",
     "output_bits": 1,
-    "mono_threshold": 96,
+    "mono_threshold": 128,
     "gray_gamma": 1.0,
     "characters": " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,:;!?%\u00b0+-/()",
     "missing_glyphs": "error",

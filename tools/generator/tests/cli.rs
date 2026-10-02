@@ -48,6 +48,9 @@ fn cli_resolves_fonts_relative_to_job_and_validates_before_writing() {
         String::from_utf8_lossy(&result.stderr)
     );
     let first = fs::read(&output_path).unwrap();
+    let artifact: serde_json::Value = serde_json::from_slice(&first).unwrap();
+    assert_eq!(artifact["generated"]["config"]["hinting"], "auto");
+    assert_eq!(artifact["generated"]["config"]["mono_threshold"], 128);
     assert!(run().status.success());
     assert_eq!(first, fs::read(&output_path).unwrap());
     job["provenance"]["expected_sha256"] = json!("wrong");

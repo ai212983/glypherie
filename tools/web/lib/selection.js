@@ -14,9 +14,13 @@ export function selectPreview(variants) {
     versions.add(key.join("."));
     return { ...variant, key };
   }).sort((a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1]);
-  const current = iterations.at(-1) ?? references[0];
+  const baseline = iterations.findLast((variant) => variant.renderer === "baseline");
+  check(baseline || !iterations.length || !variants.some((variant) => variant.renderer), "Explicit working preview requires an approved baseline.");
+  const candidate = baseline && iterations.findLast((variant) => variant.renderer === "candidate"
+    && (variant.key[0] > baseline.key[0] || variant.key[0] === baseline.key[0] && variant.key[1] > baseline.key[1]));
+  const current = candidate || baseline || iterations.at(-1) || references[0];
   check(current, "No preview variants.");
-  const previous = iterations.length
+  const previous = baseline ? candidate ? baseline : references[0] : iterations.length
     ? iterations.findLast((variant) => variant.key[0] < current.key[0]) ?? references[0]
     : null;
   check(!iterations.length || previous, "First revision requires reference for comparison.");

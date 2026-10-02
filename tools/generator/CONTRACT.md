@@ -52,8 +52,10 @@ artifact.
 
 `published.json` records the latest completed generation's logical-variant-to-package mapping using schema
 `specimen-publication-v1` and a `variants` object. Derive the current comparison input from the latest revision and
-iteration in this mapping. The baseline is the latest iteration of the preceding revision, or reference if none exists.
-Retain the previous revision's latest variant in the configuration so it is published for comparison.
+iteration in this mapping. Explicit renderer roles select a working candidate against the approved baseline; with no
+newer candidate, select baseline against reference. Versions identify states rather than compile-time features. Retain
+the approved baseline and reference variants in the configuration. Older packages without roles retain their historical
+previous-revision comparison policy.
 
 ## Output location and selection
 
@@ -76,7 +78,9 @@ The generator owns `out/specimens/`. Each package is immutable. Changes to sourc
 dimensions, or assets create a new package ID. Content-addressed images can be reused when their bytes match.
 
 `active.json` records the automatically selected latest working variant. Publication and production approval are
-separate decisions. The web index always shows this latest revision and iteration.
+separate decisions. The user accepted 001.01 and authorized its production promotion on 2026-10-02; the standard
+`generate` path now uses its model for automatic 1-bit output. The web index always shows this latest revision and
+iteration; promotion does not change the preview matrix or independent reference.
 
 ### Active pointer
 
@@ -193,10 +197,10 @@ white background, black/white pixels for 1-bit specimens, and the declared eight
 ## Glyph comparison export
 
 `comparisons.json` uses schema `comparison-config-v2` and an `id` containing a numeric route ID such as `01`. It cannot
-select renderer inputs or labels. Export one comparison for the latest revision's latest iteration against the preceding
-revision's latest iteration. Fall back to the unique reference only when there is no preceding revision. For revision
-001, every iteration compares with reference, including 001.01. Derive labels from package versions. A reference-only
-publication exports an empty comparison index. Invalid or ambiguous versions fail publication.
+select renderer inputs or labels. Export one comparison for the working candidate against the approved baseline. With no
+newer candidate, compare baseline with the unique reference. Accepted 001.01 therefore compares with reference. Legacy
+packages without roles retain their historical previous-revision policy. Derive labels from package versions. A
+reference-only publication exports an empty comparison index. Invalid or ambiguous versions fail publication.
 
 The comparison exporter reads canonical rendered pixels and publishes:
 

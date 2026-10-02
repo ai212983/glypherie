@@ -278,6 +278,11 @@ fn invalid_inputs_leave_active_pointer_unchanged() {
 fn configured_variants_and_profile_subsets_publish_exact_selection() {
     let temp = tempfile::tempdir().unwrap();
     let mut value = fixture();
+    // Exercise legacy roleless publication and retain its selection metadata.
+    value["variants"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("renderer");
     value["variants"].as_array_mut().unwrap().push(json!({"id": "reference-extra", "kind": "iteration", "version": "001.01", "hinting": "auto", "extensions": "none"}));
     value["defaults"]["variants"] = json!(["reference", "reference-extra"]);
     value["defaults"]["profiles"] = json!(["gray_3bit"]);
@@ -288,6 +293,7 @@ fn configured_variants_and_profile_subsets_publish_exact_selection() {
     assert!(result.active.variant_id.starts_with("reference-extra-"));
     for id in &result.packages {
         let manifest = manifest(&output, id);
+        assert!(manifest.variant.renderer.is_none());
         assert_eq!(manifest.profiles.len(), 1);
         assert_eq!(manifest.profiles[0].id, "gray_3bit");
         assert_eq!(manifest.families[0].sizes[0].items.len(), 1);

@@ -56,5 +56,18 @@ test("published versions override a stale active pointer; missing latest content
 
 test("index rejects missing or stale comparisons for the latest iteration", async (t) => {
   const f = await publishedFixture(t);
-  await assert.rejects(build(f.root, f.output), /Comparison must show the latest iteration/);
+  await assert.rejects(build(f.root, f.output), /Comparison must show the selected/);
 });
+
+ test("renderer roles compare every working version with the approved baseline", () => {
+ const baseline = {...iteration("approved", "001.01"), renderer: "baseline"};
+ assert.equal(selectPreview([reference, baseline]).previous.id, "reference");
+ for(const version of ["001.02", "002.01", "100.500"]){
+ const candidate = {...iteration("working", version), renderer: "candidate"};
+ const selected = selectPreview([candidate, reference, baseline]);
+ assert.equal(selected.current.id,"working");
+ assert.equal(selected.previous.id,"approved");
+ assert.equal(selectPreview([candidate, baseline]).previous.id,"approved");
+ assert.throws(() => selectPreview([candidate, reference]), /approved baseline/);
+ }
+ });

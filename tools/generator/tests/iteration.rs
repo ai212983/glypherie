@@ -1,4 +1,4 @@
-#![cfg(feature = "iteration-01")]
+#![cfg(feature = "candidate")]
 
 use font_generator::{
     iteration::{capture, render, EXTENSIONS_DIAGONAL_01},

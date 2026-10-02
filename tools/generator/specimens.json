@@ -19,14 +19,16 @@
       "kind": "reference",
       "version": null,
       "hinting": "auto",
-      "extensions": "none"
+      "extensions": "none",
+      "renderer": "reference"
     },
     {
       "id": "iteration-01",
       "kind": "iteration",
       "version": "001.01",
       "hinting": "auto",
-      "extensions": "diagonal-01"
+      "extensions": "diagonal-01",
+      "renderer": "baseline"
     }
   ],
   "profiles": [

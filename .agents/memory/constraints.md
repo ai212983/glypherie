@@ -19,8 +19,9 @@ glyphs or visual findings; do not present standalone images or local image links
 # Working constraint (stated 2026-10-01): latest web preview and revision baseline
 
 The web index `/` ALWAYS shows the latest iteration of the latest revision. Compare revision and iteration numbers
-numerically. Comparison is ALWAYS with the previous revision's latest iteration, never the preceding iteration of the
-same revision. If there is no previous revision, compare with reference (currently 001.01 versus reference).
+numerically. The 2026-10-02 renderer-role decision supersedes the earlier previous-revision comparison rule: compare a
+working candidate with the approved baseline; with no newer candidate, compare baseline with reference (currently
+approved 001.01 versus reference).
 Do not create a separate `/reviews/` folder or endpoint. Update guidance, generator selection, comparison export,
 and the web together. Only link rebuilt web content that reflects the current changes.
 
@@ -39,13 +40,15 @@ diagnostics, and validation for that problem stay in the same iteration. An iter
 explicitly agrees and user and agent agree there are no further actions for that problem: resolved/closed, not fixable,
 or remaining work explicitly assigned to an agreed follow-up. Record that decision and follow-up scope before advancing
 iteration identity. Passing tests, publishing output, or adopting a new algorithm does not imply closure.
-The current diagonal-weight problem remains open as 001.01; its source-relative width tweak is part of 001.01.
+001.01 closed on 2026-10-02 following explicit user acceptance of all current quality and authorization to promote it
+to production. Its source-relative width and terminal corrections belong to that accepted iteration.
 
 # Working scope (agreed 2026-10-01): Literata diagonal coverage
 
 Include Literata 14 px Q's lower tail, x, and y in the still-open 001.01 diagonal-weight problem. Identical output to
 reference does not exclude an existing diagonal-weight coverage issue. Roboto 16 px t's upright stem is a separate
-stem-weight issue. The Literata cases are unresolved; this scope agreement does not close 001.01 or accept its output.
+stem-weight issue. The Literata cases were initially unresolved under this scope agreement; the 2026-10-02 acceptance below supersedes
+that pending disposition.
 
 # Working constraint (stated 2026-10-01): model-first evaluation
 
@@ -80,14 +83,16 @@ assessment, not independently confirmed regressions solely from their component 
 
 Mark unresolved symbol findings in `tools/generator/attention.json`. Every mark records internal status, the inspection
 type and an optional short hint identifying the part to inspect, with font/size/axes/profile scope. The web index puts marked cases
-in a special Attention card instead of the ordinary changed-symbol block. Marked unchanged output must remain reviewable.
+in the Attention card of their own font/size section instead of the ordinary changed-symbol block. Marked unchanged
+output must remain reviewable.
 Attention must obey the same published preview scope as regular specimens; do not publish broader diagnostic sizes or
 axes through another card. Broader findings remain in iteration notes and isolated captures. Pending marks need
 assessment; accepted deviations need a recorded rationale. Annotations must not become production fitting exceptions.
 
 # Working constraint (stated 2026-10-01): concise assessment UI
 
-Group Attention symbols by inspection type. Each tile shows only font, symbol, size and an optional short hint such as
+Each font/size section gets an Attention card when applicable, grouping its symbols by inspection type. The surrounding
+section identifies font and size; each tile shows only the symbol and an optional short hint such as
 "Lower tail" for Q. Remove the explanatory subtitle, diagnostic labels, axes information and Attention/status badges
 from the assessment UI. Keep scope and disposition metadata in tooling. Apply the published-preview guard to every
 rendered surface, including Attention, rather than only regular specimens; diagnostic sizes/axes remain isolated.
@@ -116,3 +121,23 @@ Within open 001.01, correct excessive thickness in Literata 14 px Q's lower tail
 16 px w/x/y. The user accepted everything else in the reviewed normal preview. This does not dispose of unpublished
 diagnostic findings. Accepted cases may evolve under the volatility preference above; reassess meaningful concerns
 without treating every difference as a regression or a reason for another review.
+
+# Latest user decision (2026-10-02): accepted and promoted 001.01
+
+The user accepted all current published quality, requested iteration closure and authorized production promotion.
+001.01 is resolved/closed; all six remaining published Attention cases are accepted. Production automatic 1-bit fitting
+uses this model, with automatic hinting and threshold 128 as job defaults. Keep the independent upstream reference,
+explicit interpreter/unhinted semantics, gray fitting and layout contracts. No new iteration has been started.
+Broader unpublished topology observations remain for future investigation outside this accepted preview scope; they
+are not demonstrated contract failures or blockers to promotion. Preserve their captures and conservative guards.
+See the acceptance and production record in docs/revisions/001/01-diagonal-weight.md. Earlier open/pending notes in this
+memory are historical and superseded for the published cases. Some rendering volatility remains acceptable.
+
+# Renderer roles (2026-10-02)
+
+Use three stable roles: independent upstream reference, approved baseline with revision/iteration metadata, and working
+candidate with revision/iteration metadata. Do not create Cargo feature guards for individual iterations. Production
+always uses the separate approved baseline fitter source; only candidate tooling is optional. Keep one baseline source
+snapshot and one candidate copy, sharing generator/raster/output code. Promotion replaces the baseline snapshot after
+explicit acceptance and updates its version metadata. Baseline and candidate source hashes remain separate. The accepted
+001.01 preview renders the baseline against reference; a future candidate compares with that approved baseline.

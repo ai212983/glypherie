@@ -7,7 +7,7 @@ use crate::{
     validate_config, Error, FontMetrics, Hinting,
 };
 use sha2::{Digest, Sha256};
-use skrifa_iteration::{
+use fitting_skrifa::{
     instance::Size,
     outline::{DrawSettings, Engine, HintingInstance, HintingOptions, SmoothMode, Target},
     FontRef, MetadataProvider,
@@ -228,7 +228,7 @@ pub fn capture(
             } else {
                 EXTENSIONS_DIAGONAL_01
             },
-            env!("SKRIFA_ITERATION_SHA256")
+            FITTING_SHA256
         ),
         fork: true,
         skrifa_version: skrifa_version(),

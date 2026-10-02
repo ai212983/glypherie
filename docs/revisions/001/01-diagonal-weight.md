@@ -2,7 +2,9 @@
 
 <!-- cspell:words XSHIFT -->
 
-2026-10-01. Open; implementation is being tweaked in place. Acceptance pending. Git checkpoint pending.
+Closed and accepted for production on 2026-10-02. The user accepted all current quality and authorized promotion. See
+the [acceptance record](#acceptance-and-production-promotion-2026-10-02). Earlier dated findings below retain the
+iteration's development history; their pending labels are superseded by that disposition where applicable.
 
 ## Problem and scope
 
@@ -45,7 +47,7 @@ Broader checks found new disconnected strokes in:
 Tests confirmed determinism, disabled equality with upstream, and unchanged layout/3-bit output. Those checks do not
 establish visual acceptance or resolve the broader join failures.
 
-## Decision and next step
+## Initial decision and next step (2026-10-01)
 
 Keep the experiment optional and retain the independent reference. Review Roboto 14 px X and 16 px N/W/X/Y/Z for weight
 and balance. Correct the diagonal width policy and address the broader join regressions before acceptance. These
@@ -77,7 +79,7 @@ attributed to pixel removal by this iteration; their balance still deserves sepa
 
 ### Pre-tweak width policy diagnosis
 
-[`grid_width`](../../../tools/generator/vendor/skrifa-iteration/src/outline/autohint/hint/diagonal.rs) first measures
+[`grid_width`](../../../tools/generator/vendor/skrifa-candidate/src/outline/autohint/hint/diagonal.rs) first measures
 perpendicular source thickness, matches a standard stem only within 10%, then rounds to whole pixels. The solve uses
 that integer as separation across the dominant axis. For slope `s = dx/dy`, ignoring the small safety margin, an integer
 target `n` consequently has perpendicular thickness `n * max(1, |s|) / sqrt(1 + s*s)`. This is smaller than `n` for
@@ -127,7 +129,7 @@ investigation.
 
 Transfer the font standard stem's Mono fit ratio to source diagonal thickness, then project onto the dominant control
 axis with bounded rounding distortion. The
-[patch policy](../../../tools/generator/vendor/skrifa-iteration/PATCH.md#current-00101-width-tweak-source-relative-transfer)
+[patch policy](../../../tools/generator/vendor/skrifa-candidate/PATCH.md#current-00101-width-tweak-source-relative-transfer)
 records the source foundation, explicit project hypothesis, and limitations.
 
 The original Roboto 14/16 px fixes remain unchanged against captured pre-tweak witnesses. Roboto 18 v changes from 20 to
@@ -182,7 +184,7 @@ those trials were discarded. A source-proximity trial was also discarded.
 The current correction retries only inconsistent components. Supported terminal curves become X dependents of the
 diagonal endpoint, with the far endpoint stationary. Curves on both sides of the far endpoint, one-control quadratics,
 and independent ownership stay protected. Previously successful fitting is unchanged. The
-[patch policy](../../../tools/generator/vendor/skrifa-iteration/PATCH.md#current-00101-terminal-curve-correction)
+[patch policy](../../../tools/generator/vendor/skrifa-candidate/PATCH.md#current-00101-terminal-curve-correction)
 records the VTT XSHIFT/Shamir foundations, explicit project hypotheses, and validation limits.
 
 | Reported case | Reference ink pixels | Candidate ink pixels | Detected / applied / unapplied pairs |
@@ -227,7 +229,7 @@ complete upstream interpolation; a mixture of fitted extrema and raw controls is
 A pair requires an independent interior control on at least one side. The trial that admitted two two-control borders
 moved Literata 17 px c's cap and broke its join. That geometry lacks this model's supported interior width variable and
 is rejected generically. The correction uses no font, glyph, point or raster-row selection. The
-[patch policy](../../../tools/generator/vendor/skrifa-iteration/PATCH.md#current-00101-short-and-curved-slant-coverage)
+[patch policy](../../../tools/generator/vendor/skrifa-candidate/PATCH.md#current-00101-short-and-curved-slant-coverage)
 records source foundations, deliberate unsupported cases, explicit project hypotheses and bounded-fit limits.
 
 Muse supplied curved-feature research and a read-only prototype audit. The audit highlighted ownership across axes,
@@ -262,7 +264,7 @@ The web preview has been rebuilt against reference. Browser checks confirm that 
 package, load their images without errors and retain the agreed four-size matrix on the index. Final evaluation,
 captures, corpus differences, source research and validation logs are under `out/diagnostics/literata-qx/`.
 
-## Current finding classification
+## Finding classification before acceptance (2026-10-01)
 
 The user's clarification distinguishes genuine regressions requiring correction from deviations that may be allowed
 after assessment. Earlier descriptions of broader "join failures" or "acceptance blockers" were stronger than the
@@ -353,7 +355,7 @@ coordinates, but let an exactly transverse cap's thickness follow the width equa
 solving and after rounding. A supported mixed component may contain pure-curve pairs; pure two-control/two-control bows
 remain rejected. The earlier two outer pairs are joined by four applied mixed portions. This is source-feature coverage,
 not a pixel-population objective. The
-[patch policy](../../../tools/generator/vendor/skrifa-iteration/PATCH.md#current-00101-optical-weight-corrections)
+[patch policy](../../../tools/generator/vendor/skrifa-candidate/PATCH.md#current-00101-optical-weight-corrections)
 records the source foundations, hypotheses and protected unsupported roles.
 
 An unrestricted fractional-width trial caused visible principal-stroke gaps in Literata x/y and Source Sans w, with
@@ -402,3 +404,42 @@ but identical final 1-bit pixels, bitmap placement, dimensions and advance. Its 
 subpixel geometry and misleadingly implied a visible weight change. The mark now asks "Unchanged: check terminal weight"
 because the user's terminal-weight concern remains unresolved. This is an existing appearance to assess, not evidence of
 a visible regression against reference. The ordinary changed-symbol list correctly omits an identical bitmap.
+
+## Acceptance and production promotion: 2026-10-02
+
+The user explicitly accepted all current quality, requested closure of 001.01 and authorized production promotion. The
+agent agrees that no further correction is required for the reviewed diagonal-weight problem. Outcome: resolved and
+closed. This records optical acceptance of the published state, not a conclusion inferred from mechanical checks. No new
+revision or iteration is created by promotion.
+
+The accepted preview covers Roboto, Literata and Source Sans 3 at 14/16/18/20 px, weight 400, Roboto width 100 and
+Literata optical size equal to pixel size, in the published 1-bit and 3-bit profiles. All six remaining Attention cases
+are accepted: Literata 14 Q's lower tail, x/y terminals, and Source Sans 3 16 w/x/y. Their dispositions record that the
+reviewed appearance is acceptable and requires no compensating change. Literata 14 x's unchanged reference bitmap is
+accepted too. Earlier accepted cases retain their recorded rationale. Acceptance allows later general-model changes; it
+does not freeze outlines or pixels.
+
+Reviewed candidate package: `iteration-01-19ea1bfd9af7b7be3333fd4b44d8ddc00dc5efe4a8b624ecb036fa4b086b85a0`, generation
+`c9d0d33757745a802b2406ac5824cc7eb66aae59288ba4d8b2e5c5c8244275f4`. Independent reference generation:
+`166e169d74c31fef7319908a3fdd9949e902420499d0c3ea8892e9e63b69c61f`.
+
+Production promotion routes ordinary automatic 1-bit generation through the accepted patched fitter. Default jobs use
+automatic fitting and threshold 128. Explicit interpreter and no-hinting paths, gray fitting settings, rasterization,
+layout and the independently buildable upstream reference remain separate contracts. Explicit automatic fallback still
+honors its selected embedded interpreter; diagonal fitting applies only when the actual selected engine is automatic.
+Renderer roles are reference/baseline/candidate, with revision and iteration numbers as metadata. The accepted fitter is
+isolated in `vendor/skrifa-baseline`; working code lives in `vendor/skrifa-candidate`. Production always uses baseline;
+only candidate tooling has an optional feature. There is no active candidate after closure.
+
+The three broader diagnostic observations (Roboto 20 W at weight 300, Literata 15 W at weight 400/optical size 15, and
+Source Sans 3 20 y at weight 300) remain observations without visual assessment outside the accepted preview scope. They
+are retained for a future broader-corpus investigation, with no required action in this closed iteration. Promotion does
+not claim they were visually assessed or convert component-count changes into confirmed defects. Existing conservative
+connectivity guards and diagnostic captures remain intact. Roboto 16 t's upright weight is a separate potential problem.
+
+Promotion verification records are under `out/diagnostics/production-001-01/`. The baseline and independent reference
+retain exactly the accepted fitted outlines, coverage, pixels, placement and metrics across all 24 configured cases
+each. Release generation matches all 1,136 supported scalar glyph requests in the mono matrix; the four Literata
+backtick requests retain their existing text-run capability rejection. This identity check verifies promotion routing,
+not a freeze on future accepted glyphs. The Rust evaluator passes all 24 configured cases. The browser preview has no
+remaining Attention cards after recorded acceptance and retains the agreed matrix.

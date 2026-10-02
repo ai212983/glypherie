@@ -1,4 +1,4 @@
-#![cfg(feature = "iteration-01")]
+#![cfg(feature = "candidate")]
 
 use font_generator::{comparison, specimens};
 use serde_json::{json, Value};
@@ -313,7 +313,8 @@ fn identical_inputs_export_no_comparison_images() {
     let (_temp, root, config) = fixture();
     let source_path = config.parent().unwrap().join("specimens.json");
     let mut source: Value = serde_json::from_slice(&fs::read(&source_path).unwrap()).unwrap();
-    source["variants"][1]["extensions"] = json!("none");
+    // Gray rendering leaves diagonal fitting disabled in both renderer roles.
+    source["defaults"]["profiles"] = json!(["gray_3bit"]);
     fs::write(&source_path, serde_json::to_vec(&source).unwrap()).unwrap();
     specimens::publish(&source_path, &root).unwrap();
     comparison::publish(&config, &root).unwrap();
@@ -429,12 +430,13 @@ fn missing_previous_or_current_glyph_fails_with_context_and_preserves_index() {
 }
 
 #[test]
-fn latest_iteration_compares_to_reference_until_a_previous_revision_exists() {
+fn candidate_compares_to_approved_baseline_across_versions() {
     let (_temp, root, config) = fixture();
     let source_path = config.parent().unwrap().join("specimens.json");
     let mut source: Value = serde_json::from_slice(&fs::read(&source_path).unwrap()).unwrap();
     // Hypothetical future iterations exercise selection after explicit user closure.
     let mut newer = source["variants"][1].clone();
+    newer["renderer"] = json!("candidate");
     newer["id"] = json!("future-iteration");
     newer["version"] = json!("001.02");
     source["variants"].as_array_mut().unwrap().push(newer);
@@ -444,7 +446,7 @@ fn latest_iteration_compares_to_reference_until_a_previous_revision_exists() {
     comparison::publish(&config, &root).unwrap();
     let (_, m) = manifest(&root);
     assert_eq!(m["current"]["label"], "001.02");
-    assert_eq!(m["previous"]["label"], "Reference");
+    assert_eq!(m["previous"]["label"], "001.01");
     let mut next_revision = source["variants"][2].clone();
     next_revision["id"] = json!("next-revision");
     next_revision["version"] = json!("002.01");
@@ -463,5 +465,5 @@ fn latest_iteration_compares_to_reference_until_a_previous_revision_exists() {
     comparison::publish(&config, &root).unwrap();
     let (_, m) = manifest(&root);
     assert_eq!(m["current"]["label"], "002.01");
-    assert_eq!(m["previous"]["label"], "001.02");
+    assert_eq!(m["previous"]["label"], "001.01");
 }

@@ -66,10 +66,11 @@ permission to accept them. Do not silently weaken a guard; an accepted deviation
 test expectations appropriate to that basis, without a glyph-specific production exception.
 
 Use the current web preview for optical review alongside the Rust evaluator and tests. Explain the model's behavior and
-tradeoffs before interpreting pixel changes. Preserve the agreed preview matrix; compare the latest iteration with the
-previous revision's latest iteration, or reference when there is no previous revision. State uncertainty and
-limitations. Passing mechanical checks alone does not establish optical acceptance. Iteration acceptance and closure
-require agreement with the user on the problem's outcome and any remaining work.
+tradeoffs before interpreting pixel changes. Preserve the agreed preview matrix; compare the working candidate with the
+approved baseline, or the approved baseline with reference when there is no newer candidate. Renderer roles are
+independent of revision/iteration identities. State uncertainty and limitations. Passing mechanical checks alone does
+not establish optical acceptance. Iteration acceptance and closure require agreement with the user on the problem's
+outcome and any remaining work.
 
 ## Attention card
 

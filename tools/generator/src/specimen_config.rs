@@ -1,3 +1,4 @@
+pub use crate::renderer::RendererRole;
 use crate::{fail, Error, Hinting};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -31,6 +32,20 @@ pub struct Variant {
     pub version: Option<String>,
     pub hinting: Hinting,
     pub extensions: String,
+    /// Stable renderer role; versions identify states, never Cargo features.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renderer: Option<RendererRole>,
+}
+
+impl Variant {
+    pub fn renderer(&self) -> RendererRole {
+        self.renderer
+            .unwrap_or(if self.kind == VariantKind::Reference {
+                RendererRole::Reference
+            } else {
+                RendererRole::Candidate
+            })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -209,11 +224,13 @@ fn sizes_valid(
 
 impl SpecimenConfig {
     pub fn latest_variant(&self) -> Result<&str, Error> {
-        crate::preview_selection::select(
-            self.variants
-                .iter()
-                .map(|variant| (variant.id.as_str(), variant.version.as_deref())),
-        )
+        crate::preview_selection::select_roles(self.variants.iter().map(|variant| {
+            (
+                variant.id.as_str(),
+                variant.version.as_deref(),
+                variant.renderer,
+            )
+        }))
         .map(|(latest, _)| latest)
     }
 
@@ -308,6 +325,19 @@ impl SpecimenConfig {
         identities(self.families.iter().map(|f| f.id.as_str()), "family")?;
         let latest = self.latest_variant()?;
         for variant in &self.variants {
+            if (variant.kind == VariantKind::Reference)
+                != (variant.renderer() == RendererRole::Reference)
+            {
+                return Err(fail("reference package kind and renderer role must agree"));
+            }
+            if variant.renderer() == RendererRole::Baseline
+                && (variant.version.as_deref() != Some(crate::baseline::VERSION)
+                    || variant.extensions != crate::baseline::EXTENSIONS_DIAGONAL_01)
+            {
+                return Err(fail(
+                    "baseline must identify the approved version and fitting policy",
+                ));
+            }
             if !["none", "diagonal-01"].contains(&variant.extensions.as_str())
                 || variant.hinting != Hinting::Auto
             {
@@ -422,11 +452,14 @@ impl SpecimenConfig {
         if !cases.iter().any(|case| case.variant == latest) {
             return Err(fail("latest variant must select at least one render case"));
         }
-        let (_, previous) = crate::preview_selection::select(
-            self.variants
-                .iter()
-                .map(|variant| (variant.id.as_str(), variant.version.as_deref())),
-        )?;
+        let (_, previous) =
+            crate::preview_selection::select_roles(self.variants.iter().map(|variant| {
+                (
+                    variant.id.as_str(),
+                    variant.version.as_deref(),
+                    variant.renderer,
+                )
+            }))?;
         if previous.is_some_and(|previous| !cases.iter().any(|case| case.variant == previous)) {
             return Err(fail(
                 "comparison baseline must select at least one render case",

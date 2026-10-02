@@ -34,8 +34,10 @@ export function validateManifest(manifest, pointer) {
   check(pointer.manifest === `${pointer.variant_id}/manifest.json`, "Active manifest path is invalid.");
   fields(manifest, ["schema_version", "variant", "profiles", "families"]);
   check(manifest.schema_version === "web-specimens-v1", "Unsupported specimen format.");
-  fields(manifest.variant, ["id", "kind", "version", "generation_sha256", "composition_sha256"]);
+  fields(manifest.variant, ["id", "kind", "version", "generation_sha256", "composition_sha256"], ["renderer"]);
   const variant = manifest.variant;
+  check(variant.renderer === undefined || ["reference", "baseline", "candidate"].includes(variant.renderer), "Invalid renderer role.");
+  check(variant.renderer === undefined || (variant.kind === "reference") === (variant.renderer === "reference"), "Renderer role differs from package kind.");
   check(variant.id === pointer.variant_id, "The package differs from the active selection.");
   check((variant.kind === "reference" && variant.version === null)
     || (variant.kind === "iteration" && isText(variant.version)), "Invalid renderer version.");

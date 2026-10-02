@@ -89,19 +89,9 @@ fn run() -> Result<bool, String> {
         let source = reference(data, &source_request).map_err(|e| e.to_string())?;
         let mut candidate_request = request;
         candidate_request.extensions = variant.extensions.clone();
-        let candidate = if candidate_request.extensions == "none" {
-            reference(data, &candidate_request).map_err(|e| e.to_string())?
-        } else {
-            #[cfg(feature = "iteration-01")]
-            {
-                font_generator::iteration::render(data, &candidate_request)
-                    .map_err(|e| e.to_string())?
-            }
-            #[cfg(not(feature = "iteration-01"))]
-            {
-                return Err("candidate requires iteration-01 feature".into());
-            }
-        };
+        let candidate =
+            font_generator::renderer::render(data, &candidate_request, variant.renderer())
+                .map_err(|e| e.to_string())?;
         cases.push(Case {
             family: case.family_id.clone(),
             size_px: case.size_px,

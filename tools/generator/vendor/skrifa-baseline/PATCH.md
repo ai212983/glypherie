@@ -1,11 +1,11 @@
-# Optional diagonal fitting experiment
+# Approved baseline diagonal fitter
 
 Base: Skrifa 0.46.2, Fontations commit `f886c9069b08eaddcb1caced3a44b0d8291a159a`, registry SHA-256
 `d4febebda507fb889c545a37a135517769d1391941013561292897961d1887d6`. The original MIT and Apache-2.0 licenses are
-retained. The package is renamed `skrifa_iteration`; the registry dependency remains the independent reference renderer.
+retained. The package is renamed `skrifa_baseline`; the registry dependency remains the independent reference renderer.
 
-Maintenance owner: the project maintainer. This is a local experiment, with upstream contribution considered after the
-method and visual results have been reviewed. Rebase against a pinned base, review the isolated source diff, and rerun
+Maintenance owner: the project maintainer. The user accepted 001.01 and authorized production promotion on 2026-10-02.
+Upstream contribution remains a separate decision. Rebase against a pinned base, review the isolated source diff, and rerun
 disabled parity before publishing new specimens.
 
 ## Foundation
@@ -19,15 +19,17 @@ disabled parity before publishing new specimens.
 
 ## Iteration status
 
-001.01 remains open for the diagonal-weight problem identified by user feedback. The source-relative width tweak below
-is part of this iteration. It closes only when user and agent explicitly agree no further actions remain for that
-problem, including agreement that remaining work is not fixable or belongs in a follow-up. Passing tests or publishing
-new content does not close it or authorize a new iteration.
+001.01 is closed and accepted for production on 2026-10-02 following the user's explicit assessment that all current
+published quality is acceptable. Ordinary automatic 1-bit generation now enables the accepted diagonal constraints
+and source-relative width policy. The independent registry renderer remains the reference. Broader unpublished
+observations remain documented for future investigation; existing mechanical and conservative regression guards remain
+in force. See the [acceptance record](../../../../docs/revisions/001/01-diagonal-weight.md#acceptance-and-production-promotion-2026-10-02).
 
 ## Experimental policy
 
 The constants and automatic feature detector below are project hypotheses, rather than values prescribed by the papers.
-The extension applies to explicitly enabled Mono automatic fitting in the default script group.
+The accepted extension applies to Mono automatic fitting in the default script group. Automatic feature detection
+remains a project hypothesis rather than an optical acceptance algorithm.
 
 1. Detect adjacent on-curve straight borders with vertical span ≥1/8 em and horizontal/vertical slope magnitude 0.1–2.
    Pair opposite directions within an angle tolerance expressed as `|s1-s2| ≤0.08(1+|s1*s2|)`, overlapping by at least
@@ -79,7 +81,7 @@ sizes, profiles, and engines, plus candidate determinism, unchanged grayscale/la
 generator build hashes vendored source, generated data, manifest, licenses, and this policy into candidate provenance.
 
 The restored, pinned `font-test-data` 0.9.1 dev dependency supports the upstream unit suite, omitted from the registry
-manifest. Run `cargo test --manifest-path tools/generator/vendor/skrifa-iteration/Cargo.toml --lib` from the repo root.
+manifest. Run `cargo test --manifest-path tools/generator/vendor/skrifa-candidate/Cargo.toml --lib` from the repo root.
 
 ## Current 001.01 width tweak: source-relative transfer
 
@@ -122,7 +124,7 @@ as the baseline, with shared origins/baselines and native pixel differences.
 
 Literata 14 px y supplied a concrete coverage failure: both pairs were detected, but fixing curve-adjacent endpoints in
 both coordinates made their parallel-border and width equations inconsistent. There were no hard axial or inter-contour
-anchors at those endpoints. This correction remains within the still-open 001.01.
+anchors at those endpoints. This correction belongs to the accepted 001.01 model.
 
 [VTT XSHIFT](../../../../docs/references/VisualTrueType/doc/VTT%20Language%20Reference/vttlang.md#xshift) carries a child by
 its parent's X displacement. [Shamir §§3.2–3.3](../../../../docs/references/papers/2003-shamir/paper.md) supplies Dist/Ratio
@@ -152,7 +154,7 @@ Synthetic tests cover quadratic/cubic terminal tangents after X interpolation, i
 controls and far endpoints, continuous curve junctions, and atomic rejection. Integration checks cover Literata y at
 14/16/18/20 px, source thick/thin contrast above the existing 14 px one-pixel minimum, the k witnesses, original Roboto
 fixes, disabled/reference equality, layout/grayscale equality, determinism, and no additional joins broken in the broader
-diagnostic sweep. The Q/x coverage extension below follows this correction. Optical acceptance is pending.
+diagnostic sweep. The Q/x coverage extension below follows this correction. This model is included in the accepted production state.
 
 ## Current 001.01 short and curved slant coverage
 
@@ -201,7 +203,8 @@ y/k/Roboto controls. No test requires ink count to move in a preferred direction
 
 The [evaluation rules](../../../../docs/evaluation.md) and Rust evaluator separate mechanical failures from descriptive
 geometry/topology/coverage signals. Pixel additions/removals and pair counts alone do not judge quality or acceptance.
-The iteration remains open, with existing broader join failures and optical assessment still requiring disposition.
+The iteration is accepted and closed; the acceptance record distinguishes reviewed output from broader unassessed
+diagnostic observations.
 
 ## Current 001.01 optical-weight corrections
 
@@ -258,3 +261,10 @@ Synthetic tests use rotations/reflections with deliberately unequal axis standar
 longitudinal cap coordinates, ordered cap endpoints, bounded movement and atomic anchor conflicts. The Source Sans
 integration witness checks additional inner coverage, cap placement/order, connectivity and layout. Existing bow, c/k,
 normal-corpus and broader-sweep controls remain. No test requires ink count to increase or decrease.
+
+## Renderer role
+
+This source tree is the baseline fitter, independent of the other local renderer. It is the approved 001.01 source snapshot
+used by production regardless of candidate feature selection. Replace it only after explicit promotion authorization.
+The generator, capture adapter and raster/output stages remain shared. Reference rendering uses the separately pinned
+registry library. Revision and iteration labels are metadata; no per-iteration Cargo feature selects production.

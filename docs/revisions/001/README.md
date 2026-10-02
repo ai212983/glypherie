@@ -6,16 +6,15 @@ See the [iteration lifecycle guidance](../README.md#iteration-lifecycle).
 
 ## Iterations
 
-- [001.01 — diagonal weight](01-diagonal-weight.md): open. Straight-border constraints for 1-bit fitting, including the
-  original Roboto 14/16 px corrections, source-relative width tweak, terminal-curve correction for Literata y, and
-  short/curved coverage for x/Q. Literata Q/x/y coverage is implemented and awaits optical assessment. Roboto 18 v/w
-  weight/size transitions and three broader topology changes remain pending assessment. These observations are not
-  confirmed defects merely because their ink/component counts differ. See the
-  [current finding classification](01-diagonal-weight.md#current-finding-classification).
+- [001.01 — diagonal weight](01-diagonal-weight.md): closed and accepted for production on 2026-10-02. Straight, curved
+  and mixed diagonal fitting includes coherent terminal preparation and source-relative thickness. The user accepted all
+  current published quality, including the six remaining Attention cases. No further correction is required in this
+  iteration. Broader diagnostic observations that have not been reviewed remain documented for future investigation;
+  they are not demonstrated contract failures or blockers to this promotion.
 
-The web index shows `reference → 001.01` at the agreed 14/16/18/20 px sizes. Both the original corrections and the
-reported excessive-thinning investigation belong to the same open iteration. The iteration closes only when user and
-agent explicitly agree that no further actions remain for its problem.
+The web index retains `reference → 001.01` at the agreed 14/16/18/20 px sizes. Production automatic 1-bit generation
+uses this accepted model; the upstream renderer remains the independent reference. See the
+[acceptance record](01-diagonal-weight.md#acceptance-and-production-promotion-2026-10-02).
 
 ## Validation
 
@@ -26,4 +25,5 @@ diagnostics without an optical score.
 The tests cover reported border thickness, terminal-curve dependencies and protected junctions, preservation of original
 Roboto 14/16 px fixes, source contrast, layout/grayscale equality, determinism, disabled parity, and no additional join
 failures compared with historical captures within 001.01. Broader diagnostic sizes remain outside the normal preview.
-These checks establish implementation and publication behavior, not optical acceptance or iteration closure.
+Mechanical checks establish implementation and publication behavior. Optical acceptance and closure are recorded
+separately from the user's explicit decision on 2026-10-02.

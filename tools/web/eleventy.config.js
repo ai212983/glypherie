@@ -41,7 +41,7 @@ export function configureWeb(eleventyConfig, options = {}) {
         || activeComparison.previous.generation_sha256 !== previous.generation_sha256
         || activeComparison.current.label !== current.version
         || activeComparison.previous.label !== (previous.version ?? "Reference")) {
-        throw new Error("Comparison must show the latest iteration against the previous revision's latest iteration, or reference.");
+        throw new Error("Comparison must show the selected candidate against the approved baseline, or the baseline against reference; legacy manifests use their historical comparison.");
       }
       comparisons = [activeComparison];
     } else if (specimens.state === "ready" && specimens.selection) {

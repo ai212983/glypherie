@@ -23,13 +23,13 @@ explicitly agree to closure before advancing the iteration. Record the decision 
 
 ## Specimen configuration
 
-[specimens.json](specimens.json) defines the specimen matrix: upstream `reference` and the still-open `iteration-01`.
+[specimens.json](specimens.json) defines the specimen matrix: upstream `reference` and the accepted `iteration-01`.
 Roboto, Literata, and Source Sans 3 use ordinary 14/16/18/20 px slices. Both `mono_1bit` and `gray_3bit` profiles are
-included. The working preview selects 001.01; acceptance is separate.
+included. The preview selects 001.01, closed and accepted for production on 2026-10-02.
 
 - `variants` defines renderer iterations. The latest numeric revision and iteration is selected automatically. Each
-  variant has an ID, kind, version, hinting mode, and extension policy. Automatic fitting supports extensions `none` and
-  the optional `diagonal-01` experiment. Reference variants use `none`.
+  variant has an ID, kind, version, renderer role, hinting mode, and extension policy. Automatic fitting supports
+  extensions `none` and the accepted `diagonal-01` model. Reference variants use `none`.
 - `profiles` defines shared output settings. Profile IDs identify the 1-bit and 3-bit modes; their settings apply
   uniformly across selected families and sizes.
 - `characters` defines the drawable repertoire. `cards` supplies IDs, titles, and content for the editable specimen
@@ -166,13 +166,13 @@ after an interrupted publication requires checking that the publisher has stoppe
 
 After `just specimens`, run `just comparisons`. [comparisons.json](comparisons.json) sets the numeric symbol-route ID
 and optional `attention` annotation path, using `comparison-config-v2`. Inputs and labels are derived from
-`published.json` and package metadata: latest iteration of the latest revision versus the latest iteration of the
-preceding revision. If there is no preceding revision, compare with reference. Thus `001.01` compares with reference;
-`002.01` will compare with `001.01`. A reference-only publication has no comparison. [attention.json](attention.json)
-marks cases for the web Attention card, with an internal status, required inspection type and optional short hint; see
-the [guide](../../docs/evaluation.md#attention-card). Marks must match published preview scope, including sizes and
-axes, and cannot add diagnostic renders. The exporter reuses canonical pixels and writes aligned glyph/difference PNGs
-under `out/specimens/comparisons/`, leaving active selection unchanged.
+`published.json` and explicit renderer roles: a working candidate versus the approved baseline, or baseline versus
+reference when there is no newer candidate. Approved `001.01` currently compares with reference. A future working
+`001.02` or `002.01` compares with approved `001.01` until the baseline is promoted. A reference-only publication has no
+comparison. [attention.json](attention.json) marks cases for the web Attention card, with an internal status, required
+inspection type and optional short hint; see the [guide](../../docs/evaluation.md#attention-card). Marks must match
+published preview scope, including sizes and axes, and cannot add diagnostic renders. The exporter reuses canonical
+pixels and writes aligned glyph/difference PNGs under `out/specimens/comparisons/`, leaving active selection unchanged.
 
 `just preview-build` generates specimens, exports comparisons, and builds the site. `just preview` also serves it. The
 [comparison contract](CONTRACT.md#glyph-comparison-export) defines exported content.
@@ -227,7 +227,7 @@ contract. LVGL packing and table generation belong to the later output adapter.
 ## Rendering settings
 
 The separate `reference::reference(font_bytes, &ReferenceRequest)` API and `font_reference JOB.json OUTPUT.json` binary
-provide upstream-only reference capture without changing the existing `generate` API or job defaults. A reference job
+provide upstream-only reference capture independently of the production `generate` API and job defaults. A reference job
 uses the usual `font`, `provenance`, and `settings` fields plus `profile` (`mono_1bit` or `gray_3bit`) and optional
 `extensions` (default `none`). Set `settings.hinting` explicitly to `auto`, `interpreter`, or `none`, with matching
 `settings.output_bits` 1 or 3. `auto_fallback`, unknown fields, mismatched targets, and unsupported extensions are
@@ -240,30 +240,54 @@ develops optional changes for identified issues. Reference specimen export and t
 variant-bound issue reporting remains pending. [Font diagnostics](../../docs/references/font-diagnostics.md) describes
 the capture and comparison tools provided by this generator.
 
-### Optional diagonal iterations
+### Accepted production fitting
 
-`iteration::render` selects the current `diagonal-01` implementation for Mono automatic fitting. It uses a separately
-named Skrifa copy with straight-border width/phase constraints committed before interpolation. Grayscale uses the
-upstream reference path. The [patch policy](vendor/skrifa-iteration/PATCH.md) records the pinned base, licenses,
-algorithm sources, experimental constants, maintenance owner, and rebase/parity checks. Review status is recorded in
-[iteration 001.01](../../docs/revisions/001/01-diagonal-weight.md).
+The user accepted all current quality and authorized closing and promoting 001.01 on 2026-10-02. In the standard build,
+`generate` uses the accepted patched fitter for automatic 1-bit output, with both diagonal constraints and the
+source-relative width policy enabled. This includes straight, curved and mixed borders and coherent terminal
+preparation. The
+[acceptance record](../../docs/revisions/001/01-diagonal-weight.md#acceptance-and-production-promotion-2026-10-02)
+defines the reviewed scope and retains broader diagnostic observations for future investigation.
 
-The current `diagonal-01` width tweak transfers the font standard stem's fit ratio to source diagonal thickness, then
-projects onto the control axis with bounded rounding distortion. It preserves the original 14/16 px corrections but can
-increase 18 px weight beyond upstream. Review status remains experimental; the patch policy records the source
-foundation and limitations. Earlier 001.01 results are regression witnesses, not a separate production iteration.
+Default jobs now select `hinting: "auto"`, 1-bit output and threshold 128. Example jobs use these accepted settings.
+Explicit `auto_fallback` still honors upstream engine selection: embedded interpretation remains embedded
+interpretation; when it selects automatic Mono fitting, the accepted diagonal model applies. Explicit `interpreter` and
+`none` modes retain their existing behavior. Gray production targets retain symmetric Normal rendering with linear
+metric preservation; they receive no diagonal extension. Advances, kerning, capability validation and output schemas
+remain unchanged. Some full-repertoire pairs need unsupported text-run substitutions even with kerning disabled; the
+generator continues to reject those requests rather than silently dropping positioning.
 
-Review the latest iteration on the web index `/`, with changed symbols opening aligned previous/current/difference
-pages. All visual communication uses this web preview. There is no separate review export or endpoint. Run `just
-preview-build` to update specimens, comparisons, and the index together.
+Renderer roles are stable across iterations:
 
-The default `iteration-01` Cargo feature builds both experiments; `generate` and `reference` keep their existing
-upstream behavior. Build a separate upstream-only reference executable with:
+- `reference`: independently pinned upstream Skrifa, used by the reference API and binary.
+- `baseline`: the approved fitter snapshot in `vendor/skrifa-baseline`, always used by production `generate`.
+- `candidate`: working fitter source in `vendor/skrifa-candidate`, available through the optional `candidate` feature.
+
+`baseline::VERSION` records the approved revision and iteration (`001.01`); it selects no conditional compilation.
+Specimen variants declare `renderer` separately from `version`. The current published 001.01 package uses `baseline`;
+there is no active candidate after closure. A future working version uses `candidate` and compares with the approved
+baseline, including work in the same revision. With no newer candidate, the preview shows baseline against reference.
+Legacy packages without role metadata keep their historical previous-revision selection. Both Rust and web selection
+apply the same rule, and baseline configuration must identify its approved version and fitting policy.
+
+Baseline and candidate have separate source copies, with shared generator, fitting adapter, rasterizer and output code.
+Candidate edits cannot change the approved fitting source. On an authorized promotion, replace the baseline's source
+snapshot with the accepted candidate, retain its distinct package name, update the approved version metadata, record
+acceptance and rerun parity and integration checks. Keep only one approved source snapshot and one working copy;
+historical versions remain immutable generated packages and iteration notes. Never copy build outputs.
+
+The `candidate` feature enables research tooling only. Disabling it leaves production on the same approved baseline:
 
 ```sh
+cargo build --locked --manifest-path tools/generator/Cargo.toml --no-default-features --bin font_generator
 cargo build --locked --manifest-path tools/generator/Cargo.toml --no-default-features --bin font_reference \
   --target-dir out/upstream-reference
 ```
+
+The reference binary always renders with the registry library, independently of both local fitters. The
+[baseline patch policy](vendor/skrifa-baseline/PATCH.md) and [candidate policy](vendor/skrifa-candidate/PATCH.md) record
+the pinned base, licenses, sourced model, project hypotheses, maintenance owner and parity checks. `iteration` remains
+an API compatibility alias for `candidate`; its name does not choose production behavior.
 
 `iteration::capture` with extensions `none` and `enabled=false` checks the patched library against the independently
 renderable registry path. The full ordinary corpus parity test compares commands, metrics, coverage, placement, and

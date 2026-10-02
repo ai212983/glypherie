@@ -8,9 +8,10 @@
 - Read `out/specimens/published.json` and package versions to select the latest iteration of the latest revision,
   comparing revision and iteration numbers numerically. The index `/` always shows this package; manual preview
   overrides are not supported. Use `active.json` only for single-package exports without a publication mapping.
-- Compare with the latest iteration of the preceding revision, or the unique reference when no preceding revision
-  exists. Thus 001.01 compares with reference. Reject missing or stale comparison inputs and labels. Do not silently
-  fall back to an older package if latest content is invalid or incomplete.
+- Compare an explicit working candidate with the latest approved baseline, including within the same revision. With no
+  newer candidate, compare baseline with the unique reference. Accepted 001.01 therefore compares with reference. Older
+  packages without role metadata retain previous-revision selection. Reject missing or stale comparison inputs and
+  labels. Do not silently fall back to an older package if latest content is invalid or incomplete.
 - Read `out/specimens/comparisons/index.json` to select comparison packages.
 - Publish a pointer to the selected latest package in `out/web/content/active.json`. Copy the specimen manifest and
   referenced PNGs into `out/web/content/`, preserving package paths and bytes. Copy comparison manifests and PNGs into

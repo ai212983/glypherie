@@ -13,9 +13,11 @@ agree to closure; an agent must not infer it from passing tests, published compa
 approach. If there is still action to take on the current problem, keep the iteration open. Advance iteration numbering
 only after that agreement and identify the next problem from user feedback.
 
-The current diagonal-weight problem remains open as 001.01. Its source-relative width correction is a tweak within
-001.01. See the [iteration record](001/01-diagonal-weight.md) for findings, remaining actions, and current status.
+The diagonal-weight problem in 001.01 is closed and accepted for production on 2026-10-02, following explicit user
+acceptance of the current quality. See the
+[iteration record](001/01-diagonal-weight.md#acceptance-and-production-promotion-2026-10-02) for the accepted scope and
+retained follow-up observations. No new iteration has been started.
 
 ## Index
 
-- [001](001/README.md): optional Skrifa fitting experiments; independent upstream reference retained.
+- [001](001/README.md): accepted diagonal fitting promoted to production; independent upstream reference retained.

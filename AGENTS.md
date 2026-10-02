@@ -40,5 +40,6 @@ The web index moves marked cases into the Attention card of their own family/siz
 recorded; an accepted deviation needs a rationale. Review annotations must never affect font fitting.
 
 Use the current Rust evaluator and tests with the web preview. Passing mechanical checks does not establish optical
-acceptance or close an iteration. Preserve the agreed preview matrix and compare the latest iteration against the
-previous revision's latest iteration, or reference when there is no previous revision.
+acceptance or close an iteration. Preserve the agreed preview matrix. Compare the working candidate with the approved baseline; with no newer candidate,
+compare the approved baseline with reference. Renderer roles stay reference/baseline/candidate across all versions; never
+add revision/iteration-specific production feature guards. Production must use the separate approved baseline snapshot.

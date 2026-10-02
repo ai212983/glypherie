@@ -1,8 +1,8 @@
 use crate::{
     fail, fixed,
     probe::{lock_sha256, lock_version},
-    reference::{reference, ReferenceReport, ReferenceRequest},
-    specimen_config::{self, RenderCase, VariantKind},
+    reference::{ReferenceReport, ReferenceRequest},
+    specimen_config::{self, RenderCase, RendererRole, VariantKind},
     Config, Error, MetricRounding,
 };
 use harfrust::{
@@ -53,6 +53,8 @@ pub struct PackageVariant {
     pub version: Option<String>,
     pub generation_sha256: String,
     pub composition_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub renderer: Option<RendererRole>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -184,24 +186,12 @@ fn coordinate(value: i64) -> Result<i32, Error> {
     i32::try_from(value).map_err(|_| fail("layout coordinate exceeds supported range"))
 }
 
-#[cfg(feature = "iteration-01")]
-fn render_iteration(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceReport, Error> {
-    crate::iteration::render(data, request)
-}
-
-#[cfg(not(feature = "iteration-01"))]
-fn render_iteration(_data: &[u8], _request: &ReferenceRequest) -> Result<ReferenceReport, Error> {
-    Err(fail(
-        "diagonal fitting requires the iteration-01 Cargo feature",
-    ))
-}
-
-fn renderer_identity() -> String {
+fn renderer_identity(role: RendererRole) -> String {
     let mut digest = Sha256::new();
     for source in [
         include_str!("lib.rs"),
         include_str!("reference.rs"),
-        include_str!("iteration.rs"),
+        include_str!("renderer.rs"),
         include_str!("probe.rs"),
         include_str!("raster.rs"),
         include_str!("spacing.rs"),
@@ -209,7 +199,19 @@ fn renderer_identity() -> String {
         digest.update((source.len() as u64).to_le_bytes());
         digest.update(source.as_bytes());
     }
-    digest.update(env!("SKRIFA_ITERATION_SHA256").as_bytes());
+    let (adapter, source) = match role {
+        RendererRole::Reference => ("", ""),
+        RendererRole::Baseline => (include_str!("baseline.rs"), env!("SKRIFA_BASELINE_SHA256")),
+        RendererRole::Candidate => (
+            include_str!("candidate.rs"),
+            env!("SKRIFA_CANDIDATE_SHA256"),
+        ),
+    };
+    digest.update(adapter.as_bytes());
+    digest.update(source.as_bytes());
+    if role != RendererRole::Reference {
+        digest.update(include_str!("fitting.rs").as_bytes());
+    }
     format!("{digest:x}", digest = digest.finalize())
 }
 
@@ -544,11 +546,7 @@ fn capture(loaded: &specimen_config::LoadedSpecimens) -> Result<Vec<Captured>, E
             extensions: variant.extensions.clone(),
             settings,
         };
-        let result = if variant.extensions == "diagonal-01" {
-            render_iteration(data, &request)
-        } else {
-            reference(data, &request)
-        };
+        let result = crate::renderer::render(data, &request, variant.renderer());
         let (report, reason) = match result {
             Ok(report) => (Some(report), None),
             Err(error) => (None, Some(error.to_string())),
@@ -605,7 +603,7 @@ fn build_packages(
             .collect();
         let generation = json(&serde_json::json!({
             "schema_version": "specimen-render-v1", "generator_version": env!("CARGO_PKG_VERSION"),
-            "implementation_sha256": renderer_identity(), "dependency_lock_sha256": lock_sha256(),
+            "implementation_sha256": renderer_identity(variant.renderer()), "dependency_lock_sha256": lock_sha256(),
             "variant": variant, "profiles": profiles, "characters": loaded.config.characters,
             "cases": selected.iter().map(|c| &c.capture).collect::<Vec<_>>()
         }))?;
@@ -732,6 +730,7 @@ fn build_packages(
             variant: PackageVariant {
                 id: String::new(),
                 kind: variant.kind,
+                renderer: variant.renderer,
                 version: variant.version.clone(),
                 generation_sha256,
                 composition_sha256: hash(&composition),

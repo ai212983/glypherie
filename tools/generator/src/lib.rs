@@ -1,34 +1,40 @@
 //! Deterministic outline glyph generation, independent of display and output adapters.
 //! Metrics use signed 26.6 pixels. Bitmaps contain unpacked coverage levels, row-major.
+pub mod baseline;
 pub mod batch;
+#[cfg(feature = "candidate")]
+pub mod candidate;
 pub mod comparison;
 pub mod evaluation;
-#[cfg(feature = "iteration-01")]
-pub mod iteration;
+/// Compatibility name for earlier diagnostic callers; renderer selection uses roles.
+#[cfg(feature = "candidate")]
+pub use candidate as iteration;
 pub mod preview_selection;
 pub mod probe;
 mod raster;
 pub mod reference;
+pub mod renderer;
 mod spacing;
 pub mod specimen_config;
 pub mod specimens;
 
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use skrifa::{
+use production_skrifa::{
     instance::Size,
     outline::{DrawSettings, Engine, HintingInstance, HintingOptions, SmoothMode, Target},
     FontRef, MetadataProvider,
 };
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use skrifa_baseline as production_skrifa;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Hinting {
     None,
+    #[default]
     Auto,
     Interpreter,
-    #[default]
     AutoFallback,
 }
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -66,7 +72,7 @@ impl Default for Config {
         Self {
             size_px: 16.0,
             axes: BTreeMap::new(),
-            hinting: Hinting::AutoFallback,
+            hinting: Hinting::Auto,
             output_bits: 1,
             mono_threshold: 128,
             gray_gamma: 1.0,
@@ -198,6 +204,21 @@ pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
             .map_err(|e| fail(format!("hinting setup failed: {e}")))?,
         )
     };
+    let mut hinting = hinting;
+    // Accepted 001.01: use the reviewed model only for actual Mono autohint
+    // instances. AutoFallback retains upstream embedded-interpreter selection;
+    // the setters reject that engine, as well as all non-Mono targets.
+    if config.output_bits == 1 && matches!(config.hinting, Hinting::Auto | Hinting::AutoFallback) {
+        if let Some(instance) = hinting.as_mut() {
+            if instance.set_diagonal_constraints(true) {
+                if !instance.set_diagonal_stem_relative(true) {
+                    return Err(fail("accepted diagonal width policy could not be enabled"));
+                }
+            } else if config.hinting == Hinting::Auto {
+                return Err(fail("accepted diagonal fitting could not be enabled"));
+            }
+        }
+    }
     let metrics = font.metrics(size, &location);
     if metrics.units_per_em == 0 {
         return Err(fail("font has invalid units per em"));

@@ -528,5 +528,5 @@ test("index publishes tweaks under the same iteration identity and removes obsol
   f.comparison.previous.package_id = "candidate-test";
   f.comparison.previous.label = "001.01";
   await f.saveComparison();
-  await assert.rejects(build(f.root, f.output), /Comparison must show the latest iteration/);
+  await assert.rejects(build(f.root, f.output), /Comparison must show the selected/);
 });

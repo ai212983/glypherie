@@ -9,6 +9,12 @@ fn document() -> Value {
     value.as_object_mut().unwrap().remove("cards");
     value["samples"] = json!([{ "id": "reading", "label": "Reading sample", "text": "A V" }]);
     value["variants"].as_array_mut().unwrap().truncate(1);
+    // General selection fixtures exercise legacy manifests without role metadata;
+    // explicit approval/candidate contracts have their own checked-in fixture.
+    value["variants"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("renderer");
     value["defaults"]["variants"] = json!(["reference"]);
     value["defaults"]["sizes"] = json!([14, 16, 18, 20]);
     value["families"][2]
@@ -429,4 +435,34 @@ fn missing_or_invalid_preview_policy_is_an_error_and_diagnostics_stay_independen
     diagnostic["defaults"]["sizes"] = json!([14, 15, 16, 17, 18, 19, 20]);
     fs::write(&path, serde_json::to_vec(&diagnostic).unwrap()).unwrap();
     assert_eq!(load(&path).unwrap().cases.len(), 14);
+}
+
+#[test]
+fn stable_renderer_roles_distinguish_approval_from_working_version_metadata() {
+    let mut current: Value = serde_json::from_str(include_str!("../specimens.json")).unwrap();
+    // Resolve role validation independently of the filesystem preview-policy
+    // fixture; matrix protection is exercised separately with actual files.
+    current.as_object_mut().unwrap().remove("preview_policy");
+    assert!(resolve(current.clone()).is_ok());
+    assert_eq!(current["variants"][0]["renderer"], "reference");
+    assert_eq!(current["variants"][1]["renderer"], "baseline");
+    for field in ["version", "extensions", "renderer"] {
+        let mut invalid = current.clone();
+        invalid["variants"][1][field] = json!(match field {
+            "version" => "100.500",
+            "extensions" => "none",
+            _ => "reference",
+        });
+        assert!(resolve(invalid).is_err(), "baseline drift: {field}");
+    }
+    let mut working = current.clone();
+    let mut candidate = current["variants"][1].clone();
+    candidate["id"] = json!("working");
+    candidate["renderer"] = json!("candidate");
+    candidate["version"] = json!("100.500");
+    working["variants"].as_array_mut().unwrap().push(candidate);
+    working["defaults"]["variants"] = json!(["iteration-01", "working"]);
+    assert!(resolve(working).is_ok());
+    current["variants"][1]["renderer"] = json!("candidate");
+    assert!(resolve(current).unwrap_err().contains("approved baseline"));
 }
