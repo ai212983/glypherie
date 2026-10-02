@@ -169,7 +169,6 @@ fn layout_and_raster_integrity_failures_are_separate_from_shape_signals() {
     assert_eq!(evaluation.glyphs.len(), 1);
 }
 
-#[cfg(feature = "candidate")]
 #[test]
 fn dropout_policy_reproduces_delivered_pixels_and_keeps_independent_coverage_hard() {
     use font_generator::reference::RasterPolicy;

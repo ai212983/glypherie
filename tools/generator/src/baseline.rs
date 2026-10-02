@@ -4,13 +4,24 @@ const FITTING_SHA256: &str = env!("SKRIFA_BASELINE_SHA256");
 fn rasterize_enabled(
     commands: &[crate::probe::FittedCommand],
     config: &crate::Config,
-    _enabled: bool,
+    enabled: bool,
 ) -> Result<crate::probe::RasterOutput, crate::Error> {
-    crate::probe::rasterize(commands, config)
+    // Approved outline-driven monochrome dropout (Hersch §7 / SCANTYPE,
+    // project hypothesis): rescue applies only to actually enabled Mono
+    // automatic instances; raw coverage is never modified.
+    if enabled {
+        crate::dropout::rasterize(commands, config)
+    } else {
+        crate::probe::rasterize(commands, config)
+    }
 }
-fn raster_policy(_enabled: bool) -> crate::reference::RasterPolicy {
-    crate::reference::RasterPolicy::Coverage
+fn raster_policy(enabled: bool) -> crate::reference::RasterPolicy {
+    if enabled {
+        crate::reference::RasterPolicy::CoverageDropout
+    } else {
+        crate::reference::RasterPolicy::Coverage
+    }
 }
 /// Latest explicitly approved model. Update only on an authorized promotion.
-pub const VERSION: &str = "001.01";
+pub const VERSION: &str = "001.02";
 include!("fitting.rs");

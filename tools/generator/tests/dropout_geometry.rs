@@ -8,7 +8,6 @@
 //! core adapts those scan-converter rules to coverage-thresholded output by
 //! rescuing subpixel interior spans with no delivered ink, keeping raw
 //! coverage and ordinary threshold conversion unchanged.
-#![cfg(feature = "candidate")]
 
 use font_generator::{
     dropout,

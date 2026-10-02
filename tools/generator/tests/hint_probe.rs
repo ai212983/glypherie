@@ -262,10 +262,39 @@ fn probe_records_explicit_engine_evidence() {
 }
 
 #[test]
-fn probe_matches_generate_output_exactly() {
+fn probe_matches_independent_reference_and_unchanged_interpreter_output() {
+    use font_generator::reference::{reference, ReferenceRequest};
     for hinting in [Hinting::Auto, Hinting::Interpreter] {
         let cfg = mono_config("A", hinting);
         let report = probe(CFF, &cfg).unwrap();
+        let reference = reference(
+            CFF,
+            &ReferenceRequest {
+                profile: "mono_1bit".into(),
+                extensions: "none".into(),
+                settings: cfg.clone(),
+            },
+        )
+        .unwrap();
+        assert_eq!(report.records.len(), reference.records.len());
+        for (record, expected) in report.records.iter().zip(&reference.records) {
+            assert_eq!(record.codepoint, expected.codepoint);
+            assert_eq!(record.glyph_id, expected.glyph_id);
+            assert_eq!(record.fitted_commands, expected.fitted_commands);
+            assert_eq!(record.pixels, expected.pixels);
+            assert_eq!(
+                (record.left, record.top, record.width, record.height),
+                (expected.left, expected.top, expected.width, expected.height)
+            );
+            assert_eq!(record.advance_26_6, expected.advance_26_6);
+        }
+        assert_eq!(report.metrics, reference.metrics);
+        // Automatic production uses the approved fitter and dropout policy;
+        // the probe remains independent upstream evidence. Interpreter output
+        // retains its production/reference identity contract.
+        if hinting != Hinting::Interpreter {
+            continue;
+        }
         let generated = generate(CFF, &cfg).unwrap();
         assert_eq!(report.records.len(), generated.glyphs.len());
         for (record, glyph) in report.records.iter().zip(generated.glyphs.iter()) {
@@ -290,12 +319,39 @@ fn probe_matches_generate_output_exactly() {
         ..Config::default()
     };
     let report = probe(&bytes, &cfg).unwrap();
-    let generated = generate(&bytes, &cfg).unwrap();
-    assert_eq!(report.records[0].pixels, generated.glyphs[0].pixels);
+    let reference = reference(
+        &bytes,
+        &ReferenceRequest {
+            profile: "mono_1bit".into(),
+            extensions: "none".into(),
+            settings: cfg,
+        },
+    )
+    .unwrap();
     assert_eq!(
-        (report.records[0].left, report.records[0].top),
-        (generated.glyphs[0].left, generated.glyphs[0].top)
+        report.records[0].fitted_commands,
+        reference.records[0].fitted_commands
     );
+    assert_eq!(report.records[0].pixels, reference.records[0].pixels);
+    assert_eq!(
+        (
+            report.records[0].left,
+            report.records[0].top,
+            report.records[0].width,
+            report.records[0].height
+        ),
+        (
+            reference.records[0].left,
+            reference.records[0].top,
+            reference.records[0].width,
+            reference.records[0].height
+        )
+    );
+    assert_eq!(
+        report.records[0].advance_26_6,
+        reference.records[0].advance_26_6
+    );
+    assert_eq!(report.metrics, reference.metrics);
 }
 
 #[test]

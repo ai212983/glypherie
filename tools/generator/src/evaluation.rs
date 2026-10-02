@@ -359,7 +359,6 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     };
     let reproduced = match record.raster_policy {
         RasterPolicy::Coverage => rasterize(&record.fitted_commands, &config),
-        #[cfg(feature = "candidate")]
         RasterPolicy::CoverageDropout if record.output_bits == 1 => {
             crate::dropout::rasterize(&record.fitted_commands, &config)
         }

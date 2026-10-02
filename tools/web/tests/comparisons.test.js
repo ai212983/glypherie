@@ -74,7 +74,7 @@ test("imports comparisons and copies exact prepared assets; pages group a symbol
   await importer.publish(comparisons, f.output);
   for (const [relative, bytes] of f.assets) assert.deepEqual(await fs.readFile(path.join(f.output, "comparison-content", f.packageId, relative)), bytes);
   const html = await build(f.root, f.output);
-  assert.match(html, /<p class="variant"><span>reference<\/span> → <span>001\.01<\/span><\/p>/);
+  assert.match(html, /<p class="variant"><span>001\.01<\/span><\/p>/);
   assert.doesNotMatch(html, /\.\/content\//);
   assert.doesNotMatch(html, /glyph-link/);
   assert.doesNotMatch(html, /\.\/01\/fixture\/U0041\/#size-14/);
@@ -382,7 +382,7 @@ test("HTTP glyph routes preserve mode/zoom, anchor sizes, and show aligned direc
   await page.goto(`${url}?profile=mono_1bit&zoom=1#family-fixture`, { waitUntil: "networkidle" });
   assert.equal(new URL(page.url()).pathname, "/preview/");
   assert.equal(new URL(page.url()).hash, "#family-fixture");
-  assert.equal(await page.locator(".variant").textContent().then((text) => text.trim()), "reference → 001.01");
+  assert.equal(await page.locator(".variant").textContent().then((text) => text.trim()), "001.01");
   assert.equal(await page.locator(".glyph-link").count(), 0);
   assert.equal(await page.locator("#family-fixture").count(), 1);
   await page.goto(`${url}01/fixture/U0041/?profile=mono_1bit&zoom=1#size-16`, { waitUntil: "networkidle" });
@@ -445,7 +445,7 @@ test("index publishes tweaks under the same iteration identity and removes obsol
   await fs.writeFile(path.join(f.output, "reviews/obsolete/index.html"), "obsolete");
   const html = await build(f.root, f.output);
   assert.match(html, /<span>001\.01<\/span>/);
-  assert.match(html, /<p class="variant"><span>reference<\/span> → <span>001\.01<\/span><\/p>/);
+  assert.match(html, /<p class="variant"><span>001\.01<\/span><\/p>/);
   assert.doesNotMatch(html, /reviews\//);
   const url = await serve(t, f.output);
   assert.equal((await fetch(`${url}reviews/obsolete/`)).status, 404);

@@ -18,7 +18,7 @@ fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
         json!(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fonts/Roboto.ttf"));
     config["defaults"]["sizes"] = json!([16, 14]);
     config["variants"].as_array_mut().unwrap().truncate(2);
-    config["defaults"]["variants"] = json!(["reference", "iteration-01"]);
+    config["defaults"]["variants"] = json!(["reference", "iteration-02"]);
     config["characters"] = json!("AX\"");
     config["samples"] = json!([{ "id": "text", "label": "Text", "text": "A X\"" }]);
     let specimen_config = temp.path().join("specimens.json");
@@ -50,7 +50,7 @@ fn attention_config(config: &Path, symbols: Value) -> PathBuf {
     fs::write(
         &path,
         serde_json::to_vec(&json!({
-            "schema_version": "symbol-attention-v1", "version": "001.01",
+            "schema_version": "symbol-attention-v1", "version": font_generator::baseline::VERSION,
             "specimens": "specimens.json", "symbols": symbols
         }))
         .unwrap(),
@@ -122,7 +122,7 @@ fn invalid_attention_preserves_published_comparison_and_acceptance_requires_a_di
     assert!(comparison::publish(&config, &root).is_err());
     let path = attention_config(&config, json!([mark.clone()]));
     let mut doc: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    doc["version"] = json!("001.02");
+    doc["version"] = json!("100.500");
     fs::write(&path, serde_json::to_vec(&doc).unwrap()).unwrap();
     assert!(comparison::publish(&config, &root).is_err());
     let mut accepted = mark;
@@ -197,7 +197,7 @@ fn exports_configured_glyphs_profiles_and_sizes_without_changing_active_selectio
     let (path, m) = manifest(&root);
     assert_eq!(m["id"], "01");
     assert_eq!(m["previous"]["label"], "Reference");
-    assert_eq!(m["current"]["label"], "001.01");
+    assert_eq!(m["current"]["label"], font_generator::baseline::VERSION);
     let sizes = m["families"][0]["sizes"].as_array().unwrap();
     assert_eq!(
         sizes
@@ -347,7 +347,7 @@ fn rejects_unsafe_routes_and_unknown_selections_without_changing_index() {
     let base: Value = serde_json::from_slice(include_bytes!("../comparisons.json")).unwrap();
     for (field, value) in [
         ("id", "../escape"),
-        ("id", "iteration-01"),
+        ("id", "iteration-02"),
         ("current", "missing-package"),
         ("previous", "reference"),
     ] {
@@ -370,11 +370,11 @@ fn missing_previous_size_fails_without_replacing_comparison_index() {
     let mut source: Value = serde_json::from_str(include_str!("../specimens.json")).unwrap();
     source.as_object_mut().unwrap().remove("preview_policy");
     source["variants"].as_array_mut().unwrap().truncate(2);
-    source["defaults"]["variants"] = json!(["reference", "iteration-01"]);
+    source["defaults"]["variants"] = json!(["reference", "iteration-02"]);
     source["families"].as_array_mut().unwrap().truncate(1);
     source["families"][0]["font"] =
         json!(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fonts/Roboto.ttf"));
-    source["defaults"]["sizes"] = json!([14, {"size_px": 16, "variants": ["iteration-01"]}]);
+    source["defaults"]["sizes"] = json!([14, {"size_px": 16, "variants": ["iteration-02"]}]);
     let source_path = config.parent().unwrap().join("limited.json");
     fs::write(&source_path, serde_json::to_vec(&source).unwrap()).unwrap();
     specimens::publish(&source_path, &root).unwrap();
@@ -442,15 +442,15 @@ fn candidate_compares_to_approved_baseline_across_versions() {
     let mut newer = source["variants"][1].clone();
     newer["renderer"] = json!("candidate");
     newer["id"] = json!("future-iteration");
-    newer["version"] = json!("001.02");
+    newer["version"] = json!("001.03");
     source["variants"].as_array_mut().unwrap().push(newer);
-    source["defaults"]["variants"] = json!(["reference", "iteration-01", "future-iteration"]);
+    source["defaults"]["variants"] = json!(["reference", "iteration-02", "future-iteration"]);
     fs::write(&source_path, serde_json::to_vec(&source).unwrap()).unwrap();
     specimens::publish(&source_path, &root).unwrap();
     comparison::publish(&config, &root).unwrap();
     let (_, m) = manifest(&root);
-    assert_eq!(m["current"]["label"], "001.02");
-    assert_eq!(m["previous"]["label"], "001.01");
+    assert_eq!(m["current"]["label"], "001.03");
+    assert_eq!(m["previous"]["label"], font_generator::baseline::VERSION);
     let mut next_revision = source["variants"][2].clone();
     next_revision["id"] = json!("next-revision");
     next_revision["version"] = json!("002.01");
@@ -460,7 +460,7 @@ fn candidate_compares_to_approved_baseline_across_versions() {
         .push(next_revision);
     source["defaults"]["variants"] = json!([
         "reference",
-        "iteration-01",
+        "iteration-02",
         "future-iteration",
         "next-revision"
     ]);
@@ -469,5 +469,5 @@ fn candidate_compares_to_approved_baseline_across_versions() {
     comparison::publish(&config, &root).unwrap();
     let (_, m) = manifest(&root);
     assert_eq!(m["current"]["label"], "002.01");
-    assert_eq!(m["previous"]["label"], "001.01");
+    assert_eq!(m["previous"]["label"], font_generator::baseline::VERSION);
 }

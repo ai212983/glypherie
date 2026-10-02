@@ -4,7 +4,8 @@ Base: Skrifa 0.46.2, Fontations commit `f886c9069b08eaddcb1caced3a44b0d8291a159a
 `d4febebda507fb889c545a37a135517769d1391941013561292897961d1887d6`. The original MIT and Apache-2.0 licenses are
 retained. The package is renamed `skrifa_candidate`; the registry dependency remains the independent reference renderer.
 
-Maintenance owner: the project maintainer. The user accepted 001.01 and authorized production promotion on 2026-10-02.
+Maintenance owner: the project maintainer. The user accepted 001.02 on 2026-10-02; production uses the separate approved
+baseline snapshot.
 Upstream contribution remains a separate decision. Rebase against a pinned base, review the isolated source diff, and rerun
 disabled parity before publishing new specimens.
 
@@ -18,6 +19,11 @@ disabled parity before publishing new specimens.
   priority-based constraint conflict handling.
 
 ## Iteration status
+
+001.02 is the current accepted model, with no newer active candidate. See the accepted 001.02 policy at the end and
+its [acceptance record](../../../../docs/revisions/001/02-light-continuity.md#acceptance-and-promotion-2026-10-02).
+The following 001.01 sections retain the historical foundation; 001.02 supersedes their integer-width transfer and
+coverage-only conversion descriptions.
 
 001.01 is closed and accepted for production on 2026-10-02 following the user's explicit assessment that all current
 published quality is acceptable. Ordinary automatic 1-bit generation now enables the accepted diagonal constraints
@@ -274,3 +280,24 @@ ownership and rounding-separation guards remain unchanged. See the
 Future experiments change this tree without editing the approved baseline.
 The generator, capture adapter and raster/output stages remain shared. Reference rendering uses the separately pinned
 registry library. Revision and iteration labels are metadata; no per-iteration Cargo feature selects production.
+
+
+## Accepted 001.02: dropout and fractional shared widths
+
+The preceding 001.01 descriptions record the approved baseline foundation. Production uses the separate
+`skrifa-baseline` snapshot, now promoted to 001.02. The user accepted the current result on 2026-10-02; see
+[001.02](../../../../docs/revisions/001/02-light-continuity.md) for evidence, classifications and remaining questions.
+
+Candidate extra-light diagonal transfer honors the standard's actual subpixel fit; the generator adds outline-driven
+Mono dropout control based on Hersch §7 and TrueType SCANTYPE, adapting those rules to coverage conversion. Raw
+coverage and threshold remain unchanged. Gray and disabled fitting keep independent-reference parity.
+
+The shared-width experiment reuses pinned FreeType's smooth horizontal `stem_width` branch for enabled candidate
+Mono/default scripts, including glyphs with no diagonal pair. It clears only HORIZONTAL_SNAP in the effective scale,
+retaining Mono, Y snapping, anchors and existing placement rules. Each horizontal standard stores the actual fitted
+width; diagonal thickness transfer uses fitted/scaled rather than reconstructing an integer. Source thickness roles,
+projection/rounding margins, movement bounds, tangent dependencies and ownership remain in force. This adaptation is
+a project hypothesis grounded in FreeType's width policy and Shamir's shared feature dimensions, not FreeType Mono
+parity. Synthetic transforms, source-width witnesses, the conservative join sweep and unchanged gray/disabled paths
+provide mechanical evidence. The user's web assessment accepted the current weight, continuity and placement tradeoffs,
+including the disclosed remaining binary upright step near weight 465. There is no active newer candidate.

@@ -90,7 +90,7 @@ fn resolve(value: Value) -> Result<Vec<font_generator::specimen_config::RenderCa
 fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let loaded = load(&root.join("specimens.json")).unwrap();
-    assert_eq!(loaded.cases.len(), 72);
+    assert_eq!(loaded.cases.len(), 48);
     assert_eq!(
         loaded.config.preview_policy.as_deref(),
         Some(Path::new("preview-policy.json"))
@@ -123,14 +123,6 @@ fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
         loaded
             .cases
             .iter()
-            .filter(|case| case.variant == "iteration-01")
-            .count(),
-        24
-    );
-    assert_eq!(
-        loaded
-            .cases
-            .iter()
             .filter(|case| case.variant == "iteration-02")
             .count(),
         24
@@ -143,14 +135,16 @@ fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
             .iter()
             .map(|variant| variant.id.as_str())
             .collect::<Vec<_>>(),
-        ["reference", "iteration-01", "iteration-02"]
+        ["reference", "iteration-02"]
     );
-    assert_eq!(loaded.config.variants[1].version.as_deref(), Some("001.01"));
-    assert_eq!(loaded.config.variants[1].extensions, "diagonal-01");
-    assert_eq!(loaded.config.variants[2].version.as_deref(), Some("001.02"));
     assert_eq!(
-        loaded.config.variants[2].renderer(),
-        font_generator::renderer::RendererRole::Candidate
+        loaded.config.variants[1].version.as_deref(),
+        Some(font_generator::baseline::VERSION)
+    );
+    assert_eq!(loaded.config.variants[1].extensions, "diagonal-01");
+    assert_eq!(
+        loaded.config.variants[1].renderer(),
+        font_generator::renderer::RendererRole::Baseline
     );
     for profile in &loaded.config.profiles {
         assert_eq!(profile.mono_threshold, 128);
@@ -392,7 +386,7 @@ fn preview_policy_rejects_effective_matrix_drift_in_defaults_and_overrides() {
             2 => value["families"][1]["sizes"] = json!([14, 16, 20]),
             3 => {
                 value["defaults"]["sizes"] = json!([
-                    14, 16, 18, 20, {"size_px": 19, "variants": ["iteration-01"], "profiles": ["mono_1bit"]}
+                    14, 16, 18, 20, {"size_px": 19, "variants": ["iteration-02"], "profiles": ["mono_1bit"]}
                 ])
             }
             // Aggregate family sizes remain unchanged; the latest variant loses 18 px.
@@ -474,7 +468,7 @@ fn stable_renderer_roles_distinguish_approval_from_working_version_metadata() {
     candidate["renderer"] = json!("candidate");
     candidate["version"] = json!("100.500");
     working["variants"].as_array_mut().unwrap().push(candidate);
-    working["defaults"]["variants"] = json!(["iteration-01", "working"]);
+    working["defaults"]["variants"] = json!([current["variants"][1]["id"], "working"]);
     assert!(resolve(working).is_ok());
     current["variants"][1]["renderer"] = json!("candidate");
     assert!(resolve(current).unwrap_err().contains("approved baseline"));

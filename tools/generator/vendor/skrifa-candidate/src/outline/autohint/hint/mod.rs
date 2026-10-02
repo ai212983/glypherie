@@ -102,7 +102,30 @@ fn hint_outline_impl(
     } else {
         QuirksMode::Jit
     };
-    let scaled_metrics = scale_style_metrics(metrics, *scale, quirks);
+    let mut scaled_metrics = scale_style_metrics(metrics, *scale, quirks);
+    let group = metrics.style_class().script.group;
+    // Project hypothesis (pinned FreeType stem_width; Shamir shared widths):
+    // reuse smooth X-width fitting for Mono/default scripts, including glyphs
+    // without diagonals. Retain Y snapping, anchors and all other scale flags;
+    // transfer this actual fitted standard rather than rebuilding an integer.
+    if diagonal_enabled
+        && stem_relative
+        && scaled_metrics.scale.flags.contains(ScaleFlags::MONO)
+        && group == ScriptGroup::Default
+    {
+        scaled_metrics.scale.flags &= !ScaleFlags::HORIZONTAL_SNAP;
+        let standard_count = scaled_metrics.axes[0].widths.len();
+        for ix in 0..standard_count {
+            let scaled = scaled_metrics.axes[0].widths[ix].scaled;
+            let fitted = edges::smooth_standard_fitted_width(
+                &scaled_metrics.axes[0],
+                group,
+                &scaled_metrics.scale,
+                scaled,
+            );
+            scaled_metrics.axes[0].widths[ix].fitted = fitted;
+        }
+    }
     let scale = &scaled_metrics.scale;
     let mut axis = Axis::default();
     let hint_top_to_bottom = metrics.style_class().script.hint_top_to_bottom;
@@ -125,7 +148,6 @@ fn hint_outline_impl(
         x_scale: scale.x_scale,
         ..Default::default()
     };
-    let group = metrics.style_class().script.group;
     let mut axes = [const { None }; 2];
     // For default script group, we don't proceed with hinting if we're
     // missing alignment zones. FreeType swaps in a "dummy" hinter here
@@ -196,13 +218,8 @@ fn hint_outline_impl(
                 .map(|plan| {
                     outline::align_edge_points(outline, &axis, group, scale);
                     outline::align_strong_points(outline, &mut axis, recorder.as_deref_mut());
-                    let (counts, reserved) = plan.apply(
-                        outline,
-                        &scaled_metrics.axes,
-                        &axis,
-                        &hard_y,
-                        stem_relative,
-                    );
+                    let (counts, reserved) =
+                        plan.apply(outline, &scaled_metrics.axes, &axis, &hard_y, stem_relative);
                     diagonal_pairs = Some(counts);
                     reserved
                 })

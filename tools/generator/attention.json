@@ -14,9 +14,9 @@
       },
       "profile": "mono_1bit",
       "status": "accepted",
-      "description": "Diagonals and bottom junction",
-      "inspection": "Thickening: check optical weight",
-      "disposition": "User accepted the current published 001.01 appearance on 2026-10-01: everything besides Literata 14 Q/x/y and Source Sans 3 16 w/x/y is fine. Acceptance applies to this reviewed geometry."
+      "description": "Lower junction",
+      "inspection": "Thinning: check continuity and shape",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
     },
     {
       "id": "roboto-0077-18",
@@ -29,9 +29,9 @@
       },
       "profile": "mono_1bit",
       "status": "accepted",
-      "description": "Diagonals and bottom junctions",
-      "inspection": "Thickening: check optical weight",
-      "disposition": "User accepted the current published 001.01 appearance on 2026-10-01: everything besides Literata 14 Q/x/y and Source Sans 3 16 w/x/y is fine. Acceptance applies to this reviewed geometry."
+      "description": "Inner strokes and junctions",
+      "inspection": "Thinning: check continuity and shape",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
     },
     {
       "id": "literata-007A-16",
@@ -58,9 +58,10 @@
         "wght": 400
       },
       "profile": "mono_1bit",
-      "status": "pending",
-      "description": "Lower tail",
-      "inspection": "Thickening: check tail weight"
+      "status": "accepted",
+      "description": "Lower tail and bowl",
+      "inspection": "Mixed: check continuity and contrast",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
     },
     {
       "id": "literata-0051-16",
@@ -118,9 +119,9 @@
       },
       "profile": "mono_1bit",
       "status": "accepted",
-      "description": "Fork and heavy diagonal",
-      "inspection": "Thickening: check optical weight",
-      "disposition": "User accepted the current published 001.01 appearance on 2026-10-01: everything besides Literata 14 Q/x/y and Source Sans 3 16 w/x/y is fine. Acceptance applies to this reviewed geometry."
+      "description": "Fork and lower join",
+      "inspection": "Thinning: check continuity and shape",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
     },
     {
       "id": "literata-0078-14",
@@ -132,9 +133,10 @@
         "wght": 400
       },
       "profile": "mono_1bit",
-      "status": "pending",
-      "description": "Terminals",
-      "inspection": "Thickening: check terminal weight"
+      "status": "accepted",
+      "description": "Terminals and crossing",
+      "inspection": "Mixed: check continuity and contrast",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
     },
     {
       "id": "literata-0078-20",
@@ -161,9 +163,10 @@
         "wght": 400
       },
       "profile": "mono_1bit",
-      "status": "pending",
-      "description": "Upper terminals",
-      "inspection": "Thickening: check terminal weight"
+      "status": "accepted",
+      "description": "Fork and terminals",
+      "inspection": "Mixed: check continuity and contrast",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
     },
     {
       "id": "literata-0079-18",
@@ -235,9 +238,9 @@
       },
       "profile": "mono_1bit",
       "status": "accepted",
-      "inspection": "Thinning: check joins",
-      "description": "Inner diagonals and joins",
-      "disposition": "User accepted all current published 001.01 quality and authorized closure and production promotion on 2026-10-02. The reviewed appearance, including this feature, is acceptable; no compensating correction is required. Acceptance records this reviewed state and allows later model volatility."
+      "inspection": "Shape/placement: check stroke spacing",
+      "description": "Inner strokes",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
     },
     {
       "id": "source-sans-3-0078-16",
@@ -248,9 +251,10 @@
         "wght": 400
       },
       "profile": "mono_1bit",
-      "status": "pending",
-      "inspection": "Thickening: check terminal weight",
-      "description": "Terminals"
+      "status": "accepted",
+      "inspection": "Mixed: check continuity and contrast",
+      "description": "Slant ends and crossing",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
     },
     {
       "id": "source-sans-3-0079-16",
@@ -276,9 +280,69 @@
         "wght": 400
       },
       "profile": "mono_1bit",
-      "status": "pending",
-      "inspection": "Thickening: check terminal weight",
-      "description": "Terminals"
+      "status": "accepted",
+      "inspection": "Thickening: check optical weight",
+      "description": "Slant ends",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
+    },
+    {
+      "id": "roboto-0078-14",
+      "family_id": "roboto",
+      "character": "x",
+      "size_px": 14,
+      "axes": {
+        "wght": 400,
+        "wdth": 100
+      },
+      "profile": "mono_1bit",
+      "status": "accepted",
+      "inspection": "Thickening: check optical weight",
+      "description": "Crossing",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
+    },
+    {
+      "id": "roboto-0048-14",
+      "family_id": "roboto",
+      "character": "H",
+      "size_px": 14,
+      "axes": {
+        "wght": 400,
+        "wdth": 100
+      },
+      "profile": "mono_1bit",
+      "status": "accepted",
+      "inspection": "Mixed: check weight and spacing",
+      "description": "Uprights and counter",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
+    },
+    {
+      "id": "roboto-0049-16",
+      "family_id": "roboto",
+      "character": "I",
+      "size_px": 16,
+      "axes": {
+        "wght": 400,
+        "wdth": 100
+      },
+      "profile": "mono_1bit",
+      "status": "accepted",
+      "inspection": "Shape/placement: check bearings",
+      "description": "Upright",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
+    },
+    {
+      "id": "source-sans-3-0048-16",
+      "family_id": "source-sans-3",
+      "character": "H",
+      "size_px": 16,
+      "axes": {
+        "wght": 400
+      },
+      "profile": "mono_1bit",
+      "status": "accepted",
+      "inspection": "Mixed: check weight and spacing",
+      "description": "Uprights and counter",
+      "disposition": "User accepted the current 001.02 result on 2026-10-02 (\"really good result. lets commit it as 001.02\"). Source thickness/contrast, protected dependencies and joins were checked; the reviewed weight and placement tradeoffs are accepted. The disclosed remaining binary step near weight 465 is an accepted limitation. This records the reviewed state without freezing future pixels or geometry."
     }
   ]
 }

@@ -55,7 +55,7 @@ fn grid_width(pair: &Pair, metrics: &ScaledAxisMetrics) -> i32 {
 // VTT TTGenerator.cpp RectilinearDistanceOfDiagonal/DStroke: project across X
 // for steep strokes and Y for shallow ones, then control an integer axial width.
 // The specific source/standard ratio transfer is a project hypothesis: preserve
-// thick/thin design ratios while coordinating the stem's one-to-two pixel change.
+// thick/thin design ratios while following the shared standard's fitted width.
 // Quantize only after projection, never reuse a perpendicular integer as an axis distance.
 fn stem_relative_width(pair: &Pair, metrics: &ScaledAxisMetrics, fitted_slope: f64) -> f64 {
     let source_slope = (pair.left.slope + pair.right.slope) * 0.5;
@@ -66,8 +66,14 @@ fn stem_relative_width(pair: &Pair, metrics: &ScaledAxisMetrics, fitted_slope: f
         .filter(|w| w.scaled > 0)
         .min_by_key(|w| round((w.scaled as f64 - source_normal).abs()))
         .map(|standard| {
-            let fitted = ((standard.scaled + 32) / 64).max(1) * 64;
-            source_normal * fitted as f64 / standard.scaled as f64
+            // Shamir 2003 §§3.2/3.4 shared font widths: transfer the actual
+            // fitted standard from the horizontal width policy (smooth
+            // stem_width via ScaledWidth.fitted) instead of reconstructing an
+            // integer. Extra-light fitted equals scaled under that same
+            // policy, preserving the unit ratio there; dropout control keeps
+            // subpixel-visibility responsibility (Hersch 1993 §7). PROJECT
+            // HYPOTHESIS: this fitted/scaled transfer, not integer rebuild.
+            source_normal * standard.fitted as f64 / standard.scaled as f64
         })
         .unwrap_or(source_normal);
     let dominant = fitted_slope.abs().max(1.0);
@@ -77,7 +83,9 @@ fn stem_relative_width(pair: &Pair, metrics: &ScaledAxisMetrics, fitted_slope: f
     // to less than 1/4 pixel. Applying that geometric guard to diagonal Mono
     // targets is an explicit project hypothesis; it avoids a second coarse
     // rounding step undoing the source/standard thickness ratio.
-    let axial = if (rounded as f64 - projected).abs() < 16.0 {
+    let axial = if metrics.width_metrics.is_extra_light {
+        projected
+    } else if (rounded as f64 - projected).abs() < 16.0 {
         rounded as f64
     } else {
         projected.max(64.0)
@@ -1062,6 +1070,52 @@ mod tests {
     }
 
     #[test]
+    fn extra_light_diagonals_preserve_normal_weight_and_contrast_under_projection() {
+        // FreeType/Skrifa extra-light stems retain source width. The same
+        // shared-width ratio must preserve both thin/thick roles through
+        // reflection and steep/shallow fitted projections. Only the existing
+        // 26.6 coordinate-rounding separation margin may increase that width.
+        let mut metrics = ScaledAxisMetrics::default();
+        metrics.width_metrics.is_extra_light = true;
+        metrics
+            .widths
+            .push(super::super::super::metrics::ScaledWidth {
+                scaled: 24,
+                fitted: 24,
+            });
+        for source_slope in [-2.0_f64, -0.5, 0.5, 2.0] {
+            for fitted_slope in [-1.5_f64, -0.4, 0.4, 1.5] {
+                let mut fitted_normals = Vec::new();
+                for normal in [18.0, 30.0] {
+                    let border = Border {
+                        a: 0,
+                        b: 1,
+                        slope: source_slope,
+                        intercept: 0.0,
+                        low: 0.0,
+                        high: 640.0,
+                        direction: 1,
+                    };
+                    let pair = Pair {
+                        left: border,
+                        right: Border {
+                            direction: -1,
+                            ..border
+                        },
+                        width: normal * (1.0 + source_slope * source_slope).sqrt(),
+                    };
+                    let fitted = stem_relative_width(&pair, &metrics, fitted_slope)
+                        / (1.0 + fitted_slope * fitted_slope).sqrt();
+                    assert!(fitted >= normal && fitted <= normal + 3.0);
+                    assert!(fitted < 64.0, "extra-light stroke acquired a pixel floor");
+                    fitted_normals.push(fitted);
+                }
+                assert!((fitted_normals[1] - fitted_normals[0] - 12.0).abs() < 1e-10);
+            }
+        }
+    }
+
+    #[test]
     fn stem_relative_fit_keeps_source_contrast_with_bounded_projection_error() {
         // Project hypothesis grounded in Shamir shared widths/relative dimensions
         // and VTT axial diagonal control: transfer the standard stem's fit ratio,
@@ -1256,5 +1310,98 @@ mod tests {
             vec![1.0]
         );
         assert!(minimum_norm(&[vec![1.0], vec![1.0]], &[1.0, 2.0]).is_none());
+    }
+
+    #[test]
+    fn stem_relative_transfer_uses_fitted_standard_without_integer_leap() {
+        // Shamir §§3.2/3.4 shared widths: the diagonal transfer follows the
+        // standard's actual fitted width. With {scaled 96, fitted 100} a
+        // 96-unit source normal stays near 100 instead of leaping to the
+        // reconstructed integer 128; distinct source roles stay distinct
+        // through reflected/steep/shallow projections. PROJECT HYPOTHESIS:
+        // fitted/scaled transfer under the smooth width policy.
+        use super::super::super::metrics::ScaledWidth;
+        let mut metrics = ScaledAxisMetrics::default();
+        metrics.widths.push(ScaledWidth {
+            scaled: 96,
+            fitted: 100,
+        });
+        let pair_with_normal = |source_slope: f64, normal: f64| {
+            let border = Border {
+                a: 0,
+                b: 1,
+                slope: source_slope,
+                intercept: 0.0,
+                low: 0.0,
+                high: 640.0,
+                direction: 1,
+            };
+            Pair {
+                left: border,
+                right: Border {
+                    direction: -1,
+                    ..border
+                },
+                width: normal * (1.0 + source_slope * source_slope).sqrt(),
+            }
+        };
+        let estimate = |result: f64, fitted_slope: f64| {
+            (result - (1.0 + fitted_slope.abs()).ceil())
+                / (1.0 + fitted_slope * fitted_slope).sqrt()
+        };
+        for source_slope in [-2.0_f64, -0.5, 0.5, 2.0] {
+            for fitted_slope in [-1.5_f64, -0.5, 0.5, 1.5] {
+                let thin = estimate(
+                    stem_relative_width(
+                        &pair_with_normal(source_slope, 80.0),
+                        &metrics,
+                        fitted_slope,
+                    ),
+                    fitted_slope,
+                );
+                let thick = estimate(
+                    stem_relative_width(
+                        &pair_with_normal(source_slope, 96.0),
+                        &metrics,
+                        fitted_slope,
+                    ),
+                    fitted_slope,
+                );
+                let normal_rounding_bound =
+                    16.0 * fitted_slope.abs().max(1.0) / (1.0 + fitted_slope * fitted_slope).sqrt();
+                assert!(
+                    (thin - 80.0 * 100.0 / 96.0).abs() < normal_rounding_bound,
+                    "thin role lost at slopes {source_slope}/{fitted_slope}: {thin}"
+                );
+                assert!(
+                    (thick - 100.0).abs() < normal_rounding_bound,
+                    "thick role leapt at slopes {source_slope}/{fitted_slope}: {thick}"
+                );
+                assert!(
+                    thick > thin,
+                    "roles merged at slopes {source_slope}/{fitted_slope}: {thin} vs {thick}"
+                );
+                // Reflection preserves the transfer exactly.
+                assert_eq!(
+                    stem_relative_width(
+                        &pair_with_normal(source_slope, 96.0),
+                        &metrics,
+                        fitted_slope,
+                    ),
+                    stem_relative_width(
+                        &pair_with_normal(-source_slope, 96.0),
+                        &metrics,
+                        -fitted_slope,
+                    )
+                );
+            }
+        }
+        // A smooth 1.5px fitted standard transfers near itself, not 2px.
+        metrics.widths[0] = ScaledWidth {
+            scaled: 96,
+            fitted: 96,
+        };
+        let result = stem_relative_width(&pair_with_normal(0.5, 96.0), &metrics, 0.5);
+        assert!((estimate(result, 0.5) - 96.0).abs() < 16.0 / 1.25_f64.sqrt());
     }
 }

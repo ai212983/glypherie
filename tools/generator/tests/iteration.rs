@@ -82,6 +82,23 @@ fn assert_connected_letter_preserved(a: &ReferenceRecord, b: &ReferenceRecord, c
     }
 }
 
+// The experiment changes X-width fitting even when no diagonal pair applies.
+// Y fitting and contour structure remain unchanged on these axial witnesses.
+fn assert_axial_structure_and_y_preserved(a: &ReferenceRecord, b: &ReferenceRecord) {
+    let y_commands = |r: &ReferenceRecord| {
+        let mut commands = serde_json::to_value(&r.fitted_commands).unwrap();
+        for command in commands.as_array_mut().unwrap() {
+            for key in ["x", "x_bits", "x1", "x1_bits", "x2", "x2_bits"] {
+                command.as_object_mut().unwrap().remove(key);
+            }
+        }
+        commands
+    };
+    assert_eq!(y_commands(a), y_commands(b));
+    assert_eq!(a.advance_26_6, b.advance_26_6);
+    assert_eq!(ink_components(a), 1);
+}
+
 #[test]
 fn reported_roboto_14_x_and_16_nwxyz_fit_all_pairs_and_stay_connected() {
     let bytes = font("Roboto.ttf");
@@ -176,7 +193,7 @@ fn experimental_corpus_is_deterministic_preserves_layout_and_grayscale() {
 }
 
 #[test]
-fn reported_case_has_real_constraints_and_straight_controls_are_unchanged() {
+fn reported_case_has_real_constraints_and_straight_controls_preserve_y_and_layout() {
     let bytes = font("Roboto.ttf");
     let mut req = request("Roboto.ttf", 14.0, PROFILE_MONO_1BIT);
     let upstream = reference(&bytes, &req).unwrap();
@@ -184,14 +201,8 @@ fn reported_case_has_real_constraints_and_straight_controls_are_unchanged() {
     let candidate = render(&bytes, &req).unwrap();
     for (a, b) in candidate.records.iter().zip(&upstream.records) {
         if "HIn".contains(char::from_u32(a.codepoint).unwrap()) {
-            let mut actual = serde_json::to_value(a).unwrap();
-            actual.as_object_mut().unwrap().remove("diagonal_pairs");
-            // Raster policy is now explicit provenance. These straight
-            // controls still require identical geometry, coverage and pixels.
-            actual.as_object_mut().unwrap().remove("raster_policy");
-            let mut expected = serde_json::to_value(b).unwrap();
-            expected.as_object_mut().unwrap().remove("raster_policy");
-            assert_eq!(actual, expected);
+            assert_eq!(a.diagonal_pairs, Some([0, 0, 0]));
+            assert_axial_structure_and_y_preserved(a, b);
         }
         if "AVvwxyz".contains(char::from_u32(a.codepoint).unwrap()) {
             eprintln!(
@@ -420,10 +431,30 @@ fn stem_relative_widths_restore_reported_strokes_and_preserve_design_contracts()
         req.extensions = EXTENSIONS_DIAGONAL_01.into();
         let old = before_width_tweak(name, size, &ch.to_string());
         let new = render(&bytes, &req).unwrap();
+        // Fractional shared fitting replaces the former integer-width increase.
+        // Compare to independent unhinted source thickness, with the inherited
+        // quarter-pixel axial rounding bound and endpoint quantization margin.
+        req.settings.hinting = Hinting::None;
+        req.extensions = "none".into();
+        let source = reference(&bytes, &req).unwrap();
+        let source_width = normal_width(
+            &serde_json::to_value(&source.records[0]).unwrap(),
+            left,
+            right,
+        );
+        let commands = serde_json::to_value(&new.records[0].fitted_commands).unwrap();
+        let slope = (commands[left]["x"].as_f64().unwrap()
+            - commands[left - 1]["x"].as_f64().unwrap())
+            / (commands[left]["y"].as_f64().unwrap() - commands[left - 1]["y"].as_f64().unwrap());
+        let normal_scale = (1.0 + slope * slope).sqrt();
+        let rounding_bound = (0.25 * slope.abs().max(1.0)
+            + ((1.0 + slope.abs()).ceil() + 1.0) / 64.0)
+            / normal_scale;
+        let fitted_width =
+            normal_width(&serde_json::to_value(&new.records[0]).unwrap(), left, right);
         assert!(
-            normal_width(&serde_json::to_value(&new.records[0]).unwrap(), left, right)
-                > normal_width(&old[0], left, right) + 0.4,
-            "{name} {size} {ch}"
+            (fitted_width - source_width).abs() <= rounding_bound,
+            "{name} {size} {ch}: {source_width} -> {fitted_width}"
         );
         assert_eq!(ink_components(&new.records[0]), 1);
         assert_eq!(
@@ -537,11 +568,27 @@ fn reported_literata_y_has_parallel_borders_contrast_and_protected_curve_junctio
         // Continuous curve junctions remain protected. They cannot acquire the
         // terminal dependency that broke these joins in the unrestricted trial.
         assert_eq!(candidate.records[0].diagonal_pairs, Some([2, 0, 2]));
-        assert_eq!(
-            candidate.records[0].fitted_commands,
-            baseline.records[0].fitted_commands
-        );
-        assert_eq!(candidate.records[0].pixels, baseline.records[0].pixels);
+        assert_axial_structure_and_y_preserved(&candidate.records[0], &baseline.records[0]);
+        // The unsupported curved junction contour keeps its shape: the changed
+        // upright width carries it by one X translation, without a diagonal solve.
+        let actual = serde_json::to_value(&candidate.records[0].fitted_commands).unwrap();
+        let expected = serde_json::to_value(&baseline.records[0].fitted_commands).unwrap();
+        let translation = actual[0]["x"].as_f64().unwrap() - expected[0]["x"].as_f64().unwrap();
+        for (a, b) in actual
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(expected.as_array().unwrap())
+        {
+            if a["op"] == "close" {
+                break;
+            }
+            for key in ["x", "x1", "x2"] {
+                if let (Some(x), Some(y)) = (a[key].as_f64(), b[key].as_f64()) {
+                    assert_eq!(x - y, translation, "Literata {size} k protected junction");
+                }
+            }
+        }
     }
 }
 
@@ -741,7 +788,7 @@ fn reported_source_sans_inner_diagonals_preserve_caps_layout_and_connectivity() 
 fn unsupported_two_control_bow_terminal_preserves_reference_join() {
     // A source pair without interior controls can change local width only by
     // moving its shared cap. It lacks this curved-width model's supported shape
-    // role; independent fitting must retain the upstream join instead.
+    // role; keep the pair unsupported and its join intact under axial refitting.
     let bytes = font("Literata.ttf");
     let mut req = request("Literata.ttf", 17.0, PROFILE_MONO_1BIT);
     req.settings.characters = "c".into();
@@ -749,9 +796,56 @@ fn unsupported_two_control_bow_terminal_preserves_reference_join() {
     req.extensions = EXTENSIONS_DIAGONAL_01.into();
     let candidate = render(&bytes, &req).unwrap();
     assert_eq!(candidate.records[0].diagonal_pairs, Some([0, 0, 0]));
-    assert_eq!(
-        candidate.records[0].fitted_commands,
-        upstream.records[0].fitted_commands
-    );
-    assert_eq!(ink_components(&candidate.records[0]), 1);
+    assert_axial_structure_and_y_preserved(&candidate.records[0], &upstream.records[0]);
+}
+
+#[test]
+fn mono_straight_stem_uses_fractional_shared_width_across_weight_boundary() {
+    use skrifa_baseline::{
+        outline::{
+            autohint::{GlyphStyles, Scale, UnscaledStyleMetrics},
+            Target,
+        },
+        FontRef, MetadataProvider,
+    };
+    let bytes = font("Roboto.ttf");
+    let face = FontRef::new(&bytes).unwrap();
+    let outlines = face.outline_glyphs();
+    let styles = GlyphStyles::new(&outlines);
+    let style = styles
+        .get(face.charmap().map('H').unwrap())
+        .unwrap()
+        .style_class()
+        .unwrap();
+    let mut widths = Vec::new();
+    for weight in [459.0, 460.0] {
+        let mut req = request("Roboto.ttf", 14.0, PROFILE_MONO_1BIT);
+        req.settings.characters = "H".into();
+        req.settings.axes.insert("wght".into(), weight);
+        let loc = face.axes().location([("wght", weight), ("wdth", 100.0)]);
+        let metrics = UnscaledStyleMetrics::new(&face, loc.coords(), style);
+        let scaled = metrics.scale(Scale::new(
+            14.0,
+            face.metrics(skrifa_baseline::instance::Size::unscaled(), &loc)
+                .units_per_em as i32,
+            face.attributes().style,
+            Target::Mono,
+            style.script.group,
+        ));
+        let standard = scaled.horizontal_metrics().widths()[0].scaled as f64 / 64.0;
+        let upstream = reference(&bytes, &req).unwrap();
+        req.extensions = EXTENSIONS_DIAGONAL_01.into();
+        let candidate = render(&bytes, &req).unwrap();
+        let actual = &candidate.records[0];
+        assert_eq!(actual.diagonal_pairs, Some([0, 0, 0]));
+        assert_axial_structure_and_y_preserved(actual, &upstream.records[0]);
+        let commands = serde_json::to_value(&actual.fitted_commands).unwrap();
+        // The first upright's opposing borders are geometric witnesses, never
+        // production selectors. Its width follows the independently scaled class.
+        let width = commands[5]["x"].as_f64().unwrap() - commands[7]["x"].as_f64().unwrap();
+        assert_eq!(width, standard);
+        widths.push(width);
+    }
+    // A standard moving one 26.6 unit cannot trigger the former full-pixel fit.
+    assert_eq!(widths[1] - widths[0], 1.0 / 64.0);
 }

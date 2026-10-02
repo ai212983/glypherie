@@ -224,8 +224,12 @@ test("switching fonts swaps controls, preserves edits, and idles inactive fonts"
   const freed = await page.evaluate(() => globalThis.__freed ?? 0);
   assert.ok(freed >= 1);
 
+  const constructionsBeforeReturn = await page.evaluate(() => globalThis.__constructions ?? 0);
   await page.locator("#font-select").selectOption("alpha");
-  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.text === "Alpha edited" && spec.size_px === 16));
+  // The retained canvas may be reused. Wait for the returning font to load
+  // before checking ownership; an earlier matching render cannot establish it.
+  await page.waitForFunction((before) => (globalThis.__constructions ?? 0) > before
+    && !document.querySelector("#interactive-alpha [data-size]").disabled, constructionsBeforeReturn);
   assert.equal(await page.locator("#interactive-alpha [data-text]").inputValue(), "Alpha edited");
   assert.equal(await page.locator("#interactive-alpha [data-preset]").inputValue(), "custom");
   // Every displaced font was released exactly once; only the active one lives.

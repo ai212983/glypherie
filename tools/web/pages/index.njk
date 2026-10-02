@@ -18,7 +18,7 @@ permalink: index.html
       <p class="eyebrow">Font workshop</p>
       <h1>Font preview</h1>
       {% if specimens.state == "ready" %}
-      <p class="variant">{% if activeComparison %}<span>{% if activeComparison.previous.label == "Reference" %}reference{% else %}{{ activeComparison.previous.label }}{% endif %}</span> → {% endif %}<span>{{ specimens.variantLabel }}</span></p>
+      <p class="variant"><span>{{ specimens.variantLabel }}</span></p>
       {% endif %}
     </div>
     {% if specimens.state == "ready" %}

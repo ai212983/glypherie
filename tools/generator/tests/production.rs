@@ -197,6 +197,55 @@ fn production_matches_approved_baseline_over_preview_matrix() {
 }
 
 #[test]
+fn low_weight_mono_matches_approved_baseline_without_ink_targets() {
+    use font_generator::{
+        baseline::{render, EXTENSIONS_DIAGONAL_01},
+        reference::ReferenceRequest,
+    };
+    let data = font("Roboto.ttf");
+    // Bounded fractional-role witnesses: approved dropout plus the smooth
+    // near-1.5px standard must reproduce the approved baseline exactly. No
+    // ink totals are asserted, only baseline parity, layout and delivered
+    // ink presence for these continuity-sensitive characters.
+    for size in [14.0, 16.0, 18.0, 20.0] {
+        for weight in [100.0, 200.0, 400.0, 459.0, 460.0, 465.0] {
+            for width in [75.0, 100.0] {
+                let mut settings = config("Roboto.ttf", size, "aHIAVxyn");
+                settings.axes.insert("wght".into(), weight);
+                settings.axes.insert("wdth".into(), width);
+                let request = ReferenceRequest {
+                    profile: "mono_1bit".into(),
+                    extensions: EXTENSIONS_DIAGONAL_01.into(),
+                    settings: settings.clone(),
+                };
+                let reviewed = render(&data, &request).unwrap();
+                assert_eq!(reviewed.records.len(), 8);
+                for record in reviewed.records {
+                    let mut single = settings.clone();
+                    single.characters = char::from_u32(record.codepoint).unwrap().to_string();
+                    let produced = generate(&data, &single).unwrap();
+                    let context = format!(
+                        "Roboto {size} wght{weight} wdth{width} U+{:04X}",
+                        record.codepoint
+                    );
+                    assert_eq!(produced.metrics, reviewed.metrics, "{context}");
+                    assert_eq!(produced.glyphs.len(), 1, "{context}");
+                    let glyph = &produced.glyphs[0];
+                    assert_eq!(glyph.advance_26_6, record.advance_26_6, "{context}");
+                    assert_eq!(
+                        (glyph.left, glyph.top, glyph.width, glyph.height),
+                        (record.left, record.top, record.width, record.height),
+                        "{context}"
+                    );
+                    assert_eq!(glyph.pixels, record.pixels, "{context}");
+                    assert!(glyph.pixels.iter().any(|pixel| *pixel != 0), "{context}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn explicit_engines_and_gray_keep_upstream_production_settings() {
     for name in ["Roboto.ttf", "Literata.ttf", "SourceSans3.ttf"] {
         let data = font(name);

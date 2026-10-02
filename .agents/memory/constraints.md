@@ -21,7 +21,7 @@ glyphs or visual findings; do not present standalone images or local image links
 The web index `/` ALWAYS shows the latest iteration of the latest revision. Compare revision and iteration numbers
 numerically. The 2026-10-02 renderer-role decision supersedes the earlier previous-revision comparison rule: compare a
 working candidate with the approved baseline; with no newer candidate, compare baseline with reference (currently
-approved 001.01 versus reference).
+approved 001.02 versus reference).
 Do not create a separate `/reviews/` folder or endpoint. Update guidance, generator selection, comparison export,
 and the web together. Only link rebuilt web content that reflects the current changes.
 
@@ -152,3 +152,27 @@ preview compares with that baseline and the interactive tester switches the same
 Low weights stay outside the weight-400 publication matrix and Attention scope. See docs/revisions/001/02-light-continuity.md
 for classification, checks, independent witnesses and pending optical assessment. 001.02 remains open until explicit
 user acceptance and an agreed disposition of remaining actions.
+
+
+# Current experiment (2026-10-02): shared monochrome width transition
+
+Checkpoint d9ba93f preserves the light-continuity candidate. Open 001.02 now reuses the inherited smooth horizontal
+stem-width branch for candidate Mono/default scripts and transfers the actual fitted standard to diagonals. This is a
+project hypothesis grounded in pinned FreeType stem_width and Shamir shared source widths. At Roboto14 wdth100
+459/460 it removes the 1→2 px fitted-width cliff; inherited placement and binary steps remain. Preserve the approved
+baseline, source contrast, conservative join guards, gray/disabled identity and preview scope. Candidate regular-weight
+geometry may change; review meaningful thinning, thickening and placement questions recorded in the iteration notes
+and scoped Attention, without freezing accepted glyph pixels. Optical assessment remains open.
+
+
+# Latest acceptance (2026-10-02): 001.02
+
+User: "really good result. lets commit it as 001.02". Accepted and closed 001.02 includes light-stroke dropout,
+extra-light width coordination and fractional shared horizontal fitting. Promote the accepted source to the separate
+baseline snapshot, production version 001.02; candidate tooling remains optional. All 13 pending published Attention
+cases are accepted tradeoffs with recorded source-geometry rationale. The disclosed binary upright step near 465 and
+inherited placement steps are accepted limitations, not a claim of fully smooth optical weight. No new iteration starts.
+Earlier open/pending and approved00101 statements are historical and superseded. Preserve normal preview scope and
+independent reference, gray/disabled/layout contracts. The index subtitle shows only the active iteration (001.02),
+without comparison names or an arrow, per the user's explicit follow-up. Version roles and symbol routes retain their
+reference/baseline/candidate semantics.

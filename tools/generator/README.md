@@ -19,13 +19,13 @@ validation under the same iteration identity. An iteration closes only when the 
 further actions for that problem: it is resolved, cannot be fixed, or the remaining work belongs in an agreed follow-up.
 Do not infer closure from passing tests, publishing specimens, or changing an implementation approach. The user must
 explicitly agree to closure before advancing the iteration. Record the decision and any follow-up scope in the
-[iteration record](../../docs/revisions/001/01-diagonal-weight.md).
+[iteration record](../../docs/revisions/001/02-light-continuity.md).
 
 ## Specimen configuration
 
-[specimens.json](specimens.json) defines the specimen matrix: upstream `reference` and the accepted `iteration-01`.
+[specimens.json](specimens.json) defines the specimen matrix: upstream `reference` and the accepted `iteration-02`.
 Roboto, Literata, and Source Sans 3 use ordinary 14/16/18/20 px slices. Both `mono_1bit` and `gray_3bit` profiles are
-included. The preview selects 001.01, closed and accepted for production on 2026-10-02.
+included. The preview selects 001.02, accepted on 2026-10-02, using the separate approved baseline snapshot.
 
 - `variants` defines renderer iterations. The latest numeric revision and iteration is selected automatically. Each
   variant has an ID, kind, version, renderer role, hinting mode, and extension policy. Automatic fitting supports
@@ -167,12 +167,12 @@ after an interrupted publication requires checking that the publisher has stoppe
 After `just specimens`, run `just comparisons`. [comparisons.json](comparisons.json) sets the numeric symbol-route ID
 and optional `attention` annotation path, using `comparison-config-v2`. Inputs and labels are derived from
 `published.json` and explicit renderer roles: a working candidate versus the approved baseline, or baseline versus
-reference when there is no newer candidate. Approved `001.01` currently compares with reference. A future working
-`001.02` or `002.01` compares with approved `001.01` until the baseline is promoted. A reference-only publication has no
-comparison. [attention.json](attention.json) marks cases for the web Attention card, with an internal status, required
-inspection type and optional short hint; see the [guide](../../docs/evaluation.md#attention-card). Marks must match
-published preview scope, including sizes and axes, and cannot add diagnostic renders. The exporter reuses canonical
-pixels and writes aligned glyph/difference PNGs under `out/specimens/comparisons/`, leaving active selection unchanged.
+reference when there is no newer candidate. Approved `001.02` currently compares with reference. A future working
+version compares with approved `001.02` until the baseline is promoted. A reference-only publication has no comparison.
+[attention.json](attention.json) marks cases for the web Attention card, with an internal status, required inspection
+type and optional short hint; see the [guide](../../docs/evaluation.md#attention-card). Marks must match published
+preview scope, including sizes and axes, and cannot add diagnostic renders. The exporter reuses canonical pixels and
+writes aligned glyph/difference PNGs under `out/specimens/comparisons/`, leaving active selection unchanged.
 
 `just preview-build` generates specimens, exports comparisons, and builds the site. `just preview` also serves it. The
 [comparison contract](CONTRACT.md#glyph-comparison-export) defines exported content.
@@ -242,12 +242,12 @@ the capture and comparison tools provided by this generator.
 
 ### Accepted production fitting
 
-The user accepted all current quality and authorized closing and promoting 001.01 on 2026-10-02. In the standard build,
-`generate` uses the accepted patched fitter for automatic 1-bit output, with both diagonal constraints and the
-source-relative width policy enabled. This includes straight, curved and mixed borders and coherent terminal
+The user accepted the current result and requested committing 001.02 on 2026-10-02. In the standard build, `generate`
+uses the accepted patched fitter for automatic 1-bit output, with diagonal constraints, fractional shared-width fitting
+and outline-driven monochrome dropout enabled. This includes straight, curved and mixed borders and coherent terminal
 preparation. The
-[acceptance record](../../docs/revisions/001/01-diagonal-weight.md#acceptance-and-production-promotion-2026-10-02)
-defines the reviewed scope and retains broader diagnostic observations for future investigation.
+[acceptance record](../../docs/revisions/001/02-light-continuity.md#acceptance-and-promotion-2026-10-02) defines the
+reviewed scope and retains broader diagnostic observations for future investigation.
 
 Default jobs now select `hinting: "auto"`, 1-bit output and threshold 128. Example jobs use these accepted settings.
 Explicit `auto_fallback` still honors upstream engine selection: embedded interpretation remains embedded
@@ -263,8 +263,8 @@ Renderer roles are stable across iterations:
 - `baseline`: the approved fitter snapshot in `vendor/skrifa-baseline`, always used by production `generate`.
 - `candidate`: working fitter source in `vendor/skrifa-candidate`, available through the optional `candidate` feature.
 
-`baseline::VERSION` records the approved revision and iteration (`001.01`); it selects no conditional compilation.
-Specimen variants declare `renderer` separately from `version`. The current published 001.01 package uses `baseline`;
+`baseline::VERSION` records the approved revision and iteration (`001.02`); it selects no conditional compilation.
+Specimen variants declare `renderer` separately from `version`. The current published 001.02 package uses `baseline`;
 there is no active candidate after closure. A future working version uses `candidate` and compares with the approved
 baseline, including work in the same revision. With no newer candidate, the preview shows baseline against reference.
 Legacy packages without role metadata keep their historical previous-revision selection. Both Rust and web selection
@@ -275,6 +275,10 @@ Candidate edits cannot change the approved fitting source. On an authorized prom
 snapshot with the accepted candidate, retain its distinct package name, update the approved version metadata, record
 acceptance and rerun parity and integration checks. Keep only one approved source snapshot and one working copy;
 historical versions remain immutable generated packages and iteration notes. Never copy build outputs.
+
+The index subtitle shows only the active iteration identity. Independent reference comparison remains available through
+renderer controls and symbol routes. The remaining binary upright step near weight 465 is an accepted limitation of
+001.02; gradual fitted widths do not imply continuous 1-bit optical weight.
 
 The `candidate` feature enables research tooling only. Disabling it leaves production on the same approved baseline:
 

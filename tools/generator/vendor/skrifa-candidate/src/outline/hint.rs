@@ -296,7 +296,7 @@ impl HintingInstance {
         false
     }
 
-    /// Selects the current source-relative width policy within iteration 001.01.
+    /// Selects the source-relative width policy using the actual fitted standard.
     /// Reconfiguration resets this setting, like diagonal constraint enablement.
     pub fn set_diagonal_stem_relative(&mut self, enabled: bool) -> bool {
         if let HinterKind::Auto(instance) = &mut self.kind {

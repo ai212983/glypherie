@@ -6,7 +6,6 @@ pub mod batch;
 pub mod candidate;
 #[cfg(feature = "native-io")]
 pub mod comparison;
-#[cfg(feature = "candidate")]
 pub mod dropout;
 pub mod evaluation;
 pub mod metadata;
@@ -182,15 +181,18 @@ pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
         )
     };
     let mut hinting = hinting;
-    // Accepted 001.01: use the reviewed model only for actual Mono autohint
-    // instances. AutoFallback retains upstream embedded-interpreter selection;
-    // the setters reject that engine, as well as all non-Mono targets.
+    // Approved dropout applies only to an actually enabled Mono automatic
+    // instance: both setters must accept, so AutoFallback resolving to the
+    // embedded interpreter, like gray/None/Interpreter, retains upstream
+    // identity. Never infer enablement from the requested hinting mode alone.
+    let mut dropout_enabled = false;
     if config.output_bits == 1 && matches!(config.hinting, Hinting::Auto | Hinting::AutoFallback) {
         if let Some(instance) = hinting.as_mut() {
             if instance.set_diagonal_constraints(true) {
                 if !instance.set_diagonal_stem_relative(true) {
                     return Err(fail("accepted diagonal width policy could not be enabled"));
                 }
+                dropout_enabled = true;
             } else if config.hinting == Hinting::Auto {
                 return Err(fail("accepted diagonal fitting could not be enabled"));
             }
@@ -226,7 +228,8 @@ pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
         outline
             .draw(settings, &mut pen)
             .map_err(|e| fail(format!("outline U+{:04X}: {e}", ch as u32)))?;
-        let (pixels, left, top, width, height) = raster::render(pen.commands(), config)?;
+        let (pixels, left, top, width, height) =
+            raster::render(pen.commands(), config, dropout_enabled)?;
         // Linear advances share the same variation coordinates as the shaper;
         // pixel rounding is applied once, explicitly, to the output metric.
         let advance = advances

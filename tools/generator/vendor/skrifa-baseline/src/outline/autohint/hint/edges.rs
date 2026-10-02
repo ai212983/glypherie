@@ -750,6 +750,27 @@ fn snap_width(widths: &[ScaledWidth], width: i32) -> i32 {
     }
 }
 
+/// Fits a horizontal standard through pinned FreeType's smooth `stem_width`.
+/// Near the standard, this retains the scaled width (with its inherited minimum).
+/// Project hypothesis: reuse this policy in Mono to preserve shared source widths;
+/// diagonal projection retains its separate quarter-pixel rounding bound.
+pub(super) fn smooth_standard_fitted_width(
+    metrics: &ScaledAxisMetrics,
+    group: ScriptGroup,
+    scale: &Scale,
+    width: i32,
+) -> i32 {
+    stem_width(
+        metrics,
+        group,
+        scale,
+        width,
+        0,
+        TopoFlags::NORMAL,
+        TopoFlags::NORMAL,
+    )
+}
+
 /// Compute the snapped width of a given stem.
 ///
 /// See <https://gitlab.freedesktop.org/freetype/freetype/-/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/aflatin.c#L2746>
@@ -1196,5 +1217,93 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(h_edges, expected_h_edges);
         assert_eq!(v_edges, expected_v_edges);
+    }
+
+    fn mono_width_scales() -> (Scale, Scale) {
+        // Disabled Mono keeps integer horizontal snapping; the enabled
+        // candidate width policy clears only HORIZONTAL_SNAP.
+        let base = ScaleFlags::STEM_ADJUST | ScaleFlags::MONO | ScaleFlags::VERTICAL_SNAP;
+        (
+            Scale {
+                flags: base | ScaleFlags::HORIZONTAL_SNAP,
+                ..Default::default()
+            },
+            Scale {
+                flags: base,
+                ..Default::default()
+            },
+        )
+    }
+
+    fn horizontal_axis_with_standard(standard: i32) -> ScaledAxisMetrics {
+        let mut axis = ScaledAxisMetrics {
+            dim: Dimension::Horizontal,
+            ..Default::default()
+        };
+        axis.widths.push(ScaledWidth {
+            scaled: standard,
+            fitted: standard,
+        });
+        axis
+    }
+
+    #[test]
+    fn mono_horizontal_width_policy_softens_standard_transition() {
+        // Roboto 14px wdth100 evidence: horizontal standard 95/64 (w459) vs
+        // 96/64 (w460); the upstream Mono branch fits 95→64 and 96→128 (1→2px).
+        // PROJECT HYPOTHESIS: the enabled candidate policy reuses the smooth
+        // horizontal stem_width, retaining both near their fractional source.
+        let (mono, smooth) = mono_width_scales();
+        for (standard, integer) in [(95, 64), (96, 128)] {
+            let axis = horizontal_axis_with_standard(standard);
+            let disabled = stem_width(
+                &axis,
+                ScriptGroup::Default,
+                &mono,
+                standard,
+                0,
+                TopoFlags::NORMAL,
+                TopoFlags::NORMAL,
+            );
+            assert_eq!(disabled, integer);
+            let fitted =
+                smooth_standard_fitted_width(&axis, ScriptGroup::Default, &smooth, standard);
+            assert_eq!(fitted, standard);
+            let enabled = stem_width(
+                &axis,
+                ScriptGroup::Default,
+                &smooth,
+                standard,
+                0,
+                TopoFlags::NORMAL,
+                TopoFlags::NORMAL,
+            );
+            assert_eq!(enabled, standard);
+        }
+        // Vertical blue/height snapping is unchanged by the horizontal policy.
+        let mut vertical = horizontal_axis_with_standard(95);
+        vertical.dim = Dimension::Vertical;
+        for width in [80, 95, 96, 120] {
+            assert_eq!(
+                stem_width(
+                    &vertical,
+                    ScriptGroup::Default,
+                    &mono,
+                    width,
+                    0,
+                    TopoFlags::NORMAL,
+                    TopoFlags::NORMAL,
+                ),
+                stem_width(
+                    &vertical,
+                    ScriptGroup::Default,
+                    &smooth,
+                    width,
+                    0,
+                    TopoFlags::NORMAL,
+                    TopoFlags::NORMAL,
+                )
+            );
+        }
     }
 }
