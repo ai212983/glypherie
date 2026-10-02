@@ -1,0 +1,23 @@
+Copyright and licensing record
+
+Ariel Shamir, Constraint-Based Approach for Automatic Hinting of Digital Typefaces.
+ACM Transactions on Graphics 22(2), April 2003, pp. 131–151.
+DOI: 10.1145/636886.636887
+Source: https://dl.acm.org/doi/10.1145/636886.636887
+
+The following notice is transcribed from page 1 of the supplied PDF:
+
+Permission to make digital or hard copies of part or all of this work for personal or classroom use is granted without fee provided
+that copies are not made or distributed for profit or direct commercial advantage and that copies show this notice on the first
+page or initial screen of a display along with the full citation. Copyrights for components of this work owned by others than ACM
+must be honored. Abstracting with credit is permitted. To copy otherwise, to republish, to post on servers, to redistribute to lists,
+or to use any component of this work in other works requires prior specific permission and/or a fee. Permissions may be requested
+from Publications Dept., ACM, Inc., 1515 Broadway, New York, NY 10036 USA, fax: +1 (212) 869-0481, or permissions@acm.org.
+
+© 2003 ACM 0730-0301/03/0400-0131 $5.00
+
+This is the notice carried by this PDF, not a newly granted license.
+The current publisher page could not be inspected (HTTP 403 on 2026-10-01),
+so any later license change has not been verified. The Markdown and figure
+copies retain the paper's licensing status; the repository's software
+license does not relicense them.

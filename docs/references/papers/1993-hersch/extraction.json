@@ -1,0 +1,609 @@
+{
+  "source_pdf": "paper.pdf",
+  "source_url": "https://lspwww.epfl.ch/publications/typography/frsa.pdf",
+  "source_sha256": "6a675012bb6bca534d1c6c1e409179ea61f87550ef8e1837b318724d82df71ff",
+  "pdf_pages": 32,
+  "first_printed_page": 78,
+  "versions": {
+    "docling": "2.131.0",
+    "docling-core": "2.99.0",
+    "docling-ibm-models": "4.0.3",
+    "docling-parse": "7.22.1",
+    "torch": "2.14.1+cpu",
+    "pymupdf": "1.28.2"
+  },
+  "pipeline": {
+    "ocr": false,
+    "formula_enrichment": false,
+    "code_enrichment": false,
+    "code_formula_model": null,
+    "device": "cpu",
+    "dtype": "float32",
+    "image_dpi": 144,
+    "prose_decoder": "PyMuPDF using Docling bounding boxes"
+  },
+  "model_revisions": {
+    "docling-project/docling-layout-heron": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+    "docling-project/docling-models": "fc0f2d45e2218ea24bce5045f58a389aed16dc23"
+  },
+  "detected_item_counts": {
+    "section_header": 12,
+    "text": 96,
+    "list_item": 25,
+    "picture": 33,
+    "caption": 29,
+    "formula": 16
+  },
+  "figures": [
+    {
+      "file": "figures/figure-01.png",
+      "pdf_page": 2,
+      "caption": "Figure 1. Character appearance with decreasing font size",
+      "bbox": {
+        "l": 158.56582641601562,
+        "t": 585.5401611328125,
+        "r": 412.90985107421875,
+        "b": 354.2445068359375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-02.png",
+      "pdf_page": 4,
+      "caption": "Figure 2. Interpolation points V0; V3, tangents and corresponding B´ezier control points V1; V2",
+      "bbox": {
+        "l": 117.142578125,
+        "t": 677.971435546875,
+        "r": 428.150146484375,
+        "b": 533.4944458007812,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-03.png",
+      "pdf_page": 5,
+      "caption": "Figure 3. A quadratic B´ezier spline segment given by its control polygon",
+      "bbox": {
+        "l": 203.37387084960938,
+        "t": 589.3193664550781,
+        "r": 346.75054931640625,
+        "b": 509.6592712402344,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-04.png",
+      "pdf_page": 6,
+      "caption": "Figure 4. TrueType curve given by points n28TT0; B1; B2; TT3n29",
+      "bbox": {
+        "l": 113.0,
+        "t": 128.0,
+        "r": 451.0,
+        "b": 264.0,
+        "coord_origin": "TOPLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-05.png",
+      "pdf_page": 7,
+      "caption": "Figure 5. Conversion of cubic B´ezier spline into quadratic B-spline",
+      "bbox": {
+        "l": 172.0,
+        "t": 118.0,
+        "r": 439.0,
+        "b": 273.0,
+        "coord_origin": "TOPLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-06.png",
+      "pdf_page": 9,
+      "caption": "Figure 6. Interior of filled shape",
+      "bbox": {
+        "l": 106.81353759765625,
+        "t": 724.4741821289062,
+        "r": 446.54132080078125,
+        "b": 573.2160339355469,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-07.png",
+      "pdf_page": 9,
+      "caption": "Figure 7. Example of the flag fill algorithm applied to a character",
+      "bbox": {
+        "l": 133.189697265625,
+        "t": 423.1070556640625,
+        "r": 447.3135986328125,
+        "b": 227.333251953125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-08.png",
+      "pdf_page": 10,
+      "caption": "",
+      "bbox": {
+        "l": 107.7425537109375,
+        "t": 703.8691711425781,
+        "r": 448.7304992675781,
+        "b": 559.3983764648438,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-09.png",
+      "pdf_page": 12,
+      "caption": "Figure 9. DeCasteljou's subdivision of B´ezier splines",
+      "bbox": {
+        "l": 108.0,
+        "t": 117.0,
+        "r": 481.0,
+        "b": 270.0,
+        "coord_origin": "TOPLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-10.png",
+      "pdf_page": 12,
+      "caption": "Figure 10. The three possible final outcomes of a B´ezier subdivision",
+      "bbox": {
+        "l": 109.53440856933594,
+        "t": 361.88580322265625,
+        "r": 480.2400817871094,
+        "b": 219.3472900390625,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-11.png",
+      "pdf_page": 13,
+      "caption": "Figure 11. Rasterized curved shapes having different phase at horizontal or vertical tangential points",
+      "bbox": {
+        "l": 122.29898071289062,
+        "t": 469.2415466308594,
+        "r": 185.69891357421875,
+        "b": 330.62835693359375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-12.png",
+      "pdf_page": 13,
+      "caption": "",
+      "bbox": {
+        "l": 407.74774169921875,
+        "t": 469.08056640625,
+        "r": 457.63836669921875,
+        "b": 332.0435485839844,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-13.png",
+      "pdf_page": 13,
+      "caption": "",
+      "bbox": {
+        "l": 266.7447509765625,
+        "t": 469.0246887207031,
+        "r": 309.6629638671875,
+        "b": 332.1438293457031,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-14.png",
+      "pdf_page": 14,
+      "caption": "Figure 12. Phase placement of bars",
+      "bbox": {
+        "l": 102.0,
+        "t": 180.0,
+        "r": 479.0,
+        "b": 325.0,
+        "coord_origin": "TOPLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-15.png",
+      "pdf_page": 14,
+      "caption": "Figure 13. Support points for the specification of grid constraints",
+      "bbox": {
+        "l": 105.0,
+        "t": 377.0,
+        "r": 482.0,
+        "b": 616.0,
+        "coord_origin": "TOPLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-16.png",
+      "pdf_page": 15,
+      "caption": "Figure 14. Proportional application of a computed subpixel displacement",
+      "bbox": {
+        "l": 106.95115661621094,
+        "t": 606.7100830078125,
+        "r": 465.6632080078125,
+        "b": 492.1297912597656,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-17.png",
+      "pdf_page": 15,
+      "caption": "Figure 15. Phase control of reference lines",
+      "bbox": {
+        "l": 154.54718017578125,
+        "t": 378.2784729003906,
+        "r": 414.9429016113281,
+        "b": 244.7354736328125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-18.png",
+      "pdf_page": 16,
+      "caption": "Figure 16. Result of reference lines phase control application",
+      "bbox": {
+        "l": 155.8905792236328,
+        "t": 652.2078247070312,
+        "r": 420.05584716796875,
+        "b": 507.195068359375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-19.png",
+      "pdf_page": 16,
+      "caption": "Figure 17. Different phase positioning for the center of symmetry of a character",
+      "bbox": {
+        "l": 120.68091583251953,
+        "t": 371.8487548828125,
+        "r": 446.4064636230469,
+        "b": 230.796875,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-20.png",
+      "pdf_page": 17,
+      "caption": "Figure 18. Horizontal centering constraints",
+      "bbox": {
+        "l": 105.61438751220703,
+        "t": 651.3828735351562,
+        "r": 461.5209045410156,
+        "b": 526.7840270996094,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-21.png",
+      "pdf_page": 17,
+      "caption": "Figure 19. Uniform appearance of similar characters at small sizes",
+      "bbox": {
+        "l": 131.09884643554688,
+        "t": 398.8675231933594,
+        "r": 444.1247253417969,
+        "b": 243.41656494140625,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-22.png",
+      "pdf_page": 18,
+      "caption": "Figure 20. Specifying an allowed phase range for the bowl's extremities",
+      "bbox": {
+        "l": 123.17724609375,
+        "t": 705.7346649169922,
+        "r": 443.63037109375,
+        "b": 546.5984497070312,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-23.png",
+      "pdf_page": 18,
+      "caption": "Figure 21. Rasterized Haas Unica: optimal corrections at different sizes",
+      "bbox": {
+        "l": 108.0,
+        "t": 356.0,
+        "r": 501.0,
+        "b": 609.0,
+        "coord_origin": "TOPLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-24.png",
+      "pdf_page": 19,
+      "caption": "Figure 22. Small stemwidth variation produces different rasterizations",
+      "bbox": {
+        "l": 156.69537353515625,
+        "t": 442.8114929199219,
+        "r": 425.0434875488281,
+        "b": 277.63909912109375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-25.png",
+      "pdf_page": 21,
+      "caption": "Figure 24. Control of half-serifs",
+      "bbox": {
+        "l": 107.4957046508789,
+        "t": 692.2263946533203,
+        "r": 476.1960144042969,
+        "b": 555.0709533691406,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-26.png",
+      "pdf_page": 21,
+      "caption": "Figure 25. Control of diagonal bars: parallelization, snapping, phase control",
+      "bbox": {
+        "l": 107.15880584716797,
+        "t": 352.8861999511719,
+        "r": 438.9952087402344,
+        "b": 234.20098876953125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-27.png",
+      "pdf_page": 22,
+      "caption": "Figure 26. Common hints for upright and italic characters",
+      "bbox": {
+        "l": 105.48651885986328,
+        "t": 534.97900390625,
+        "r": 459.78179931640625,
+        "b": 296.1943359375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-28.png",
+      "pdf_page": 23,
+      "caption": "",
+      "bbox": {
+        "l": 170.46923828125,
+        "t": 690.6577301025391,
+        "r": 398.9549865722656,
+        "b": 523.3478698730469,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-29.png",
+      "pdf_page": 24,
+      "caption": "Figure 28. Dropout control",
+      "bbox": {
+        "l": 148.42013549804688,
+        "t": 657.9819641113281,
+        "r": 410.65289306640625,
+        "b": 402.7543640136719,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-30.png",
+      "pdf_page": 26,
+      "caption": "",
+      "bbox": {
+        "l": 187.4193878173828,
+        "t": 536.13720703125,
+        "r": 357.1597900390625,
+        "b": 346.0191650390625,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-31.png",
+      "pdf_page": 27,
+      "caption": "Figure 31. Bands defined by reference lines and individual stem hints",
+      "bbox": {
+        "l": 128.0,
+        "t": 245.0,
+        "r": 458.0,
+        "b": 492.0,
+        "coord_origin": "TOPLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-32.png",
+      "pdf_page": 28,
+      "caption": "",
+      "bbox": {
+        "l": 168.17518615722656,
+        "t": 387.4301452636719,
+        "r": 392.66864013671875,
+        "b": 281.5242919921875,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-33.png",
+      "pdf_page": 29,
+      "caption": "Figure 33. Nimbus Roman and Haas Unica rendered at low resolution (size: capsheight in pixels)",
+      "bbox": {
+        "l": 119.61947631835938,
+        "t": 549.3169555664062,
+        "r": 457.1371154785156,
+        "b": 370.1348571777344,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-23-supplement.png",
+      "pdf_page": 20,
+      "caption": "Figure 23 was omitted by layout detection; crop restored from PDF page 20.",
+      "bbox": [
+        108,
+        286,
+        464,
+        461
+      ]
+    },
+    {
+      "file": "figures/figure-29-supplement.png",
+      "pdf_page": 25,
+      "caption": "Figure 29 was omitted by layout detection; crop restored from PDF page 25.",
+      "bbox": [
+        107,
+        112,
+        455,
+        421
+      ]
+    }
+  ],
+  "reviewed_corrections": [
+    {
+      "pdf_page": 3,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 5,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 5,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 5,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 6,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 8,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 8,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 8,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 8,
+      "note": "Formula transcribed and checked against the PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Derivative introduction restored before equation (6), matching PDF page 4."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Inline parameter transformation checked against PDF page 4."
+    },
+    {
+      "pdf_page": 8,
+      "note": "Remove a stray 3 duplicated from the adjacent display formula; PDF page 8, printed 85."
+    },
+    {
+      "pdf_page": 8,
+      "note": "Remove a stray prime duplicated from the adjacent display formula; PDF page 8, printed 85."
+    },
+    {
+      "pdf_page": 29,
+      "note": "Restore the compound word in Figure 33 caption; PDF page 29, printed 106."
+    },
+    {
+      "pdf_page": 30,
+      "note": "Recover accented names in acknowledgments; PDF page 30, printed 107."
+    },
+    {
+      "pdf_page": 30,
+      "note": "Recover André in references, checked against the printed bibliography."
+    },
+    {
+      "pdf_page": 30,
+      "note": "Restore separate bibliography entries from the printed reference list."
+    },
+    {
+      "pdf_page": 31,
+      "note": "Recover André in references, checked against the printed bibliography."
+    },
+    {
+      "pdf_page": 31,
+      "note": "Recover André in references, checked against the printed bibliography."
+    },
+    {
+      "pdf_page": 32,
+      "note": "Restore separate bibliography entries from the printed reference list."
+    },
+    {
+      "pdf_page": 20,
+      "note": "Figure 23 was omitted by layout detection; crop restored from PDF page 20."
+    },
+    {
+      "pdf_page": 25,
+      "note": "Figure 29 was omitted by layout detection; crop restored from PDF page 25."
+    },
+    {
+      "pdf_page": 6,
+      "note": "Figure 4: include the full control-polygon annotation."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Figure 5: restore the clipped quadratic-spline label."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Figure 9: include the complete subdivision/control-point annotation."
+    },
+    {
+      "pdf_page": 14,
+      "note": "Figure 12: include the full maximal-difference label."
+    },
+    {
+      "pdf_page": 14,
+      "note": "Figure 13: include complete hint specifications on the right."
+    },
+    {
+      "pdf_page": 18,
+      "note": "Figure 21: include the complete size label and right-side optical-correction annotations."
+    },
+    {
+      "pdf_page": 27,
+      "note": "Figure 31: include complete capsline/baseline-overhang labels."
+    }
+  ],
+  "review_notes": [
+    "All 16 detected display formulas checked against PDF pages 3–8.",
+    "Equation (3) prints T_1 although the preceding prose names T_3; the source notation is retained.",
+    "Equation (5) is transcribed as printed; its relationship to the preceding parameter substitution should be checked before implementation.",
+    "Figure crops and text are derived copies, not new licensing grants."
+  ]
+}

@@ -1,0 +1,17 @@
+Copyright and licensing record
+
+David Turner and Werner Lemberg, Real-Time Grid Fitting of Typographic Outlines.
+TUGboat 24(3), Proceedings of EuroTeX 2003, pp. 430–434.
+
+Original PDF: https://www.tug.org/TUGboat/tb24-3/lemberg.pdf
+Publisher policy: https://tug.org/tugboat/
+
+The supplied article PDF does not state an explicit reuse license.
+The publisher's TUGboat page says that copyright to articles remains with
+the authors and that submitting an article normally authorizes TUG to
+publish it on paper and online. This policy was reviewed on 2026-10-01.
+It does not establish a general reuse license for this article.
+
+This file records the observed licensing status; it does not grant rights.
+The Markdown and extracted figures are derived copies of the paper, and
+the repository's software license does not relicense them.

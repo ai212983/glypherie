@@ -1,0 +1,223 @@
+{
+  "source_pdf": "paper.pdf",
+  "source_url": "https://www.tug.org/TUGboat/tb24-3/lemberg.pdf",
+  "source_sha256": "9e3ea36a14229fc6e785ba2cac7275655359118dbd904483ea712fe1ddcd4ee7",
+  "pdf_pages": 5,
+  "first_printed_page": 430,
+  "versions": {
+    "docling": "2.131.0",
+    "docling-core": "2.99.0",
+    "docling-ibm-models": "4.0.3",
+    "docling-parse": "7.22.1",
+    "torch": "2.14.1+cpu",
+    "pymupdf": "1.28.2"
+  },
+  "pipeline": {
+    "ocr": false,
+    "formula_enrichment": false,
+    "code_enrichment": false,
+    "code_formula_model": null,
+    "device": "cpu",
+    "dtype": "float32",
+    "image_dpi": 144,
+    "prose_decoder": "PyMuPDF using Docling bounding boxes"
+  },
+  "model_revisions": {
+    "docling-project/docling-layout-heron": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+    "docling-project/docling-models": "fc0f2d45e2218ea24bce5045f58a389aed16dc23"
+  },
+  "detected_item_counts": {
+    "section_header": 8,
+    "text": 65,
+    "list_item": 21,
+    "picture": 8,
+    "caption": 8,
+    "code": 6,
+    "formula": 2
+  },
+  "figures": [
+    {
+      "file": "figures/figure-01.png",
+      "pdf_page": 1,
+      "caption": "F. 1: The stem widths and heights of the glyph 'o'.",
+      "bbox": {
+        "l": 368.12091064453125,
+        "t": 389.5576171875,
+        "r": 483.302001953125,
+        "b": 277.834228515625,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-02.png",
+      "pdf_page": 2,
+      "caption": "F. 2: Two blue zones relevant to the glyph 'a'. Vertical point coordinates of all glyphs within these zones are aligned.",
+      "bbox": {
+        "l": 125.93289184570312,
+        "t": 718.5477752685547,
+        "r": 240.93673706054688,
+        "b": 609.2646789550781,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-03.png",
+      "pdf_page": 2,
+      "caption": "F. 3: A cubic Bézier curve with two control points. The 'out' direction of p1 is AH_DIR_LEFT; all other directions are of type AH_DIR_NONE.",
+      "bbox": {
+        "l": 357.0,
+        "t": 69.0,
+        "r": 511.0,
+        "b": 162.0,
+        "coord_origin": "TOPLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-04.png",
+      "pdf_page": 3,
+      "caption": "F. 4: A serif. Contour and control points are represented by squares and circles, respectively. The bottom 'line' DE is approximately aligned along the horizontal axis, thus it forms a segment of 7 points. Two other horizontal segments are BC and FG, while AB, CD, EF, and GH form vertical segments.",
+      "bbox": {
+        "l": 81.15010070800781,
+        "t": 719.1514663696289,
+        "r": 286.1512451171875,
+        "b": 664.4368057250977,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-05.png",
+      "pdf_page": 3,
+      "caption": "F. 5: The three segments marked with thick lines form an edge.",
+      "bbox": {
+        "l": 93.32955169677734,
+        "t": 543.3848114013672,
+        "r": 273.7119445800781,
+        "b": 439.82061767578125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-06.png",
+      "pdf_page": 3,
+      "caption": "F. 6: The outline orientation of a glyph in a Type 1 font. TrueType fonts use the opposite direction.",
+      "bbox": {
+        "l": 366.5347900390625,
+        "t": 719.6040115356445,
+        "r": 484.0471496582031,
+        "b": 616.0207977294922,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-07.png",
+      "pdf_page": 4,
+      "caption": "F. 7: The difference between the height of a glyph with a flat top segment and a glyph with a round top segment is called top overshoot. Analogously, the difference in depth is called bottom overshoot. Glyphs from the string 'xzroesc' are used compute the blue zone and overshoot value of the top and bottom of lowercase letters.",
+      "bbox": {
+        "l": 334.9422607421875,
+        "t": 716.3046875,
+        "r": 516.1892700195312,
+        "b": 640.1770782470703,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-08.png",
+      "pdf_page": 5,
+      "caption": "F. 8: An angle point (left) and an inflection point (right).",
+      "bbox": {
+        "l": 83.28971099853516,
+        "t": 719.4791107177734,
+        "r": 285.01275634765625,
+        "b": 675.6294021606445,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    }
+  ],
+  "reviewed_corrections": [
+    {
+      "pdf_page": 2,
+      "note": "C snippet line breaks and indentation restored from the PDF."
+    },
+    {
+      "pdf_page": 2,
+      "note": "C snippet line breaks and indentation restored from the PDF."
+    },
+    {
+      "pdf_page": 3,
+      "note": "C snippet line breaks and indentation restored from the PDF."
+    },
+    {
+      "pdf_page": 4,
+      "note": "C snippet line breaks and indentation restored from the PDF."
+    },
+    {
+      "pdf_page": 5,
+      "note": "C snippet line breaks and indentation restored from the PDF."
+    },
+    {
+      "pdf_page": 5,
+      "note": "C snippet line breaks and indentation restored from the PDF."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Stem/serif condition restored from PDF page 4; incorrectly classified code converted to math."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Stem/serif condition restored from PDF page 4; incorrectly classified code converted to math."
+    },
+    {
+      "pdf_page": 1,
+      "note": "Full-width Abstract and Résumé moved before the two-column Overview, matching the PDF."
+    },
+    {
+      "pdf_page": 2,
+      "note": "Fixed-point granularity checked against PDF page 2."
+    },
+    {
+      "pdf_page": 2,
+      "note": "Remove the Figure 3 label p12 accidentally captured as prose and join the sentence across columns; PDF page 2, printed 431."
+    },
+    {
+      "pdf_page": 2,
+      "note": "Remove the continuation now restored before Figure 3; PDF page 2, printed 431."
+    },
+    {
+      "pdf_page": 2,
+      "note": "Move Figure 3 before the paragraph introducing the coordinate-mode list."
+    },
+    {
+      "pdf_page": 2,
+      "note": "Keep the coordinate-mode introduction and list together; PDF page 2."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Segment-angle threshold checked against PDF page 3."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Serif introductory sentence restored from PDF page 4."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Code continuation across PDF pages 3–4 labelled explicitly."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Stray slash from preceding inequality removed from the following prose region."
+    },
+    {
+      "pdf_page": 5,
+      "note": "Advance-width C snippet rejoined across the two columns of PDF page 5."
+    },
+    {
+      "pdf_page": 2,
+      "note": "Figure 3: restore the full right endpoint label p1."
+    }
+  ],
+  "review_notes": [
+    "All six C snippet regions and both stem/serif relations checked against the PDF.",
+    "The source presents C fragments rather than independently compilable programs; declarations are transcribed without adding syntax.",
+    "The segment-scoring snippet spans PDF pages 3–4; the advance-width snippet continues across columns on page 5."
+  ]
+}

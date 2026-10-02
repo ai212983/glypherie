@@ -1,0 +1,18 @@
+Copyright and licensing record
+
+Roger D. Hersch, Font Rasterization: the State of the Art.
+In Visual and Technical Aspects of Type, R. D. Hersch (ed.),
+Cambridge University Press, 1993, pp. 78–109.
+
+Original PDF: https://lspwww.epfl.ch/publications/typography/frsa.pdf
+Publication record: https://lspwww.epfl.ch/publications/books/vataot.html
+
+The supplied PDF does not state an explicit reuse license. No explicit
+reuse license was found in the publication record reviewed on 2026-10-01.
+The precise copyright holder and any additional permissions are not
+established by these files. The author-hosted download is not itself a
+license grant.
+
+This file records the observed licensing status; it does not grant rights.
+The Markdown and extracted figures are derived copies of the paper, and
+the repository's software license does not relicense them.

@@ -1,0 +1,453 @@
+{
+  "source_pdf": "paper.pdf",
+  "source_url": "https://ocw.mit.edu/courses/6-450-principles-of-digital-communications-i-fall-2006/926689aaa62a0315473fa9b982de1b07_book_3.pdf",
+  "source_sha256": "8db8e12de50d0e388cb825283836ddf5b1465bc850eaa18298a3842476956824",
+  "pdf_pages": 24,
+  "first_printed_page": 63,
+  "versions": {
+    "docling": "2.131.0",
+    "docling-core": "2.99.0",
+    "docling-ibm-models": "4.0.3",
+    "docling-parse": "7.22.1",
+    "torch": "2.14.1+cpu",
+    "pymupdf": "1.28.2"
+  },
+  "pipeline": {
+    "ocr": false,
+    "formula_enrichment": false,
+    "code_enrichment": false,
+    "code_formula_model": null,
+    "device": "cpu",
+    "dtype": "float32",
+    "image_dpi": 144,
+    "prose_decoder": "PyMuPDF using Docling bounding boxes"
+  },
+  "model_revisions": {
+    "docling-project/docling-layout-heron": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+    "docling-project/docling-models": "fc0f2d45e2218ea24bce5045f58a389aed16dc23"
+  },
+  "detected_item_counts": {
+    "section_header": 17,
+    "text": 136,
+    "picture": 10,
+    "caption": 9,
+    "list_item": 63,
+    "formula": 46,
+    "footnote": 6
+  },
+  "figures": [
+    {
+      "file": "figures/figure-01.png",
+      "pdf_page": 1,
+      "caption": "Figure 3.1: Encoding and decoding of discrete sources, analog sequence sources, and waveform sources. Quantization, the topic of this chapter, is the middle layer and should be understood before trying to understand the outer layer, which deals with waveform sources.",
+      "bbox": {
+        "l": 126.26673889160156,
+        "t": 391.706298828125,
+        "r": 466.65826416015625,
+        "b": 229.95733642578125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-02.png",
+      "pdf_page": 3,
+      "caption": "Figure 3.2: Quantization regions and representation points.",
+      "bbox": {
+        "l": 127.67347717285156,
+        "t": 430.1922302246094,
+        "r": 478.0878601074219,
+        "b": 387.2567138671875,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-03.png",
+      "pdf_page": 5,
+      "caption": "Figure 3.3: Example of regions and representaion points that satisfy Lloyd-Max condi­ tions without minimizing mean-squared distortion.",
+      "bbox": {
+        "l": 152.0440216064453,
+        "t": 476.0014343261719,
+        "r": 453.1675109863281,
+        "b": 340.8339538574219,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-04.png",
+      "pdf_page": 6,
+      "caption": "Figure 3.4: 2D rectangular quantizer.",
+      "bbox": {
+        "l": 237.77279663085938,
+        "t": 546.7790069580078,
+        "r": 338.3247985839844,
+        "b": 446.33197021484375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-05.png",
+      "pdf_page": 7,
+      "caption": "Figure 3.5: Voronoi regions for given set of representation points.",
+      "bbox": {
+        "l": 237.37635803222656,
+        "t": 720.9044189453125,
+        "r": 328.3914489746094,
+        "b": 619.9803771972656,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-06.png",
+      "pdf_page": 8,
+      "caption": "Figure 3.6: Comparison of constraint on M to constraint on H[U ].",
+      "bbox": {
+        "l": 102.56471252441406,
+        "t": 714.5369720458984,
+        "r": 478.4635009765625,
+        "b": 629.3319549560547,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-07.png",
+      "pdf_page": 11,
+      "caption": "Figure 3.7: Uniform scalar quantizer.",
+      "bbox": {
+        "l": 116.00324249267578,
+        "t": 508.2558288574219,
+        "r": 485.4404296875,
+        "b": 457.6110534667969,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-08.png",
+      "pdf_page": 11,
+      "caption": "Figure 3.8: Average density over each Rj.",
+      "bbox": {
+        "l": 202.1269073486328,
+        "t": 205.08489990234375,
+        "r": 402.8702392578125,
+        "b": 162.948486328125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-09.png",
+      "pdf_page": 13,
+      "caption": "Figure 3.9: MSE as a function of L for a scalar quantizer with the high-rate approxi­ mation. Note that changing the source entropy h(U) simply shifts the figure right or left. Note also that log MSE is linear, with a slope of -2, as a function of L.",
+      "bbox": {
+        "l": 172.83631896972656,
+        "t": 588.7239990234375,
+        "r": 409.27972412109375,
+        "b": 511.6539611816406,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-10.png",
+      "pdf_page": 21,
+      "caption": "",
+      "bbox": {
+        "l": 128.29039001464844,
+        "t": 232.009521484375,
+        "r": 477.66778564453125,
+        "b": 160.413818359375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    }
+  ],
+  "reviewed_corrections": [
+    {
+      "pdf_page": 4,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 8,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 8,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 9,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 10,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 10,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 10,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 10,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 13,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 14,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 14,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 14,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 16,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 17,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 18,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 18,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 18,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 18,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 18,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 18,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 18,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 19,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 19,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 19,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 19,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 20,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 20,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 20,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 20,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 22,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 22,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 23,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 23,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 23,
+      "note": "Display math transcribed in LaTeX and checked against the original PDF; original numbering and notation retained."
+    },
+    {
+      "pdf_page": 1,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 2,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 4,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 5,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 6,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 8,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 9,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 10,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 13,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 14,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 16,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 17,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 18,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 19,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 20,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 21,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 22,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 23,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    },
+    {
+      "pdf_page": 24,
+      "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
+    }
+  ],
+  "review_notes": [
+    "All 24 PDF pages were inspected for section and equation coverage, reading order, and figures. All 46 detected display regions were checked and transcribed in LaTeX. These include the separate equation (3.20) label, which is merged with its display.",
+    "All nine numbered figures (3.1–3.9) and the unnumbered density plot in Exercise 3.3 are included. No tables or code blocks occur in this chapter.",
+    "The text uses an overbar on the average density f and the rate L; display formulas retain those overbars and distinguish vector and scalar variables. Native-text inline mathematics outside the targeted corrections is not fully proofread; consult the PDF for exact subscripts, overbars, and vector notation.",
+    "Printed p. 77 has an unmatched closing bracket and a misplaced +log A(R) in the penultimate displayed entropy line. The transcription preserves that printed line rather than silently correcting it.",
+    "Printed p. 81 gives Delta(u)=sqrt(lambda(log e)/6), although its preceding derivative implies a different factor. The transcription retains the printed expression.",
+    "Exercise 3.6(d), printed p. 85, refers to (3.6) and calls the difference nonnegative, while the related footnote on printed p. 74 calls it nonpositive. These source statements are retained.",
+    "Equation (3.28) retains the printed approximation sign even though the surrounding discussion describes a lower bound.",
+    "A Docling page-filter bug omitted the second-page portion of paragraphs spanning pages. The extractor now restricts prose provenance to the current page before export, retaining the continuations on PDF pages 2, 7, 9, 15, 18, and 19.",
+    "Section 3.2.1 (PDF p. 3 / printed p. 65), the Lloyd-Max update, vector-coordinate prose, Gaussian entropy, Lagrange-multiplier prose, and all exercises were checked and corrected against the PDF. Soft hyphens inside words were removed; figure captions and original source typos were otherwise retained."
+  ]
+}

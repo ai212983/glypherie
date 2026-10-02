@@ -1,0 +1,446 @@
+{
+  "source_pdf": "paper.pdf",
+  "source_url": "https://dl.acm.org/doi/10.1145/636886.636887",
+  "source_sha256": "36348c47e159d64e7563b678e031f2d5be2373f8d38fbbc65bc9852ddf0ab8d7",
+  "pdf_pages": 21,
+  "first_printed_page": 131,
+  "versions": {
+    "docling": "2.131.0",
+    "docling-core": "2.99.0",
+    "docling-ibm-models": "4.0.3",
+    "docling-parse": "7.22.1",
+    "torch": "2.14.1+cpu",
+    "pymupdf": "1.28.2"
+  },
+  "pipeline": {
+    "ocr": false,
+    "formula_enrichment": false,
+    "code_enrichment": false,
+    "code_formula_model": null,
+    "device": "cpu",
+    "dtype": "float32",
+    "image_dpi": 144,
+    "prose_decoder": "PyMuPDF using Docling bounding boxes"
+  },
+  "model_revisions": {
+    "docling-project/docling-layout-heron": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+    "docling-project/docling-models": "fc0f2d45e2218ea24bce5045f58a389aed16dc23"
+  },
+  "detected_item_counts": {
+    "section_header": 15,
+    "text": 74,
+    "list_item": 19,
+    "picture": 20,
+    "formula": 6,
+    "table": 5,
+    "caption": 14
+  },
+  "figures": [
+    {
+      "file": "figures/figure-01.png",
+      "pdf_page": 2,
+      "caption": "",
+      "bbox": {
+        "l": 208.117919921875,
+        "t": 672.4794311523438,
+        "r": 404.4822082519531,
+        "b": 532.5250244140625,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-02.png",
+      "pdf_page": 2,
+      "caption": "",
+      "bbox": {
+        "l": 209.65643310546875,
+        "t": 472.2298889160156,
+        "r": 405.7054443359375,
+        "b": 331.9584045410156,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-03.png",
+      "pdf_page": 9,
+      "caption": "Fig. 3. The process of typographic feature extraction from outline representation starts with point classification according to their geometric properties. Straight and curved segments are extracted, sorted, and matched in order to find overlapping segments that create bars and stems. Using finite automata identifies more complex features like serifs by matching the sequence of outline points that defines them.",
+      "bbox": {
+        "l": 159.00242614746094,
+        "t": 672.834587097168,
+        "r": 453.1115417480469,
+        "b": 304.60772705078125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-04.png",
+      "pdf_page": 10,
+      "caption": "Fig. 4. Some examples of point classification on the outline of characters.",
+      "bbox": {
+        "l": 153.47262573242188,
+        "t": 672.2249526977539,
+        "r": 459.3613586425781,
+        "b": 508.0410461425781,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-05.png",
+      "pdf_page": 10,
+      "caption": "Fig. 5. Characteristic stems and bars in Times-Roman and Helvetica Bold fonts.",
+      "bbox": {
+        "l": 186.33172607421875,
+        "t": 475.46368408203125,
+        "r": 427.12139892578125,
+        "b": 284.7090759277344,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-06.png",
+      "pdf_page": 11,
+      "caption": "",
+      "bbox": {
+        "l": 163.36024475097656,
+        "t": 671.1056365966797,
+        "r": 449.39141845703125,
+        "b": 552.5686187744141,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-07.png",
+      "pdf_page": 12,
+      "caption": "",
+      "bbox": {
+        "l": 168.49964904785156,
+        "t": 672.1210098266602,
+        "r": 445.08734130859375,
+        "b": 541.7839813232422,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-08.png",
+      "pdf_page": 12,
+      "caption": "",
+      "bbox": {
+        "l": 134.94805908203125,
+        "t": 504.8861083984375,
+        "r": 478.0697021484375,
+        "b": 444.25860595703125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-09.png",
+      "pdf_page": 14,
+      "caption": "",
+      "bbox": {
+        "l": 174.86337280273438,
+        "t": 673.5562973022461,
+        "r": 439.7799072265625,
+        "b": 457.918701171875,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-10.png",
+      "pdf_page": 15,
+      "caption": "Fig. 10. Overlapping of stem hints in PostScript must be resolved by changing hint sets.",
+      "bbox": {
+        "l": 242.19895935058594,
+        "t": 673.1325454711914,
+        "r": 372.3648681640625,
+        "b": 530.3352966308594,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-11.png",
+      "pdf_page": 16,
+      "caption": "Fig. 11. The number of hint-set replacements remains very low even in Far-Eastern typefaces where characters are muchmore complex and may include many stems. More than 99% have less than 10 set-replacements and the average number of sets in a character is below 2.",
+      "bbox": {
+        "l": 172.9694061279297,
+        "t": 671.8625411987305,
+        "r": 437.5917663574219,
+        "b": 484.10797119140625,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-12.png",
+      "pdf_page": 17,
+      "caption": "Fig. 13. The number of typographic features extracted from a character is proportional to the number of points (each plottedpoint represents one character). The proportion between them changes with the style of the font. The relatively high number of features counted comes from the fact that we define all sub-parts of every compound typographic feature as a feature by itself. For example, A ladder feature will include many stems and counters, which in turn will include many more segments.",
+      "bbox": {
+        "l": 154.36732482910156,
+        "t": 670.5353775024414,
+        "r": 456.5401306152344,
+        "b": 456.3968505859375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-13.png",
+      "pdf_page": 18,
+      "caption": "Fig. 14. The automatically hinted 'R' character from several different typefaces. The hints shown in VTT are only themain part of the whole set of hints for aligning and positioning points relative to the ones shown. Also, the links to CVT were dropped.",
+      "bbox": {
+        "l": 157.4634552001953,
+        "t": 672.2466659545898,
+        "r": 454.1690673828125,
+        "b": 613.2406311035156,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-14.png",
+      "pdf_page": 18,
+      "caption": "Fig. 15. Several automatically hinted characters from a Mincho style Japanese font. Only the main point dependencies are shown in the left three characters. All point relations and hints are illustrated in the rightmost character.",
+      "bbox": {
+        "l": 167.07362365722656,
+        "t": 563.3700561523438,
+        "r": 444.0741271972656,
+        "b": 497.7331237792969,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-15.png",
+      "pdf_page": 18,
+      "caption": "",
+      "bbox": {
+        "l": 129.28305053710938,
+        "t": 446.3161926269531,
+        "r": 291.6641540527344,
+        "b": 242.6302490234375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-16.png",
+      "pdf_page": 18,
+      "caption": "Fig. 16. Times (left) and Georgia (right) Roman fonts bitmaps created without hinting and no dropout control (top), compared to automatic hinting (middle) and manual expert hinting (bottom).",
+      "bbox": {
+        "l": 304.4319763183594,
+        "t": 447.58233642578125,
+        "r": 480.78350830078125,
+        "b": 242.5538330078125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-17.png",
+      "pdf_page": 19,
+      "caption": "",
+      "bbox": {
+        "l": 173.22999572753906,
+        "t": 673.271728515625,
+        "r": 436.09405517578125,
+        "b": 489.8597717285156,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-18.png",
+      "pdf_page": 19,
+      "caption": "Fig. 18. Cascading sizes of Courier typeface (top) and Times-Roman (bottom) hinted automatically. Note the uniformity of characters for a given size and the move from one pixel width per feature to two pixels almost consistently in the font (between 28 to 29 in Courier and between 13 to 14 in Times).",
+      "bbox": {
+        "l": 155.55116271972656,
+        "t": 437.9384460449219,
+        "r": 454.21673583984375,
+        "b": 198.72833251953125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-19.png",
+      "pdf_page": 20,
+      "caption": "Fig. 19. Japanese Square-Gothic style font automatically hinted in different sizes.",
+      "bbox": {
+        "l": 172.29783630371094,
+        "t": 673.192008972168,
+        "r": 441.69146728515625,
+        "b": 502.5526428222656,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-20.png",
+      "pdf_page": 20,
+      "caption": "Fig. 20. Japanese Mincho style font automatically hinted in different sizes.",
+      "bbox": {
+        "l": 171.49954223632812,
+        "t": 469.23095703125,
+        "r": 441.2336730957031,
+        "b": 298.3390197753906,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-12-supplement.png",
+      "pdf_page": 16,
+      "caption": "Figure 12 was omitted by layout detection; crop and pseudocode recovered from PDF page 16.",
+      "bbox": [
+        209,
+        364,
+        403,
+        585
+      ]
+    }
+  ],
+  "reviewed_corrections": [
+    {
+      "pdf_page": 7,
+      "note": "Constraint formula transcribed and checked against PDF page 7."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Constraint formula transcribed and checked against PDF page 7."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Constraint formula transcribed and checked against PDF page 7."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Constraint formula transcribed and checked against PDF page 7."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Constraint formula transcribed and checked against PDF page 15."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Constraint formula transcribed and checked against PDF page 15."
+    },
+    {
+      "pdf_page": 1,
+      "note": "Restore the accented name in the introduction; PDF page 1."
+    },
+    {
+      "pdf_page": 1,
+      "note": "Restore the printed copyright symbol; PDF page 1."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Projected absolute constraints checked against PDF page 7."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Projected distance constraints checked against PDF page 7."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Negative height value checked against Table II in PDF page 11."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Negative height value checked against Table II in PDF page 11."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Negative height value checked against Table II in PDF page 11."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Negative height value checked against Table II in PDF page 11."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Negative height value checked against Table II in PDF page 11."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Negative height value checked against Table II in PDF page 11."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Negative height value checked against Table II in PDF page 11."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Negative height value checked against Table II in PDF page 11."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Negative height value checked against Table II in PDF page 11."
+    },
+    {
+      "pdf_page": 11,
+      "note": "Keep the printed subsection hierarchy."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Separate Figure 8 caption from the continuation of the Section 3.5 paragraph; PDF page 12, printed 142."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Restore the Section 3.6 heading; PDF page 12, printed 142."
+    },
+    {
+      "pdf_page": 14,
+      "note": "TrueType instruction listings in Figure 9 transcribed from PDF page 14 without changing operands."
+    },
+    {
+      "pdf_page": 14,
+      "note": "Keep the printed subsection hierarchy."
+    },
+    {
+      "pdf_page": 14,
+      "note": "Keep the printed subsection hierarchy."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Sigma symbol restored from PDF page 15."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Sigma symbol restored from PDF page 15."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Sigma symbol restored from PDF page 15."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Sigma symbol restored from PDF page 15."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Sigma symbol restored from PDF page 15."
+    },
+    {
+      "pdf_page": 16,
+      "note": "Restore the superscript in the set-expansion complexity; PDF page 16, printed 146."
+    },
+    {
+      "pdf_page": 17,
+      "note": "Restore the superscript in the segment sorting/matching complexity; PDF page 17, printed 147."
+    },
+    {
+      "pdf_page": 17,
+      "note": "Restore the superscript in the overall complexity; PDF page 17, printed 147."
+    },
+    {
+      "pdf_page": 17,
+      "note": "Restore the compound word in Figure 13 caption; PDF page 17, printed 147."
+    },
+    {
+      "pdf_page": 21,
+      "note": "The acknowledgment sentence is prose, not a heading; PDF page 21, printed 151."
+    },
+    {
+      "pdf_page": 21,
+      "note": "Restore 21 separate reference entries and accented author names; checked against PDF page 21."
+    },
+    {
+      "pdf_page": 16,
+      "note": "Figure 12 was omitted by layout detection; crop and pseudocode recovered from PDF page 16."
+    }
+  ],
+  "review_notes": [
+    "All six detected display formulas checked against PDF pages 7 and 15.",
+    "Tables I and II checked against PDF pages 8 and 11; negative height values restored.",
+    "Figure 12 is a low-resolution embedded bitmap; its pseudocode is transcribed separately and its crop retained."
+  ]
+}

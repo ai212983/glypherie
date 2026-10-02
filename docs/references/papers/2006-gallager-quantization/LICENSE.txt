@@ -1,0 +1,27 @@
+Copyright and licensing record
+
+Robert Gallager, Quantization, Chapter 3 of the course text for
+6.450 Principles of Digital Communications I, Fall 2006, pp. 63–86.
+MIT OpenCourseWare, Massachusetts Institute of Technology.
+
+Original PDF:
+https://ocw.mit.edu/courses/6-450-principles-of-digital-communications-i-fall-2006/926689aaa62a0315473fa9b982de1b07_book_3.pdf
+Course:
+https://ocw.mit.edu/courses/6-450-principles-of-digital-communications-i-fall-2006/
+License source (reviewed 2026-10-01):
+https://ocw.mit.edu/pages/privacy-and-terms-of-use/
+License:
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+Legal terms:
+https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
+
+MIT OpenCourseWare publishes its course materials under Creative Commons
+Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0),
+unless otherwise specified. The chapter PDF supplies an attribution to
+Robert Gallager and MIT OpenCourseWare; no separate license or exception
+was found in the PDF.
+
+The original PDF bytes are unchanged. paper.md and figures/ are derived
+transcriptions and crops. Changes and extraction limitations are recorded
+in extraction.json. These derivatives are provided under CC BY-NC-SA 4.0;
+the repository's software license does not relicense this material.
