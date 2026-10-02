@@ -24,27 +24,24 @@
 
 - Identify the active package as `reference` or its `variant.version`. Show compact header badges for baseline →
   current, for example `reference → 001.01`, without a separate comparison sentence. Use manifest names and labels for
-  families, sizes, samples, and profiles.
-- Preserve manifest family and item order; sort size groups numerically. Show only families and sizes containing samples
-  for the selected profile.
+  families and profiles.
+- Preserve manifest family order in the font dropdown. The index shows the selected font's interactive specimen, with no
+  published sample rows, size sections, glyph grids, or comparison footer. Exported specimen images and comparison data
+  remain available to tooling; standalone symbol comparisons retain their routes.
 - Beneath each main-page family heading, show a compact metadata definition list: kerning availability, supported axes
   with names/tags, ranges and defaults, and available design/pitch classification. Do not display a style field. Read
   the generator's optional `family.metadata`; older packages display unknown metadata. Show an empty axis list as a
   static font and distinguish horizontal from vertical-only kerning. Use registered IBM family classes when specified,
   otherwise interpret PANOSE in its Family Kind context. Omit unspecified/reserved classification values and omit the
   entire classification field when no design or pitch information is known; never infer classification from the
-  configured name. Keep these fields outside sample and Attention cards. Classification mappings follow the
+  configured name. Classification mappings follow the
   [IBM specification](https://learn.microsoft.com/en-us/typography/opentype/spec/ibmfc) and
   [PANOSE guide](https://monotype.github.io/panose/pan2.htm).
-- Use the manifest's shared thumbnail dimensions for all image areas within a size group, including failed and
-  unsupported samples. Rows wrap to fit the available width.
 - A missing publication mapping and active pointer produces an empty state. Invalid or incomplete selected content
   produces an error identifying the selection and problem. Do not silently substitute another package.
-- Failed and unsupported samples remain visible with their recorded reasons.
-- The main-page footer shows comparison impact for the selected output profile: same and changed symbol counts, plus
-  average changed pixels. The average uses changed symbols only. Each family/size rendering counts separately. Validate
-  changed counts and pixel statistics against the difference images, counting every symbol even when assets are shared.
-  Older exports without statistics show an unavailable state.
+- Validate changed counts and pixel statistics against the difference images, counting every symbol even when assets are
+  shared. Statistics stay available to tooling through the exported comparison manifests even though the index shows no
+  footer.
 
 ## Profiles and pixel display
 
@@ -61,16 +58,11 @@
 
 - There is no separate `/reviews/` folder or endpoint. Remove obsolete review output on rebuild. All visual
   communication goes through the web index and its symbol pages.
-- `/` shows the latest package's samples and matching current glyphs by family and ascending size. Match comparison
-  inputs by the active package identity. Each glyph opens its symbol page in a new tab at the selected size. Pack glyphs
-  using exported advances and a shared baseline, without added spacing from borders, padding, gaps, or white canvas
-  margins. Overlapping canvases must preserve neighboring ink.
-- Place the changed-symbol block after the samples, using their card border, rounded corners, and caption styling. Fit
-  its width to the content, capped by the available width; wrap glyphs as needed. Apply the image inset around the block
-  while keeping adjacent glyphs packed.
+- `/` shows the selected font's interactive specimen. Match comparison inputs by the active package identity. Symbol
+  pages stay directly reachable at their stable routes below; the index links none.
 - Generate thumbnails and symbol pages only for pixel changes, per size/profile. Retain changed sizes/profiles on each
-  symbol page, hide empty thumbnail blocks, and remove stale generated symbol pages on rebuild. Regular samples remain
-  complete. Missing comparison images or reported missing glyphs fail import and the site build.
+  symbol page, hide empty thumbnail blocks, and remove stale generated symbol pages on rebuild. Missing comparison
+  images or reported missing glyphs fail import and the site build.
 - `/<id>/<family-id>/U<HEX>/` groups a symbol by ascending size. Show previous, current, and difference images with the
   exported version labels, shared pen origin, and baseline. Active symbol pages link back to `/`.
 - `/<id>/` has no index page or redirect; requests return 404. Symbol pages link directly back to `/`.
@@ -84,29 +76,38 @@
   `canvas` and `profiles`; profiles use the existing glyph-image contract. Require unique IDs and exact cases, valid
   images and a nonempty inspection type; the per-symbol hint may be empty. Status is `pending` or `confirmed`; accepted
   dispositions remain in generator input.
-- Show an Attention card inside each marked family/size section on `/`, grouping that section's symbols by inspection
-  type; sections without marks show no card. Each tile shows only the symbol and an optional short hint. Hide
-  axes/status metadata, diagnostic labels and introductory subtitles. Labels and hints keep ordinary UI scale; images
+- Attention cases render on the existing symbol routes with an inspection type and optional short hint beside the
+  comparison images. Hide axes/status metadata and diagnostic labels. Labels and hints keep ordinary UI scale; images
   use the existing profile/zoom controls. Preserve URL-prefix support and controls in symbol links.
-- Move marked exact cases out of the ordinary changed-symbol block. Attention membership is independent of pixel
-  differences, so unchanged marked cases still have comparison images and symbol pages. Unmarked changes remain in the
-  ordinary block. Require all comparison and Attention cases to match the active specimen family/size/axes/profile
-  scope; reject debug cases at export and web build. Do not generate diagnostic renders for Attention.
+- Attention membership is independent of pixel differences, so unchanged marked cases still have comparison images and
+  symbol pages. Require all comparison and Attention cases to match the active specimen family/size/axes/profile scope;
+  reject debug cases at export and web build. Do not generate diagnostic renders for Attention.
 - Include marked cases on the existing symbol routes, at stable `attention-<id>` anchors, showing both versions,
   difference, inspection type and optional per-symbol hint. Rebuild removes obsolete marked cases. No separate review
   endpoint is created. Attention is a request for assessment, not automatic rejection or acceptance.
 
 ## Interactive specimens
 
-- Each family section opens with an interactive block (before the published size groups): a font size input, one slider
-  per non-hidden variable axis with published min/default/max, editable sample text, and reset. Static fonts render no
-  axis inputs.
-- Controls default to the published first size, axes, and sample text, and re-render a canvas through the WASM renderer
-  with the published source bytes. The global profile switch and zoom apply; zoom stays CSS-only.
-- The block is independent of the published PNG cards and Attention scope: it creates no marks and changes no assessment
-  content. Missing WASM output or font sources leave a concise unavailable message with disabled controls, never a build
-  error. Font bytes publish to `interactive-fonts/` and must hash-match the manifest source; paths stay inside the
-  repository and only cover the renderer's supported font types.
+- The index holds one font dropdown and exactly one visible interactive block: a font size input, one slider per
+  non-hidden variable axis with published min/default/max, a text preset select, a multi-line sample textarea, and
+  reset. Static fonts render no axis inputs. Hidden family sections are acceptable; the user sees one tester.
+- The preset select offers the configured card texts (Reading sample, Numbers and symbols) plus Custom, which the page
+  selects whenever the textarea no longer matches a preset. Cards come from the generator config through the web
+  importer; presets are never hardcoded in page sources. Reset restores the published default size, axes, full sample
+  text, and matching preset.
+- Controls default to the published first size, axes, and full sample text, and re-render a canvas through the WASM
+  renderer with the published source bytes. Each font's size, axes, text, and preset persist across font switches; only
+  the active font loads and renders, and inactive fonts are released. The global profile switch and zoom apply to the
+  active font.
+- Zoom is integer magnification of the rendered glyph pixels: the request keeps the approved size, axes, and hinting
+  while shrinking to the logical width for the zoom factor, then scales up with smoothing off. Display width follows the
+  parent; display height fits the laid-out content (the sum of the actual result `layout().lines` heights times zoom)
+  with at most one correction re-render after a bounded first pass, growing and shrinking with the text. A viewport
+  resize remeasures the width and re-renders. Content taller than the native 4096 px render limit shows a concise
+  overflow message instead of silent truncation.
+- Missing WASM output or font sources leave a concise unavailable message with disabled controls (including textarea and
+  select), never a build error. Font bytes publish to `interactive-fonts/` and must hash-match the manifest source;
+  paths stay inside the repository and only cover the renderer's supported font types.
 - `just wasm-build` builds the renderer and stages `assets/wasm/`; `just preview-build` runs it before the page.
 
 ## Verification

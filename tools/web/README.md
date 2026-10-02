@@ -22,11 +22,18 @@ just wasm-build  # Build the WASM renderer and stage it for the page
 just preview-build  # Specimens, comparisons, WASM, and the page together
 ```
 
-Each font section starts with an **Interactive specimen** block: a font size input, one slider per variable axis (ranges
-and defaults come from the published metadata; static fonts have no sliders), editable sample text, and a reset button.
-Controls re-render a canvas with the real WASM renderer and source font bytes; the global output-mode switch and zoom
-apply to it. It is exploration only and leaves the published PNG cards unchanged. It needs `just wasm-build` output plus
-published font sources; otherwise the block shows an unavailable message and stays disabled.
+The index is one font tester: a font dropdown selects the single visible specimen block, which holds a font size input,
+one slider per variable axis (ranges and defaults come from the published metadata; static fonts have no sliders), a
+preset select with the configured Reading sample and Numbers and symbols texts plus Custom, a multi-line sample
+textarea, and a reset button. Each font keeps its own size, axes, text, and preset when switching; only the active font
+loads and renders. Controls re-render a canvas with the real WASM renderer and source font bytes. The display width
+follows the parent; the canvas height fits the laid-out content exactly: the page re-renders at the full height read
+from the WASM result layout (`layout().lines` heights) instead of truncating. Zoom magnifies the rendered pixels instead
+of requesting a larger size; the global output-mode switch and zoom apply to the active font. Content taller than the
+native 4096 px render limit shows a concise overflow message. The index shows no published sample rows or size sections;
+standalone symbol comparison routes are unchanged, and exported specimen/comparison assets remain for tooling and those
+routes. The tester needs `just wasm-build` output plus published font sources; otherwise the block shows an unavailable
+message and stays disabled.
 
 To build, watch, and serve existing exports over HTTP:
 
@@ -42,16 +49,14 @@ reference. Legacy packages without renderer roles retain their previous-revision
 `001.01` versus reference. A stale active pointer or preview environment variable cannot select an older iteration on
 the index. Missing or stale comparison content fails the build.
 
-Use `just preview-build` to regenerate specimens, comparisons, and the index together. Changed symbols open aligned
+Use `just preview-build` to regenerate specimens, comparisons, and the index together. Symbol routes show aligned
 previous/current/difference pages. All visual communication goes through the web. There is no separate `/reviews/`
 folder or endpoint; rebuilding removes obsolete review output.
 
-Each marked family/size section of the index shows its own **Attention** card, grouping that section's symbols by
-inspection type, with an optional short hint for each symbol. Sections without marks show no card. Marks are configured
-in [attention.json](../generator/attention.json); see the [evaluation guide](../../docs/evaluation.md#attention-card).
-Exact marked cases move out of Changed symbols and remain reviewable even when their images match reference. Attention
-uses the same published preview scope; debug sizes or axes are rejected, not rendered. Clicking a mark opens its
-existing symbol page at the exact case with reference/current/difference images.
+Marked symbols stay reviewable on their standalone symbol pages at the exact case with reference/current/difference
+images, an inspection type, and an optional short hint. Marks are configured in
+[attention.json](../generator/attention.json); see the [evaluation guide](../../docs/evaluation.md#attention-card).
+Attention uses the same published preview scope; debug sizes or axes are rejected, not rendered.
 
 ## Source layout
 
@@ -71,10 +76,10 @@ embedded design/pitch classification. The Rust generator extracts these fields f
 classification values are omitted. It also exports names, default style, license fields and Unicode coverage for
 tooling. Run `just preview-build` to add extracted metadata to existing previews.
 
-Main-page sample cards are configured in the `cards` array of [specimens.json](../generator/specimens.json), using `id`,
-`title`, and `content`. See the [card configuration guide](../generator/README.md#configure-preview-cards). Run `just
-preview-build` after edits to update the rendered text. Character coverage and changed symbols are generated
-automatically.
+The preset select options come from the `cards` array of [specimens.json](../generator/specimens.json), using `id`,
+`title`, and full multiline `content`. See the
+[card configuration guide](../generator/README.md#configure-preview-cards). Run `just preview-build` after edits to
+update the presets. The web importer passes cards through without duplicating their strings in page sources.
 
 Browser tests use `/opt/google/chrome/chrome` or the executable specified by `WEB_TEST_BROWSER`; they skip when the
 browser is unavailable.

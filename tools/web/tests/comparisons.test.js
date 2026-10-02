@@ -75,10 +75,10 @@ test("imports comparisons and copies exact prepared assets; pages group a symbol
   for (const [relative, bytes] of f.assets) assert.deepEqual(await fs.readFile(path.join(f.output, "comparison-content", f.packageId, relative)), bytes);
   const html = await build(f.root, f.output);
   assert.match(html, /<p class="variant"><span>reference<\/span> → <span>001\.01<\/span><\/p>/);
-  assert.match(html, /\.\/content\/candidate-test\//);
-  assert.doesNotMatch(html, /\.\/content\/reference-test\//);
-  assert.match(html, /\.\/01\/fixture\/U0041\/#size-14/);
-  assert.match(html, /Compare &lt; in Fixture font/);
+  assert.doesNotMatch(html, /\.\/content\//);
+  assert.doesNotMatch(html, /glyph-link/);
+  assert.doesNotMatch(html, /\.\/01\/fixture\/U0041\/#size-14/);
+  assert.doesNotMatch(html, /Compare &lt; in Fixture font/);
   await assert.rejects(fs.access(path.join(f.output, "01/index.html")), { code: "ENOENT" });
   const glyph = await fs.readFile(path.join(f.output, "01/fixture/U003C/index.html"), "utf8");
   assert.match(glyph, /Fixture font — &lt;/);
@@ -118,8 +118,8 @@ test("only changed profiles and sizes produce thumbnails/pages; rebuilding remov
   assert.deepEqual(pages[0].sizes.map((size) => size.size_px), [14]);
   assert.deepEqual(pages[0].sizes[0].profiles.map((profile) => profile.id), ["mono_1bit"]);
   const html = await build(f.root, f.output);
-  assert.equal((html.match(/class="specimen-card glyph-link"/g) ?? []).length, 1);
-  assert.match(html, /U0041\/#size-14/);
+  assert.doesNotMatch(html, /glyph-link/);
+  assert.doesNotMatch(html, /U0041\/#size-14/);
   assert.doesNotMatch(html, /U003C/);
   await assert.rejects(fs.access(path.join(f.output, "01/fixture/U003C/index.html")), { code: "ENOENT" });
   const glyph = await fs.readFile(path.join(f.output, "01/fixture/U0041/index.html"), "utf8");
@@ -131,7 +131,7 @@ test("only changed profiles and sizes produce thumbnails/pages; rebuilding remov
   assert.equal(glyphPages(await createComparisonImporter(f.root).load()).length, 0);
   const empty = await build(f.root, f.output);
   assert.doesNotMatch(empty, /glyph-sheet/);
-  assert.match(empty, /Reading sample/);
+  assert.doesNotMatch(empty, /<figcaption>/);
   await assert.rejects(fs.access(path.join(f.output, "01/fixture/U0041/index.html")), { code: "ENOENT" });
 });
 
@@ -146,7 +146,7 @@ test("gray-only pixel changes remain reviewable and become the symbol page defau
   assert.equal(pages[0].comparison.defaultProfile, "gray_3bit");
   assert.ok(pages[0].sizes.every((size) => size.initiallyVisible && size.profiles[0].initiallyVisible));
   const html = await build(f.root, f.output);
-  assert.match(html, /class="specimen-row glyph-sheet"[^>]* hidden/);
+  assert.doesNotMatch(html, /glyph-sheet/);
   const glyph = await fs.readFile(path.join(f.output, "01/fixture/U0041/index.html"), "utf8");
   assert.match(glyph, /value="gray_3bit" checked/);
 });
@@ -220,17 +220,13 @@ test("attention moves exact cases to scoped family/size cards and retains unchan
   assert.deepEqual(scopedGroups(comparison, 14).map((g) => g.inspection), ["Stroke continuity"]);
   assert.deepEqual(scopedGroups(comparison, 16).map((g) => g.inspection), ["Stroke continuity"]);
   const html = await build(f.root, f.output);
-  assert.match(html, /id="attention-fixture-14"/);
-  assert.match(html, /id="attention-fixture-16"/);
-  assert.match(html, /id="fixture-size-14"[\s\S]*?id="attention-fixture-14"[\s\S]*?id="fixture-size-16"[\s\S]*?id="attention-fixture-16"/);
-  assert.match(html, /<h4 class="attention-heading"[^>]*>Attention<\/h4>/);
-  assert.match(html, /<h5>Stroke continuity<\/h5>/);
-  assert.match(html, /<strong>A<\/strong>/);
-  assert.doesNotMatch(html, /Fixture font · A · 1[46] px/);
-  assert.doesNotMatch(html, /These symbols need assessment|Diagnostic case|Attention · Pending assessment|wght 400/);
-  assert.match(html, /Lower junction &lt;detail&gt;/);
-  assert.match(html, /U0041\/#attention-A-14/);
-  assert.match(html, /U0041\/#attention-A-16/);
+  assert.doesNotMatch(html, /attention-block/);
+  assert.doesNotMatch(html, /id="attention-fixture-14"/);
+  assert.doesNotMatch(html, /id="attention-fixture-16"/);
+  assert.doesNotMatch(html, /<h5>Stroke continuity<\/h5>/);
+  assert.doesNotMatch(html, /Lower junction &lt;detail&gt;/);
+  assert.doesNotMatch(html, /U0041\/#attention-A-14/);
+  assert.doesNotMatch(html, /U0041\/#attention-A-16/);
   // The normal gray case still belongs to the ordinary list; the marked mono case does not.
   assert.doesNotMatch(html, /class="specimen-card glyph-link"[^>]*data-profile="mono_1bit"[^>]*href="\.\/01\/fixture\/U0041\/#size-14/);
   const symbol = await fs.readFile(path.join(f.output, "01/fixture/U0041/index.html"), "utf8");
@@ -244,12 +240,12 @@ test("attention moves exact cases to scoped family/size cards and retains unchan
   assert.deepEqual(scopedGroups(grouped, 14).map((g) => g.inspection), ["Stroke continuity"]);
   assert.deepEqual(scopedGroups(grouped, 16).map((g) => g.inspection), ["Weight and contrast"]);
   const concise = await build(f.root, f.output);
-  assert.match(concise, /<h5>Weight and contrast<\/h5>/);
-  assert.equal((concise.match(/class="attention-description"/g) ?? []).length, 1);
+  assert.doesNotMatch(concise, /<h5>Weight and contrast<\/h5>/);
+  assert.doesNotMatch(concise, /class="attention-description"/);
   f.comparison.attention = [f.comparison.attention[0]];
   await f.saveComparison();
   const scoped = await build(f.root, f.output);
-  assert.match(scoped, /id="attention-fixture-14"/);
+  assert.doesNotMatch(scoped, /id="attention-fixture-14"/);
   assert.doesNotMatch(scoped, /id="attention-fixture-16"/);
   f.comparison.attention = [];
   await f.saveComparison();
@@ -289,7 +285,7 @@ test("web rejects attention and ordinary comparisons outside the active specimen
   }
 });
 
-test("attention links preserve profile and zoom under a hosting prefix", { skip: !browserAvailable }, async (t) => {
+test("attention cases stay on standalone routes with profile and zoom", { skip: !browserAvailable }, async (t) => {
   const f = await attentionFixture(t); await build(f.root, f.output);
   const url = await serve(t, f.output);
   const browser = await chromium.launch({ executablePath: browserPath, headless: true });
@@ -297,23 +293,14 @@ test("attention links preserve profile and zoom under a hosting prefix", { skip:
   const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
   const errors = []; page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(`${url}?profile=mono_1bit&zoom=4`);
-  assert.equal(await page.locator(".attention-symbol:visible").count(), 2);
-  assert.equal(await page.locator(".attention-block:visible").count(), 2);
-  const link = page.locator('[data-attention-id="A-16"]');
-  const destination = new URL(await link.getAttribute("href"));
-  assert.ok(destination.pathname.startsWith("/preview/01/fixture/U0041/"));
-  assert.equal(destination.hash, "#attention-A-16");
-  assert.equal(destination.searchParams.get("profile"), "mono_1bit");
-  assert.equal(destination.searchParams.get("zoom"), "4");
+  assert.equal(await page.locator(".attention-block").count(), 0);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  await page.locator('input[value="gray_3bit"]').check();
-  assert.equal(await page.locator(".attention-block:visible").count(), 0);
-  assert.equal(await page.locator("#attention-fixture-14").isVisible(), false);
-  assert.equal(await page.locator("#attention-fixture-16").isVisible(), false);
-  await page.goto(destination.href);
+  await page.goto(`${url}01/fixture/U0041/?profile=mono_1bit&zoom=4#attention-A-16`);
   await page.waitForFunction(() => [...document.querySelectorAll("img")].filter((i) => i.closest(".specimen-card:not([hidden])")).every((i) => i.complete && i.naturalWidth));
   assert.equal(await page.locator("#attention-A-16").isVisible(), true);
   assert.match(await page.locator("#attention-A-16 .attention-note").innerText(), /Lower junction/);
+  await page.locator('input[value="gray_3bit"]').check();
+  assert.equal(await page.locator("#attention-A-16 .attention-note:visible").count(), 0);
   assert.deepEqual(errors, []);
 });
 
@@ -338,27 +325,7 @@ test("impact statistics count repeated images per symbol, validate pixel counts,
   assert.equal(comparison.statistics[0].averageLabel, "1.75");
   assert.equal(comparison.statistics[0].medianLabel, "1");
   const html = await build(f.root, f.output);
-  assert.match(html, /Same symbols/);
-  assert.match(html, /Average changed pixels<\/dt>/);
-  assert.doesNotMatch(html, /Median changed pixels|per changed symbol|This is the active working output|Device-panel review|Unavailable symbols/);
-  if (browserAvailable) {
-    const url = await serve(t, f.output);
-    const browser = await chromium.launch({ executablePath: browserPath, headless: true });
-    t.after(() => browser.close());
-    const page = await browser.newPage();
-    await page.goto(url, { waitUntil: "networkidle" });
-    assert.equal(await page.locator('[data-impact-profile]:visible').count(), 1);
-    assert.deepEqual(await page.locator('[data-impact-profile]:visible dd').allTextContents(), ["3", "4", "1.75"]);
-    await page.getByRole("radio", { name: "3-bit", exact: true }).check();
-    assert.equal(await page.locator('[data-impact-profile]:visible').count(), 1);
-    assert.deepEqual(await page.locator('[data-impact-profile]:visible dd').allTextContents(), ["5", "4", "2"]);
-    await page.reload({ waitUntil: "networkidle" });
-    assert.equal(await page.locator('[data-impact-profile]:visible').getAttribute("data-impact-profile"), "gray_3bit");
-    assert.deepEqual(await page.locator('[data-impact-profile]:visible dd').allTextContents(), ["5", "4", "2"]);
-    await page.getByRole("radio", { name: "1-bit", exact: true }).check();
-    assert.equal(await page.locator('[data-impact-profile]:visible').count(), 1);
-    assert.deepEqual(await page.locator('[data-impact-profile]:visible dd').allTextContents(), ["3", "4", "1.75"]);
-  }
+  assert.doesNotMatch(html, /Same symbols|Average changed pixels|impact-stats/);
   f.comparison.statistics[0].median_changed_pixels = 2;
   await f.saveComparison();
   await assert.rejects(() => createComparisonImporter(f.root).load(), /statistics differ/);
@@ -393,28 +360,22 @@ test("missing comparison images fail import and site builds; zero-change statist
   assert.equal(identical.statistics[0].medianLabel, "0");
   assert.equal(glyphPages([identical]).length, 0);
   const html = await build(f.root, f.output);
-  assert.match(html, /Same symbols<\/dt><dd>4<\/dd>/);
-  assert.match(html, /Changed symbols<\/dt><dd>0<\/dd>/);
-  assert.doesNotMatch(html, /Unavailable symbols|excluded from pixel statistics/);
+  assert.doesNotMatch(html, /Same symbols|Changed symbols|impact-stats/);
   delete f.comparison.statistics;
   await f.saveComparison();
-  assert.match(await build(f.root, f.output), /Comparison statistics are unavailable/);
+  assert.doesNotMatch(await build(f.root, f.output), /Same symbols|impact-stats/);
 });
 
-test("HTTP glyph links open new tabs, preserve mode/zoom, anchor the clicked size, and show aligned directional differences", { skip: !browserAvailable }, async (t) => {
+test("HTTP glyph routes preserve mode/zoom, anchor sizes, and show aligned directional differences", { skip: !browserAvailable }, async (t) => {
   const f = await comparisonFixture(t);
   await build(f.root, f.output);
   const url = await serve(t, f.output);
   const browser = await chromium.launch({ executablePath: browserPath, headless: true });
   t.after(() => browser.close());
-  let page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1100, height: 900 } });
   const errors = [], failed = [];
-  function watchPage(tab) {
-    tab.on("pageerror", (error) => errors.push(error.message));
-    tab.on("response", (response) => { if (response.status() >= 400 && !response.url().endsWith("favicon.ico")) failed.push(response.url()); });
-  }
-  watchPage(page);
-  page.context().on("page", watchPage);
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("response", (response) => { if (response.status() >= 400 && !response.url().endsWith("favicon.ico")) failed.push(response.url()); });
   const removedIndex = await page.request.get(`${url}01/`, { maxRedirects: 0 });
   assert.equal(removedIndex.status(), 404);
   assert.equal(removedIndex.headers().location, undefined);
@@ -422,49 +383,18 @@ test("HTTP glyph links open new tabs, preserve mode/zoom, anchor the clicked siz
   assert.equal(new URL(page.url()).pathname, "/preview/");
   assert.equal(new URL(page.url()).hash, "#family-fixture");
   assert.equal(await page.locator(".variant").textContent().then((text) => text.trim()), "reference → 001.01");
-  assert.equal(await page.locator(".glyph-link:visible").count(), 4);
-  assert.equal(await page.locator(".glyph-sheet").first().evaluate((sheet) => getComputedStyle(sheet).overflowX), "clip");
-  assert.ok(await page.locator(".size-group").evaluateAll((groups) => groups.every((group) => {
-    const sheet = group.querySelector(".glyph-sheet");
-    const block = sheet.closest(".glyph-block");
-    const sample = group.querySelector("figure.specimen-card");
-    const blockStyle = getComputedStyle(block), sampleStyle = getComputedStyle(sample);
-    const caption = getComputedStyle(block.querySelector("figcaption"));
-    const sampleCaption = getComputedStyle(sample.querySelector("figcaption"));
-    return group.lastElementChild === block && block.previousElementSibling.contains(sample)
-      && blockStyle.borderTopWidth === "1px" && blockStyle.borderTopStyle === "solid"
-      && blockStyle.borderTopColor === sampleStyle.borderTopColor
-      && blockStyle.borderRadius === sampleStyle.borderRadius
-      && blockStyle.backgroundColor === sampleStyle.backgroundColor
-      && blockStyle.overflow === sampleStyle.overflow
-      && caption.padding === sampleCaption.padding && caption.borderBottom === sampleCaption.borderBottom
-      && block.getBoundingClientRect().width < group.getBoundingClientRect().width;
-  })));
-  assert.equal(await page.getByText("Select a symbol", { exact: false }).count(), 0);
+  assert.equal(await page.locator(".glyph-link").count(), 0);
+  assert.equal(await page.locator("#family-fixture").count(), 1);
+  await page.goto(`${url}01/fixture/U0041/?profile=mono_1bit&zoom=1#size-16`, { waitUntil: "networkidle" });
+  assert.equal(new URL(page.url()).hash, "#size-16");
+  await page.waitForFunction(() => [...document.querySelectorAll(".specimen-card:not([hidden]) img")].every((image) => image.complete && image.naturalWidth > 0));
   for (const [stop, zoom] of [[0, 1], [1, 2], [2, 3], [3, 4]]) {
     await page.locator("#zoom").fill(String(stop));
-    const positions = await page.locator("#fixture-size-14 .glyph-link:visible").evaluateAll((links) => links.map((link) => {
-      const rect = link.getBoundingClientRect(), style = getComputedStyle(link);
-      return { left: rect.left, width: rect.width, padding: style.paddingLeft, border: style.borderLeftWidth };
-    }));
-    assert.equal(positions[0].width, 2 * zoom);
-    assert.equal(positions[1].left, positions[0].left + positions[0].width);
-    assert.ok(positions.every((p) => p.padding === "0px" && p.border === "0px"));
-    assert.equal(await page.locator(".glyph-sheet").first().evaluate((sheet) => getComputedStyle(sheet).paddingLeft), `${8 * zoom}px`);
+    const widths = await page.locator('#size-14 [data-kind="current"][data-profile="mono_1bit"] img').evaluateAll((images) => images.map((image) => image.getBoundingClientRect().width));
+    assert.ok(widths.every((width) => width === 2 * zoom));
   }
   await page.getByRole("radio", { name: "3-bit", exact: true }).check();
-  await page.locator("#zoom").fill("2");
-  const mainPage = page;
-  const mainUrl = page.url();
-  [page] = await Promise.all([
-    mainPage.waitForEvent("popup"),
-    mainPage.locator('#fixture-size-16 .glyph-link[data-codepoint="65"]:visible').click(),
-  ]);
-  await page.waitForLoadState("networkidle");
-  assert.equal(mainPage.url(), mainUrl);
-  assert.equal(await page.evaluate(() => window.opener), null);
-  assert.equal(new URL(page.url()).pathname, "/preview/01/fixture/U0041/");
-  assert.equal(new URL(page.url()).hash, "#size-16");
+  await page.locator("#zoom").fill("3");
   assert.equal(await page.getByRole("radio", { name: "3-bit", exact: true }).isChecked(), true);
   assert.equal(await page.locator("#zoom-value").textContent(), "4×");
   assert.equal(await page.locator(".specimen-card:visible").count(), 6);
@@ -481,18 +411,12 @@ test("HTTP glyph links open new tabs, preserve mode/zoom, anchor the clicked siz
   await page.getByRole("radio", { name: "1-bit", exact: true }).check();
   await page.setViewportSize({ width: 360, height: 800 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  await page.getByRole("link", { name: "All symbols", exact: true }).click();
+  await page.getByRole("link", { name: "Font preview", exact: true }).click();
   await page.waitForSelector("#zoom:not([disabled])");
   assert.equal(new URL(page.url()).pathname, "/preview/");
-  assert.equal(await page.locator("#zoom-value").textContent(), "3×");
-  assert.equal(await page.getByRole("radio", { name: "1-bit", exact: true }).isChecked(), true);
-  assert.deepEqual(await page.evaluate(() => [localStorage.getItem("font-preview.zoom.specimen"), localStorage.getItem("font-preview.zoom.glyph")]), ["3", "1"]);
-  [page] = await Promise.all([
-    page.waitForEvent("popup"),
-    page.locator('#fixture-size-14 .glyph-link[data-codepoint="65"]:visible').click(),
-  ]);
-  await page.waitForLoadState("networkidle");
+  assert.equal(new URL(page.url()).hash, "#family-fixture");
   assert.equal(await page.locator("#zoom-value").textContent(), "1×");
+  assert.equal(await page.getByRole("radio", { name: "1-bit", exact: true }).isChecked(), true);
   assert.deepEqual(errors, []);
   assert.deepEqual(failed, []);
   const context = await browser.newContext({ javaScriptEnabled: false });

@@ -9,7 +9,7 @@ import {
   resolveFontFile,
   validateInteractive,
 } from "../lib/interactive.js";
-import { toRenderSpec } from "../assets/interactive.js";
+import { logicalBounds, toRenderSpec } from "../assets/interactive.js";
 import { hash } from "./helpers.js";
 
 const bytes = (text) => Buffer.from(text);
@@ -58,7 +58,7 @@ test("publishes hashed font bytes with published defaults and visible axes only"
   assert.equal(entry.fontUrl, "./interactive-fonts/alpha.ttf");
   assert.equal(entry.default_size_px, 14);
   assert.deepEqual(entry.default_axes, { wght: 400, opsz: 14 });
-  assert.equal(entry.sample_text, "Pack my box.");
+  assert.equal(entry.sample_text, "Pack my box.\nSecond line");
   assert.deepEqual(entry.axes, [{ tag: "wght", name: "Weight", min: 100, default: 400, max: 900, step: 1 }]);
   assert.deepEqual(entry.render, { hinting: "auto", mono_threshold: 200, gray_gamma: 2.2 });
   assert.deepEqual(result.fonts, [{ target: "interactive-fonts/alpha.ttf", bytes: bytes("font-a") }]);
@@ -100,6 +100,46 @@ test("rejects unsafe font references without reading", () => {
   assert.equal(resolveFontFile(roots.configDir, roots.repoRoot, null), null);
 });
 
+test("passes config card presets through to each family", async () => {
+  const file = "/repo/fonts/A.ttf";
+  const cards = [
+    { id: "reading", title: "Reading sample", content: "Pack my box.\nSecond line" },
+    { id: "numbers", title: "Numbers and symbols", content: "0123456789" },
+    { id: "../escape", title: "Bad", content: "x" },
+    { id: "empty", title: "Empty", content: "" },
+  ];
+  const result = await buildInteractive({
+    viewFamilies: [viewFamily()],
+    configFamilies: [{ id: "alpha", font: "../../fonts/A.ttf" }],
+    profiles: [],
+    cards,
+    ...roots,
+    readFont: reader({ [file]: bytes("font-a") }),
+  });
+  assert.deepEqual(result.doc.families[0].presets, [
+    { id: "reading", title: "Reading sample", content: "Pack my box.\nSecond line" },
+    { id: "numbers", title: "Numbers and symbols", content: "0123456789" },
+  ]);
+  assert.equal(result.doc.families[0].default_preset, "reading");
+});
+
+test("unmatched sample text falls back to the custom preset", async () => {
+  const file = "/repo/fonts/A.ttf";
+  const result = await buildInteractive({
+    viewFamilies: [viewFamily({ sizes: [{
+      size_px: 14, axes: { wght: 400 }, thumbnail: { width_px: 2, height_px: 2 },
+      items: [{ id: "other", profile: "mono_1bit", label: "Other", text: "Unlisted words" }],
+    }] })],
+    configFamilies: [{ id: "alpha", font: "../../fonts/A.ttf" }],
+    profiles: [],
+    cards: [{ id: "reading", title: "Reading sample", content: "Pack my box." }],
+    ...roots,
+    readFont: reader({ [file]: bytes("font-a") }),
+  });
+  assert.equal(result.doc.families[0].sample_text, "Unlisted words");
+  assert.equal(result.doc.families[0].default_preset, "custom");
+});
+
 test("falls back to default render options without profiles", async () => {
   const file = "/repo/fonts/A.ttf";
   const result = await buildInteractive({
@@ -115,17 +155,26 @@ test("falls back to default render options without profiles", async () => {
 test("maps control state to the exact tools/wasm render request", () => {
   const spec = toRenderSpec({
     text: "Ag", sizePx: 18, axes: { wght: 700 }, profile: "gray_3bit",
-    render: { mono_threshold: 200, gray_gamma: 2.2 },
+    render: { mono_threshold: 200, gray_gamma: 2.2 }, width: 360, height: 120,
   });
   assert.deepEqual(spec, {
-    text: "Ag", width: 720, height: 54, size_px: 18, axes: { wght: 700 }, hinting: "auto", output_bits: 3,
+    text: "Ag", width: 360, height: 120, size_px: 18, axes: { wght: 700 }, hinting: "auto", output_bits: 3,
     mono_threshold: 200, gray_gamma: 2.2, missing_glyphs: "error", kerning: true, metric_rounding: "subpixel",
     wrap: "word", align: "left", foreground: [36, 40, 43, 255], background: [255, 255, 255, 255],
   });
-  const mono = toRenderSpec({ text: "", sizePx: 16, axes: {}, profile: "mono_1bit" });
+  const mono = toRenderSpec({ text: "", sizePx: 16, axes: {}, profile: "mono_1bit", width: 0.4, height: 5000 });
   assert.equal(mono.output_bits, 1);
-  assert.equal(mono.height, 48);
+  assert.equal(mono.width, 1);
+  assert.equal(mono.height, 4096);
   assert.equal(mono.text, "");
+});
+
+test("derives shrunken logical bounds for integer magnification", () => {
+  assert.equal(logicalBounds(720, 1), 720);
+  assert.equal(logicalBounds(721, 2), 361);
+  assert.equal(logicalBounds(240, 4), 60);
+  assert.equal(logicalBounds(0, 2), 1);
+  assert.equal(logicalBounds(9000, 1), 4096);
 });
 
 test("publishes interactive.json and font bytes, rejecting invalid documents", async (t) => {
@@ -146,6 +195,10 @@ test("publishes interactive.json and font bytes, rejecting invalid documents", a
   assert.throws(() => validateInteractive({ schema_version: "other", families: [] }), /format/);
   assert.throws(() => validateInteractive({
     schema_version: "web-interactive-v1",
-    families: [{ id: "alpha", available: true }],
+    families: [{ id: "alpha", available: true, presets: [], default_preset: "custom" }],
   }), /source/);
+  assert.throws(() => validateInteractive({
+    schema_version: "web-interactive-v1",
+    families: [{ id: "alpha", available: false }],
+  }), /Invalid interactive/);
 });

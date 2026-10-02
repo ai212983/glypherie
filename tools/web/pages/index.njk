@@ -60,9 +60,17 @@ permalink: index.html
       <details><summary>Selection details</summary><p>{{ specimens.selectedVariant }}</p></details>
     </section>
     {% else %}
-    <noscript><p class="intro">Images are displayed at native size.</p></noscript>
+    <noscript><p class="intro">The interactive preview needs JavaScript.</p></noscript>
+    <div class="font-picker">
+      <label for="font-select">Font</label>
+      <select id="font-select">
+        {% for family in specimens.families %}
+        <option value="{{ family.id }}"{% if loop.first %} selected{% endif %}>{{ family.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
     {% for family in specimens.families %}
-    <section class="family" id="family-{{ family.id }}" aria-labelledby="heading-{{ family.id }}"{% if not family.initiallyVisible %} hidden{% endif %}>
+    <section class="family" id="family-{{ family.id }}" aria-labelledby="heading-{{ family.id }}"{% if not loop.first %} hidden{% endif %}>
       <h2 id="heading-{{ family.id }}">{{ family.name }}</h2>
       <dl class="font-metadata" aria-label="{{ family.name }} font metadata">
         <div><dt>Kerning</dt><dd>{{ family.metadataView.kerningLabel }}</dd></div>
@@ -76,7 +84,8 @@ permalink: index.html
         data-available="{{ family.interactive.available }}"
         data-font-url="{{ family.interactive.fontUrl or "" }}" data-default-size="{{ family.interactive.default_size_px or 16 }}"
         data-default-axes="{{ (family.interactive.default_axes or {}) | dump }}" data-axes="{{ family.interactive.axes | dump }}"
-        data-render="{{ (family.interactive.render or {}) | dump }}" data-sample-text="{{ family.interactive.sample_text or "Aa" }}" hidden>
+        data-render="{{ (family.interactive.render or {}) | dump }}" data-sample-text="{{ family.interactive.sample_text or "Aa" }}"
+        data-presets="{{ family.interactive.presets | dump }}" hidden>
         <h3 class="interactive-heading">Interactive specimen</h3>
         <p class="interactive-status" data-status role="status" hidden></p>
         <fieldset class="interactive-controls">
@@ -94,8 +103,16 @@ permalink: index.html
             </div>
           </div>
           {% endfor %}
-          <label class="interactive-field">Sample text
-            <input type="text" data-text value="{{ family.interactive.sample_text or "Aa" }}" maxlength="200" autocomplete="off">
+          <label class="interactive-field">Preset
+            <select data-preset>
+              {% for preset in family.interactive.presets %}
+              <option value="{{ preset.id }}"{% if preset.id == family.interactive.default_preset %} selected{% endif %}>{{ preset.title }}</option>
+              {% endfor %}
+              <option value="custom"{% if family.interactive.default_preset == "custom" %} selected{% endif %}>Custom</option>
+            </select>
+          </label>
+          <label class="interactive-field interactive-text">Sample text
+            <textarea data-text rows="4" maxlength="8192" autocomplete="off" spellcheck="false">{{ family.interactive.sample_text or "Aa" }}</textarea>
           </label>
           <button type="button" data-reset>Reset</button>
         </fieldset>
@@ -104,70 +121,8 @@ permalink: index.html
         </div>
       </section>
       {% endif %}
-      {% for group in family.sizes %}
-      <section class="size-group" id="{{ family.id }}-size-{{ group.size_px }}" aria-labelledby="size-{{ family.id }}-{{ loop.index }}" style="--native-width: {{ group.thumbnail.width_px }}px; --native-height: {{ group.thumbnail.height_px }}px"{% if not group.initiallyVisible %} hidden{% endif %}>
-        <h3 id="size-{{ family.id }}-{{ loop.index }}">{{ group.size_px }} <span>px</span></h3>
-        <div class="specimen-row">
-          {% for item in group.items %}
-          <figure class="specimen-card" data-item-id="{{ item.id }}" data-profile="{{ item.profile }}"{% if not item.initiallyVisible %} hidden{% endif %}>
-            <figcaption>{{ item.label }}</figcaption>
-            <div class="image-viewport" tabindex="0" role="region" aria-label="{{ family.name }}, {{ group.size_px }} px, {{ item.profileLabel }}, {{ item.label }}">
-              {% if item.outcome == "rendered" %}
-              <img src="{{ item.imageUrl }}" width="{{ group.thumbnail.width_px }}" height="{{ group.thumbnail.height_px }}" alt="{{ item.text }}" loading="lazy" decoding="async">
-              {% else %}
-              <div class="sample-failure"><strong>{% if item.outcome == "failed" %}Sample could not be rendered{% else %}Sample is unsupported{% endif %}</strong><p>{{ item.reason }}</p></div>
-              {% endif %}
-            </div>
-          </figure>
-          {% endfor %}
-        </div>
-        {% if activeComparison and group.attentionGroups.length %}
-        <section class="attention-block" id="attention-{{ family.id }}-{{ group.size_px }}" aria-labelledby="attention-heading-{{ family.id }}-{{ group.size_px }}"{% if not group.attentionInitiallyVisible %} hidden{% endif %}>
-          <h4 class="attention-heading" id="attention-heading-{{ family.id }}-{{ group.size_px }}">Attention</h4>
-          {% for inspectionGroup in group.attentionGroups %}
-          <section class="attention-group"{% if not inspectionGroup.initiallyVisible %} hidden{% endif %}>
-          <h5>{{ inspectionGroup.inspection }}</h5>
-          <div class="attention-grid">
-            {% for symbol in inspectionGroup.symbols %}{% for profile in symbol.profiles %}
-            <a class="specimen-card attention-symbol" data-attention-id="{{ symbol.id }}" data-profile="{{ profile.id }}" data-preserve-controls data-target-zoom-scope="glyph"
-               href="./{{ activeComparison.id }}/{{ symbol.family_id }}/{{ symbol.slug }}/#{{ symbol.anchor }}" target="_blank" rel="noopener"
-               style="--native-width: {{ symbol.canvas.width_px }}px; --native-height: {{ symbol.canvas.height_px }}px"{% if not profile.initiallyVisible %} hidden{% endif %}>
-              <strong>{{ symbol.character }}</strong>
-              <div class="image-viewport"><img src="./comparison-content/{{ activeComparison.packageId }}/{{ profile.current.path }}" width="{{ symbol.canvas.width_px }}" height="{{ symbol.canvas.height_px }}" alt="{{ symbol.character }}" loading="lazy" decoding="async"></div>
-              {% if symbol.description %}<span class="attention-description">{{ symbol.description }}</span>{% endif %}
-            </a>
-            {% endfor %}{% endfor %}
-          </div>
-          </section>
-          {% endfor %}
-        </section>
-        {% endif %}
-        {% if group.glyphPreview %}
-        {% set comparison = activeComparison %}
-        {% set glyphGroup = group.glyphPreview %}
-        {% set siteBase = "./" %}
-        {% include "glyph-sheet.njk" %}
-        {% endif %}
-      </section>
-      {% endfor %}
     </section>
     {% endfor %}
-    <footer class="page-footer">
-      {% if activeComparison and activeComparison.statistics.length %}
-      <p>Compared with {{ activeComparison.previous.label }} across all families and sizes.</p>
-      {% for stats in activeComparison.statistics %}
-      <div data-impact-profile="{{ stats.profile }}"{% if stats.profile != specimens.defaultProfile %} hidden{% endif %}>
-        <dl class="impact-stats">
-          <div><dt>Same symbols</dt><dd>{{ stats.sameLabel }}</dd></div>
-          <div><dt>Changed symbols</dt><dd>{{ stats.changedLabel }}</dd></div>
-          <div><dt>Average changed pixels</dt><dd>{{ stats.averageLabel }}</dd></div>
-        </dl>
-      </div>
-      {% endfor %}
-      {% else %}
-      <p>Comparison statistics are unavailable.</p>
-      {% endif %}
-    </footer>
     {% endif %}
   </main>
 </body>

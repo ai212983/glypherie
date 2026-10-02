@@ -45,6 +45,9 @@ if (profileSwitch) {
   for (const input of profileSwitch.querySelectorAll("input")) {
     if (input.value === parameters.get("profile")) input.checked = true;
   }
+  // The index shows only the selected font's interactive family; glyph
+  // pages have no font select and keep the size-group rule.
+  const fontSelect = document.querySelector("#font-select");
   function updateProfile() {
     const selected = profileSwitch.querySelector("input:checked")?.value;
     if (!selected) return;
@@ -56,13 +59,18 @@ if (profileSwitch) {
     for (const group of document.querySelectorAll(".attention-group")) group.hidden = !group.querySelector(".attention-symbol:not([hidden])");
     for (const note of document.querySelectorAll("[data-attention-profile]")) note.hidden = note.dataset.attentionProfile !== selected;
     for (const group of groups) group.hidden = !group.querySelector(".specimen-card:not([hidden])");
-    for (const family of families) family.hidden = !family.querySelector(".size-group:not([hidden])");
+    for (const family of families) {
+      family.hidden = fontSelect
+        ? family.id !== `family-${fontSelect.value}`
+        : !family.querySelector(".size-group:not([hidden])");
+    }
     const unchanged = document.querySelector("#no-pixel-changes");
     if (unchanged) unchanged.hidden = cards.some((card) => !card.hidden);
     preserveControls();
   }
   profileSwitch.disabled = false;
   profileSwitch.addEventListener("change", updateProfile);
+  fontSelect?.addEventListener("change", updateProfile);
   updateProfile();
 }
 

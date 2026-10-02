@@ -101,15 +101,18 @@ figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: .45rem;
 .interactive-status { margin: .5rem 1rem 0; font-size: .8rem; line-height: 1.5; color: var(--muted); }
 .interactive-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .85rem 1.25rem; margin: 0; padding: .85rem 1rem; border: 0; }
 .interactive-field { display: flex; flex-direction: column; gap: .35rem; font-size: .8rem; line-height: 1.4; }
-.interactive-field input[type="number"], .interactive-field input[type="text"] { padding: .4rem .55rem; border: 1px solid var(--line); border-radius: 5px; background: white; }
-.interactive-field input[type="text"] { min-width: min(22rem, 100%); }
+.interactive-field input[type="number"], .interactive-field select, .interactive-field textarea { padding: .4rem .55rem; border: 1px solid var(--line); border-radius: 5px; background: white; }
+.interactive-text { flex: 1 1 100%; }
+.interactive-text textarea { width: 100%; min-height: 5.5rem; font: inherit; line-height: 1.5; resize: vertical; }
 .interactive-axis { display: flex; align-items: center; gap: .55rem; }
 .interactive-axis input[type="range"] { width: 10rem; max-width: 40vw; accent-color: var(--accent); }
 .interactive-axis output { min-width: 3rem; font-variant-numeric: tabular-nums; }
 .interactive-controls button { padding: .45rem .85rem; border: 1px solid var(--line); border-radius: 5px; background: white; cursor: pointer; }
 .interactive-controls button:hover { border-color: var(--accent); color: var(--accent); }
-.interactive-viewport { display: block; width: calc(100% - 2rem); height: auto; max-height: 32rem; margin: 0 1rem 1rem; }
-.interactive-canvas { display: block; max-width: none; image-rendering: pixelated; }
+.font-picker { display: flex; align-items: baseline; gap: .6rem; margin: 1.25rem 0 0; font-size: .875rem; font-weight: 600; }
+.font-picker select { padding: .4rem .55rem; border: 1px solid var(--line); border-radius: 5px; background: white; font: inherit; font-weight: 400; }
+.interactive-viewport { display: block; width: calc(100% - 2rem); height: auto; margin: 0 1rem 1rem; overflow: hidden; }
+.interactive-canvas { display: block; image-rendering: pixelated; }
 @media (max-width: 540px) {
   .page-header, main { width: calc(100% - 2rem); }
   .page-header { padding-top: 1.5rem; }

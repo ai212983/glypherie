@@ -141,7 +141,7 @@ test("checks decoded PNG levels as well as dimensions and checksums", async (t) 
   assert.match((await createSpecimenImporter(f.root).load()).message, /dimensions/);
 });
 
-test("failure items retain group dimensions and explanations", async (t) => {
+test("failure items retain outcomes, reasons, and dimensions in the importer view", async (t) => {
   const f = await fixture(t);
   for (const [i, item] of f.manifest.families[0].sizes[0].items.entries()) {
     delete item.image;
@@ -152,11 +152,14 @@ test("failure items retain group dimensions and explanations", async (t) => {
   const result = await createSpecimenImporter(f.root).load();
   assert.equal(result.state, "ready");
   assert.equal(result.assets.size, 0);
+  const group = result.families[0].sizes[0];
+  assert.deepEqual([group.thumbnail.width_px, group.thumbnail.height_px], [2, 2]);
+  assert.deepEqual(group.items.map((item) => [item.outcome, item.reason]), [
+    ["failed", "Sample needs investigation."],
+    ["unsupported", "Sample needs investigation."],
+  ]);
   const html = await build(f.root, f.output);
-  assert.match(html, /Sample could not be rendered/);
-  assert.match(html, /Sample is unsupported/);
-  assert.match(html, /Sample needs investigation/);
-  assert.match(html, /--native-width: 2px; --native-height: 2px/);
+  assert.doesNotMatch(html, /specimen-card|sample-failure|<figcaption>/);
 });
 
 test("iteration labels are human-facing and metadata is HTML escaped", async (t) => {

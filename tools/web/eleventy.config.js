@@ -80,6 +80,7 @@ export function configureWeb(eleventyConfig, options = {}) {
           viewFamilies: specimens.families,
           configFamilies: Array.isArray(raw?.families) ? raw.families : [],
           profiles: Array.isArray(raw?.profiles) ? raw.profiles : [],
+          cards: Array.isArray(raw?.cards) ? raw.cards : [],
           configDir: path.dirname(path.resolve(interactiveConfig)),
           repoRoot,
           readFont: (file) => boundedFontFile(file, repoRoot),
@@ -87,7 +88,7 @@ export function configureWeb(eleventyConfig, options = {}) {
       }
       for (const family of specimens.families) {
         family.interactive = interactive.doc.families.find((entry) => entry.id === family.id) ?? {
-          available: false, axes: [], fontUrl: "", default_size_px: 16, default_axes: {}, render: {}, sample_text: "Aa",
+          available: false, axes: [], fontUrl: "", default_size_px: 16, default_axes: {}, render: {}, sample_text: "Aa", presets: [], default_preset: "custom",
         };
       }
     }

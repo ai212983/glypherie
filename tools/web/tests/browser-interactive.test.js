@@ -20,6 +20,7 @@ export default async function init() {
 export class Font {
   constructor(bytes) {
     if (!(bytes instanceof Uint8Array) || !bytes.length) throw new Error("bad font bytes");
+    globalThis.__constructions = (globalThis.__constructions ?? 0) + 1;
     this.bytes = bytes;
   }
   metadata() { return { axes: [] }; }
@@ -30,22 +31,29 @@ export class Font {
     (globalThis.__renders ??= []).push(JSON.parse(JSON.stringify(spec)));
     const width = spec.width, height = spec.height;
     const pixels = new Uint8Array(width * height * 4);
-    const red = Math.round(spec.size_px) % 256;
-    const green = Math.round(spec.axes?.wght ?? 0) % 256;
-    for (let i = 0; i < width * height; i++) {
-      pixels[i * 4] = red; pixels[i * 4 + 1] = green; pixels[i * 4 + 2] = 128; pixels[i * 4 + 3] = 255;
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      pixels[i] = (x + Math.round(spec.size_px)) % 256;
+      pixels[i + 1] = (y + Math.round(spec.axes?.wght ?? 0)) % 256;
+      pixels[i + 2] = 128; pixels[i + 3] = 255;
     }
     return {
       width: () => width,
       height: () => height,
       pixels: () => pixels.slice(),
-      layout: () => ({ lines: [], missing_codepoints: [] }),
+      layout: () => ({
+        lines: spec.text.split("\\n").map(() => ({ height_px: 20 })),
+        missing_codepoints: [],
+      }),
       free: () => { globalThis.__frees = (globalThis.__frees ?? 0) + 1; },
     };
   }
   free() { globalThis.__freed = (globalThis.__freed ?? 0) + 1; }
 }
 `;
+
+const ALPHA_TEXT = "Alpha sample\nSecond line";
+const NUMBERS_TEXT = "0123456789 .,;:!?+-/()";
 
 function variableMetadata() {
   const metadata = fontMetadata();
@@ -66,7 +74,7 @@ async function interactiveFixture(t, { withWasm = true } = {}) {
   const fontA = Buffer.from("fake-font-alpha");
   const fontB = Buffer.from("fake-font-beta");
   const item = (id, profile) => ({
-    id, profile, label: "Reading sample", text: "Alpha sample",
+    id, profile, label: "Reading sample", text: ALPHA_TEXT,
     outcome: "rendered", image: { path: `assets/${imageHash}.png`, sha256: imageHash },
   });
   const family = (id, name, source, metadata, axes, text) => ({
@@ -84,7 +92,7 @@ async function interactiveFixture(t, { withWasm = true } = {}) {
     variant: { id: "reference-test", kind: "reference", version: null, generation_sha256: "a".repeat(64), composition_sha256: "b".repeat(64) },
     profiles: [{ id: "mono_1bit", output_bits: 1 }, { id: "gray_3bit", output_bits: 3 }],
     families: [
-      family("alpha", "Alpha", hash(fontA), variableMetadata(), { wght: 400, wdth: 100 }, "Alpha sample"),
+      family("alpha", "Alpha", hash(fontA), variableMetadata(), { wght: 400, wdth: 100 }, ALPHA_TEXT),
       family("beta", "Beta", hash(fontB), { ...fontMetadata(), axes: [] }, {}, "Beta sample"),
       family("gamma", "Gamma", "d".repeat(64), variableMetadata(), { wght: 400, wdth: 100 }, "Gamma sample"),
     ],
@@ -104,6 +112,10 @@ async function interactiveFixture(t, { withWasm = true } = {}) {
     profiles: [
       { id: "mono_1bit", output_bits: 1, mono_threshold: 200, gray_gamma: 1.0 },
       { id: "gray_3bit", output_bits: 3, mono_threshold: 128, gray_gamma: 2.2 },
+    ],
+    cards: [
+      { id: "reading", title: "Reading sample", content: ALPHA_TEXT },
+      { id: "numbers", title: "Numbers and symbols", content: NUMBERS_TEXT },
     ],
     families: [
       { id: "alpha", font: "fonts/A.ttf" },
@@ -131,16 +143,19 @@ async function launch(t, output) {
 }
 
 const renders = (page) => page.evaluate(() => globalThis.__renders ?? []);
-const canvasPixel = (page, family) => page.evaluate((id) => {
+const canvasBox = (page, family) => page.evaluate((id) => {
   const canvas = document.querySelector(`#interactive-${id} canvas`);
-  return [...canvas.getContext("2d").getImageData(0, 0, 1, 1).data];
+  return { width: canvas.width, height: canvas.height, style: [canvas.style.width, canvas.style.height] };
 }, family);
 
-test("interactive controls render through WASM with published ranges and defaults", { skip: !browserAvailable }, async (t) => {
+test("one font tester renders the selected family with published ranges", { skip: !browserAvailable }, async (t) => {
   const f = await interactiveFixture(t);
   const { page, errors } = await launch(t, f.output);
+  assert.deepEqual(await page.locator("#font-select option").allTextContents(), ["Alpha", "Beta", "Gamma"]);
+  assert.equal(await page.locator("#font-select").inputValue(), "alpha");
+  assert.equal(await page.locator(".interactive-specimen:visible").count(), 1);
+  assert.equal(await page.locator("#interactive-alpha").isVisible(), true);
   await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
-  await page.waitForFunction(() => document.querySelector("#interactive-beta canvas")?.dataset.rendered === "true");
 
   const weight = page.locator("#interactive-alpha-wght");
   assert.equal(await weight.getAttribute("min"), "100");
@@ -150,74 +165,198 @@ test("interactive controls render through WASM with published ranges and default
   assert.equal(await widthAxis.getAttribute("min"), "62.5");
   assert.equal(await widthAxis.getAttribute("step"), "0.1");
   assert.equal(await page.locator("#interactive-alpha [data-size]").inputValue(), "16");
-  assert.equal(await page.locator("#interactive-beta [data-axis]").count(), 0);
+  assert.equal(await page.locator("#interactive-alpha [data-text]").inputValue(), ALPHA_TEXT);
+  assert.equal(await page.locator("#interactive-alpha [data-preset]").inputValue(), "reading");
 
   const all = await renders(page);
-  const first = all.find((spec) => spec.text === "Alpha sample");
-  assert.deepEqual(first, {
-    text: "Alpha sample", width: 720, height: 48, size_px: 16, axes: { wght: 400, wdth: 100 },
-    hinting: "auto", output_bits: 1, mono_threshold: 200, gray_gamma: 2.2,
-    missing_glyphs: "error", kerning: true, metric_rounding: "subpixel",
-    wrap: "word", align: "left", foreground: [36, 40, 43, 255], background: [255, 255, 255, 255],
-  });
-  assert.deepEqual(await canvasPixel(page, "alpha"), [16, 144, 128, 255]);
-  const counts = await page.evaluate(() => ({ inits: globalThis.__inits ?? 0, renders: (globalThis.__renders ?? []).length, frees: globalThis.__frees ?? 0 }));
+  assert.equal(all.length, 1);
+  const [first] = all;
+  const box = await canvasBox(page, "alpha");
+  assert.equal(first.text, ALPHA_TEXT);
+  assert.equal(first.size_px, 16);
+  assert.deepEqual(first.axes, { wght: 400, wdth: 100 });
+  assert.equal(first.hinting, "auto");
+  assert.equal(first.output_bits, 1);
+  assert.equal(first.mono_threshold, 200);
+  assert.equal(first.gray_gamma, 2.2);
+  assert.equal(first.wrap, "word");
+  assert.equal(first.width, box.width);
+  assert.ok(first.height >= 1 && first.height <= 4096);
+  assert.equal(box.height, 2 * 20);
+  const counts = await page.evaluate(() => ({ inits: globalThis.__inits ?? 0, renders: (globalThis.__renders ?? []).length, frees: globalThis.__frees ?? 0, constructions: globalThis.__constructions ?? 0 }));
   assert.equal(counts.inits, 1);
   assert.equal(counts.frees, counts.renders);
+  // Boot and the initial resize observation share one in-flight font load.
+  assert.equal(counts.constructions, 1);
   assert.deepEqual(errors, []);
 });
 
-test("families render independently and follow profile, zoom, text, and reset", { skip: !browserAvailable }, async (t) => {
+test("switching fonts swaps controls, preserves edits, and idles inactive fonts", { skip: !browserAvailable }, async (t) => {
   const f = await interactiveFixture(t);
   const { page, errors } = await launch(t, f.output);
   await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
+
+  await page.locator("#interactive-alpha [data-text]").fill("Alpha edited");
+  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.text === "Alpha edited"));
+  await page.locator("#interactive-alpha [data-text]").evaluate((el) => el.blur());
+  await page.waitForTimeout(500);
+  const alphaCount = (await renders(page)).length;
+
+  await page.locator("#font-select").selectOption("beta");
   await page.waitForFunction(() => document.querySelector("#interactive-beta canvas")?.dataset.rendered === "true");
-  const betaBefore = await canvasPixel(page, "beta");
-  const betaRenders = () => renders(page).then((all) => all.filter((spec) => spec.text === "Beta sample").length);
+  assert.equal(await page.locator("#interactive-alpha").isVisible(), false);
+  assert.equal(await page.locator("#interactive-beta [data-axis]").count(), 0);
+  assert.equal(await page.locator("#interactive-beta [data-size]").inputValue(), "16");
+  assert.equal(await page.locator("#interactive-beta [data-text]").inputValue(), "Beta sample");
+  assert.equal(await page.locator("#interactive-beta [data-preset]").inputValue(), "custom");
+  // Only beta rendered since the switch; alpha stayed idle.
+  const betaRenders = (await renders(page)).filter((spec) => spec.text === "Beta sample").length;
+  assert.ok(betaRenders >= 1);
+  assert.equal((await renders(page)).length, alphaCount + betaRenders);
 
-  await page.locator("#interactive-alpha-wght").fill("700");
-  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.text === "Alpha sample" && spec.axes.wght === 700));
-  assert.deepEqual(await canvasPixel(page, "alpha"), [16, 188, 128, 255]);
-  assert.deepEqual(await canvasPixel(page, "beta"), betaBefore);
-  assert.equal(await betaRenders(), 1);
+  await page.locator("#interactive-beta [data-size]").fill("20");
+  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.text === "Beta sample" && spec.size_px === 20));
+  const freed = await page.evaluate(() => globalThis.__freed ?? 0);
+  assert.ok(freed >= 1);
 
-  await page.locator("#interactive-alpha [data-size]").fill("20");
-  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.text === "Alpha sample" && spec.size_px === 20));
-  assert.deepEqual(await canvasPixel(page, "alpha"), [20, 188, 128, 255]);
+  await page.locator("#font-select").selectOption("alpha");
+  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.text === "Alpha edited" && spec.size_px === 16));
+  assert.equal(await page.locator("#interactive-alpha [data-text]").inputValue(), "Alpha edited");
+  assert.equal(await page.locator("#interactive-alpha [data-preset]").inputValue(), "custom");
+  // Every displaced font was released exactly once; only the active one lives.
+  const balance = await page.evaluate(() => (globalThis.__constructions ?? 0) - (globalThis.__freed ?? 0));
+  assert.equal(balance, 1);
+  assert.deepEqual(errors, []);
+});
 
-  await page.locator('#interactive-alpha [data-text]').fill("Hi there");
-  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.text === "Hi there"));
-  // Blur fires the text input's change render; settle it before zoom takes focus.
-  await page.locator('#interactive-alpha [data-text]').evaluate((el) => el.blur());
+test("zoom magnifies symbols while the canvas fits the laid-out content", { skip: !browserAvailable }, async (t) => {
+  const f = await interactiveFixture(t);
+  const { page, errors } = await launch(t, f.output);
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
+  const before = await canvasBox(page, "alpha");
+  const specBefore = (await renders(page)).at(-1);
+  assert.equal(specBefore.size_px, 16);
+
+  await page.locator("#zoom").fill("1");
+  await page.waitForFunction((width) => (globalThis.__renders ?? []).some((spec) => spec.width < width), specBefore.width);
+  const specAfter = (await renders(page)).at(-1);
+  assert.equal(specAfter.size_px, 16);
+  assert.ok(specAfter.width < specBefore.width);
+  assert.equal(specAfter.height, specBefore.height);
+  const zoomed = await canvasBox(page, "alpha");
+  assert.equal(zoomed.width, before.width);
+  assert.equal(zoomed.height, before.height * 2);
+  // Integer magnification repeats each logical texel: the top-left 2x2
+  // canvas block is uniform while the neighboring logical texel differs.
+  const block = await page.evaluate(() => [...document.querySelector("#interactive-alpha canvas").getContext("2d").getImageData(0, 0, 3, 1).data]);
+  assert.deepEqual(block.slice(0, 4), block.slice(4, 8));
+  assert.notDeepEqual(block.slice(0, 4), block.slice(8, 12));
+
+  await page.setViewportSize({ width: 360, height: 800 });
   await page.waitForTimeout(500);
-  const renderCount = (await renders(page)).length;
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  assert.deepEqual(errors, []);
+});
+
+test("the display canvas grows and shrinks with the laid-out lines", { skip: !browserAvailable }, async (t) => {
+  const f = await interactiveFixture(t);
+  const { page, errors } = await launch(t, f.output);
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
+  assert.equal((await canvasBox(page, "alpha")).height, 2 * 20);
+
+  const tall = Array.from({ length: 30 }, (_, i) => `Row ${i}`).join("\n");
+  await page.locator("#interactive-alpha [data-text]").fill(tall);
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.height === 30 * 20);
+  assert.equal((await canvasBox(page, "alpha")).height, 30 * 20);
+
+  await page.locator("#interactive-alpha [data-text]").fill("Short");
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.height === 20);
+  assert.equal((await canvasBox(page, "alpha")).height, 20);
+  assert.deepEqual(errors, []);
+});
+
+test("a short request height gets one taller correction pass", { skip: !browserAvailable }, async (t) => {
+  const f = await interactiveFixture(t);
+  const { page, errors } = await launch(t, f.output);
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
+  // At 5 px the first-pass estimate (2 lines × 10 px) undershoots the stub
+  // layout (2 lines × 20 px), so the same text renders twice, then paints.
+  await page.locator("#interactive-alpha [data-size]").fill("5");
+  await page.waitForFunction(() => (globalThis.__renders ?? []).filter((spec) => spec.size_px === 5).length === 2);
+  const heights = (await renders(page)).filter((spec) => spec.size_px === 5).map((spec) => spec.height);
+  assert.deepEqual(heights, [2 * Math.ceil(5 * 2), 2 * 20]);
+  assert.deepEqual(errors, []);
+});
+
+test("a one-pixel resize at high zoom repaints at the same content height", { skip: !browserAvailable }, async (t) => {
+  const f = await interactiveFixture(t);
+  const { page, errors } = await launch(t, f.output);
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
   await page.locator("#zoom").fill("3");
-  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas").style.width === "2880px");
   await page.waitForTimeout(500);
-  assert.equal((await renders(page)).length, renderCount);
+  const before = await canvasBox(page, "alpha");
+  await page.setViewportSize({ width: 1099, height: 900 });
+  await page.waitForFunction((width) => {
+    const canvas = document.querySelector("#interactive-alpha canvas");
+    return canvas.width !== width && canvas.width > 0;
+  }, before.width);
+  await page.waitForTimeout(500);
+  const after = await canvasBox(page, "alpha");
+  assert.equal(after.height, before.height);
+  assert.ok(after.width < before.width);
+  const sum = await page.evaluate(() => {
+    const canvas = document.querySelector("#interactive-alpha canvas");
+    const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+    let total = 0;
+    for (let i = 0; i < data.length; i++) total = (total + data[i]) % 4294967296;
+    return total;
+  });
+  assert.ok(sum > 0);
+  assert.deepEqual(errors, []);
+});
+
+test("presets, custom edits, and reset work on the selected family", { skip: !browserAvailable }, async (t) => {
+  const f = await interactiveFixture(t);
+  const { page, errors } = await launch(t, f.output);
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
+
+  await page.locator("#interactive-alpha [data-preset]").selectOption("numbers");
+  await page.waitForFunction((expected) => (globalThis.__renders ?? []).some((spec) => spec.text === expected), NUMBERS_TEXT);
+  assert.equal(await page.locator("#interactive-alpha [data-text]").inputValue(), NUMBERS_TEXT);
+
+  await page.locator("#interactive-alpha [data-text]").fill("Line one\nLine two");
+  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.text === "Line one\nLine two"));
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha [data-preset]").value === "custom");
+  assert.equal(await page.locator("#interactive-alpha [data-preset]").inputValue(), "custom");
 
   await page.locator(".profile-options label").filter({ hasText: "3-bit" }).click();
   await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.output_bits === 3));
 
-  await page.locator('#interactive-alpha [data-reset]').click();
-  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.text === "Alpha sample" && spec.size_px === 16 && spec.axes.wght === 400));
-  assert.equal(await page.locator("#interactive-alpha-wght").inputValue(), "400");
-  assert.equal(await page.locator("#interactive-alpha [data-size]").inputValue(), "16");
+  await page.locator("#interactive-alpha [data-reset]").click();
+  await page.waitForFunction((expected) => (globalThis.__renders ?? []).some((spec) => spec.text === expected && spec.size_px === 16), ALPHA_TEXT);
+  assert.equal(await page.locator("#interactive-alpha [data-text]").inputValue(), ALPHA_TEXT);
+  assert.equal(await page.locator("#interactive-alpha [data-preset]").inputValue(), "reading");
   assert.deepEqual(errors, []);
 });
 
 test("unavailable fonts and missing WASM degrade to a concise message", { skip: !browserAvailable }, async (t) => {
   const f = await interactiveFixture(t);
   const { page } = await launch(t, f.output);
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
+  await page.locator("#font-select").selectOption("gamma");
   const gamma = page.locator("#interactive-gamma");
   await gamma.locator("[data-status]:visible").waitFor();
   await assert.match(await gamma.locator("[data-status]").textContent(), /unavailable/);
   assert.equal(await gamma.locator("canvas").isHidden(), true);
   assert.equal(await gamma.locator("[data-size]").isDisabled(), true);
+  assert.equal(await gamma.locator("[data-text]").isDisabled(), true);
+  assert.equal(await gamma.locator("[data-preset]").isDisabled(), true);
 
   const nowasm = await interactiveFixture(t, { withWasm: false });
   const { page: plain } = await launch(t, nowasm.output);
   await plain.locator("#interactive-alpha [data-status]:visible").waitFor();
   await assert.match(await plain.locator("#interactive-alpha [data-status]").textContent(), /unavailable/);
   assert.equal(await plain.locator("#interactive-alpha [data-size]").isDisabled(), true);
+  assert.equal(await plain.locator("#interactive-alpha [data-text]").isDisabled(), true);
+  assert.equal(await plain.locator("#interactive-alpha [data-preset]").isDisabled(), true);
 });

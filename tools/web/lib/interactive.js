@@ -9,6 +9,7 @@ import { atomicWrite, check, hash, isHash, isId, regularFile } from "./specimens
 export const INTERACTIVE_SCHEMA = "web-interactive-v1";
 export const FONT_DIR = "interactive-fonts";
 const MAX_FONT_BYTES = 32 * 1024 * 1024;
+const MAX_TEXT_CHARS = 8192;
 const FONT_EXTENSIONS = new Set(["ttf", "otf"]);
 const AXIS_TAG = /^[\x20-\x7e]{4}$/;
 
@@ -54,21 +55,29 @@ function controlAxes(metadata) {
 
 function defaultState(family) {
   const group = [...(family.sizes ?? [])].sort((a, b) => a.size_px - b.size_px)[0] ?? null;
-  const text = group?.items?.[0]?.text?.split("\n")[0] ?? "";
+  const text = typeof group?.items?.[0]?.text === "string" ? group.items[0].text : "";
   return {
     size_px: Number.isFinite(group?.size_px) ? group.size_px : 16,
     axes: { ...(group?.axes ?? {}) },
-    text: text.slice(0, 200),
+    text: text.slice(0, MAX_TEXT_CHARS),
   };
+}
+
+function textPresets(configCards) {
+  return (configCards ?? [])
+    .filter((card) => card && isId(card.id) && typeof card.title === "string" && card.title
+      && typeof card.content === "string" && card.content)
+    .map((card) => ({ id: card.id, title: card.title, content: card.content.slice(0, MAX_TEXT_CHARS) }));
 }
 
 // Pure assembly from already-loaded inputs: manifest view families (id, name,
 // source_sha256, metadata, sizes with axes/text) plus the generator config's
 // family font references. `readFont` is injectable for tests; production
 // passes a bounded regular-file read.
-export async function buildInteractive({ viewFamilies, configFamilies, profiles, configDir, repoRoot, readFont }) {
+export async function buildInteractive({ viewFamilies, configFamilies, profiles, cards, configDir, repoRoot, readFont }) {
   const configured = new Map((configFamilies ?? []).map((family) => [family?.id, family?.font]));
   const defaults = renderDefaults(profiles);
+  const presets = textPresets(cards);
   const families = [];
   const fonts = [];
   for (const family of viewFamilies ?? []) {
@@ -77,6 +86,7 @@ export async function buildInteractive({ viewFamilies, configFamilies, profiles,
     const entry = {
       id: family.id, name: family.name, available: false, axes: controlAxes(family.metadata),
       default_size_px: state.size_px, default_axes: state.axes, sample_text: state.text, render: defaults,
+      presets, default_preset: presets.find((preset) => preset.content === state.text)?.id ?? "custom",
     };
     const file = resolveFontFile(configDir, repoRoot, configured.get(family.id));
     if (!file) {
@@ -115,7 +125,10 @@ export async function boundedFontFile(file, repoRoot) {
 export function validateInteractive(doc) {
   check(doc?.schema_version === INTERACTIVE_SCHEMA && Array.isArray(doc.families), "Unsupported interactive preview format.");
   for (const family of doc.families) {
-    check(family && isId(family.id), "Invalid interactive family.");
+    check(family && isId(family.id) && Array.isArray(family.presets)
+      && family.presets.every((preset) => preset && isId(preset.id)
+        && typeof preset.title === "string" && typeof preset.content === "string")
+      && typeof family.default_preset === "string", "Invalid interactive family.");
     if (!family.available) continue;
     check(isHash(family.source_sha256) && typeof family.fontUrl === "string"
       && family.fontUrl === `./${FONT_DIR}/${family.id}.${path.extname(family.fontUrl).slice(1).toLowerCase()}`
