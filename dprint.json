@@ -1,0 +1,36 @@
+{
+  "lineWidth": 120,
+  "newLineKind": "lf",
+  "includes": [
+    "README.md",
+    "fonts/**/*.md",
+    "docs/**/*.md",
+    "tools/**/*.md",
+    "**/*.{json,jsonc}"
+  ],
+  "excludes": [
+    "docs/references/VisualTrueType/**",
+    "docs/references/specs/**",
+    "**/vendor/**",
+    "**/package-lock.json",
+    "**/.mise/**",
+    "**/node_modules/**",
+    "**/target/**",
+    "**/out/**",
+    "**/.venv/**"
+  ],
+  "markdown": {
+    "textWrap": "always",
+    "heading.kind": "atx",
+    "list.unorderedMarker": "dashes",
+    "table.cellPadding": "align",
+    "codeBlock.skipFormat": true,
+    "codeBlock.preserveIndentation": true,
+    "codeBlock.preserveBlankLines": true,
+    "html.skipFormat": true
+  },
+  "plugins": [
+    "https://plugins.dprint.dev/markdown-0.23.3.wasm@e554f8cc21e81000cce0d5f94b043a9da30a7a65a2a142c72c4c5c7e32deee50",
+    "npm:@dprint/json@0.25.0@215a8b978ae06a9f45656ecbd11b026689adac2adbba97e026620614d8344230"
+  ]
+}

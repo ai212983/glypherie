@@ -1,0 +1,74 @@
+name: generator
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  generator:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust generator and compatibility tests
+        run: cargo test --locked --manifest-path tools/generator/Cargo.toml
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: jdx/mise-action@v4
+        with:
+          install_args: --locked
+      - run: npm ci --ignore-scripts
+      - name: Formatting and documentation spelling
+        run: |
+          just fmt-check
+          just spell-check
+          just rust-fmt-check
+      - name: Hook behavior tests
+        run: just hooks-test
+
+  commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+      - uses: jdx/mise-action@v4
+        with:
+          install_args: --locked node
+      - run: npm ci --ignore-scripts
+      - name: Validate new commit messages
+        run: node tools/hooks/check-commits.mjs
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: jdx/mise-action@v4
+        with:
+          install_args: --locked node
+      - run: npm ci --ignore-scripts
+        working-directory: tools/web
+      - name: Install browser for web tests
+        working-directory: tools/web
+        run: |
+          npx --no-install playwright-core install --with-deps chromium
+          node --input-type=module <<'JS'
+          import { appendFileSync } from "node:fs";
+          import { chromium } from "playwright-core";
+          appendFileSync(process.env.GITHUB_ENV, `WEB_TEST_BROWSER=${chromium.executablePath()}\n`);
+          JS
+      - run: npm test
+        working-directory: tools/web

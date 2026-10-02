@@ -1,0 +1,15 @@
+{
+  "name": "font-generator-tooling",
+  "private": true,
+  "scripts": {
+    "commitlint": "commitlint",
+    "test": "node --test tools/hooks/tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "21.2.3",
+    "@commitlint/config-conventional": "21.2.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

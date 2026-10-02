@@ -1,6 +1,11 @@
-/tools/*/target
-/tools/*/out
-/tools/**/__pycache__/
-tools/font_probe/.venv/
-**/*.py[cod]
+# Generated
+
+node_modules/
+out/
+target/
+__pycache__/
+*.py[cod]
+.venv/
+.muse-memory.lock
+.cargo-ok
 .DS_Store

@@ -1,0 +1,11 @@
+[
+  "ci",
+  "deps",
+  "docs",
+  "docs:papers",
+  "fonts",
+  "generator",
+  "hooks",
+  "tooling",
+  "web"
+]

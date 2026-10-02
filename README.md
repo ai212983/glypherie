@@ -1,37 +1,59 @@
 # font_generator
 
-Host-side font research and glyph generation, extracted from the
-Meditamer firmware working tree into its own repository. No firmware
-build depends on anything here; the production LVGL font compiler
-stays with the firmware.
+Tools for font research and glyph generation.
 
-## Layout
+Font binaries, reference PDFs, and figure PNGs are stored with [Git LFS](https://git-lfs.com/). Install Git LFS before
+cloning, then run `git lfs install --local` and `git lfs pull` in an existing clone to configure filters and retrieve
+assets. LFS installs its upload hook alongside the Lefthook commit checks. Generated builds and previews remain ignored.
 
-- `tools/font_generator/` — standalone Rust crate: configurable glyph
-  generation from outline fonts, JSON command-line adapter.
-  See `tools/font_generator/README.md`.
-- `tools/font_probe/` — measurement and panel-specimen experiments.
-  See `tools/font_probe/README.md`.
-- `assets/fonts/` — test input faces only (IBM Plex Sans Variable,
-  Ark Pixel 16px, plus OFL texts), pinned by SHA-256 in the example
-  job files. These are copies for standalone testing, not firmware
-  build inputs.
-- `docs/` — the font legibility plan, methodology reference, and
-  experiment notes, copied over with the tooling.
+## Getting started
 
-## Reproduce the calibration outputs
+Install [mise](https://mise.jdx.dev/getting-started.html), then run from the repository root:
 
-```bash
-mkdir -p tools/font_generator/out
-cargo +stable run --locked --manifest-path tools/font_generator/Cargo.toml -- \
-  tools/font_generator/examples/roboto.json tools/font_generator/out/roboto-glyphs.json
-cargo +stable test --locked --manifest-path tools/font_generator/Cargo.toml
+```sh
+mise install
+mise exec -- just
 ```
 
-## Provenance
+Tool versions are pinned in [mise.toml](mise.toml). `just` lists the available commands.
 
-Font sources, licenses, and expected SHA-256 hashes are declared in
-each `tools/font_generator/examples/*.json` job file; the generator
-verifies font bytes, not legal provenance. Per-face embedded
-name-table readings are recorded in
-`tools/font_generator/README.md`.
+Markdown wraps at 120 characters. Use `just fmt` to format Markdown and JSON or `just fmt-check` to check formatting.
+Use `just spell-check` to check documentation spelling; project vocabulary lives in [cspell.json](cspell.json).
+
+## Commit checks
+
+Run `mise exec -- just hooks-setup` after cloning to install the locked commit tooling and activate
+[Lefthook](https://lefthook.dev/) hooks. Rust formatting requires a Rust toolchain with rustfmt.
+
+Before a commit, hooks check Markdown/JSON formatting and documentation spelling for relevant staged files, plus Rust
+formatting when generator Rust files change. Hooks check files in the working tree and never format or stage fixes. Use
+`just fmt` or `cargo fmt --manifest-path tools/generator/Cargo.toml` to fix formatting, then stage your changes again.
+Imported paper transcripts and upstream reference sources are excluded from documentation spelling checks.
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/): `type(scope):
+description`. The scope is optional; when supplied, it must appear in [commit-scopes.json](commit-scopes.json). Types
+are `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `style`, `chore`, and `revert`. Headers are
+limited to 100 characters. Breaking changes use `!` and/or a `BREAKING CHANGE:` footer. Standard generated merge,
+revert, and fixup messages use commitlint's default exemptions.
+
+```text
+refactor(fonts): move font assets to the repository root
+test(generator): remove redundant font fixtures
+ci: add formatting and commit-message checks
+```
+
+Use `just commit-check path/to/message.txt` to validate a message, `just commit-check-range BASE HEAD` to validate new
+commits, or `just hooks-test` to test hook behavior. CI runs formatting, spelling, Rust and web tests, and checks commit
+messages introduced by a push or pull request. The first push to a new branch checks its tip; subsequent pushes check
+the new commit range. Existing history is not revalidated.
+
+## Browse
+
+- [Glyph generation](tools/generator/)
+- [Web preview](tools/web/)
+- [Font assets](fonts/)
+- [Documentation](docs/)
+- [Development revisions](docs/revisions/)
+- [Evaluation rules and Rust evaluator](docs/evaluation.md)
+- [Agent working rules](AGENTS.md)
+- [Research papers](docs/references/papers/)

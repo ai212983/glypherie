@@ -1,0 +1,46 @@
+lefthook: mise exec -- lefthook
+glob_matcher: doublestar
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: formatting
+      glob: "**/*.{md,json,jsonc}"
+      exclude:
+        - "docs/references/VisualTrueType/**"
+        - "docs/references/specs/**"
+        - "**/vendor/**"
+        - "**/package-lock.json"
+        - "**/.mise/**"
+        - "**/node_modules/**"
+        - "**/target/**"
+        - "**/out/**"
+        - "**/.venv/**"
+      run: mise exec -- dprint check {staged_files}
+    - name: spelling
+      glob:
+        - "README.md"
+        - "fonts/**/*.md"
+        - "docs/**/*.md"
+        - "tools/**/*.md"
+      exclude:
+        - "docs/references/VisualTrueType/**"
+        - "docs/references/specs/**"
+        - "docs/references/papers/*/paper.md"
+        - "**/vendor/**"
+        - "**/node_modules/**"
+        - "**/target/**"
+        - "**/out/**"
+        - "**/.venv/**"
+      run: mise exec -- cspell --no-progress --gitignore --no-must-find-files {staged_files}
+    - name: rust-formatting
+      glob:
+        - "tools/generator/**/*.rs"
+        - "tools/generator/Cargo.toml"
+      exclude: "tools/generator/vendor/**"
+      run: cargo fmt --manifest-path tools/generator/Cargo.toml --check
+
+commit-msg:
+  jobs:
+    - name: conventional-commit
+      run: mise exec -- node node_modules/@commitlint/cli/cli.js --edit "{1}"
