@@ -3,10 +3,13 @@ import { promises as fs } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createSpecimenImporter } from "./lib/specimens.js";
 import { createComparisonImporter, glyphPages, removeStaleGlyphPages, validatePreviewScope } from "./lib/comparisons.js";
+import { boundedFontFile, buildInteractive, publishInteractive } from "./lib/interactive.js";
 
 export function configureWeb(eleventyConfig, options = {}) {
   const webRoot = path.dirname(fileURLToPath(import.meta.url));
   const specimenRoot = options.specimenRoot ?? path.resolve(webRoot, "../../out/specimens");
+  const interactiveConfig = options.interactiveConfig ?? path.resolve(webRoot, "../generator/specimens.json");
+  const repoRoot = options.repoRoot ?? path.resolve(webRoot, "../..");
   const importer = createSpecimenImporter(specimenRoot);
   const comparisonImporter = createComparisonImporter(specimenRoot);
   let specimens;
@@ -62,6 +65,33 @@ export function configureWeb(eleventyConfig, options = {}) {
       }
     }
     await comparisonImporter.publish(comparisons, path.resolve(directories.output));
+    // Interactive specimens never gate the page: a missing config or font
+    // source leaves disabled sections, but a malformed config fails loudly.
+    let interactive = { doc: { schema_version: "web-interactive-v1", families: [] }, fonts: [] };
+    if (specimens.state === "ready") {
+      let raw = null;
+      try {
+        raw = JSON.parse(await fs.readFile(interactiveConfig, "utf8"));
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      if (raw) {
+        interactive = await buildInteractive({
+          viewFamilies: specimens.families,
+          configFamilies: Array.isArray(raw?.families) ? raw.families : [],
+          profiles: Array.isArray(raw?.profiles) ? raw.profiles : [],
+          configDir: path.dirname(path.resolve(interactiveConfig)),
+          repoRoot,
+          readFont: (file) => boundedFontFile(file, repoRoot),
+        });
+      }
+      for (const family of specimens.families) {
+        family.interactive = interactive.doc.families.find((entry) => entry.id === family.id) ?? {
+          available: false, axes: [], fontUrl: "", default_size_px: 16, default_axes: {}, render: {}, sample_text: "Aa",
+        };
+      }
+    }
+    await publishInteractive(interactive, path.resolve(directories.output));
   });
   eleventyConfig.on("eleventy.after", async ({ directories }) => {
     await removeStaleGlyphPages(comparisons, path.resolve(directories.output));

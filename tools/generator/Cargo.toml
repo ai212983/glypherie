@@ -5,8 +5,11 @@ edition = "2021"
 default-run = "font_generator"
 
 [features]
-default = ["candidate"]
+default = ["candidate", "native-io"]
 candidate = ["dep:skrifa_candidate"]
+# Filesystem/publication-only modules (specimens, comparison, specimen_config)
+# and tempfile stay behind this gate so WASM builds without them.
+native-io = ["dep:tempfile"]
 
 [dependencies]
 harfrust = "=0.13.3"
@@ -20,7 +23,31 @@ sha2 = "0.10"
 unicode-script = "0.5"
 unicode-general-category = "1"
 png = "=0.18.0"
-tempfile = "3"
+tempfile = { version = "3", optional = true }
+
+[[bin]]
+name = "font_specimens"
+required-features = ["native-io"]
+
+[[bin]]
+name = "font_comparison"
+required-features = ["native-io"]
+
+[[bin]]
+name = "font_evaluate"
+required-features = ["native-io"]
+
+[[test]]
+name = "comparison"
+required-features = ["native-io"]
+
+[[test]]
+name = "specimen_config"
+required-features = ["native-io"]
+
+[[test]]
+name = "specimens"
+required-features = ["native-io"]
 
 [build-dependencies]
 sha2 = "0.10"

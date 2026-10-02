@@ -63,6 +63,8 @@ pub struct FamilyManifest {
     pub id: String,
     pub name: String,
     pub source_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<crate::metadata::FontMetadata>,
     pub sizes: Vec<SizeGroup>,
 }
 
@@ -160,6 +162,11 @@ struct Captured {
     case: RenderCase,
     capture: CapturedCase,
     layouts: Vec<Result<Layout, String>>,
+}
+
+struct CapturedFonts {
+    cases: Vec<Captured>,
+    metadata: BTreeMap<String, crate::metadata::FontMetadata>,
 }
 
 struct BuiltPackage {
@@ -488,8 +495,9 @@ fn compose(
     encode_png(&pixels, thumbnail)
 }
 
-fn capture(loaded: &specimen_config::LoadedSpecimens) -> Result<Vec<Captured>, Error> {
+fn capture(loaded: &specimen_config::LoadedSpecimens) -> Result<CapturedFonts, Error> {
     let mut fonts = BTreeMap::new();
+    let mut metadata = BTreeMap::new();
     for family in &loaded.config.families {
         let path = loaded
             .cases
@@ -502,6 +510,7 @@ fn capture(loaded: &specimen_config::LoadedSpecimens) -> Result<Vec<Captured>, E
         if hash(&bytes) != family.provenance.expected_sha256 {
             return Err(fail(format!("font checksum mismatch for {}", family.id)));
         }
+        metadata.insert(family.id.clone(), crate::metadata::extract(&bytes)?);
         fonts.insert(family.id.as_str(), bytes);
     }
     let mut cases = loaded.cases.clone();
@@ -578,12 +587,16 @@ fn capture(loaded: &specimen_config::LoadedSpecimens) -> Result<Vec<Captured>, E
             layouts,
         });
     }
-    Ok(captured)
+    Ok(CapturedFonts {
+        cases: captured,
+        metadata,
+    })
 }
 
 fn build_packages(
     loaded: &specimen_config::LoadedSpecimens,
     captures: &[Captured],
+    metadata: &BTreeMap<String, crate::metadata::FontMetadata>,
 ) -> Result<Vec<BuiltPackage>, Error> {
     let mut packages = Vec::new();
     for variant in &loaded.config.variants {
@@ -714,6 +727,7 @@ fn build_packages(
                 id: family.id.clone(),
                 name: family.name.clone(),
                 source_sha256: family.provenance.expected_sha256.clone(),
+                metadata: Some(metadata[&family.id].clone()),
                 sizes: groups,
             });
         }
@@ -957,7 +971,7 @@ pub fn publish(config_path: &Path, output: &Path) -> Result<Publication, Error> 
         }
     }
     let captures = capture(&loaded)?;
-    let packages = build_packages(&loaded, &captures)?;
+    let packages = build_packages(&loaded, &captures.cases, &captures.metadata)?;
     directory(output)?;
     let output = io(fs::canonicalize(output))?;
     let lock_path = output.join(".publishing");
@@ -1048,7 +1062,7 @@ pub fn publish(config_path: &Path, output: &Path) -> Result<Publication, Error> 
             .iter()
             .map(|p| p.manifest.variant.id.clone())
             .collect(),
-        case_count: captures.len(),
+        case_count: captures.cases.len(),
         image_count,
         failure_count,
     })

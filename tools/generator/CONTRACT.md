@@ -1,5 +1,7 @@
 # Specimen generator output contract
 
+<!-- cspell:words fvar kerx vkrn subtables -->
+
 The specimen generator publishes a self-contained package of native-resolution PNG specimens and display metadata. This
 interface is independent of the generator's implementation language. The web generator consumes the package according to
 the [web generator contract](../web/CONTRACT.md).
@@ -114,6 +116,39 @@ then update the active pointer atomically.
 The generation hash identifies the canonical render artifact separately from the exported specimen composition. Full
 provenance, geometry, and layout policy remain in the canonical artifacts; the display manifest carries the metadata
 needed to present the specimens.
+
+New exports include each family's `metadata`, extracted once from the checksum-verified source bytes with the upstream
+Skrifa reader. Older immutable packages can omit this field. Metadata is descriptive and does not affect rendering,
+shaping, fitting, preview scope or review annotations.
+
+- `names`: nullable strings for `family`, `style`, `full`, `postscript`, `version`, `copyright`, `manufacturer`,
+  `designer`, `description`, `vendor_url`, `designer_url`, `license` and `license_url`. Prefer English, otherwise the
+  first nonempty localized value. Family/style prefer typographic name IDs 16/17, falling back to 1/2. License fields
+  are embedded text, not verified provenance or a substitute for the supplied license.
+- `axes`: source-ordered records with `tag`, nullable localized `name`, `min`, `default`, `max` and `hidden`. An empty
+  list identifies a static font. These describe supported coordinates, separately from each size group's selected axes.
+- `kerning`: `horizontal` and `vertical` booleans, with `sources` identifying `GPOS kern`, `GPOS vkrn`, `kern` or
+  `kerx`. Detect nonempty positioning lookups under the registered kerning features or populated legacy kerning
+  subtables; GPOS presence alone is insufficient. This reports available data, not an assurance that a particular pair
+  or script receives an adjustment. Missing kerning tables mean no kerning; malformed tables fail extraction.
+- `style`: nullable `slope` (`upright`, `italic`, `oblique`), raw OS/2 `weight_class` and `width_class`, and
+  `italic_angle` in degrees. Values describe the font's default instance, not a preview's selected variation
+  coordinates.
+- `classification`: nullable raw IBM `family_class` (class in the high byte, subclass in the low byte), ten-byte
+  `panose`, and `monospaced` from the post table's fixed-pitch declaration. Missing or unspecified classification does
+  not authorize guessing from a filename or outlines.
+- `coverage`: nullable `character_count` and sorted, disjoint, inclusive `ranges` of Unicode scalar values from the
+  renderer's selected nominal character map. Exclude missing glyphs, out-of-range glyph IDs and surrogate codepoints.
+  Missing/unsupported Unicode maps and symbol encodings have unknown coverage. This is character mapping coverage, not a
+  guarantee of language shaping support.
+- `declared_unicode_ranges`: nullable four-word OS/2 range flags, separate from actual character-map coverage.
+
+Definitions follow the OpenType [name](https://learn.microsoft.com/en-us/typography/opentype/spec/name),
+[fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar),
+[OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2),
+[kerning features](https://learn.microsoft.com/en-us/typography/opentype/spec/features_ko) and
+[kern](https://learn.microsoft.com/en-us/typography/opentype/spec/kern) specifications, plus Apple's
+[kerx](https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6kerx.html) definition.
 
 Each family has a nonempty `sizes` array. Each size group contains:
 

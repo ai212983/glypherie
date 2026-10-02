@@ -9,6 +9,7 @@ permalink: index.html
   <title>Font preview</title>
   <link rel="stylesheet" href="./assets/index.css">
   <script type="module" src="./assets/index.js"></script>
+  <script type="module" src="./assets/interactive.js"></script>
 </head>
 <body>
   <a class="skip-link" href="#specimens">Skip to specimens</a>
@@ -63,6 +64,46 @@ permalink: index.html
     {% for family in specimens.families %}
     <section class="family" id="family-{{ family.id }}" aria-labelledby="heading-{{ family.id }}"{% if not family.initiallyVisible %} hidden{% endif %}>
       <h2 id="heading-{{ family.id }}">{{ family.name }}</h2>
+      <dl class="font-metadata" aria-label="{{ family.name }} font metadata">
+        <div><dt>Kerning</dt><dd>{{ family.metadataView.kerningLabel }}</dd></div>
+        <div><dt>Axes</dt><dd>{{ family.metadataView.axesLabel }}</dd></div>
+        {% if family.metadataView.classificationLabel %}
+        <div><dt>Classification</dt><dd>{{ family.metadataView.classificationLabel }}</dd></div>
+        {% endif %}
+      </dl>
+      {% if family.interactive %}
+      <section class="interactive-specimen" id="interactive-{{ family.id }}" data-interactive-family="{{ family.id }}"
+        data-available="{{ family.interactive.available }}"
+        data-font-url="{{ family.interactive.fontUrl or "" }}" data-default-size="{{ family.interactive.default_size_px or 16 }}"
+        data-default-axes="{{ (family.interactive.default_axes or {}) | dump }}" data-axes="{{ family.interactive.axes | dump }}"
+        data-render="{{ (family.interactive.render or {}) | dump }}" data-sample-text="{{ family.interactive.sample_text or "Aa" }}" hidden>
+        <h3 class="interactive-heading">Interactive specimen</h3>
+        <p class="interactive-status" data-status role="status" hidden></p>
+        <fieldset class="interactive-controls">
+          <legend class="visually-hidden">{{ family.name }} interactive controls</legend>
+          <label class="interactive-field">Font size (px)
+            <input type="number" data-size min="1" max="512" step="0.5" value="{{ family.interactive.default_size_px or 16 }}">
+          </label>
+          {% for axis in family.interactive.axes %}
+          <div class="interactive-field">
+            <label for="interactive-{{ family.id }}-{{ axis.tag }}">{{ axis.name }} ({{ axis.tag }})</label>
+            <div class="interactive-axis">
+              <input id="interactive-{{ family.id }}-{{ axis.tag }}" type="range" data-axis="{{ axis.tag }}"
+                min="{{ axis.min }}" max="{{ axis.max }}" step="{{ axis.step }}" value="{{ axis.default }}">
+              <output data-axis-value="{{ axis.tag }}">{{ axis.default }}</output>
+            </div>
+          </div>
+          {% endfor %}
+          <label class="interactive-field">Sample text
+            <input type="text" data-text value="{{ family.interactive.sample_text or "Aa" }}" maxlength="200" autocomplete="off">
+          </label>
+          <button type="button" data-reset>Reset</button>
+        </fieldset>
+        <div class="image-viewport interactive-viewport" tabindex="0" role="region" aria-label="{{ family.name }} interactive specimen">
+          <canvas class="interactive-canvas">Interactive preview needs JavaScript and the font renderer.</canvas>
+        </div>
+      </section>
+      {% endif %}
       {% for group in family.sizes %}
       <section class="size-group" id="{{ family.id }}-size-{{ group.size_px }}" aria-labelledby="size-{{ family.id }}-{{ loop.index }}" style="--native-width: {{ group.thumbnail.width_px }}px; --native-height: {{ group.thumbnail.height_px }}px"{% if not group.initiallyVisible %} hidden{% endif %}>
         <h3 id="size-{{ family.id }}-{{ loop.index }}">{{ group.size_px }} <span>px</span></h3>

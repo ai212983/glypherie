@@ -61,6 +61,9 @@ test("HTTP preview supports native pixels, all zoom stops, wrapping, local scrol
   page.on("response", (response) => { if (response.status() >= 400 && !response.url().endsWith("favicon.ico")) failedRequests.push(response.url()); });
   await page.goto(url, { waitUntil: "networkidle" });
   assert.equal(await page.locator(".specimen-card").count(), 6);
+  assert.equal(await page.locator(".font-metadata").count(), 1);
+  assert.match(await page.locator(".font-metadata").innerText(), /Kerning\s+Yes/);
+  assert.match(await page.locator(".font-metadata").innerText(), /Weight \(wght\): 100–900/);
   assert.equal(await page.locator(".specimen-card:visible").count(), 3);
   assert.equal(await page.getByRole("radio", { name: "1-bit", exact: true }).isChecked(), true);
   assert.equal(await page.locator(".variant span").textContent(), "reference");

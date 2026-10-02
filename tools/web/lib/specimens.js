@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { loadPreviewSelection } from "./selection.js";
+import { fontMetadataView, validateFontMetadata } from "./font-metadata.js";
 
 const MAX_PIXELS = 16 * 1024 * 1024;
 const profileLabels = { mono_1bit: "1-bit", gray_3bit: "3-bit" };
@@ -55,10 +56,11 @@ export function validateManifest(manifest, pointer) {
   const families = new Set();
   const items = new Set();
   for (const family of manifest.families) {
-    fields(family, ["id", "name", "source_sha256", "sizes"]);
+    fields(family, ["id", "name", "source_sha256", "sizes"], ["metadata"]);
     check(isId(family.id) && isText(family.name) && isHash(family.source_sha256), "Invalid font family metadata.");
     check(!families.has(family.id), "Duplicate font family.");
     families.add(family.id);
+    if (family.metadata !== undefined) validateFontMetadata(family.metadata);
     nonemptyArray(family.sizes, "Sizes");
     const sizes = new Set();
     for (const group of family.sizes) {
@@ -130,6 +132,9 @@ function view(manifest, pointer) {
     families: manifest.families.map((family) => ({
       id: family.id,
       name: family.name,
+      source_sha256: family.source_sha256,
+      metadata: family.metadata ?? null,
+      metadataView: fontMetadataView(family.metadata),
       initiallyVisible: family.sizes.some((group) => group.items.some((item) => item.profile === defaultProfile)),
       sizes: [...family.sizes].sort((a, b) => a.size_px - b.size_px).map((group) => ({
         ...group,

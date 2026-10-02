@@ -118,6 +118,10 @@ fn exports_native_reference_pixels_and_separate_canonical_artifacts() {
     let composition: Value = serde_json::from_slice(&composition_bytes).unwrap();
     let loaded = load(&path).unwrap();
     let data = fs::read(&loaded.cases[0].font).unwrap();
+    assert_eq!(
+        serde_json::to_value(manifest.families[0].metadata.as_ref().unwrap()).unwrap(),
+        serde_json::to_value(font_generator::metadata::extract(&data).unwrap()).unwrap()
+    );
     let group = &manifest.families[0].sizes[0];
     for (index, item) in group.items.iter().enumerate() {
         let profile = loaded

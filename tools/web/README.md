@@ -15,10 +15,18 @@ just web-setup
 ## Commands
 
 ```sh
-just web        # Build the static site
-just web-watch  # Rebuild when sources change
-just web-test   # Run tests
+just web         # Build the static site
+just web-watch   # Rebuild when sources change
+just web-test    # Run tests
+just wasm-build  # Build the WASM renderer and stage it for the page
+just preview-build  # Specimens, comparisons, WASM, and the page together
 ```
+
+Each font section starts with an **Interactive specimen** block: a font size input, one slider per variable axis (ranges
+and defaults come from the published metadata; static fonts have no sliders), editable sample text, and a reset button.
+Controls re-render a canvas with the real WASM renderer and source font bytes; the global output-mode switch and zoom
+apply to it. It is exploration only and leaves the published PNG cards unchanged. It needs `just wasm-build` output plus
+published font sources; otherwise the block shows an unavailable message and stays disabled.
 
 To build, watch, and serve existing exports over HTTP:
 
@@ -57,6 +65,11 @@ tools/web/
 
 `just web` reads manifests and PNG images from `out/specimens/` and copies imported content into `out/web/content/`. See
 the [specimen generator contract](../generator/CONTRACT.md) for the input format.
+
+Each font heading includes kerning availability, supported variable axes and their ranges/defaults, and available
+embedded design/pitch classification. The Rust generator extracts these fields from the source font; unspecified
+classification values are omitted. It also exports names, default style, license fields and Unicode coverage for
+tooling. Run `just preview-build` to add extracted metadata to existing previews.
 
 Main-page sample cards are configured in the `cards` array of [specimens.json](../generator/specimens.json), using `id`,
 `title`, and `content`. See the [card configuration guide](../generator/README.md#configure-preview-cards). Run `just

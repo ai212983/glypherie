@@ -1,0 +1,3 @@
+# Generated wasm-bindgen packages (one per target) and Cargo build trees.
+pkg-*/
+target/

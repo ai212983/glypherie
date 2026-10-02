@@ -46,12 +46,36 @@ web-setup:
     mise -C tools/web install --locked node
     mise -C tools/web exec -- npm ci --ignore-scripts
 
+# Build the WASM font renderer and stage its web artifacts into out/web/assets/wasm/.
+# Runs tools/wasm/build.sh (owned separately; never installs toolchains) and
+# copies the web-target outputs. Set FONT_WASM_WEB_DIR to override the build
+# output directory. Fails loudly when the toolchain or outputs are missing;
+# the preview page stays disabled until this succeeds.
+wasm-build out_dir="out/web":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -x tools/wasm/build.sh ]; then
+      echo "wasm-build: tools/wasm/build.sh is missing or not executable." >&2
+      exit 1
+    fi
+    tools/wasm/build.sh web
+    wasm_dir="${FONT_WASM_WEB_DIR:-tools/wasm/pkg-web}"
+    mkdir -p "{{out_dir}}/assets/wasm"
+    for artifact in font_wasm.js font_wasm_bg.wasm; do
+      source="$wasm_dir/$artifact"
+      if [ ! -f "$source" ]; then
+        echo "wasm-build: expected output $source was not produced." >&2
+        exit 1
+      fi
+      cp "$source" "{{out_dir}}/assets/wasm/$artifact"
+    done
+
 # Build the static website into out/web/.
 web:
     mise -C tools/web exec -- npm run build
 
 # Build, watch, and serve the website with live reload.
-preview $web_port="8903" config_path="tools/generator/specimens.json" comparison_config="tools/generator/comparisons.json": (specimens config_path) (comparisons comparison_config)
+preview $web_port="8903" config_path="tools/generator/specimens.json" comparison_config="tools/generator/comparisons.json": (specimens config_path) (comparisons comparison_config) (wasm-build)
     mise -C tools/web exec -- npm run dev -- --port="$web_port"
 
 # Generate and publish the configured specimen packages.
@@ -59,7 +83,7 @@ specimens $config_path="tools/generator/specimens.json" $output_dir="out/specime
     cargo run --locked --manifest-path tools/generator/Cargo.toml --bin font_specimens -- "$config_path" "$output_dir"
 
 # Generate specimens and build the static website.
-preview-build config_path="tools/generator/specimens.json" comparison_config="tools/generator/comparisons.json": (specimens config_path) (comparisons comparison_config) web
+preview-build config_path="tools/generator/specimens.json" comparison_config="tools/generator/comparisons.json": (specimens config_path) (comparisons comparison_config) (wasm-build) web
 
 # Rebuild the website when its sources change.
 web-watch:

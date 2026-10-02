@@ -27,6 +27,15 @@
   families, sizes, samples, and profiles.
 - Preserve manifest family and item order; sort size groups numerically. Show only families and sizes containing samples
   for the selected profile.
+- Beneath each main-page family heading, show a compact metadata definition list: kerning availability, supported axes
+  with names/tags, ranges and defaults, and available design/pitch classification. Do not display a style field. Read
+  the generator's optional `family.metadata`; older packages display unknown metadata. Show an empty axis list as a
+  static font and distinguish horizontal from vertical-only kerning. Use registered IBM family classes when specified,
+  otherwise interpret PANOSE in its Family Kind context. Omit unspecified/reserved classification values and omit the
+  entire classification field when no design or pitch information is known; never infer classification from the
+  configured name. Keep these fields outside sample and Attention cards. Classification mappings follow the
+  [IBM specification](https://learn.microsoft.com/en-us/typography/opentype/spec/ibmfc) and
+  [PANOSE guide](https://monotype.github.io/panose/pan2.htm).
 - Use the manifest's shared thumbnail dimensions for all image areas within a size group, including failed and
   unsupported samples. Rows wrap to fit the available width.
 - A missing publication mapping and active pointer produces an empty state. Invalid or incomplete selected content
@@ -86,6 +95,19 @@
 - Include marked cases on the existing symbol routes, at stable `attention-<id>` anchors, showing both versions,
   difference, inspection type and optional per-symbol hint. Rebuild removes obsolete marked cases. No separate review
   endpoint is created. Attention is a request for assessment, not automatic rejection or acceptance.
+
+## Interactive specimens
+
+- Each family section opens with an interactive block (before the published size groups): a font size input, one slider
+  per non-hidden variable axis with published min/default/max, editable sample text, and reset. Static fonts render no
+  axis inputs.
+- Controls default to the published first size, axes, and sample text, and re-render a canvas through the WASM renderer
+  with the published source bytes. The global profile switch and zoom apply; zoom stays CSS-only.
+- The block is independent of the published PNG cards and Attention scope: it creates no marks and changes no assessment
+  content. Missing WASM output or font sources leave a concise unavailable message with disabled controls, never a build
+  error. Font bytes publish to `interactive-fonts/` and must hash-match the manifest source; paths stay inside the
+  repository and only cover the renderer's supported font types.
+- `just wasm-build` builds the renderer and stages `assets/wasm/`; `just preview-build` runs it before the page.
 
 ## Verification
 

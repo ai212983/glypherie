@@ -4,8 +4,10 @@ pub mod baseline;
 pub mod batch;
 #[cfg(feature = "candidate")]
 pub mod candidate;
+#[cfg(feature = "native-io")]
 pub mod comparison;
 pub mod evaluation;
+pub mod metadata;
 /// Compatibility name for earlier diagnostic callers; renderer selection uses roles.
 #[cfg(feature = "candidate")]
 pub use candidate as iteration;
@@ -15,8 +17,11 @@ mod raster;
 pub mod reference;
 pub mod renderer;
 mod spacing;
+#[cfg(feature = "native-io")]
 pub mod specimen_config;
+#[cfg(feature = "native-io")]
 pub mod specimens;
+pub mod surface;
 
 use production_skrifa::{
     instance::Size,
@@ -140,38 +145,8 @@ pub(crate) fn fixed(value: f32, rounding: MetricRounding) -> i32 {
 /// Pair positioning is accepted only when representable as a left advance change.
 pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
     validate_config(config)?;
-    if !matches!(data.get(..4), Some(b"\0\x01\0\0" | b"OTTO")) {
-        return Err(fail("supported input is a single sfnt TTF/OTF outline font; collections, WOFF and bitmap formats require conversion"));
-    }
-    let font = FontRef::new(data).map_err(|e| fail(format!("invalid font: {e}")))?;
-    for tag in [b"COLR", b"SVG ", b"CBDT", b"sbix"] {
-        if font.table_data(skrifa::Tag::new(tag)).is_some() {
-            return Err(fail("color fonts require a color output adapter"));
-        }
-    }
-    if ![b"glyf", b"CFF ", b"CFF2"]
-        .iter()
-        .any(|t| font.table_data(skrifa::Tag::new(t)).is_some())
-    {
-        return Err(fail("font has no supported glyf/CFF/CFF2 outlines"));
-    }
-    for (tag, value) in &config.axes {
-        if tag.len() != 4 || !tag.is_ascii() {
-            return Err(fail(format!("axis tag {tag:?} must be four ASCII bytes")));
-        }
-        let axis = font
-            .axes()
-            .iter()
-            .find(|a| a.tag().to_string() == *tag)
-            .ok_or_else(|| fail(format!("unsupported axis {tag}")))?;
-        if !value.is_finite() || *value < axis.min_value() || *value > axis.max_value() {
-            return Err(fail(format!(
-                "axis {tag} must be within {}..={}",
-                axis.min_value(),
-                axis.max_value()
-            )));
-        }
-    }
+    let font = open_font(data)?;
+    validate_axes(&font, &config.axes)?;
     let location = font
         .axes()
         .location(config.axes.iter().map(|(t, v)| (t.as_str(), *v)));
@@ -284,6 +259,18 @@ pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
     })
 }
 pub(crate) fn validate_config(c: &Config) -> Result<(), Error> {
+    validate_settings(c)?;
+    let count = c.characters.chars().collect::<BTreeSet<_>>().len();
+    if !(1..=1024).contains(&count) {
+        return Err(fail(
+            "select between 1 and 1024 distinct characters per generation",
+        ));
+    }
+    Ok(())
+}
+/// Numeric generation settings without the repertoire count, so adapters can
+/// validate blank requests that carry no characters.
+pub(crate) fn validate_settings(c: &Config) -> Result<(), Error> {
     if !c.size_px.is_finite() || !(1.0..=512.0).contains(&c.size_px) {
         return Err(fail("size_px must be finite and within 1..=512"));
     }
@@ -296,11 +283,46 @@ pub(crate) fn validate_config(c: &Config) -> Result<(), Error> {
     if !c.gray_gamma.is_finite() || c.gray_gamma <= 0.0 {
         return Err(fail("gray_gamma must be finite and positive"));
     }
-    let count = c.characters.chars().collect::<BTreeSet<_>>().len();
-    if !(1..=1024).contains(&count) {
-        return Err(fail(
-            "select between 1 and 1024 distinct characters per generation",
-        ));
+    Ok(())
+}
+/// Raw font acceptance shared with `generate()`: single sfnt outline font
+/// with supported glyph outlines and no color tables.
+pub(crate) fn open_font(data: &[u8]) -> Result<FontRef<'_>, Error> {
+    if !matches!(data.get(..4), Some(b"\0\x01\0\0" | b"OTTO")) {
+        return Err(fail("supported input is a single sfnt TTF/OTF outline font; collections, WOFF and bitmap formats require conversion"));
+    }
+    let font = FontRef::new(data).map_err(|e| fail(format!("invalid font: {e}")))?;
+    for tag in [b"COLR", b"SVG ", b"CBDT", b"sbix"] {
+        if font.table_data(skrifa::Tag::new(tag)).is_some() {
+            return Err(fail("color fonts require a color output adapter"));
+        }
+    }
+    if ![b"glyf", b"CFF ", b"CFF2"]
+        .iter()
+        .any(|t| font.table_data(skrifa::Tag::new(t)).is_some())
+    {
+        return Err(fail("font has no supported glyf/CFF/CFF2 outlines"));
+    }
+    Ok(font)
+}
+/// Variation-axis validation shared with `generate()`.
+pub(crate) fn validate_axes(font: &FontRef, axes: &BTreeMap<String, f32>) -> Result<(), Error> {
+    for (tag, value) in axes {
+        if tag.len() != 4 || !tag.is_ascii() {
+            return Err(fail(format!("axis tag {tag:?} must be four ASCII bytes")));
+        }
+        let axis = font
+            .axes()
+            .iter()
+            .find(|a| a.tag().to_string() == *tag)
+            .ok_or_else(|| fail(format!("unsupported axis {tag}")))?;
+        if !value.is_finite() || *value < axis.min_value() || *value > axis.max_value() {
+            return Err(fail(format!(
+                "axis {tag} must be within {}..={}",
+                axis.min_value(),
+                axis.max_value()
+            )));
+        }
     }
     Ok(())
 }
