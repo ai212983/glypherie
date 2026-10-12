@@ -127,6 +127,36 @@
         18,
         20
       ]
+    },
+    {
+      "id": "roboto-italic",
+      "name": "Roboto Italic",
+      "font": "../../fonts/Roboto-Italic.ttf",
+      "provenance": {
+        "source": "https://github.com/google/fonts @ bd8f81ddb5c74d5c8897b36ad88b440266245103:ofl/roboto/Roboto-Italic[wdth,wght].ttf",
+        "license": "SIL OFL 1.1 (embedded font metadata; see fonts/OFL-Roboto.txt)",
+        "expected_sha256": "9725a847af6b460ffca162ae66d20dad48b01876137947180b42d7dcd7887182"
+      },
+      "axes": {
+        "wght": 400,
+        "wdth": 100
+      }
+    },
+    {
+      "id": "roboto-flex",
+      "name": "Roboto Flex",
+      "font": "../../fonts/RobotoFlex.ttf",
+      "provenance": {
+        "source": "https://github.com/google/fonts @ bd8f81ddb5c74d5c8897b36ad88b440266245103:ofl/robotoflex/RobotoFlex[GRAD,XOPQ,XTRA,YOPQ,YTAS,YTDE,YTFI,YTLC,YTUC,opsz,slnt,wdth,wght].ttf",
+        "license": "SIL OFL 1.1 (embedded font metadata; see fonts/OFL-RobotoFlex.txt)",
+        "expected_sha256": "9b523f7d82593df0107173849ebb8c817471a1df4b4fb2c3cbf40cfd810c8281"
+      },
+      "axes": {
+        "wght": 400,
+        "wdth": 100,
+        "slnt": 0,
+        "opsz": "size_px"
+      }
     }
   ],
   "preview_policy": "preview-policy.json"

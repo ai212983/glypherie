@@ -357,7 +357,7 @@ Font.prototype.render = function(spec) {
   });
   await page.goto(url, { waitUntil: "networkidle" });
   // One tester: only the selected family renders.
-  assert.deepEqual(await page.locator("#font-select option").allTextContents(), ["Roboto", "Literata", "Source Sans 3"]);
+  assert.deepEqual(await page.locator("#font-select option").allTextContents(), ["Roboto", "Literata", "Source Sans 3", "Roboto Italic", "Roboto Flex"]);
   assert.equal(await page.locator("#font-select").inputValue(), "roboto");
   assert.equal(await page.locator(".interactive-specimen:visible").count(), 1);
   await page.waitForFunction(() => document.querySelector("#interactive-roboto canvas")?.dataset.rendered === "true");

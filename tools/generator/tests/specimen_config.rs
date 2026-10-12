@@ -90,12 +90,18 @@ fn resolve(value: Value) -> Result<Vec<font_generator::specimen_config::RenderCa
 fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let loaded = load(&root.join("specimens.json")).unwrap();
-    assert_eq!(loaded.cases.len(), 72);
+    assert_eq!(loaded.cases.len(), 120);
     assert_eq!(
         loaded.config.preview_policy.as_deref(),
         Some(Path::new("preview-policy.json"))
     );
-    for family in ["roboto", "literata", "source-sans-3"] {
+    for family in [
+        "roboto",
+        "roboto-italic",
+        "roboto-flex",
+        "literata",
+        "source-sans-3",
+    ] {
         let sizes: std::collections::BTreeSet<_> = loaded
             .cases
             .iter()
@@ -117,7 +123,7 @@ fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
             .iter()
             .filter(|case| case.variant == "reference")
             .count(),
-        24
+        40
     );
     assert_eq!(
         loaded
@@ -125,7 +131,7 @@ fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
             .iter()
             .filter(|case| case.variant == "iteration-02")
             .count(),
-        24
+        40
     );
     assert_eq!(
         loaded
@@ -133,7 +139,7 @@ fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
             .iter()
             .filter(|case| case.variant == "iteration-03")
             .count(),
-        24
+        40
     );
     assert_eq!(loaded.config.latest_variant().unwrap(), "iteration-03");
     assert_eq!(
@@ -198,7 +204,7 @@ fn family_and_size_overrides_replace_inherited_selections() {
     value["families"][0]["profiles"] = json!(["gray_3bit"]);
     value["families"][0]["sizes"] = json!([14, {"size_px": 20, "profiles": ["mono_1bit"]}]);
     let cases = resolve(value).unwrap();
-    assert_eq!(cases.len(), 18);
+    assert_eq!(cases.len(), 34);
     assert_eq!(cases[0].profile, "gray_3bit");
     assert_eq!(cases[0].size_px, 14.0);
     assert_eq!(cases[1].profile, "mono_1bit");
@@ -216,7 +222,7 @@ fn variants_can_be_selected_per_family_and_size() {
     value["families"][0]["variants"] = json!(["candidate"]);
     value["families"][0]["sizes"] = json!([14, {"size_px": 16, "variants": ["reference"]}]);
     let cases = resolve(value).unwrap();
-    assert_eq!(cases.len(), 20);
+    assert_eq!(cases.len(), 36);
     assert_eq!(
         cases
             .iter()
@@ -239,8 +245,8 @@ fn adding_a_family_requires_only_config_data() {
     family["sizes"] = json!([16]);
     value["families"].as_array_mut().unwrap().push(family);
     let cases = resolve(value).unwrap();
-    assert_eq!(cases.len(), 26);
-    assert_eq!(cases[24].family_id, "another-family");
+    assert_eq!(cases.len(), 42);
+    assert_eq!(cases[40].family_id, "another-family");
 }
 
 #[test]
