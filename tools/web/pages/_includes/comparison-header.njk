@@ -16,9 +16,9 @@
     </fieldset>
     <div class="zoom-control">
       <div class="zoom-heading"><label for="zoom">Zoom</label><output id="zoom-value" for="zoom">1×</output></div>
-      <input id="zoom" type="range" min="0" max="3" step="1" value="0" aria-valuetext="1×" aria-describedby="zoom-help" disabled>
+      <input id="zoom" type="range" min="0" max="3" step="1" value="0" aria-valuetext="1×" disabled>
       <div class="zoom-stops" aria-hidden="true"><span>1×</span><span>2×</span><span>3×</span><span>4×</span></div>
-      <p id="zoom-help">Enlarge pixels to inspect detail.</p>
+      <p class="display-scale">Display scale: <output id="display-scale" title="Device pixels per CSS pixel, including browser zoom and display scaling.">—</output></p>
     </div>
   </div>
 </header>

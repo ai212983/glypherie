@@ -35,6 +35,8 @@ pub struct ReferenceRequest {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ReferenceRecord {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side_bearing_deltas_26_6: Option<[i32; 2]>,
     pub raster_policy: RasterPolicy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagonal_pairs: Option<[u32; 3]>,
@@ -75,8 +77,25 @@ pub enum RasterPolicy {
     CoverageDropout,
 }
 
+/// The design advance or the advance returned by the actual fitted outline.
+#[derive(Clone, Copy, Debug, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AdvancePolicy {
+    #[default]
+    Linear,
+    Hinted,
+}
+
+impl AdvancePolicy {
+    fn is_linear(&self) -> bool {
+        *self == Self::Linear
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct ReferenceReport {
+    #[serde(skip_serializing_if = "AdvancePolicy::is_linear")]
+    pub advance_policy: AdvancePolicy,
     pub source_sha256: String,
     pub size_px: f32,
     pub axes: BTreeMap<String, f32>,
@@ -235,6 +254,7 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
             .advance_width(gid)
             .ok_or_else(|| fail(format!("missing advance U+{:04X}", ch as u32)))?;
         records.push(ReferenceRecord {
+            side_bearing_deltas_26_6: None,
             raster_policy: RasterPolicy::Coverage,
             diagonal_pairs: None,
             codepoint: ch as u32,
@@ -274,6 +294,7 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
         return Err(fail("repertoire contains no available glyphs"));
     }
     Ok(ReferenceReport {
+        advance_policy: AdvancePolicy::Linear,
         source_sha256: format!("{:x}", Sha256::digest(data)),
         size_px: config.size_px,
         axes: config.axes.clone(),

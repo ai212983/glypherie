@@ -14,7 +14,7 @@ const browserAvailable = await fs.access(browserPath).then(() => true, () => fal
 const STUB_WASM = `
 const KNOWN = new Set(["text", "width", "height", "size_px", "axes", "hinting", "output_bits",
   "mono_threshold", "gray_gamma", "missing_glyphs", "kerning", "metric_rounding",
-  "wrap", "align", "foreground", "background", "palette", "renderer"]);
+  "wrap", "align", "foreground", "background", "palette", "renderer", "letter_spacing_px", "spacing_model"]);
 export default async function init() {
   globalThis.__inits = (globalThis.__inits ?? 0) + 1;
 }
@@ -152,6 +152,80 @@ const canvasBox = (page, family) => page.evaluate((id) => {
   const canvas = document.querySelector(`#interactive-${id} canvas`);
   return { width: canvas.width, height: canvas.height, style: [canvas.style.width, canvas.style.height] };
 }, family);
+
+test("pixel-accurate display keeps colored boundary pixels and follows display changes", { skip: !browserAvailable }, async (t) => {
+  const f = await interactiveFixture(t);
+  const url = await serve(t, f.output);
+  const browser = await chromium.launch({ executablePath: browserPath, headless: true });
+  t.after(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1101, height: 1100 }, deviceScaleFactor: 1.125 });
+  const page = await context.newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(url, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
+  await page.locator("#interactive-alpha [data-text]").fill("Short");
+  await page.locator("#zoom").fill("1");
+  await page.getByLabel("Pixel-accurate display", { exact: true }).check();
+  // The synthetic renderer colors every source pixel, including row/column
+  // zero. This catches clipping that a glyph with blank side bearings hides.
+  await page.evaluate(() => { document.documentElement.style.fontSize = "17px"; });
+  const session = await context.newCDPSession(page);
+  for (const ratio of [1.125, 1.25, 1.5, 1.75, 2.25, 2, 1]) {
+    // Keep Playwright's viewport and CDP emulation dimensions in agreement;
+    // screenshot capture otherwise restores the original viewport mid-frame.
+    await page.setViewportSize({ width: 1101 + Math.round(ratio * 10), height: 1100 });
+    await session.send("Emulation.setDeviceMetricsOverride", {
+      width: 1101 + Math.round(ratio * 10), height: 1100, deviceScaleFactor: ratio, mobile: false,
+    });
+    // CDP changes do not consistently emit the browser's monitor-change events.
+    await page.evaluate(() => window.dispatchEvent(new Event("resize")));
+    const block = Math.max(1, Math.round(2 * ratio));
+    await page.waitForFunction(({ ratio, block }) => {
+      const request = globalThis.__renders?.at(-1);
+      const canvas = document.querySelector("#interactive-alpha canvas");
+      const viewport = document.querySelector("#interactive-alpha .interactive-viewport");
+      const capacity = (viewport.clientWidth - 1) * window.devicePixelRatio - 1;
+      return canvas.width <= capacity + 0.01 && canvas.width >= capacity - block - 0.01
+        && document.querySelector("#display-scale").value === `${ratio.toFixed(4)}×`
+        && request?.text === "Short" && canvas.width === request.width * block && canvas.height === 20 * block;
+    }, { ratio, block }, { timeout: 10000 });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const measured = await page.evaluate(() => {
+      const canvas = document.querySelector("#interactive-alpha canvas");
+      const rect = canvas.getBoundingClientRect();
+      return { width: canvas.width, height: canvas.height, left: rect.left, top: rect.top,
+        pixels: Array.from(canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data) };
+    });
+    // Capture directly: Playwright restores the context's initial DPR when
+    // taking a screenshot, which would undo the simulated monitor change.
+    const capture = await session.send("Page.captureScreenshot", { fromSurface: true, captureBeyondViewport: false });
+    const shot = PNG.sync.read(Buffer.from(capture.data, "base64"));
+    const left = Math.round(measured.left * ratio);
+    const top = Math.round(measured.top * ratio);
+    assert.ok(left >= 0 && top >= 0 && left + measured.width <= shot.width && top + measured.height <= shot.height, JSON.stringify({ ratio, left, top, width: measured.width, height: measured.height, shotWidth: shot.width, shotHeight: shot.height, actualRatio: await page.evaluate(() => devicePixelRatio) }));
+    let mismatches = 0;
+    for (let y = 0; y < measured.height; y++) {
+      for (let x = 0; x < measured.width; x++) {
+        const src = (y * measured.width + x) * 4;
+        const dst = ((top + y) * shot.width + left + x) * 4;
+        for (let c = 0; c < 4; c++) if (measured.pixels[src + c] !== shot.data[dst + c]) mismatches++;
+      }
+    }
+    if (mismatches && process.env.PIXEL_SCREEN_DIAGNOSTICS) {
+      const dir = process.env.PIXEL_SCREEN_DIAGNOSTICS;
+      const after = await page.locator("#interactive-alpha canvas").boundingBox();
+      await fs.writeFile(path.join(dir, `synthetic-${ratio}.json`), JSON.stringify({ ratio, before: { left: measured.left, top: measured.top, width: measured.width, height: measured.height }, after, screenshotWidth: shot.width, screenshotHeight: shot.height }));
+      await fs.writeFile(path.join(dir, `synthetic-${ratio}-screen.png`), PNG.sync.write(shot));
+      await fs.writeFile(path.join(dir, `synthetic-${ratio}-canvas.png`), PNG.sync.write({ width: measured.width, height: measured.height, data: Buffer.from(measured.pixels) }));
+    }
+    assert.equal(mismatches, 0, `every boundary color must reach the screen at ratio ${ratio}`);
+    assert.equal(await page.locator("#zoom-value").textContent(), "2×");
+    assert.match(await page.locator("#pixel-accurate-status").textContent(), new RegExp(`${block} screen px per font px`));
+  }
+  assert.match(await page.locator("#display-scale").evaluate((el) => el.value), /^\d+\.\d{4}×$/);
+  assert.deepEqual(errors, []);
+});
 
 test("one font tester renders the selected family with published ranges", { skip: !browserAvailable }, async (t) => {
   const f = await interactiveFixture(t);
@@ -345,6 +419,90 @@ test("presets, custom edits, and reset work on the selected family", { skip: !br
   await page.waitForFunction((expected) => (globalThis.__renders ?? []).some((spec) => spec.text === expected && spec.size_px === 16), ALPHA_TEXT);
   assert.equal(await page.locator("#interactive-alpha [data-text]").inputValue(), ALPHA_TEXT);
   assert.equal(await page.locator("#interactive-alpha [data-preset]").inputValue(), "reading");
+  assert.deepEqual(errors, []);
+});
+
+test("spacing slider and number sync, reset, and persist per family", { skip: !browserAvailable }, async (t) => {
+  const f = await interactiveFixture(t);
+  const { page, errors } = await launch(t, f.output);
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
+  assert.equal((await renders(page)).at(-1).letter_spacing_px, 0);
+  assert.equal(await page.locator("#interactive-alpha [data-spacing]").inputValue(), "0");
+  assert.equal(await page.locator("#interactive-alpha [data-spacing-number]").inputValue(), "0");
+
+  assert.equal(await page.locator("#interactive-alpha [data-spacing]").getAttribute("step"), "1");
+  await page.locator("#interactive-alpha [data-spacing-number]").fill("1.5");
+  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.letter_spacing_px === 2));
+  assert.equal(await page.locator("#interactive-alpha [data-spacing]").inputValue(), "2");
+  assert.equal(await page.locator("#interactive-alpha [data-spacing-number]").inputValue(), "2");
+
+  await page.locator("#interactive-alpha [data-spacing-number]").fill("-1");
+  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.letter_spacing_px === -1));
+  assert.equal(await page.locator("#interactive-alpha [data-spacing]").inputValue(), "-1");
+
+  await page.locator("#interactive-alpha [data-spacing-number]").fill("");
+  await page.waitForTimeout(100);
+  assert.equal(await page.locator("#interactive-alpha [data-spacing]").inputValue(), "-1");
+  assert.equal((await renders(page)).at(-1).letter_spacing_px, -1);
+  await page.locator("#interactive-alpha [data-spacing-number]").fill("-1");
+
+  await page.locator(".profile-options label").filter({ hasText: "3-bit" }).click();
+  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.output_bits === 3 && spec.letter_spacing_px === -1));
+  assert.equal(await page.locator("#interactive-alpha [data-spacing]").inputValue(), "-1");
+  assert.equal(await page.locator("#interactive-alpha [data-spacing]").getAttribute("step"), "0.25");
+  await page.locator("#interactive-alpha [data-spacing-number]").fill("-0.5");
+  await page.waitForFunction(() => (globalThis.__renders ?? []).some((spec) => spec.output_bits === 3 && spec.letter_spacing_px === -0.5));
+  await page.locator(".profile-options label").filter({ hasText: "1-bit" }).click();
+  await page.waitForFunction(() => (globalThis.__renders ?? []).at(-1)?.output_bits === 1 && (globalThis.__renders ?? []).at(-1)?.letter_spacing_px === -1);
+  assert.equal(await page.locator("#interactive-alpha [data-spacing-number]").inputValue(), "-1");
+
+  await page.locator("#font-select").selectOption("beta");
+  await page.waitForFunction(() => document.querySelector("#interactive-beta canvas")?.dataset.rendered === "true");
+  assert.equal(await page.locator("#interactive-beta [data-spacing]").inputValue(), "0");
+  await page.locator("#font-select").selectOption("alpha");
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha").hidden === false);
+  assert.equal(await page.locator("#interactive-alpha [data-spacing]").inputValue(), "-1");
+  assert.equal(await page.locator("#interactive-alpha [data-spacing-number]").inputValue(), "-1");
+
+  const count = (await renders(page)).length;
+  await page.locator("#interactive-alpha [data-reset]").click();
+  await page.waitForFunction((n) => (globalThis.__renders ?? []).length > n, count);
+  assert.equal((await renders(page)).at(-1).letter_spacing_px, 0);
+  assert.equal(await page.locator("#interactive-alpha [data-spacing]").inputValue(), "0");
+  assert.equal(await page.locator("#interactive-alpha [data-spacing-number]").inputValue(), "0");
+  assert.deepEqual(errors, []);
+});
+
+test("spacing model forwards independently, persists globally, and resets", { skip: !browserAvailable }, async (t) => {
+  const f = await interactiveFixture(t);
+  const { page, errors } = await launch(t, f.output);
+  await page.waitForFunction(() => document.querySelector("#interactive-alpha canvas")?.dataset.rendered === "true");
+  assert.equal((await renders(page)).at(-1).spacing_model, "auto");
+  await page.locator("#interactive-alpha [data-spacing-model]").selectOption("fitted");
+  await page.waitForFunction(() => globalThis.__renders.at(-1).spacing_model === "fitted");
+  await page.locator("#interactive-alpha [data-kerning]").uncheck();
+  await page.waitForFunction(() => globalThis.__renders.at(-1).kerning === false);
+  await page.locator(".profile-options label").filter({ hasText: "3-bit" }).click();
+  await page.waitForFunction(() => globalThis.__renders.at(-1).output_bits === 3);
+  assert.equal((await renders(page)).at(-1).spacing_model, "auto");
+  assert.equal(await page.locator("#interactive-alpha [data-spacing-model]").isDisabled(), true);
+  assert.equal(await page.locator("#interactive-alpha [data-spacing-model]").inputValue(), "fitted");
+  assert.equal(await page.locator("#interactive-alpha [data-kerning]").isChecked(), false);
+  await page.locator(".profile-options label").filter({ hasText: "1-bit" }).click();
+  await page.waitForFunction(() => globalThis.__renders.at(-1).output_bits === 1 && globalThis.__renders.at(-1).spacing_model === "fitted");
+  await page.locator("#font-select").selectOption("beta");
+  await page.waitForFunction(() => document.querySelector("#interactive-beta canvas")?.dataset.rendered === "true");
+  assert.equal(await page.locator("#interactive-beta [data-spacing-model]").inputValue(), "fitted");
+  assert.equal(await page.locator("#interactive-beta [data-kerning]").isChecked(), false);
+  await page.locator("#font-select").selectOption("alpha");
+  assert.equal(await page.locator("#interactive-alpha [data-spacing-model]").inputValue(), "fitted");
+  await page.locator("#interactive-alpha [data-reset]").click();
+  await page.waitForFunction(() => globalThis.__renders.at(-1).spacing_model === "auto");
+  assert.equal(await page.locator("#interactive-alpha [data-spacing-model]").inputValue(), "auto");
+  assert.equal(await page.locator("#interactive-alpha [data-kerning]").isChecked(), true);
+  await page.locator("#font-select").selectOption("beta");
+  assert.equal(await page.locator("#interactive-beta [data-spacing-model]").inputValue(), "auto");
+  assert.equal(await page.locator("#interactive-beta [data-kerning]").isChecked(), true);
   assert.deepEqual(errors, []);
 });
 

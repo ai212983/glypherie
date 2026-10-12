@@ -82,6 +82,22 @@ fn assert_connected_letter_preserved(a: &ReferenceRecord, b: &ReferenceRecord, c
     }
 }
 
+// The spacing task intentionally replaces source-advance identity for enabled
+// automatic Mono with the actual scaler-returned advance (FreeType afloader).
+// Gray and disabled paths keep source identity; geometry/join guards stay intact.
+fn assert_candidate_advance(record: &ReferenceRecord, linear_26_6: i32) {
+    let expected =
+        if record.raster_policy == font_generator::reference::RasterPolicy::CoverageDropout {
+            record
+                .hinted_advance_width
+                .map(|advance| (advance * 64.0).round() as i32)
+                .unwrap_or(linear_26_6)
+        } else {
+            linear_26_6
+        };
+    assert_eq!(record.advance_26_6, expected);
+}
+
 // The experiment changes X-width fitting even when no diagonal pair applies.
 // Y fitting and contour structure remain unchanged on these axial witnesses.
 fn assert_axial_structure_and_y_preserved(a: &ReferenceRecord, b: &ReferenceRecord) {
@@ -95,7 +111,7 @@ fn assert_axial_structure_and_y_preserved(a: &ReferenceRecord, b: &ReferenceReco
         commands
     };
     assert_eq!(y_commands(a), y_commands(b));
-    assert_eq!(a.advance_26_6, b.advance_26_6);
+    assert_candidate_advance(a, b.advance_26_6);
     assert_eq!(ink_components(a), 1);
 }
 
@@ -118,7 +134,7 @@ fn reported_roboto_14_x_and_16_nwxyz_fit_all_pairs_and_stay_connected() {
             // Pixel population is a diagnostic, not a quality objective. The
             // geometric width/contrast and original-correction witnesses below
             // provide fitting evidence independently of a preferred ink count.
-            assert_eq!(a.advance_26_6, b.advance_26_6);
+            assert_candidate_advance(a, b.advance_26_6);
             assert_eq!(ink_components(a), 1, "Roboto {size} {ch}");
         }
     }
@@ -155,7 +171,7 @@ fn fork_disabled_matches_independent_upstream_full_corpus_and_modes() {
 }
 
 #[test]
-fn experimental_corpus_is_deterministic_preserves_layout_and_grayscale() {
+fn experimental_corpus_is_deterministic_preserves_line_metrics_and_grayscale() {
     for name in ["Roboto.ttf", "Literata.ttf", "SourceSans3.ttf"] {
         let bytes = font(name);
         for size in [14.0, 16.0, 18.0, 20.0] {
@@ -173,7 +189,7 @@ fn experimental_corpus_is_deterministic_preserves_layout_and_grayscale() {
                 assert_eq!(candidate.metrics, upstream.metrics);
                 assert_eq!(candidate.records.len(), 95);
                 for (a, b) in candidate.records.iter().zip(&upstream.records) {
-                    assert_eq!(a.advance_26_6, b.advance_26_6);
+                    assert_candidate_advance(a, b.advance_26_6);
                     assert_eq!(a.coverage.len(), (a.width * a.height) as usize);
                     assert!(a.pixels.iter().all(|p| *p < (1 << a.output_bits)));
                     if profile == PROFILE_GRAY_3BIT {
@@ -300,7 +316,7 @@ fn non_held_validation_and_postscript_formats_preserve_metrics_and_disabled_pari
             assert!(candidate.missing_codepoints.is_empty());
             assert_eq!(candidate.records.len(), 95);
             for (a, b) in candidate.records.iter().zip(&upstream.records) {
-                assert_eq!(a.advance_26_6, b.advance_26_6);
+                assert_candidate_advance(a, b.advance_26_6);
                 assert!(a.pixels.iter().all(|p| *p <= 1));
                 if char::from_u32(a.codepoint).unwrap().is_ascii_alphabetic()
                     && ink_components(b) == 1
@@ -474,7 +490,7 @@ fn stem_relative_widths_restore_reported_strokes_and_preserve_design_contracts()
         // contracts while allowing the general model to evolve.
         for (previous, current) in old.iter().zip(&new.records) {
             assert_eq!(previous["codepoint"], current.codepoint);
-            assert_eq!(previous["advance_26_6"], current.advance_26_6);
+            assert_candidate_advance(current, previous["advance_26_6"].as_i64().unwrap() as i32);
             assert_eq!(ink_components(current), 1);
             assert!(current.diagonal_pairs.unwrap()[1] > 0);
             let operations: Vec<_> = previous["fitted_commands"]
@@ -504,7 +520,7 @@ fn stem_relative_widths_restore_reported_strokes_and_preserve_design_contracts()
         if a.codepoint == 'z' as u32 {
             assert!(a.diagonal_pairs.unwrap()[1] > 0);
             assert_eq!(ink_components(a), 1);
-            assert_eq!(a.advance_26_6, c.advance_26_6);
+            assert_candidate_advance(a, c.advance_26_6);
         } else {
             // Earlier 001.01 captures retain evidence of the unresolved curve
             // freeze. The terminal-curve correction now fits these strokes;
@@ -512,7 +528,7 @@ fn stem_relative_widths_restore_reported_strokes_and_preserve_design_contracts()
             assert_eq!(b["diagonal_pairs"], serde_json::json!([2, 0, 2]));
             assert_eq!(a.diagonal_pairs, Some([2, 2, 0]));
             assert_eq!(ink_components(a), 1);
-            assert_eq!(a.advance_26_6, c.advance_26_6);
+            assert_candidate_advance(a, c.advance_26_6);
         }
     }
 }
@@ -529,7 +545,7 @@ fn reported_literata_y_has_parallel_borders_contrast_and_protected_curve_junctio
         let record = &candidate.records[0];
         assert_eq!(record.diagonal_pairs, Some([2, 2, 0]));
         assert_eq!(ink_components(record), 1);
-        assert_eq!(record.advance_26_6, baseline.records[0].advance_26_6);
+        assert_candidate_advance(record, baseline.records[0].advance_26_6);
         assert_ne!(record.fitted_commands, baseline.records[0].fitted_commands);
         let commands = serde_json::to_value(&record.fitted_commands).unwrap();
         // Command indices are diagnostic witnesses, never production selectors.
@@ -593,7 +609,7 @@ fn reported_literata_y_has_parallel_borders_contrast_and_protected_curve_junctio
 }
 
 #[test]
-fn stem_relative_sweep_is_deterministic_preserves_layout_gray_and_introduces_no_additional_join_failures(
+fn stem_relative_sweep_is_deterministic_preserves_line_metrics_gray_and_introduces_no_additional_join_failures(
 ) {
     let snapshot: Value =
         serde_json::from_str(include_str!("fixtures/diagonal-before-width-tweak.json")).unwrap();
@@ -629,7 +645,7 @@ fn stem_relative_sweep_is_deterministic_preserves_layout_gray_and_introduces_no_
             );
             assert_eq!(new.metrics, upstream.metrics);
             for (a, c) in new.records.iter().zip(&upstream.records) {
-                assert_eq!(a.advance_26_6, c.advance_26_6);
+                assert_candidate_advance(a, c.advance_26_6);
                 assert!(a.pixels.iter().all(|p| *p <= 1));
                 if char::from_u32(a.codepoint).unwrap().is_ascii_alphabetic() {
                     // Known failures are historical diagnostic evidence, never production exceptions.
@@ -682,7 +698,7 @@ fn reported_literata_q_and_x_fit_general_features_preserving_extrema_and_contras
         req.extensions = EXTENSIONS_DIAGONAL_01.into();
         let candidate = render(&bytes, &req).unwrap();
         for (a, b) in candidate.records.iter().zip(&baseline.records) {
-            assert_eq!(a.advance_26_6, b.advance_26_6);
+            assert_candidate_advance(a, b.advance_26_6);
             assert_eq!(ink_components(a), 1);
             assert_eq!(
                 a.fitted_commands
@@ -763,7 +779,7 @@ fn reported_source_sans_inner_diagonals_preserve_caps_layout_and_connectivity() 
     req.extensions = EXTENSIONS_DIAGONAL_01.into();
     let candidate = render(&bytes, &req).unwrap();
     for (actual, reference) in candidate.records.iter().zip(&baseline.records) {
-        assert_eq!(actual.advance_26_6, reference.advance_26_6);
+        assert_candidate_advance(actual, reference.advance_26_6);
         assert_eq!(ink_components(actual), 1);
         assert!(actual.diagonal_pairs.unwrap()[1] > 0);
     }
@@ -848,4 +864,90 @@ fn mono_straight_stem_uses_fractional_shared_width_across_weight_boundary() {
     }
     // A standard moving one 26.6 unit cannot trigger the former full-pixel fit.
     assert_eq!(widths[1] - widths[0], 1.0 / 64.0);
+}
+
+#[test]
+fn compact_dot_owns_source_dimensions_and_retains_stem_alignment() {
+    use font_generator::renderer::{render as render_role, RendererRole};
+    // These are feature witnesses, not production selectors or bitmap targets.
+    // Check continuous geometry; column counts alone do not prove optical quality.
+    let bytes = font("Roboto.ttf");
+    let contours = |record: &ReferenceRecord| -> Vec<Vec<Value>> {
+        let commands: Vec<Value> =
+            serde_json::from_value(serde_json::to_value(&record.fitted_commands).unwrap()).unwrap();
+        let mut result = vec![Vec::new()];
+        for command in commands {
+            if command["op"] == "close" {
+                result.push(Vec::new());
+            } else {
+                result.last_mut().unwrap().push(command);
+            }
+        }
+        result.retain(|c| !c.is_empty());
+        result
+    };
+    let bounds = |commands: &[Value], axis: &str| -> (f64, f64) {
+        // This witness's axis extrema are explicit on-curve endpoints.
+        commands
+            .iter()
+            .map(|c| c[axis].as_f64().unwrap())
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+                (lo.min(v), hi.max(v))
+            })
+    };
+    for size in [14.0, 18.0] {
+        for weight in [400.0, 535.0, 641.0] {
+            let mut req = request("Roboto.ttf", size, PROFILE_MONO_1BIT);
+            req.settings.characters = "i".into();
+            req.settings.axes.insert("wght".into(), weight);
+            req.settings.hinting = Hinting::None;
+            let source = reference(&bytes, &req).unwrap();
+            req.settings.hinting = Hinting::Auto;
+            req.extensions = EXTENSIONS_DIAGONAL_01.into();
+            let baseline = render_role(&bytes, &req, RendererRole::Baseline).unwrap();
+            let candidate = render_role(&bytes, &req, RendererRole::Candidate).unwrap();
+            let src = contours(&source.records[0]);
+            let old = contours(&baseline.records[0]);
+            let new = contours(&candidate.records[0]);
+            assert_eq!(src.len(), 2);
+            assert_eq!(new.len(), 2);
+            for axis in ["x", "y"] {
+                let source_dot = bounds(&src[1], axis);
+                let old_dot = bounds(&old[1], axis);
+                let new_dot = bounds(&new[1], axis);
+                let old_body = bounds(&old[0], axis);
+                let new_body = bounds(&new[0], axis);
+                // Separate dot dimensions follow the compact-mark policy:
+                // retain natural horizontal distance; quantize vertical height.
+                // Microsoft documents independent X/Y dot controls; fractional X
+                // is the project experiment, not a bitmap-equality contract.
+                let natural = source_dot.1 - source_dot.0;
+                let diameter = if axis == "x" {
+                    natural
+                } else {
+                    natural.round()
+                }
+                .max(1.0);
+                assert!(
+                    (new_dot.1 - new_dot.0 - diameter).abs() <= 1.0 / 64.0,
+                    "Roboto {size} {weight}: own {axis} diameter"
+                );
+                assert!(
+                    ((old_body.1 - old_body.0) - (new_body.1 - new_body.0)).abs() <= 1.0 / 64.0,
+                    "body thickness/height"
+                );
+                assert!(
+                    ((new_dot.0 + new_dot.1 - new_body.0 - new_body.1)
+                        - (old_dot.0 + old_dot.1 - old_body.0 - old_body.1))
+                        .abs()
+                        <= 1.0 / 64.0,
+                    "inherited mark/body alignment"
+                );
+            }
+            assert!(
+                bounds(&new[1], "y").0 - bounds(&new[0], "y").1 >= 1.0,
+                "separated dot clearance"
+            );
+        }
+    }
 }

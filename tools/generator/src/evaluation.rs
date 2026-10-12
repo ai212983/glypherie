@@ -113,6 +113,18 @@ pub fn evaluate(
         push("upstream", None, "independent upstream baseline required");
     }
     for (name, report) in [("source", source), ("upstream", upstream)] {
+        if report.advance_policy != crate::reference::AdvancePolicy::Linear
+            || report
+                .records
+                .iter()
+                .any(|record| record.side_bearing_deltas_26_6.is_some())
+        {
+            push(
+                name,
+                None,
+                "independent rendering requires linear metrics without bearing correction",
+            );
+        }
         if report
             .records
             .iter()
@@ -150,6 +162,17 @@ pub fn evaluate(
     }
     if candidate.hinting_requested != upstream.hinting_requested {
         push("candidate", None, "requested hinting policy changed");
+    }
+    if candidate.advance_policy == crate::reference::AdvancePolicy::Hinted
+        && (candidate.target != "mono"
+            || candidate.hinting_requested != "auto"
+            || candidate.extensions == "none")
+    {
+        push(
+            "candidate",
+            None,
+            "hinted advance policy requires enabled automatic mono fitting",
+        );
     }
     let mut indexes = Vec::new();
     for (name, report) in [
@@ -194,8 +217,21 @@ pub fn evaluate(
             continue;
         };
         for (name, record) in [("source", raw), ("candidate", fitted)] {
-            if record.glyph_id != baseline.glyph_id || record.advance_26_6 != baseline.advance_26_6
+            // The spacing experiment explicitly replaces advance identity with
+            // equality to the actual scaler-returned advance. Linear, gray and
+            // disabled paths retain their original independent identity contract.
+            let expected_advance = if name == "candidate"
+                && candidate.advance_policy == crate::reference::AdvancePolicy::Hinted
             {
+                record
+                    .hinted_advance_width
+                    .filter(|advance| advance.is_finite())
+                    .map(|advance| (advance * 64.0).round() as i32)
+                    .unwrap_or(baseline.advance_26_6)
+            } else {
+                baseline.advance_26_6
+            };
+            if record.glyph_id != baseline.glyph_id || record.advance_26_6 != expected_advance {
                 push(name, Some(codepoint), "glyph mapping or advance changed");
             }
             if record.target != baseline.target
@@ -302,6 +338,22 @@ fn motion(a: &[FittedCommand], b: &[FittedCommand]) -> Option<Motion> {
 
 fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     let mut failures = Vec::new();
+    // Each pinned phantom-point rounding residual is at most half a pixel;
+    // the inherited positive-bearing guard can add at most one more pixel.
+    if record.side_bearing_deltas_26_6.is_some_and(|deltas| {
+        record.target != "mono"
+            || record.selected_engine != "auto"
+            || deltas.iter().any(|delta| i64::from(*delta).abs() > 96)
+    }) {
+        failures.push("invalid monochrome side bearing deltas");
+    }
+    if record
+        .hinted_advance_width
+        .is_some_and(|value| !value.is_finite())
+        || record.hinted_lsb.is_some_and(|value| !value.is_finite())
+    {
+        failures.push("nonfinite fitted metrics");
+    }
     let size = u64::from(record.width) * u64::from(record.height);
     if size > 4_194_304
         || size != record.pixels.len() as u64

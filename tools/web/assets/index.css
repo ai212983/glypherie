@@ -40,9 +40,16 @@ h1 { margin: 0; font-size: clamp(1.8rem, 3vw, 2.25rem); letter-spacing: -.035em;
 .zoom-control { width: 240px; }
 .zoom-heading { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; font-size: .875rem; font-weight: 600; }
 .zoom-heading output { min-width: 2rem; text-align: right; font-variant-numeric: tabular-nums; }
-.zoom-control input { display: block; width: 100%; margin: .6rem 0 .2rem; accent-color: var(--accent); cursor: pointer; }
+.zoom-control input[type="range"] { display: block; width: 100%; margin: .6rem 0 .2rem; accent-color: var(--accent); cursor: pointer; }
 .zoom-stops { display: flex; justify-content: space-between; color: var(--muted); font-size: .75rem; padding-inline: 3px; }
-#zoom-help { margin: .45rem 0 0; font-size: .75rem; color: var(--muted); }
+.display-scale { margin: .45rem 0 0; font-size: .75rem; color: var(--muted); }
+.display-scale output { font-variant-numeric: tabular-nums; }
+label.pixel-accurate { display: flex; align-items: baseline; gap: .45rem; margin: .55rem 0 0; font-size: .75rem; color: var(--text); cursor: pointer; }
+label.pixel-accurate input { width: auto; accent-color: var(--accent); cursor: pointer; }
+label.pixel-accurate input:disabled { cursor: default; }
+.pixel-accurate-status { margin: .3rem 0 0; font-size: .75rem; color: var(--muted); }
+.pixel-accurate-status output { font-variant-numeric: tabular-nums; }
+.pixel-accurate-status:has(> output[hidden]) { display: none; }
 .intro { margin: 1.25rem 0 0; font-size: .875rem; line-height: 1.55; color: var(--muted); }
 .family { padding-block: 2rem 1rem; scroll-margin-top: 1rem; }
 .family + .family { border-top: 1px solid var(--line); }
@@ -52,6 +59,16 @@ h2 { margin: 0 0 1.5rem; font-size: 1.5rem; letter-spacing: -.02em; font-weight:
 .font-metadata div { min-width: 0; max-width: 100%; }
 .font-metadata dt { color: var(--muted); }
 .font-metadata dd { margin: .15rem 0 0; overflow-wrap: anywhere; }
+.font-kerning { margin: 0 0 1.5rem; font-size: .8rem; line-height: 1.5; }
+.font-kerning summary { cursor: pointer; font-weight: 600; }
+.font-kerning-scope { margin: .5rem 0 0; color: var(--muted); }
+.font-kerning-filter { display: flex; flex-direction: column; gap: .35rem; max-width: 16rem; margin-top: .6rem; }
+.font-kerning-filter input { padding: .4rem .55rem; border: 1px solid var(--line); border-radius: 5px; background: white; font: inherit; }
+.font-kerning-status { margin: .5rem 0 0; color: var(--muted); }
+.font-kerning-status:empty { display: none; }
+.font-kerning-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr)); gap: .35rem 1.5rem; max-height: 16rem; overflow: auto; margin: .6rem 0 0; padding: 0 .5rem 0 0; list-style: none; font-variant-numeric: tabular-nums; }
+.font-kerning-list li { display: flex; justify-content: space-between; gap: .75rem; overflow-wrap: anywhere; }
+.font-kerning-list .pair { font-weight: 600; }
 .size-group { margin-block: 0 1.75rem; }
 body[data-zoom-scope="glyph"] .size-group:target > h2 { width: fit-content; color: var(--accent); background: #e4eee9; border-radius: 3px; box-shadow: 0 0 0 .35rem #e4eee9; }
 h3 { display: flex; align-items: baseline; gap: .25rem; margin: 0 0 .7rem; font-size: 1rem; font-weight: 650; }
@@ -85,16 +102,6 @@ figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: .45rem;
 .diff-legend { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; }
 .added-key { color: #0060ff; }
 .removed-key { color: #e02020; }
-.attention-block { margin-block: 1.5rem; padding: 1rem; border: 1px solid #c6a452; border-radius: 5px; background: #fffdf6; }
-.attention-heading { margin: 0 0 .5rem; font-size: 1rem; font-weight: 650; }
-.attention-group { margin-top: 1.25rem; }
-.attention-group h5 { display: flex; align-items: baseline; gap: .25rem; margin: 0 0 .7rem; font-size: 1rem; font-weight: 650; }
-.attention-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); gap: .85rem; }
-.attention-symbol { width: 100%; display: flex; flex-direction: column; gap: .5rem; padding: .85rem; text-decoration: none; color: var(--text); }
-.attention-symbol .image-viewport { margin-inline: auto; }
-.attention-description { font-size: .875rem; line-height: 1.5; }
-.attention-note { margin-block: 0 1rem; padding: .85rem 1rem; border-left: 3px solid #c6a452; background: #fffdf6; font-size: .875rem; line-height: 1.5; }
-.attention-note p { margin: .5rem 0 0; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .interactive-specimen { margin-block: 0 1.75rem; background: white; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
 .interactive-heading { margin: 0; padding: .85rem 1rem .35rem; }
@@ -106,12 +113,20 @@ figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: .45rem;
 .interactive-text textarea { width: 100%; min-height: 5.5rem; font: inherit; line-height: 1.5; resize: vertical; }
 .interactive-axis { display: flex; align-items: center; gap: .55rem; }
 .interactive-axis input[type="range"] { width: 10rem; max-width: 40vw; accent-color: var(--accent); }
+.interactive-axis input[type="number"] { width: 4.5rem; }
 .interactive-axis output { min-width: 3rem; font-variant-numeric: tabular-nums; }
 .interactive-controls button { padding: .45rem .85rem; border: 1px solid var(--line); border-radius: 5px; background: white; cursor: pointer; }
+.interactive-spacing { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .85rem 1.25rem; min-width: 0; margin: 0; padding: 0; border: 0; }
+.interactive-spacing legend { padding: 0; font-size: .8rem; font-weight: 600; }
+.interactive-spacing input[type="checkbox"] { width: 1rem; height: 1rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.interactive-spacing-hint { flex: 1 1 100%; min-width: 0; margin: 0; font-size: .75rem; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
 .interactive-controls button:hover { border-color: var(--accent); color: var(--accent); }
 .font-picker { display: flex; align-items: baseline; gap: .6rem; margin: 1.25rem 0 0; font-size: .875rem; font-weight: 600; }
 .font-picker select { padding: .4rem .55rem; border: 1px solid var(--line); border-radius: 5px; background: white; font: inherit; font-weight: 400; }
 .interactive-viewport { display: block; width: calc(100% - 2rem); height: auto; margin: 0 1rem 1rem; overflow: hidden; }
+/* Pixel-accurate mode reserves 1 CSS px + 1 device px at the right/bottom
+   via inline viewport padding. This absorbs layout and physical-grid snaps
+   without clipping the first row/column or introducing a scrollbar. */
 .interactive-canvas { display: block; image-rendering: pixelated; }
 @media (max-width: 540px) {
   .page-header, main { width: calc(100% - 2rem); }

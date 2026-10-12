@@ -9,7 +9,14 @@ import {
   resolveFontFile,
   validateInteractive,
 } from "../lib/interactive.js";
-import { logicalBounds, toRenderSpec } from "../assets/interactive.js";
+import {
+  filterKerningPairs,
+  formatKerningAdjustment,
+  kerningCacheKey,
+  logicalBounds,
+  pairCodepoints,
+  toRenderSpec,
+} from "../assets/interactive.js";
 import { hash } from "./helpers.js";
 
 const bytes = (text) => Buffer.from(text);
@@ -161,8 +168,29 @@ test("maps control state to the exact tools/wasm render request", () => {
     text: "Ag", width: 360, height: 120, size_px: 18, axes: { wght: 700 }, hinting: "auto", output_bits: 3,
     mono_threshold: 200, gray_gamma: 2.2, missing_glyphs: "error", kerning: true, metric_rounding: "subpixel",
     wrap: "word", align: "left", foreground: [36, 40, 43, 255], background: [255, 255, 255, 255],
-    renderer: "baseline",
+    letter_spacing_px: 0, spacing_model: "auto", renderer: "baseline",
   });
+  assert.equal(toRenderSpec({
+    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120, letterSpacingPx: 1.5,
+  }).letter_spacing_px, 2);
+  assert.equal(toRenderSpec({
+    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120, letterSpacingPx: -0.5,
+  }).letter_spacing_px, -1);
+  assert.equal(toRenderSpec({
+    text: "Ag", sizePx: 18, axes: {}, profile: "gray_3bit", width: 360, height: 120, letterSpacingPx: -0.5,
+  }).letter_spacing_px, -0.5);
+  for (const model of ["auto", "source", "fitted", "projected"]) {
+    const options = { text: "AV", sizePx: 14, axes: {}, width: 360, height: 120, spacingModel: model };
+    assert.equal(toRenderSpec({ ...options, profile: "mono_1bit" }).spacing_model, model);
+    assert.equal(toRenderSpec({ ...options, profile: "gray_3bit" }).spacing_model, "auto");
+    assert.equal(toRenderSpec({ ...options, profile: "mono_1bit", kerning: false }).kerning, false);
+  }
+  assert.equal(toRenderSpec({
+    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120, letterSpacingPx: 99,
+  }).letter_spacing_px, 4);
+  assert.equal(toRenderSpec({
+    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120, letterSpacingPx: "bad",
+  }).letter_spacing_px, 0);
   const candidate = toRenderSpec({
     text: "Ag", sizePx: 18, axes: { wght: 700 }, profile: "mono_1bit",
     render: { mono_threshold: 200, gray_gamma: 2.2 }, width: 360, height: 120, role: "candidate",
@@ -176,6 +204,38 @@ test("maps control state to the exact tools/wasm render request", () => {
   assert.equal(mono.width, 1);
   assert.equal(mono.height, 4096);
   assert.equal(mono.text, "");
+});
+
+test("formats kerning adjustments as signed pixels at 26.6 precision", () => {
+  assert.equal(formatKerningAdjustment(-52), "-0.8125 px");
+  assert.equal(formatKerningAdjustment(64), "+1 px");
+  assert.equal(formatKerningAdjustment(-64), "-1 px");
+  assert.equal(formatKerningAdjustment(1), "+0.015625 px");
+  assert.equal(pairCodepoints(0x41, 0x56), "U+0041 U+0056");
+  assert.equal(pairCodepoints(0x20, 0x7e), "U+0020 U+007E");
+});
+
+test("keys kerning cache by size and axes independent of key order", () => {
+  assert.equal(kerningCacheKey(16, { wght: 400 }), kerningCacheKey(16, { wght: 400 }));
+  assert.notEqual(kerningCacheKey(16, { wght: 400 }), kerningCacheKey(18, { wght: 400 }));
+  assert.notEqual(kerningCacheKey(16, { wght: 400 }), kerningCacheKey(16, { wght: 700 }));
+  assert.equal(
+    kerningCacheKey(16, { wght: 400, wdth: 100 }),
+    kerningCacheKey(16, { wdth: 100, wght: 400 }),
+  );
+});
+
+test("filters kerning pairs by characters or codepoints", () => {
+  const pairs = [
+    { left: 0x41, right: 0x56, adjustment_26_6: -52 },
+    { left: 0x54, right: 0x6f, adjustment_26_6: -20 },
+  ];
+  assert.equal(filterKerningPairs(pairs, "").length, 2);
+  assert.deepEqual(filterKerningPairs(pairs, "AV"), [pairs[0]]);
+  assert.deepEqual(filterKerningPairs(pairs, "av"), [pairs[0]]);
+  assert.deepEqual(filterKerningPairs(pairs, "0041"), [pairs[0]]);
+  assert.deepEqual(filterKerningPairs(pairs, "To"), [pairs[1]]);
+  assert.deepEqual(filterKerningPairs(pairs, "zz"), []);
 });
 
 test("derives shrunken logical bounds for integer magnification", () => {

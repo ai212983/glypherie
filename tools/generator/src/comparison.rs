@@ -10,8 +10,6 @@ use std::{
     path::Path,
 };
 
-mod attention;
-
 const MAX_PIXELS: usize = 16 * 1024 * 1024;
 const PADDING: i64 = 3;
 pub const ADDED: [u8; 3] = [0, 96, 255];
@@ -22,8 +20,6 @@ pub const REMOVED: [u8; 3] = [224, 32, 32];
 struct Config {
     schema_version: String,
     id: String,
-    #[serde(default)]
-    attention: Option<std::path::PathBuf>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -49,10 +45,6 @@ struct Canonical {
     schema_version: String,
     characters: String,
     cases: Vec<Case>,
-    #[serde(default)]
-    variant: Option<crate::specimen_config::Variant>,
-    #[serde(default)]
-    profiles: Vec<crate::specimen_config::Profile>,
 }
 #[derive(Deserialize)]
 struct Case {
@@ -93,8 +85,6 @@ pub struct Comparison {
     profiles: Vec<DisplayProfile>,
     families: Vec<Family>,
     statistics: Vec<Statistics>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    attention: Vec<attention::AttentionCase>,
 }
 #[derive(Serialize)]
 struct Statistics {
@@ -521,7 +511,6 @@ fn build(
                         .statistics(profile.id.clone())
                 })
                 .collect(),
-            attention: Vec::new(),
         },
         assets,
     ))
@@ -587,16 +576,7 @@ pub fn publish(config_path: &Path, root: &Path) -> Result<usize, Error> {
             }
             inputs.push(&packages[&input.variant]);
         }
-        let (mut manifest, mut assets) = build(selection, inputs[0], inputs[1])?;
-        if let Some(path) = &config.attention {
-            manifest.attention = attention::build(
-                &config_path.parent().unwrap_or(Path::new(".")).join(path),
-                selection,
-                inputs[0],
-                inputs[1],
-                &mut assets,
-            )?;
-        }
+        let (manifest, assets) = build(selection, inputs[0], inputs[1])?;
         let bytes = specimens::json(&manifest)?;
         let id = format!("{}-{}", selection.id, specimens::hash(&bytes));
         let destination = output.join(&id);

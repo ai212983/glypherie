@@ -12,7 +12,7 @@ permalink: "{{ glyphPage.comparison.id }}/{{ glyphPage.familyId }}/{{ glyphPage.
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ glyphPage.familyName }} — {{ glyphPage.character }} comparison</title>
   <link rel="stylesheet" href="../../../assets/index.css">
-  <script type="module" src="../../../assets/index.js"></script>
+  <script type="module" src="../../../assets/index.js?v={{ assetVersion }}"></script>
 </head>
 <body data-zoom-scope="glyph">
   <a class="skip-link" href="#specimens">Skip to comparisons</a>
@@ -28,12 +28,6 @@ permalink: "{{ glyphPage.comparison.id }}/{{ glyphPage.familyId }}/{{ glyphPage.
       {% for group in glyphPage.sizes %}
       <section class="size-group" id="{{ group.anchor }}" style="--native-width: {{ group.canvas.width_px }}px; --native-height: {{ group.canvas.height_px }}px"{% if not group.initiallyVisible %} hidden{% endif %}>
         <h2>{{ group.size_px }} px</h2>
-        {% if group.attention %}
-        <div class="attention-note" data-attention-profile="{{ group.profiles[0].id }}">
-          <strong>{{ group.attention.inspection }}</strong>
-          {% if group.attention.description %}<p>{{ group.attention.description }}</p>{% endif %}
-        </div>
-        {% endif %}
         {% for profile in group.profiles %}
         <div class="specimen-row comparison-row">
           {% for kind in ["previous", "current", "difference"] %}

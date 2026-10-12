@@ -304,6 +304,25 @@ impl Plan {
         self.pairs.len() + self.curves.len()
     }
 
+    /// Points already owned by straight/curved diagonal fitting or attached
+    /// to another contour. The compact-round plan treats these as conflicting
+    /// ownership and keeps the usual path for their contours.
+    pub(super) fn owns(&self, point: usize) -> bool {
+        if self
+            .joined
+            .get(point)
+            .is_some_and(|join| *join != [false; 2])
+        {
+            return true;
+        }
+        if self.curves.affected(point) {
+            return true;
+        }
+        self.pairs
+            .iter()
+            .any(|pair| [pair.left.a, pair.left.b, pair.right.a, pair.right.b].contains(&point))
+    }
+
     fn curve_join(
         &self,
         outline: &Outline,

@@ -145,6 +145,7 @@ impl Instance {
         let h_advance = outline.advance;
         let mut pp1x = 0;
         let mut pp2x = fixed_mul(h_advance, hinted_metrics.x_scale);
+        let mut side_bearing_deltas;
         let is_light = self.target.is_light() || self.target.preserve_linear_metrics();
         // <https://gitlab.freedesktop.org/freetype/freetype/-/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L422>
         if !is_light {
@@ -171,13 +172,20 @@ impl Instance {
                 if pp2x <= edge_metrics.right_pos && old_rsb > 0 {
                     pp2x += 64;
                 }
+                // Pinned afloader.c: retain the actual phantom rounding errors,
+                // including the inherited small-bearing protection above.
+                side_bearing_deltas = [pp1x - pp1x_uh, pp2x - pp2x_uh];
             } else {
+                let unrounded = [pp1x, pp2x];
                 pp1x = pix_round(pp1x);
                 pp2x = pix_round(pp2x);
+                side_bearing_deltas = [pp1x - unrounded[0], pp2x - unrounded[1]];
             }
         } else {
+            let unrounded = [pp1x, pp2x];
             pp1x = pix_round(pp1x);
             pp2x = pix_round(pp2x);
+            side_bearing_deltas = [pp1x - unrounded[0], pp2x - unrounded[1]];
         }
         if pp1x != 0 {
             for point in &mut outline.points {
@@ -187,6 +195,8 @@ impl Instance {
         let advance = if !is_light
             && (self.is_fixed_width || (metrics.digits_have_same_width && style.is_digit()))
         {
+            // afloader.c resets deltas to preserve fixed/tabular advances.
+            side_bearing_deltas = [0, 0];
             fixed_mul(h_advance, scale.x_scale)
         } else if h_advance != 0 {
             pp2x - pp1x
@@ -195,6 +205,7 @@ impl Instance {
         };
         outline.to_path(path_style, pen)?;
         Ok(AdjustedMetrics {
+            side_bearing_deltas_26_6: self.diagonal_constraints.then_some(side_bearing_deltas),
             diagonal_pairs,
             has_overlaps: glyph.has_overlaps().unwrap_or_default(),
             lsb: None,

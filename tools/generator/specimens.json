@@ -11,6 +11,16 @@
       "id": "numbers",
       "title": "Numbers and symbols",
       "content": "08:38 21.5\u00b0C 48%\n0123456789 .,;:!?+-/()"
+    },
+    {
+      "id": "spacing-pairs",
+      "title": "Spacing pairs",
+      "content": "mi li ni im il in\nmm nn ll ii mn nm\nPac ac ca quo qu uo\nAV VA To Ta Wa Yo\noo oc co ov vo wo ow\nfi if fl lf ff tt ry yr\n11 17 71 00 08 80"
+    },
+    {
+      "id": "spacing-rhythm",
+      "title": "Spacing rhythm",
+      "content": "mi mi mi li li li ni ni ni\nminimum milling lining\nPac Pac quo quo\nAVAV VAVA ToTo WaWa YoYo\nnonono ooooo mmmmm iiiii\n0123456789 000000 111111"
     }
   ],
   "variants": [
@@ -29,6 +39,14 @@
       "hinting": "auto",
       "extensions": "diagonal-01",
       "renderer": "baseline"
+    },
+    {
+      "id": "iteration-03",
+      "kind": "iteration",
+      "version": "001.03",
+      "hinting": "auto",
+      "extensions": "diagonal-01",
+      "renderer": "candidate"
     }
   ],
   "profiles": [
@@ -54,7 +72,8 @@
     ],
     "variants": [
       "reference",
-      "iteration-02"
+      "iteration-02",
+      "iteration-03"
     ],
     "profiles": [
       "mono_1bit",

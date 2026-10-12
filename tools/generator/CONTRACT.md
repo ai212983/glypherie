@@ -6,44 +6,20 @@ The specimen generator publishes a self-contained package of native-resolution P
 interface is independent of the generator's implementation language. The web generator consumes the package according to
 the [web generator contract](../web/CONTRACT.md).
 
-## Iteration lifecycle
-
-An iteration is dedicated to one specific problem identified by user feedback. Tweaks and validation for that problem
-retain the same iteration ID and renderer extension policy. It closes only when user and agent agree no further actions
-remain for that problem: resolved, not fixable, or explicitly assigned to an agreed follow-up. The user must explicitly
-agree to closure; tests, publication, and a new implementation approach do not imply it. Record the closure decision
-before advancing iteration identity. See the [revision guidance](../../docs/revisions/README.md).
-
 ## Generation selection
 
 [specimens.json](specimens.json) supplies family sources, sizes, renderer variants, and output profiles. See the
 [configuration guide](README.md#specimen-configuration) for inheritance and per-family/per-size overrides.
 
-The `cards` array defines editable specimens using `id`, `title`, and `content`, in display order. Titles become item
-labels; content becomes exact sample text and rendered image content. Character coverage is appended automatically from
-`characters`; changed symbols are supplied by the comparison export. Both are fixed cards outside this array.
+Resolve the [specimen configuration](README.md#specimen-configuration) into explicit family/size/variant/profile cases.
+Publish one package per selected renderer variant and verify its coverage against those cases.
 
-Resolve selections into explicit family/size/variant/profile cases. Publish one package per selected renderer variant,
-containing its selected families, size groups, and profile samples. Package coverage is checked against those resolved
-cases. The normal preview selects three families at 14/16/18/20 px in both profiles. The checked-in configuration's
-`preview_policy` points to `preview-policy.json` (relative to the configuration), with schema `preview-policy-v1` and
-`families` mapping family IDs to agreed size arrays. Check exact family coverage and effective size sets separately for
-every family/variant/profile, after resolving defaults and overrides. Reject missing/invalid policy, additions,
-removals, or changed sizes before rendering or writing output; failed publication preserves existing pointers.
-
-This policy is a scope guard independent of renderer iterations. Change the configuration, policy, and regression
-expectations together only when the user's task includes a preview-matrix change. Diagnostic sweeps use Rust
-requests/tests or separate temporary configurations with isolated output; they do not change normal preview defaults.
-Generic diagnostic configurations may omit `preview_policy`, but the checked-in normal configuration must retain it.
-
-The comparison configuration may supply an `attention` path to an explicit `symbol-attention-v1` annotation file,
-resolved relative to that configuration. See the [attention guide](../../docs/evaluation.md#attention-card). Validate
-its iteration, unique IDs/cases, inspection types, optional hints and statuses before updating the comparison pointer.
-Export pending/confirmed marks as a separate `attention` array, including unchanged cases within the agreed preview
-scope. Accepted marks require a recorded disposition and are omitted from that array. Require every rendered mark to
-match published and configured family/size/axes/profile cases and symbol coverage; reject diagnostic additions before
-publication. Reuse canonical renders only. Their native aligned images are content-addressed within the comparison
-package. Do not expand normal specimens, change ordinary statistics or alter fitting decisions.
+The checked-in configuration's `preview_policy` points to [preview-policy.json](preview-policy.json), using schema
+`preview-policy-v1` and a `families` map of agreed size arrays. The configuration and policy own the actual preview
+selections. Check exact family coverage and effective sizes for every variant/profile after resolving overrides.
+Missing/invalid policy, additions, removals or matrix drift fail before rendering/publication and preserve existing
+pointers. Change configuration, policy and guard expectations together only for an explicitly requested scope change.
+Broader diagnostic configurations may omit the policy and use isolated output; the normal configuration must retain it.
 
 The configuration's variant ID is a logical name such as `reference`. Published package IDs identify immutable
 render/composition snapshots. Iteration versions are unique positive numeric `revision.iteration` pairs, for example
@@ -80,9 +56,8 @@ The generator owns `out/specimens/`. Each package is immutable. Changes to sourc
 dimensions, or assets create a new package ID. Content-addressed images can be reused when their bytes match.
 
 `active.json` records the automatically selected latest working variant. Publication and production approval are
-separate decisions. The user accepted 001.01 and authorized its production promotion on 2026-10-02; the standard
-`generate` path now uses its model for automatic 1-bit output. The web index always shows this latest revision and
-iteration; promotion does not change the preview matrix or independent reference.
+separate; current approved/candidate identities belong in the
+[revision index](../../docs/revisions/001/README.md#iterations).
 
 ### Active pointer
 
@@ -119,7 +94,7 @@ needed to present the specimens.
 
 New exports include each family's `metadata`, extracted once from the checksum-verified source bytes with the upstream
 Skrifa reader. Older immutable packages can omit this field. Metadata is descriptive and does not affect rendering,
-shaping, fitting, preview scope or review annotations.
+shaping, fitting or preview scope.
 
 - `names`: nullable strings for `family`, `style`, `full`, `postscript`, `version`, `copyright`, `manufacturer`,
   `designer`, `description`, `vendor_url`, `designer_url`, `license` and `license_url`. Prefer English, otherwise the
@@ -232,10 +207,9 @@ white background, black/white pixels for 1-bit specimens, and the declared eight
 ## Glyph comparison export
 
 `comparisons.json` uses schema `comparison-config-v2` and an `id` containing a numeric route ID such as `01`. It cannot
-select renderer inputs or labels. Export one comparison for the working candidate against the approved baseline. With no
-newer candidate, compare baseline with the unique reference. Accepted 001.01 therefore compares with reference. Legacy
-packages without roles retain their historical previous-revision policy. Derive labels from package versions. A
-reference-only publication exports an empty comparison index. Invalid or ambiguous versions fail publication.
+select renderer inputs or labels. Derive them using [generation selection](#generation-selection), with labels from
+package versions. A reference-only publication exports an empty comparison index; invalid or ambiguous versions fail
+publication.
 
 The comparison exporter reads canonical rendered pixels and publishes:
 

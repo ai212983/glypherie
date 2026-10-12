@@ -11,7 +11,7 @@ export function validateComparison(manifest, entry) {
   fields(entry, ["id", "manifest"]);
   check(typeof entry.id === "string" && /^\d{2,8}$/.test(entry.id), "Invalid comparison route.");
   check(new RegExp(`^${entry.id}-[a-f0-9]{64}/manifest\\.json$`).test(entry.manifest), "Invalid comparison manifest path.");
-  fields(manifest, ["schema_version", "id", "previous", "current", "profiles", "families"], ["statistics", "attention"]);
+  fields(manifest, ["schema_version", "id", "previous", "current", "profiles", "families"], ["statistics"]);
   check(manifest.schema_version === "web-glyph-comparison-v1" && manifest.id === entry.id, "Invalid comparison identity.");
   for (const side of [manifest.previous, manifest.current]) {
     fields(side, ["package_id", "label", "generation_sha256"]);
@@ -84,32 +84,9 @@ export function validateComparison(manifest, entry) {
       }
     }
   }
-  if (manifest.attention !== undefined) {
-    check(Array.isArray(manifest.attention), "Invalid attention cases.");
-    const ids = new Set(), cases = new Set();
-    for (const item of manifest.attention) {
-      fields(item, ["id", "family_id", "family_name", "codepoint", "character", "size_px", "axes", "status", "inspection", "description", "canvas", "profiles"]);
-      check(isId(item.id) && !ids.has(item.id), "Invalid or duplicate attention ID.");
-      ids.add(item.id);
-      check(["pending", "confirmed"].includes(item.status) && isText(item.inspection) && item.inspection.length <= 160
-        && typeof item.description === "string" && item.description.length <= 240,
-        "Invalid attention status or inspection.");
-      const family = manifest.families.find((f) => f.id === item.family_id);
-      check(family && family.name === item.family_name, "Attention family differs from comparison.");
-      for (const profile of item.profiles) {
-        const key = JSON.stringify([item.family_id, item.size_px, Object.entries(item.axes).sort(), item.codepoint, profile.id]);
-        check(!cases.has(key), "Duplicate attention symbol case."); cases.add(key);
-      }
-      // Reuse the full glyph/canvas/profile validation for marked and unchanged cases.
-      validateComparison({ ...manifest, statistics: undefined, attention: undefined,
-        families: [{ id: item.family_id, name: item.family_name, sizes: [{ size_px: item.size_px,
-          axes: item.axes, canvas: item.canvas, glyphs: [{ codepoint: item.codepoint, character: item.character, profiles: item.profiles }] }] }],
-      }, entry);
-    }
-  }
 }
 
-// Apply the selected specimen scope to every comparison surface, including annotations.
+// Apply the selected specimen scope to every comparison surface.
 // This is deliberately derived from publication metadata, not a second hardcoded size list.
 export function validatePreviewScope(comparison, specimens) {
   const sameAxes = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
@@ -122,7 +99,6 @@ export function validatePreviewScope(comparison, specimens) {
   for (const family of comparison.families) for (const size of family.sizes) {
     validate(family.id, size, size.glyphs.flatMap((g) => g.profiles));
   }
-  for (const item of comparison.attention ?? []) validate(item.family_id, item, item.profiles);
 }
 
 function validateImage(bytes, canvas, bits, diff) {
@@ -145,28 +121,6 @@ function validateImage(bytes, canvas, bits, diff) {
 
 function view(manifest, packageId, changedImages) {
   const defaultProfile = manifest.profiles.find((p) => p.id === "mono_1bit")?.id ?? manifest.profiles[0].id;
-  const attention = (manifest.attention ?? []).map((item) => ({ ...item,
-    slug: `U${item.codepoint.toString(16).toUpperCase().padStart(4, "0")}`,
-    anchor: `attention-${item.id}`,
-    initiallyVisible: item.profiles.some((p) => p.id === defaultProfile),
-    profiles: item.profiles.map((p) => ({ ...p, initiallyVisible: p.id === defaultProfile })),
-  }));
-  const sameAxes = (a, b) => JSON.stringify(Object.entries(a).sort()) === JSON.stringify(Object.entries(b).sort());
-  const scopedAttention = (familyId, size) => attention.filter((item) => item.family_id === familyId
-    && item.size_px === size.size_px && sameAxes(item.axes, size.axes));
-  const attentionGroupsFor = (symbols) => {
-    const groups = [];
-    for (const symbol of symbols) {
-      let group = groups.find((g) => g.inspection === symbol.inspection);
-      if (!group) { group = { inspection: symbol.inspection, symbols: [], initiallyVisible: false }; groups.push(group); }
-      group.symbols.push(symbol);
-      group.initiallyVisible ||= symbol.initiallyVisible;
-    }
-    return groups;
-  };
-  const marked = (family, size, glyph, profile) => attention.some((item) => item.family_id === family.id
-    && item.size_px === size.size_px && sameAxes(item.axes, size.axes)
-    && item.codepoint === glyph.codepoint && item.profiles.some((p) => p.id === profile.id));
   const visibleManifest = {
     ...manifest,
     families: manifest.families.map((family) => ({
@@ -187,14 +141,11 @@ function view(manifest, packageId, changedImages) {
       ...size,
       anchor: `size-${size.size_px}`,
       lineHeight: Math.max(1, size.canvas.height_px - 2 * size.canvas.padding_px),
-      attentionGroups: attentionGroupsFor(scopedAttention(family.id, size)),
-      attentionInitiallyVisible: scopedAttention(family.id, size).some((item) => item.initiallyVisible),
       initiallyVisible: size.glyphs.some((g) => g.profiles.some((p) => p.id === defaultProfile)),
       glyphs: size.glyphs.map((glyph) => ({
         ...glyph,
         slug: `U${glyph.codepoint.toString(16).toUpperCase().padStart(4, "0")}`,
-        profiles: glyph.profiles.map((profile) => ({ ...profile, initiallyVisible: profile.id === defaultProfile,
-          attention: marked(family, size, glyph, profile) })),
+        profiles: glyph.profiles.map((profile) => ({ ...profile, initiallyVisible: profile.id === defaultProfile })),
       })),
     })),
   }));
@@ -215,10 +166,7 @@ function view(manifest, packageId, changedImages) {
     return { ...stats, sameLabel: format(stats.same_symbols), changedLabel: format(stats.changed_symbols),
       averageLabel: format(average), medianLabel: format(median) };
   });
-  for (const family of families) for (const size of family.sizes) {
-    size.ordinaryInitiallyVisible = size.glyphs.some((g) => g.profiles.some((p) => p.initiallyVisible && !p.attention));
-  }
-  return { ...manifest, packageId, defaultProfile, families, statistics, attention,
+  return { ...manifest, packageId, defaultProfile, families, statistics,
     profiles: manifest.profiles.map((p) => ({ ...p, label: labels[p.id] })) };
 }
 
@@ -226,17 +174,10 @@ export function glyphPages(comparisons) {
   return comparisons.flatMap((comparison) => comparison.families.flatMap((family) => {
     const glyphs = new Map();
     for (const size of family.sizes) for (const glyph of size.glyphs) {
-      const profiles = glyph.profiles.filter((p) => !p.attention);
-      if (!profiles.length) continue;
+      const profiles = glyph.profiles;
       if (!glyphs.has(glyph.codepoint)) glyphs.set(glyph.codepoint, { comparison, familyId: family.id, familyName: family.name,
         character: glyph.character, slug: glyph.slug, sizes: [] });
-      glyphs.get(glyph.codepoint).sizes.push({ ...size, profiles, attention: null });
-    }
-    for (const item of comparison.attention ?? []) {
-      if (item.family_id !== family.id) continue;
-      if (!glyphs.has(item.codepoint)) glyphs.set(item.codepoint, { comparison, familyId: family.id, familyName: family.name,
-        character: item.character, slug: item.slug, sizes: [] });
-      glyphs.get(item.codepoint).sizes.push({ ...item, attention: item });
+      glyphs.get(glyph.codepoint).sizes.push({ ...size, profiles });
     }
     return [...glyphs.values()].map((page) => {
       const available = new Set(page.sizes.flatMap((size) => size.profiles.map((profile) => profile.id)));
@@ -301,9 +242,7 @@ export function createComparisonImporter(specimenRoot) {
         const manifest = JSON.parse(bytes);
         validateComparison(manifest, entry);
         const assets = new Map(), checked = new Set(), changedImages = new Map();
-        const groups = [...manifest.families.flatMap((family) => family.sizes), ...(manifest.attention ?? []).map((item) => ({
-          canvas: item.canvas, glyphs: [{ profiles: item.profiles }],
-        }))];
+        const groups = manifest.families.flatMap((family) => family.sizes);
         for (const size of groups) for (const glyph of size.glyphs) for (const profile of glyph.profiles) {
           const bits = manifest.profiles.find((p) => p.id === profile.id).output_bits;
           for (const key of ["previous", "current", "difference"]) {

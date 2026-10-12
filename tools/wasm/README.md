@@ -62,6 +62,16 @@ try {
 }
 ```
 
+## Kerning pairs
+
+`font.kerning_pairs(size_px, axes)` returns a plain object `{ pairs, skipped_pairs }`. Each pair has Unicode codepoints
+`left`, `right` and a signed `adjustment_26_6` in 1/64 pixels. It reads nonzero horizontal source adjustments for
+printable ASCII (U+0020 through U+007E), using the same shaper as native generation with kerning enabled and ligatures
+disabled. Missing characters are skipped; `skipped_pairs` counts pairs needing substitutions or positioning beyond a
+single left-advance change. Invalid settings and single-character shaping failures throw an error. This descriptive API
+draws no outlines and changes no rendering or layout policy; native generation retains its strict shaping errors. Size
+and axes use the same validation as rendering, with omitted axes at their font defaults.
+
 ## Ownership
 
 `Font` and `RenderResult` hold Rust-side memory and must be freed with `.free()` (use `try/finally`). `pixels()` returns
@@ -70,37 +80,32 @@ thrown JS strings carrying the generator message only.
 
 ## Input restrictions
 
-- Single sfnt TTF/OTF outline fonts (`glyf`/`CFF`/`CFF2`). Font collections, WOFF/WOFF2 and bitmap-only fonts are
-  rejected (convert first).
-- Color fonts (`COLR`/`SVG`/`CBDT`/`sbix` tables) are rejected; there is no color-font output adapter.
-- Supported scripts: Latin, Greek, Cyrillic and Common symbols, plus pair kerning representable as advance adjustments.
-  Combining marks, controls and format characters (including tab) and other scripts are hard errors. There is no complex
-  shaping: no ligatures, contextual alternates, or mark positioning.
+Font formats and supported shaping follow the
+[generator capabilities](../generator/README.md#supported-input-and-output). Color-font tables (`COLR`, `SVG`, `CBDT`,
+`sbix`) are rejected by this surface; there is no color-font adapter. Tabs, combining marks and unsupported shaping
+remain errors.
+
 - The render spec has no `characters` field: the repertoire always comes from `text`, and unknown spec fields (including
   `characters`) are rejected.
 
 ## Render-spec controls
 
-Only `text`, `width` and `height` are required; everything else has a default.
+Only `text`, `width` and `height` are required. Top-level glyph controls `size_px`, `axes`, `hinting`, `output_bits`,
+`mono_threshold`, `gray_gamma`, `kerning`, `metric_rounding` and `missing_glyphs` inherit the
+[generator settings and defaults](../generator/README.md#rendering-settings). The table below covers surface-specific
+controls.
 
-| Field             | Default             | Meaning                                                                                                                                                                                                                                                                                                                   |
-| ----------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `text`            | (required)          | Source text; lines split on `\n`, `\r\n`, `\r`. Max 8192 characters.                                                                                                                                                                                                                                                      |
-| `width`, `height` | (required)          | Exact canvas size, each 1..=4096.                                                                                                                                                                                                                                                                                         |
-| `size_px`         | 16                  | Glyph size, 1..=512.                                                                                                                                                                                                                                                                                                      |
-| `axes`            | `{}`                | Plain object of variation axis values, e.g. `{ wght: 700 }`. Unknown or out-of-range axes are errors.                                                                                                                                                                                                                     |
-| `hinting`         | `"auto"`            | `"none"`, `"auto"`, `"interpreter"`, `"auto_fallback"`.                                                                                                                                                                                                                                                                   |
-| `output_bits`     | 1                   | Coverage bit depth: 1, 2, 3, 4 or 8 bits per texel.                                                                                                                                                                                                                                                                       |
-| `mono_threshold`  | 128                 | 1-bit quantization cutoff, 1..=255.                                                                                                                                                                                                                                                                                       |
-| `gray_gamma`      | 1.0                 | Gray coverage gamma; finite and positive.                                                                                                                                                                                                                                                                                 |
-| `kerning`         | true                | Pair-kerning adjustments.                                                                                                                                                                                                                                                                                                 |
-| `metric_rounding` | `"subpixel"`        | `"subpixel"` or `"pixel"`.                                                                                                                                                                                                                                                                                                |
-| `missing_glyphs`  | `"error"`           | `"error"` fails on uncovered codepoints; `"skip"` omits them and reports them in `layout().missing_codepoints`.                                                                                                                                                                                                           |
-| `wrap`            | `"word"`            | `"clip"` (truncate at the edge), `"word"` (wrap at spaces; an overlong word falls back to character breaks), `"char"` (break anywhere).                                                                                                                                                                                   |
-| `align`           | `"left"`            | `"left"`, `"center"` (odd remainders truncate), `"right"`.                                                                                                                                                                                                                                                                |
-| `foreground`      | `[0,0,0,255]`       | Glyph ink color, RGBA bytes.                                                                                                                                                                                                                                                                                              |
-| `background`      | `[255,255,255,255]` | Canvas clear color, RGBA bytes; transparency (`a < 255`) is supported.                                                                                                                                                                                                                                                    |
-| `palette`         | none                | Optional explicit color per coverage level: entry `i` is used directly as the source color for level `i`, with exactly `1 << output_bits` entries and no extra coverage scaling. Without it, every nonzero level uses the foreground color with coverage-scaled alpha. These are coverage colors, not color-font support. |
+| Field               | Default             | Meaning                                                                                                                                                                                                                                                                                                                   |
+| ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`              | (required)          | Source text; lines split on `\n`, `\r\n`, `\r`. Max 8192 characters.                                                                                                                                                                                                                                                      |
+| `width`, `height`   | (required)          | Exact canvas size, each 1..=4096.                                                                                                                                                                                                                                                                                         |
+| `letter_spacing_px` | 0                   | Signed finite offset, -16..=16; follows the [shared tracking policy](../generator/README.md#tracking-policy).                                                                                                                                                                                                             |
+| `spacing_model`     | `"auto"`            | `"auto"`, `"source"`, `"fitted"`, `"projected"`; explicit choices require 1-bit output. See the [spacing API](../generator/README.md#live-spacing-api).                                                                                                                                                                   |
+| `wrap`              | `"word"`            | `"clip"` (truncate at the edge), `"word"` (wrap at spaces; an overlong word falls back to character breaks), `"char"` (break anywhere).                                                                                                                                                                                   |
+| `align`             | `"left"`            | `"left"`, `"center"` (odd remainders truncate), `"right"`.                                                                                                                                                                                                                                                                |
+| `foreground`        | `[0,0,0,255]`       | Glyph ink color, RGBA bytes.                                                                                                                                                                                                                                                                                              |
+| `background`        | `[255,255,255,255]` | Canvas clear color, RGBA bytes; transparency (`a < 255`) is supported.                                                                                                                                                                                                                                                    |
+| `palette`           | none                | Optional explicit color per coverage level: entry `i` is used directly as the source color for level `i`, with exactly `1 << output_bits` entries and no extra coverage scaling. Without it, every nonzero level uses the foreground color with coverage-scaled alpha. These are coverage colors, not color-font support. |
 
 Alpha: each nonzero coverage level `v` (of `levels = 1 << output_bits`) composites once with source alpha `sa`: by
 default `sa = foreground.a * v / (levels - 1)` over the constant foreground RGB; with an explicit palette `sa` is the
@@ -116,7 +121,6 @@ top-to-bottom, glyphs left-to-right); rendering the same input twice yields iden
 | Canvas width / height | 1..=4096 each, at most 16_777_216 texels | error before allocation |
 | Text length           | 8192 characters                          | error                   |
 | Distinct characters   | 1024                                     | error                   |
-| `size_px`             | 1..=512                                  | error                   |
 | Palette length        | exactly `1 << output_bits`               | error                   |
 
 Empty (or newline-only) text returns a blank background canvas with zero lines, after validating the font bytes, config
@@ -126,6 +130,5 @@ settings, axes and palette exactly as a non-empty request would. Text whose glyp
 
 ## metadata() shape
 
-A plain JS object (maps serialize as objects with string keys, never `Map`s) with the native `FontMetadata` fields:
-`names`, `axes`, `kerning`, `style`, `classification`, `coverage`, `declared_unicode_ranges`. Descriptive source
-information only; it carries no rendered pixels.
+A plain JS object (maps serialize as objects with string keys, never `Map`s) containing native `FontMetadata`. Fields
+and source-extraction semantics are defined by the [font metadata contract](../generator/CONTRACT.md#package-manifest).

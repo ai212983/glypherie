@@ -191,91 +191,10 @@ test("comparison import rejects symlinked assets", async (t) => {
 const browserPath = process.env.WEB_TEST_BROWSER ?? "/opt/google/chrome/chrome";
 const browserAvailable = await fs.access(browserPath).then(() => true, () => false);
 
-async function attentionFixture(t) {
+test("web rejects comparisons outside the active specimen scope", async (t) => {
   const f = await comparisonFixture(t);
-  const size = f.comparison.families[0].sizes.find((s) => s.size_px === 14);
-  const profile = structuredClone(size.glyphs[0].profiles[0]);
-  const mark = { id: "A-14", family_id: "fixture", family_name: "Fixture font", codepoint: 65,
-    character: "A", size_px: 14, axes: { wght: 400 }, status: "pending",
-    inspection: "Stroke continuity", description: "Lower junction <detail>.",
-    canvas: size.canvas, profiles: [profile] };
-  const unchanged = structuredClone(mark);
-  unchanged.id = "A-16"; unchanged.size_px = 16;
-  unchanged.profiles[0].current = unchanged.profiles[0].previous;
-  unchanged.profiles[0].difference = unchanged.profiles[0].previous;
-  f.comparison.families[0].sizes.find((s) => s.size_px === 16).glyphs[0].profiles[0] = structuredClone(unchanged.profiles[0]);
-  f.comparison.attention = [mark, unchanged];
-  await f.saveComparison();
-  return f;
-}
-
-test("attention moves exact cases to scoped family/size cards and retains unchanged comparisons", async (t) => {
-  const f = await attentionFixture(t);
-  const comparison = (await createComparisonImporter(f.root).load())[0];
-  assert.equal(comparison.attention.length, 2);
-  const page = glyphPages([comparison]).find((p) => p.slug === "U0041");
-  assert.equal(page.sizes.filter((s) => s.attention).length, 2);
-  assert.equal(page.sizes.find((s) => s.anchor === "attention-A-16").axes.wght, 400);
-  const scopedGroups = (view, size_px) => view.families[0].sizes.find((s) => s.size_px === size_px).attentionGroups;
-  assert.deepEqual(scopedGroups(comparison, 14).map((g) => g.inspection), ["Stroke continuity"]);
-  assert.deepEqual(scopedGroups(comparison, 16).map((g) => g.inspection), ["Stroke continuity"]);
-  const html = await build(f.root, f.output);
-  assert.doesNotMatch(html, /attention-block/);
-  assert.doesNotMatch(html, /id="attention-fixture-14"/);
-  assert.doesNotMatch(html, /id="attention-fixture-16"/);
-  assert.doesNotMatch(html, /<h5>Stroke continuity<\/h5>/);
-  assert.doesNotMatch(html, /Lower junction &lt;detail&gt;/);
-  assert.doesNotMatch(html, /U0041\/#attention-A-14/);
-  assert.doesNotMatch(html, /U0041\/#attention-A-16/);
-  // The normal gray case still belongs to the ordinary list; the marked mono case does not.
-  assert.doesNotMatch(html, /class="specimen-card glyph-link"[^>]*data-profile="mono_1bit"[^>]*href="\.\/01\/fixture\/U0041\/#size-14/);
-  const symbol = await fs.readFile(path.join(f.output, "01/fixture/U0041/index.html"), "utf8");
-  assert.match(symbol, /id="attention-A-16"/);
-  assert.doesNotMatch(symbol, /wght 400|Pending assessment/);
-  assert.match(symbol, /Lower junction &lt;detail&gt;/);
-  f.comparison.attention[1].inspection = "Weight and contrast";
-  f.comparison.attention[1].description = "";
-  await f.saveComparison();
-  const grouped = (await createComparisonImporter(f.root).load())[0];
-  assert.deepEqual(scopedGroups(grouped, 14).map((g) => g.inspection), ["Stroke continuity"]);
-  assert.deepEqual(scopedGroups(grouped, 16).map((g) => g.inspection), ["Weight and contrast"]);
-  const concise = await build(f.root, f.output);
-  assert.doesNotMatch(concise, /<h5>Weight and contrast<\/h5>/);
-  assert.doesNotMatch(concise, /class="attention-description"/);
-  f.comparison.attention = [f.comparison.attention[0]];
-  await f.saveComparison();
-  const scoped = await build(f.root, f.output);
-  assert.doesNotMatch(scoped, /id="attention-fixture-14"/);
-  assert.doesNotMatch(scoped, /id="attention-fixture-16"/);
-  f.comparison.attention = [];
-  await f.saveComparison();
-  const cleared = await build(f.root, f.output);
-  assert.doesNotMatch(cleared, /attention-block/);
-  assert.doesNotMatch(await fs.readFile(path.join(f.output, "01/fixture/U0041/index.html"), "utf8"), /attention-A-16/);
-});
-
-test("attention annotations require an inspection type, valid identity, scope and image assets", async (t) => {
-  const f = await attentionFixture(t);
-  for (const change of [
-    (m) => { m.attention[0].inspection = ""; },
-    (m) => { m.attention[0].status = "accepted"; },
-    (m) => { m.attention[0].id = "../escape"; },
-    (m) => { m.attention[0].character = "B"; },
-    (m) => { m.attention[0].family_id = "missing"; },
-    (m) => { m.attention[0].profiles[0].current = null; },
-    (m) => { m.attention.push(structuredClone(m.attention[0])); },
-  ]) {
-    const doc = structuredClone(f.comparison); change(doc);
-    assert.throws(() => validateComparison(doc, f.entry));
-  }
-});
-
-test("web rejects attention and ordinary comparisons outside the active specimen scope", async (t) => {
-  const f = await attentionFixture(t);
   const original = structuredClone(f.comparison);
   for (const change of [
-    (m) => { m.attention[0].size_px = 15; },
-    (m) => { m.attention[0].axes.wght = 300; },
     (m) => { m.families[0].sizes[0].size_px = 15; },
     (m) => { m.families[0].sizes[0].axes.wght = 300; },
   ]) {
@@ -283,25 +202,6 @@ test("web rejects attention and ordinary comparisons outside the active specimen
     await f.saveComparison();
     await assert.rejects(() => build(f.root, f.output), /outside published preview scope/);
   }
-});
-
-test("attention cases stay on standalone routes with profile and zoom", { skip: !browserAvailable }, async (t) => {
-  const f = await attentionFixture(t); await build(f.root, f.output);
-  const url = await serve(t, f.output);
-  const browser = await chromium.launch({ executablePath: browserPath, headless: true });
-  t.after(() => browser.close());
-  const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
-  const errors = []; page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(`${url}?profile=mono_1bit&zoom=4`);
-  assert.equal(await page.locator(".attention-block").count(), 0);
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  await page.goto(`${url}01/fixture/U0041/?profile=mono_1bit&zoom=4#attention-A-16`);
-  await page.waitForFunction(() => [...document.querySelectorAll("img")].filter((i) => i.closest(".specimen-card:not([hidden])")).every((i) => i.complete && i.naturalWidth));
-  assert.equal(await page.locator("#attention-A-16").isVisible(), true);
-  assert.match(await page.locator("#attention-A-16 .attention-note").innerText(), /Lower junction/);
-  await page.locator('input[value="gray_3bit"]').check();
-  assert.equal(await page.locator("#attention-A-16 .attention-note:visible").count(), 0);
-  assert.deepEqual(errors, []);
 });
 
 test("impact statistics count repeated images per symbol, validate pixel counts, and switch output modes", async (t) => {

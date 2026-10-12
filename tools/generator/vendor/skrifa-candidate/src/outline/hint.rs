@@ -465,6 +465,7 @@ impl HintingInstance {
                     .scale(&outline.glyph, outline.glyph_id)?;
                     scaled_outline.to_path(path_style, pen)?;
                     Ok(AdjustedMetrics {
+                        side_bearing_deltas_26_6: None,
                         has_overlaps: outline.has_overlaps,
                         lsb: Some(scaled_outline.adjusted_lsb().to_f32()),
                         // When hinting is requested, we round the advance
@@ -482,6 +483,7 @@ impl HintingInstance {
                 };
                 let advance_width = cff.draw(subfont, *glyph_id, &self.coords, true, pen)?;
                 Ok(AdjustedMetrics {
+                    side_bearing_deltas_26_6: None,
                     diagonal_pairs: None,
                     has_overlaps: false,
                     lsb: None,

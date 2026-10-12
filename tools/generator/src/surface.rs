@@ -1,6 +1,6 @@
 //! Bounded multi-line text rendering over [`crate::generate`] output.
 //!
-//! Parity contract: glyph bitmaps, advances, kerning adjustments and metrics are
+//! Approved-path parity: glyph bitmaps, advances, kerning adjustments and metrics are
 //! copied from `generate()` bit-for-bit. This adapter never refits, rescales or
 //! reinterprets coverage levels; it only places, wraps, clips and composites.
 //!
@@ -11,8 +11,16 @@
 //! A glyph texel at bitmap `(gx, gy)` lands on canvas
 //! `(pen_px + glyph.left + gx, baseline_px + glyph.top + gy)`; `pen_px` rounds
 //! the 26.6 pen with `(pen + 32).div_euclid(64)`, matching specimen placement.
-use crate::{fail, renderer::RendererRole, Config, Error, GeneratedFont, Glyph, MissingGlyphs};
+use crate::{
+    fail,
+    layout_spacing::{fitted_advance_26_6, EngineInputs, SpacingEngine},
+    renderer::RendererRole,
+    Config, Error, GeneratedFont, Glyph, MissingGlyphs,
+};
 use std::collections::{BTreeSet, HashMap};
+
+/// Selectable spacing model; see [`SpacingModel`] for the model contracts.
+pub use crate::layout_spacing::SpacingModel;
 
 /// Maximum canvas width or height in pixels.
 pub const MAX_CANVAS_DIM: u32 = 4096;
@@ -139,16 +147,17 @@ pub struct RenderedText {
 /// shape, then canvas allocation. Blank requests validate settings, font,
 /// axes and palette before returning the background canvas.
 pub fn render_text(font_data: &[u8], request: &TextRenderRequest) -> Result<RenderedText, Error> {
-    render_inner(font_data, request, None)
+    render_inner(font_data, request, None, 0.0, SpacingModel::Auto)
 }
 
 /// Render bounded multi-line text with an explicit stable renderer role.
 ///
 /// `Baseline` is the approved production path: shaping, metrics, kerning and
 /// bitmaps come from `generate()` unchanged, so this equals [`render_text`]
-/// bit-for-bit. `Reference` and `Candidate` keep that same `generate()` output
-/// for validation, layout, advances, kerning and metrics, and replace only
-/// each monochrome glyph's bitmap box with the role capture (`mono_1bit`;
+/// bit-for-bit. `Reference` keeps its layout and replaces monochrome bitmaps.
+/// `Candidate` uses fitted advances and experimental rounded source-gap pair
+/// placement, with bearing-delta fallback and source line metrics.
+/// The role capture uses `mono_1bit`;
 /// extensions `none` for reference, `diagonal-01` for candidate). Preview
 /// depths other than 1/3-bit, candidate hinting other than `Auto`, and a
 /// candidate request without the `candidate` feature fail explicitly.
@@ -161,22 +170,97 @@ pub fn render_text_with_renderer(
     request: &TextRenderRequest,
     role: RendererRole,
 ) -> Result<RenderedText, Error> {
+    render_text_with_renderer_and_spacing(font_data, request, role, 0.0)
+}
+
+/// Preview tracking: add a signed pixel offset to every available glyph's
+/// advance. Negative offsets preserve neutral ASCII word gaps; positive
+/// offsets widen spaces too. Source kerning and geometric corrections remain
+/// intact. Mono rounds the offset to whole pixels and limits
+/// tightening so normally separated source pairs retain a blank column. Fixed
+/// pitch, tabular digits and intentional source overlaps bypass the pair floor;
+/// Gray retains fractional tracking with the same word-gap policy.
+/// Glyph outlines and bitmaps never change. Zero retains the existing rendering
+/// path; line measurement and wrapping use the same constrained advances.
+pub fn render_text_with_renderer_and_spacing(
+    font_data: &[u8],
+    request: &TextRenderRequest,
+    role: RendererRole,
+    letter_spacing_px: f32,
+) -> Result<RenderedText, Error> {
+    render_text_with_spacing_model(
+        font_data,
+        request,
+        role,
+        letter_spacing_px,
+        SpacingModel::Auto,
+    )
+}
+
+/// Render bounded multi-line text with an explicit renderer role, preview
+/// tracking and a selectable [`SpacingModel`].
+///
+/// `Auto` keeps the default contracts: the working candidate lays out with
+/// fitted advances and the projected source-gap pair model, while the
+/// approved baseline and the independent reference use source linear
+/// advances plus source pair kerning. Explicit `Source` keeps source linear
+/// advances and source kerning with the same role's glyph bitmaps; explicit
+/// `Fitted` uses the same role report's returned hinted advances with
+/// bearing correction where that role provides metadata; explicit
+/// `Projected` uses same-role fitted metrics with the source-gap pair model
+/// (fitted fallback for unsupported pairs). Gray and other non-monochrome
+/// depths always use source layout: explicit non-`Auto` models fail there.
+/// A disabled source kern config stays off under every model. The baseline's
+/// own render report is captured only for explicit `Fitted`/`Projected`,
+/// never for default production.
+pub fn render_text_with_spacing_model(
+    font_data: &[u8],
+    request: &TextRenderRequest,
+    role: RendererRole,
+    letter_spacing_px: f32,
+    model: SpacingModel,
+) -> Result<RenderedText, Error> {
     #[cfg(not(feature = "candidate"))]
     if role == RendererRole::Candidate {
         return Err(fail(
             "candidate rendering requires the candidate Cargo feature",
         ));
     }
-    render_inner(font_data, request, Some(role))
+    if !letter_spacing_px.is_finite() || !(-16.0..=16.0).contains(&letter_spacing_px) {
+        return Err(fail("letter_spacing_px must be finite and within -16..=16"));
+    }
+    if model != SpacingModel::Auto && request.config.output_bits != 1 {
+        return Err(fail(format!(
+            "spacing model {} requires monochrome output_bits 1, got {}",
+            spacing_model_name(model),
+            request.config.output_bits
+        )));
+    }
+    render_inner(font_data, request, Some(role), letter_spacing_px, model)
 }
 
-/// Shared validation/layout/compositing pipeline behind [`render_text`] and
-/// [`render_text_with_renderer`]; `None` and `Some(Baseline)` both take the
-/// approved `generate()` path unchanged.
+/// Stable lowercase spacing-model name for capability errors.
+fn spacing_model_name(model: SpacingModel) -> &'static str {
+    match model {
+        SpacingModel::Auto => "auto",
+        SpacingModel::Source => "source",
+        SpacingModel::Fitted => "fitted",
+        SpacingModel::Projected => "projected",
+    }
+}
+
+/// Shared validation/layout/compositing pipeline behind [`render_text`],
+/// [`render_text_with_renderer`] and [`render_text_with_spacing_model`];
+/// `None` and `Some(Baseline)` with [`SpacingModel::Auto`] both take the
+/// approved `generate()` path unchanged. All numerical spacing decisions
+/// (advance choice, kern, bearing/projected corrections, tracking, minimum)
+/// run through the [`SpacingEngine`] built below.
 fn render_inner(
     font_data: &[u8],
     request: &TextRenderRequest,
     role: Option<RendererRole>,
+    letter_spacing_px: f32,
+    model: SpacingModel,
 ) -> Result<RenderedText, Error> {
     if !(1..=MAX_CANVAS_DIM).contains(&request.width) {
         return Err(fail("canvas width must be within 1..=4096"));
@@ -272,35 +356,147 @@ fn render_inner(
         Err(error) => return Err(error),
     };
     let mut generated = generated;
-    // Preview roles reuse the approved `generate()` output above for shaping
-    // support, missing-glyph policy, metrics, advances and kerning, then swap
-    // in only the role's glyph bitmaps so layout never diverges. Baseline
-    // keeps the approved bitmaps verbatim.
-    if let Some(role @ (RendererRole::Reference | RendererRole::Candidate)) =
-        role.filter(|_| generated.config.output_bits == 1)
-    {
-        let profile = crate::reference::PROFILE_MONO_1BIT;
-        let extensions = match role {
-            RendererRole::Reference => crate::reference::EXTENSIONS_NONE,
-            _ => crate::baseline::EXTENSIONS_DIAGONAL_01,
+    let mono = generated.config.output_bits == 1;
+    // Source advances before any role swap; explicit Source restores these
+    // while fitted-family models take the same role report's advances.
+    let source_advances: HashMap<u32, i32> = generated
+        .glyphs
+        .iter()
+        .map(|glyph| (glyph.codepoint, glyph.advance_26_6))
+        .collect();
+    // Auto retains the current paths exactly: the working candidate in
+    // monochrome lays out projected, every other role/profile lays out source.
+    let legacy_projected =
+        model == SpacingModel::Auto && role == Some(RendererRole::Candidate) && mono;
+    let resolved = match model {
+        SpacingModel::Auto => {
+            if legacy_projected {
+                SpacingModel::Projected
+            } else {
+                SpacingModel::Source
+            }
+        }
+        explicit => explicit,
+    };
+    let explicit = model != SpacingModel::Auto;
+    // Role captures reuse the approved `generate()` output above for shaping
+    // support, missing-glyph policy, line metrics and source kerning. The
+    // baseline's own report is captured only for explicit fitted-family
+    // models, never for default production; like the candidate capture it
+    // needs automatic hinting.
+    let needs_report = mono
+        && match role {
+            Some(RendererRole::Reference | RendererRole::Candidate) => true,
+            Some(RendererRole::Baseline) => {
+                explicit && matches!(resolved, SpacingModel::Fitted | SpacingModel::Projected)
+            }
+            None => false,
         };
+    if needs_report
+        && role == Some(RendererRole::Baseline)
+        && generated.config.hinting != crate::Hinting::Auto
+    {
+        return Err(fail(format!(
+            "spacing model {} for baseline requires automatic hinting, got {:?}",
+            spacing_model_name(resolved),
+            generated.config.hinting
+        )));
+    }
+    let role_report = if needs_report {
+        let selected_role = role.unwrap_or(RendererRole::Baseline);
         let preview = crate::reference::ReferenceRequest {
-            profile: profile.to_string(),
-            extensions: extensions.to_string(),
+            profile: crate::reference::PROFILE_MONO_1BIT.to_string(),
+            extensions: if selected_role == RendererRole::Reference {
+                crate::reference::EXTENSIONS_NONE.to_string()
+            } else {
+                crate::baseline::EXTENSIONS_DIAGONAL_01.to_string()
+            },
             settings: generated.config.clone(),
         };
-        let report = crate::renderer::render(font_data, &preview, role)?;
-        swap_bitmaps(&mut generated, &report, role)?;
+        Some(crate::renderer::render(font_data, &preview, selected_role)?)
+    } else {
+        None
+    };
+    if let Some(report) = &role_report {
+        swap_bitmaps(
+            &mut generated,
+            report,
+            role.unwrap_or(RendererRole::Baseline),
+        )?;
     }
+    // Capture adapters supply immutable metric alternatives. The spacing
+    // engine chooses between them; changing a model never mutates glyphs.
+    let fitted_advances = role_report
+        .as_ref()
+        .map(|report| {
+            report
+                .records
+                .iter()
+                .map(|record| {
+                    (
+                        record.codepoint,
+                        fitted_advance_26_6(record, generated.config.metric_rounding).0,
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_else(|| source_advances.clone());
+    let bearing_deltas = role_report
+        .as_ref()
+        .map(|report| {
+            report
+                .records
+                .iter()
+                .filter_map(|record| {
+                    record
+                        .side_bearing_deltas_26_6
+                        .map(|deltas| (record.codepoint, deltas))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let tracking_26_6 = SpacingEngine::normalize_tracking_offset(mono, letter_spacing_px);
+    let geometry = if mono && (resolved == SpacingModel::Projected || tracking_26_6 != 0) {
+        let mut settings = generated.config.clone();
+        settings.hinting = crate::Hinting::None;
+        let source = crate::reference::reference(
+            font_data,
+            &crate::reference::ReferenceRequest {
+                profile: crate::reference::PROFILE_MONO_1BIT.to_string(),
+                extensions: crate::reference::EXTENSIONS_NONE.to_string(),
+                settings,
+            },
+        )?;
+        Some(crate::mono_spacing::PairSpacing::for_output(
+            font_data, &source, &generated,
+        )?)
+    } else {
+        None
+    };
     let levels = 1u32 << generated.config.output_bits;
     let map = palette_map(&request.foreground, request.palette.as_deref(), levels)?;
     let glyphs: HashMap<u32, &Glyph> = generated.glyphs.iter().map(|g| (g.codepoint, g)).collect();
     // Bounded by repertoire^2 (<= 1024^2) via `generate()`; per-pair lookup is O(1).
-    let kerning: HashMap<(u32, u32), i32> = generated
-        .kerning
-        .iter()
-        .map(|k| ((k.left, k.right), k.adjustment_26_6))
-        .collect();
+    let engine = SpacingEngine::new(EngineInputs {
+        model: resolved,
+        source_advances_26_6: source_advances,
+        fitted_advances_26_6: fitted_advances,
+        kern_26_6: generated
+            .kerning
+            .iter()
+            .map(|k| ((k.left, k.right), k.adjustment_26_6))
+            .collect(),
+        bearing_deltas_26_6: bearing_deltas,
+        pair: if resolved == SpacingModel::Projected {
+            geometry.as_ref()
+        } else {
+            None
+        },
+        minimum: geometry.as_ref(),
+        apply_kerning: generated.config.kerning,
+        mono,
+        letter_spacing_px,
+    })?;
     let metrics = &generated.metrics;
     let line_height_px = ((i64::from(metrics.ascent_26_6) - i64::from(metrics.descent_26_6)
         + i64::from(metrics.line_gap_26_6)
@@ -310,8 +506,7 @@ fn render_inner(
     let ascent_px = (i64::from(metrics.ascent_26_6) + 63).div_euclid(64);
     let limit_26_6 = i64::from(request.width) * 64;
     let layout = Layout {
-        glyphs: &glyphs,
-        kerning: &kerning,
+        engine,
         wrap: request.wrap,
         limit_26_6,
     };
@@ -422,8 +617,9 @@ fn role_name(role: RendererRole) -> &'static str {
 }
 
 /// Replace only each glyph's bitmap box with the role capture's record for
-/// the same codepoint. Advances, glyph ids, metrics, kerning and the skipped
-/// set stay on the approved `generate()` output so layout is identical.
+/// the same codepoint. Advances follow the spacing model and are applied
+/// separately; glyph ids, line metrics, source kerning and the skipped set
+/// remain shared.
 fn swap_bitmaps(
     generated: &mut GeneratedFont,
     report: &crate::reference::ReferenceReport,
@@ -498,25 +694,22 @@ impl LineBuild {
 }
 
 struct Layout<'a> {
-    glyphs: &'a HashMap<u32, &'a Glyph>,
-    kerning: &'a HashMap<(u32, u32), i32>,
+    engine: SpacingEngine<'a>,
     wrap: WrapMode,
     limit_26_6: i64,
 }
 
 impl Layout<'_> {
     /// Advance of `ch` after `prev`, or `None` for Skip-missing glyphs.
-    fn advance(&self, prev: Option<u32>, ch: char) -> Option<i64> {
-        let glyph = self.glyphs.get(&(ch as u32))?;
-        let kern = match prev {
-            Some(left) => self.kerning.get(&(left, ch as u32)).copied().unwrap_or(0),
-            None => 0,
-        };
-        Some(i64::from(glyph.advance_26_6) + i64::from(kern))
+    /// Wrapping simulation and [`Layout::push`] share the engine's placement,
+    /// so measurement and placement never diverge.
+    fn advance(&self, pen: i64, prev: Option<u32>, ch: char) -> Option<i64> {
+        let (_, next) = self.engine.place(pen, prev, ch as u32)?;
+        next.checked_sub(pen)
     }
 
     fn push(&self, line: &mut LineBuild, ch: char, byte: usize, len: usize) -> Result<(), Error> {
-        let Some(glyph) = self.glyphs.get(&(ch as u32)) else {
+        if !self.engine.has_glyph(ch as u32) {
             // Skip-missing glyphs contribute no advance and break kern adjacency.
             line.last = None;
             line.byte_end = byte + len;
@@ -526,18 +719,13 @@ impl Layout<'_> {
             return Ok(());
         };
         // The pair kern shifts the current glyph origin; the pen then advances
-        // by the glyph's own advance.
-        let kern = match line.last {
-            Some(left) => self.kerning.get(&(left, ch as u32)).copied().unwrap_or(0),
-            None => 0,
-        };
-        let origin = line
-            .pen_26_6
-            .checked_add(i64::from(kern))
+        // by the glyph's own advance. Both come from the engine's single
+        // placement operation.
+        let (origin, next) = self
+            .engine
+            .place(line.pen_26_6, line.last, ch as u32)
             .ok_or_else(|| fail("layout advance overflow"))?;
-        line.pen_26_6 = origin
-            .checked_add(i64::from(glyph.advance_26_6))
-            .ok_or_else(|| fail("layout advance overflow"))?;
+        line.pen_26_6 = next;
         if line.placed.is_empty() {
             line.byte_start = byte;
         }
@@ -557,13 +745,13 @@ impl Layout<'_> {
         let mut pen = pen;
         let mut last = last;
         for (ch, _, _) in extra {
-            match self.advance(last, *ch) {
-                None => last = None,
-                Some(advance) => {
-                    pen = pen.checked_add(advance)?;
-                    last = Some(*ch as u32);
-                }
+            if !self.engine.has_glyph(*ch as u32) {
+                last = None;
+                continue;
             }
+            let (_, next) = self.engine.place(pen, last, *ch as u32)?;
+            pen = next;
+            last = Some(*ch as u32);
         }
         Some(pen)
     }
@@ -585,7 +773,7 @@ impl Layout<'_> {
                 let mut line = LineBuild::empty(paragraph.start);
                 for (ch, byte, len) in &paragraph.chars {
                     if !line.placed.is_empty() {
-                        let advance = self.advance(line.last, *ch).unwrap_or(0);
+                        let advance = self.advance(line.pen_26_6, line.last, *ch).unwrap_or(0);
                         if line.pen_26_6.checked_add(advance).unwrap_or(i64::MAX) > self.limit_26_6
                         {
                             lines.push(std::mem::replace(&mut line, LineBuild::empty(*byte)));
@@ -640,7 +828,7 @@ impl Layout<'_> {
                 // Overlong word: character fallback for this word only.
                 for (ch, byte, len) in word.drain(..) {
                     if !line.placed.is_empty() {
-                        let advance = self.advance(line.last, ch).unwrap_or(0);
+                        let advance = self.advance(line.pen_26_6, line.last, ch).unwrap_or(0);
                         if line.pen_26_6.checked_add(advance).unwrap_or(i64::MAX) > self.limit_26_6
                         {
                             lines.push(std::mem::replace(line, LineBuild::empty(byte)));

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,18 +18,54 @@ export function configureWeb(eleventyConfig, options = {}) {
   let comparisons = [];
   let activeComparison = null;
   let versionRoles = null;
+  // Cache-busting version for the served modules: a deterministic content
+  // hash of both scripts, their shared display-scaling helper, and the
+  // staged WASM renderer bytes. Missing staged files hash as fixed markers
+  // so a build without WASM (tests, degraded preview) still emits a stable
+  // version.
+  let assetVersion = "missing";
+  // Served module sources hashed into the version. Tests may override this
+  // directory with an isolated copy; the served output keeps the same layout.
+  const assetRoot = options.assetRoot ?? path.join(webRoot, "assets");
+  async function computeAssetVersion(outputDir) {
+    // Both scripts statically import display-scaling.js, and a bare relative
+    // specifier never inherits the parent's query, so helper bytes join the
+    // version and the emitted helper request URLs carry it (below).
+    const parts = [
+      await fs.readFile(path.join(assetRoot, "index.js")),
+      await fs.readFile(path.join(assetRoot, "interactive.js")),
+      await fs.readFile(path.join(assetRoot, "display-scaling.js")),
+    ];
+    for (const artifact of ["font_wasm.js", "font_wasm_bg.wasm"]) {
+      try {
+        parts.push(await fs.readFile(path.join(outputDir, "assets/wasm", artifact)));
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+        parts.push(Buffer.from(`missing:assets/wasm/${artifact}`));
+      }
+    }
+    const hash = createHash("sha256");
+    for (const part of parts) {
+      hash.update(Buffer.from(String(part.length)));
+      hash.update(Buffer.from([0]));
+      hash.update(part);
+    }
+    return hash.digest("hex").slice(0, 16);
+  }
   eleventyConfig.addWatchTarget(path.join(specimenRoot, "published.json"));
   eleventyConfig.addWatchTarget(path.join(specimenRoot, "active.json"));
   eleventyConfig.addWatchTarget(path.join(specimenRoot, "comparisons/index.json"));
-  eleventyConfig.addWatchTarget(path.join(webRoot, "assets/"));
+  eleventyConfig.addWatchTarget(assetRoot);
   eleventyConfig.addWatchTarget(path.join(webRoot, "lib/"));
-  eleventyConfig.addPassthroughCopy({ [path.join(webRoot, "assets")]: "assets" });
+  eleventyConfig.addPassthroughCopy({ [assetRoot]: "assets" });
   eleventyConfig.addGlobalData("specimens", () => specimens);
   eleventyConfig.addGlobalData("comparisons", () => comparisons);
   eleventyConfig.addGlobalData("activeComparison", () => activeComparison);
   eleventyConfig.addGlobalData("versionRoles", () => versionRoles);
+  eleventyConfig.addGlobalData("assetVersion", () => assetVersion);
   eleventyConfig.addGlobalData("glyphPages", () => glyphPages(comparisons));
   eleventyConfig.on("eleventy.before", async ({ directories }) => {
+    assetVersion = await computeAssetVersion(path.resolve(directories.output));
     for (const obsolete of ["reviews", "review-content"]) {
       await fs.rm(path.join(path.resolve(directories.output), obsolete), { recursive: true, force: true });
     }
@@ -66,8 +103,6 @@ export function configureWeb(eleventyConfig, options = {}) {
         for (const group of family.sizes) {
           const comparisonSize = comparisonFamily?.sizes.find((candidate) => candidate.size_px === group.size_px && sameAxes(candidate.axes, group.axes)) ?? null;
           group.glyphPreview = comparisonSize?.glyphs.length ? comparisonSize : null;
-          group.attentionGroups = comparisonSize?.attentionGroups ?? [];
-          group.attentionInitiallyVisible = comparisonSize?.attentionInitiallyVisible ?? false;
         }
       }
     }
@@ -101,7 +136,20 @@ export function configureWeb(eleventyConfig, options = {}) {
     }
     await publishInteractive(interactive, path.resolve(directories.output));
   });
+  // Point the emitted consumers at the versioned helper URL. Sources keep
+  // bare specifiers so Node tests can import them; only output copies change.
+  async function versionHelperImports(outputDir) {
+    for (const consumer of ["index.js", "interactive.js"]) {
+      const file = path.join(outputDir, "assets", consumer);
+      const text = await fs.readFile(file, "utf8");
+      const versioned = text
+        .replaceAll(/(\.\/display-scaling\.js)(\?v=[0-9a-f]+)?/g, "$1")
+        .replaceAll("./display-scaling.js", `./display-scaling.js?v=${assetVersion}`);
+      if (versioned !== text) await fs.writeFile(file, versioned);
+    }
+  }
   eleventyConfig.on("eleventy.after", async ({ directories }) => {
+    await versionHelperImports(path.resolve(directories.output));
     await removeStaleGlyphPages(comparisons, path.resolve(directories.output));
   });
   eleventyConfig.setNunjucksEnvironmentOptions({

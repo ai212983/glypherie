@@ -21,7 +21,7 @@ disabled parity before publishing new specimens.
 ## Iteration status
 
 001.02 is the current accepted model, with no newer active candidate. See the accepted 001.02 policy at the end and
-its [acceptance record](../../../../docs/revisions/001/02-light-continuity.md#acceptance-and-promotion-2026-10-02).
+its [scope and limits](../../../../docs/revisions/001/02-light-continuity.md#scope-and-limits).
 The following 001.01 sections retain the historical foundation; 001.02 supersedes their integer-width transfer and
 coverage-only conversion descriptions.
 
@@ -29,7 +29,7 @@ coverage-only conversion descriptions.
 published quality is acceptable. Ordinary automatic 1-bit generation now enables the accepted diagonal constraints
 and source-relative width policy. The independent registry renderer remains the reference. Broader unpublished
 observations remain documented for future investigation; existing mechanical and conservative regression guards remain
-in force. See the [acceptance record](../../../../docs/revisions/001/01-diagonal-weight.md#acceptance-and-production-promotion-2026-10-02).
+in force. See the [scope and limits](../../../../docs/revisions/001/01-diagonal-weight.md#scope-and-limits).
 
 ## Experimental policy
 

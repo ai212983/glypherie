@@ -151,6 +151,9 @@ pub enum Hinting {
 /// of the glyph. This captures those metrics.
 #[derive(Copy, Clone, Default, Debug)]
 pub struct AdjustedMetrics {
+    /// FreeType afloader phantom-point rounding deltas (left, right), in 26.6.
+    /// Exposed only by the enabled automatic Mono model for spacing.
+    pub side_bearing_deltas_26_6: Option<[i32; 2]>,
     /// Experimental pair counts: detected, constrained, and unapplied.
     pub diagonal_pairs: Option<[u32; 3]>,
     /// True if the underlying glyph contains flags indicating the
@@ -439,6 +442,7 @@ impl<'a> OutlineGlyph<'a> {
                     };
 
                     Ok(AdjustedMetrics {
+                        side_bearing_deltas_26_6: None,
                         has_overlaps: outline.has_overlaps,
                         lsb: Some(lsb),
                         advance_width: Some(advance_width),
@@ -450,6 +454,7 @@ impl<'a> OutlineGlyph<'a> {
                 let subfont = cff.subfont(*subfont_ix, ppem, coords)?;
                 let advance_width = cff.draw(&subfont, *glyph_id, coords, false, pen)?;
                 Ok(AdjustedMetrics {
+                    side_bearing_deltas_26_6: None,
                     has_overlaps: false,
                     lsb: None,
                     advance_width,

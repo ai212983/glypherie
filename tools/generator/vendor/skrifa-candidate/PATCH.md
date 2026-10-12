@@ -20,16 +20,28 @@ disabled parity before publishing new specimens.
 
 ## Iteration status
 
-001.02 is the current accepted model, with no newer active candidate. See the accepted 001.02 policy at the end and
-its [acceptance record](../../../../docs/revisions/001/02-light-continuity.md#acceptance-and-promotion-2026-10-02).
+001.03 is the working spacing candidate; 001.02 remains the accepted production model. See the accepted 001.02 policy at the end and
+its [scope and limits](../../../../docs/revisions/001/02-light-continuity.md#scope-and-limits).
 The following 001.01 sections retain the historical foundation; 001.02 supersedes their integer-width transfer and
 coverage-only conversion descriptions.
+
+### Working monochrome spacing policy
+
+The candidate exports the actual rounded advance and phantom-point bearing deltas already computed by the inherited
+autohinter. The added deltas follow pinned FreeType `afloader.c` lines 422–491; fixed-width and equal-width digit
+advances reset deltas to zero as in lines 537–555. Disabled and embedded rendering expose no deltas; the outline and
+raster fitting are unchanged. The shared layout applies FreeType's documented integer-positioning correction alongside
+the font's source pair kerning. Applying this to the existing fractional horizontal fitting is a project hypothesis,
+requiring optical assessment in open 001.03. Production baseline source and policy stay approved 001.02.
+
+Sources: [pinned afloader](https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L422),
+[integer placement and side-bearing deltas](https://freetype.org/freetype2/docs/reference/ft2-glyph_retrieval.html#ft_glyphslotrec).
 
 001.01 is closed and accepted for production on 2026-10-02 following the user's explicit assessment that all current
 published quality is acceptable. Ordinary automatic 1-bit generation now enables the accepted diagonal constraints
 and source-relative width policy. The independent registry renderer remains the reference. Broader unpublished
 observations remain documented for future investigation; existing mechanical and conservative regression guards remain
-in force. See the [acceptance record](../../../../docs/revisions/001/01-diagonal-weight.md#acceptance-and-production-promotion-2026-10-02).
+in force. See the [scope and limits](../../../../docs/revisions/001/01-diagonal-weight.md#scope-and-limits).
 
 ## Experimental policy
 
@@ -301,3 +313,30 @@ a project hypothesis grounded in FreeType's width policy and Shamir's shared fea
 parity. Synthetic transforms, source-width witnesses, the conservative join sweep and unchanged gray/disabled paths
 provide mechanical evidence. The user's web assessment accepted the current weight, continuity and placement tradeoffs,
 including the disclosed remaining binary upright step near weight 465. There is no active newer candidate.
+
+## Candidate compact rounded marks (001.03, 2026-10-03)
+
+`hint/round.rs` gives detached, filled quadratic contours independent source-derived horizontal and vertical diameters
+under the existing candidate Mono/default-script gate. The classifier requires curved intervals, a convex control cage
+with nonfolding joints, no overlapping/nested contour cages and no diagonal ownership conflict. This geometric separator
+is a project hypothesis; square marks, holes, tails, cubics and unprovable geometry retain ordinary fitting.
+
+[Microsoft's dot dimensions](https://learn.microsoft.com/en-us/typography/truetype/from-typeface-to-font-file),
+[Adobe's scoped hint influence](https://www.adobe.com/content/dam/acom/en/devnet/font/pdfs/T1_SPEC.pdf),
+[Hersch's proportional curve transfer](https://lspwww.epfl.ch/publications/typography/frsa.pdf),
+[FreeType's width management](https://freetype.org/autohinting/widths.html), and
+[Google Fonts' dot clearance example](https://googlefonts.github.io/how-to-hint-variable-fonts/) ground the feature roles.
+The adaptation is explicit project work: tight quadratic extrema at the requested source scale, a natural fractional
+horizontal source span with a one-pixel floor, an independent nearest-whole-pixel vertical diameter with the same floor,
+and proportional source-control transfer around the ordinary fitted center. Keeping the horizontal diameter fractional
+follows FreeType's warning that independent rounding exaggerates nearby widths relative to each other; it does not
+guarantee dot/stem column equality. The diameter
+measurement precedes style/x-height rescaling. The final transfer follows ordinary interpolation and owns every point of
+an accepted contour. It changes neither the accepted gradual stem-width policy nor raster thresholds.
+
+If resizing around the inherited center cannot keep one pixel of vertical clearance against a source-separated contour
+with overlapping horizontal projection, both axes fall back to ordinary fitting. Exterior mark bounds participate in
+bearing/advance deltas; phantom-origin translation can consequently change. No glyph, family, weight, size or iteration
+identifier selects the production logic. Gray, disabled and recorder paths bypass this feature. The approved baseline
+snapshot remains separate. The experiment is pending optical review; see the
+[mark model](../../../../docs/revisions/001/03-spacing-kerning.md#compact-marks-and-stem-ownership).

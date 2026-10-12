@@ -170,6 +170,25 @@ fn layout_and_raster_integrity_failures_are_separate_from_shape_signals() {
 }
 
 #[test]
+fn hinted_advance_policy_checks_scaler_metrics_without_allowing_arbitrary_changes() {
+    use font_generator::reference::AdvancePolicy;
+    let (source, upstream, mut candidate) = reports("mono_1bit");
+    candidate.advance_policy = AdvancePolicy::Hinted;
+    candidate.extensions = "diagonal-01".into();
+    let returned = candidate.records[0].hinted_advance_width.unwrap();
+    candidate.records[0].advance_26_6 = (returned * 64.0).round() as i32;
+    assert!(evaluate(&source, &upstream, &candidate).hard_invariants_pass);
+    candidate.records[0].advance_26_6 += 64;
+    assert!(!evaluate(&source, &upstream, &candidate).hard_invariants_pass);
+    candidate.records[0].hinted_advance_width = Some(f32::NAN);
+    assert!(!evaluate(&source, &upstream, &candidate).hard_invariants_pass);
+    let (source, upstream, mut gray) = reports("gray_3bit");
+    gray.advance_policy = AdvancePolicy::Hinted;
+    gray.extensions = "diagonal-01".into();
+    assert!(!evaluate(&source, &upstream, &gray).hard_invariants_pass);
+}
+
+#[test]
 fn dropout_policy_reproduces_delivered_pixels_and_keeps_independent_coverage_hard() {
     use font_generator::reference::RasterPolicy;
     let (mut source, mut upstream, mut candidate) = reports("mono_1bit");

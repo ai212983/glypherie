@@ -3,7 +3,7 @@ use crate::{
     probe::{lock_sha256, lock_version},
     reference::{ReferenceReport, ReferenceRequest},
     specimen_config::{self, RenderCase, RendererRole, VariantKind},
-    Config, Error, MetricRounding,
+    Config, Error, Hinting, MetricRounding,
 };
 use harfrust::{
     Feature, FontRef as ShapingFont, ShapeOptions, ShaperData, ShaperInstance, Tag, UnicodeBuffer,
@@ -126,6 +126,8 @@ pub struct Publication {
 struct Space {
     glyph_id: u32,
     advance_26_6: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    side_bearing_deltas_26_6: Option<[i32; 2]>,
 }
 
 #[derive(Serialize)]
@@ -202,6 +204,8 @@ fn renderer_identity(role: RendererRole) -> String {
         include_str!("probe.rs"),
         include_str!("raster.rs"),
         include_str!("spacing.rs"),
+        include_str!("mono_spacing.rs"),
+        include_str!("layout_spacing.rs"),
     ] {
         digest.update((source.len() as u64).to_le_bytes());
         digest.update(source.as_bytes());
@@ -283,6 +287,7 @@ fn space(data: &[u8], case: &RenderCase) -> Result<Option<Space>, Error> {
     Ok(Some(Space {
         glyph_id: gid.to_u32(),
         advance_26_6: fixed(advance, MetricRounding::Subpixel),
+        side_bearing_deltas_26_6: None,
     }))
 }
 
@@ -325,6 +330,52 @@ fn layout(
     let mut glyphs = Vec::new();
     let mut bounds = [0, 0, 0, 0];
     let mut singles = BTreeMap::new();
+    // Experimental candidate pair-gap model, shared with the interactive
+    // surface. Built only for Hinted (candidate Mono) reports; reference,
+    // baseline, gray and disabled paths keep `None` and their prior behavior.
+    // The source capture is independent and unhinted; errors remain explicit.
+    let (pair_spacing, source_advances) = if report.advance_policy
+        == crate::reference::AdvancePolicy::Hinted
+    {
+        let mut characters: String = records
+            .keys()
+            .filter_map(|codepoint| char::from_u32(*codepoint))
+            .collect();
+        if space.is_some() {
+            characters.push(' ');
+        }
+        let settings = Config {
+            size_px: report.size_px,
+            axes: report.axes.clone(),
+            hinting: Hinting::None,
+            output_bits: 1,
+            characters,
+            ..Config::default()
+        };
+        let request = ReferenceRequest {
+            profile: crate::reference::PROFILE_MONO_1BIT.to_string(),
+            extensions: crate::reference::EXTENSIONS_NONE.to_string(),
+            settings,
+        };
+        let source = crate::reference::reference(data, &request)?;
+        let spacing =
+            crate::mono_spacing::PairSpacing::from_font(data, &request.settings, &source, report)?;
+        let advances = source
+            .records
+            .iter()
+            .map(|record| (record.codepoint, record.advance_26_6))
+            .collect::<std::collections::HashMap<_, _>>();
+        (Some(spacing), advances)
+    } else {
+        let mut advances = records
+            .iter()
+            .map(|(cp, record)| (*cp, record.advance_26_6))
+            .collect::<std::collections::HashMap<_, _>>();
+        if let Some(space) = space {
+            advances.insert(' ' as u32, space.advance_26_6);
+        }
+        (None, advances)
+    };
     for (line_index, line) in text.split('\n').enumerate() {
         let chars: Vec<_> = line.chars().collect();
         let nominal: Vec<_> = chars
@@ -367,7 +418,10 @@ fn layout(
         bounds[3] = bounds[3].max(coordinate(
             i64::from(baseline) - i64::from(metrics.descent_26_6).div_euclid(64),
         )?);
-        let mut pen = 0_i64;
+        // Shaping attaches kerning to the left advance. Move that value into
+        // the engine's pair slot before the right glyph, applying it once.
+        // Keep the attached-left advance in exported placement metadata.
+        let mut shaped_kerns = Vec::with_capacity(chars.len());
         for ((ch, gid), position) in chars.iter().zip(&nominal).zip(shaped.glyph_positions()) {
             let single = if let Some(advance) = singles.get(ch) {
                 *advance
@@ -383,18 +437,69 @@ fn layout(
                 singles.insert(*ch, advance);
                 advance
             };
+            let adjustment = fixed(
+                (i64::from(position.x_advance) - i64::from(single)) as f32 * scale,
+                MetricRounding::Subpixel,
+            );
+            shaped_kerns.push(adjustment);
+        }
+        let mut advances = records
+            .iter()
+            .map(|(cp, record)| (*cp, record.advance_26_6))
+            .collect::<std::collections::HashMap<_, _>>();
+        let mut deltas = records
+            .iter()
+            .filter_map(|(cp, record)| record.side_bearing_deltas_26_6.map(|value| (*cp, value)))
+            .collect::<std::collections::HashMap<_, _>>();
+        if let Some(space) = space {
+            advances.insert(' ' as u32, space.advance_26_6);
+            if let Some(value) = space.side_bearing_deltas_26_6 {
+                deltas.insert(' ' as u32, value);
+            }
+        }
+        let mut kern_table = std::collections::HashMap::new();
+        for (pair, kern) in chars.windows(2).zip(&shaped_kerns) {
+            let key = (pair[0] as u32, pair[1] as u32);
+            if let Some(old) = kern_table.insert(key, *kern) {
+                if old != *kern {
+                    return Err(fail(
+                        "sample requires contextual kerning beyond pair spacing",
+                    ));
+                }
+            }
+        }
+        let engine =
+            crate::layout_spacing::SpacingEngine::new(crate::layout_spacing::EngineInputs {
+                model: if pair_spacing.is_some() {
+                    crate::layout_spacing::SpacingModel::Projected
+                } else {
+                    crate::layout_spacing::SpacingModel::Source
+                },
+                source_advances_26_6: source_advances.clone(),
+                fitted_advances_26_6: advances,
+                kern_26_6: kern_table,
+                bearing_deltas_26_6: deltas,
+                pair: pair_spacing.as_ref(),
+                minimum: None,
+                apply_kerning: true,
+                mono: report.profile == crate::reference::PROFILE_MONO_1BIT,
+                letter_spacing_px: 0.0,
+            })?;
+        let mut pen = 0_i64;
+        let mut previous = None;
+        for ((ch, gid), adjustment) in chars.iter().zip(&nominal).zip(&shaped_kerns) {
             let linear = if *ch == ' ' {
                 space.unwrap().advance_26_6
             } else {
                 records[&(*ch as u32)].advance_26_6
             };
-            let adjustment = fixed(
-                (i64::from(position.x_advance) - i64::from(single)) as f32 * scale,
-                MetricRounding::Subpixel,
-            );
             let advance = linear
-                .checked_add(adjustment)
+                .checked_add(*adjustment)
                 .ok_or_else(|| fail("layout advance overflow"))?;
+            let (origin, next) = engine
+                .place(pen, previous, *ch as u32)
+                .ok_or_else(|| fail("layout advance overflow"))?;
+            pen = origin;
             let x = i32::try_from((pen + 32).div_euclid(64))
                 .map_err(|_| fail("layout position overflow"))?;
             if *ch != ' ' {
@@ -417,9 +522,10 @@ fn layout(
                 y_px: baseline,
                 advance_26_6: advance,
             });
-            pen += i64::from(advance);
+            pen = next;
+            previous = Some(*ch as u32);
             bounds[2] = bounds[2].max(
-                i32::try_from((pen + 63).div_euclid(64))
+                i32::try_from((pen + i64::from(*adjustment) + 63).div_euclid(64))
                     .map_err(|_| fail("layout extent overflow"))?,
             );
         }
@@ -542,7 +648,7 @@ fn capture(loaded: &specimen_config::LoadedSpecimens) -> Result<CapturedFonts, E
             .iter()
             .find(|f| f.id == case.family_id)
             .unwrap();
-        let space = space(data, &case)?;
+        let mut space = space(data, &case)?;
         let settings = Config {
             size_px: case.size_px,
             axes: case.axes.clone(),
@@ -563,6 +669,20 @@ fn capture(loaded: &specimen_config::LoadedSpecimens) -> Result<CapturedFonts, E
             Ok(report) => (Some(report), None),
             Err(error) => (None, Some(error.to_string())),
         };
+        if report
+            .as_ref()
+            .is_some_and(|report| report.advance_policy == crate::reference::AdvancePolicy::Hinted)
+        {
+            if let Some(space) = space.as_mut() {
+                let mut space_request = request.clone();
+                space_request.settings.characters = " ".into();
+                let space_report =
+                    crate::renderer::render(data, &space_request, variant.renderer())?;
+                let record = &space_report.records[0];
+                space.advance_26_6 = record.advance_26_6;
+                space.side_bearing_deltas_26_6 = record.side_bearing_deltas_26_6;
+            }
+        }
         let layouts = loaded
             .config
             .samples
@@ -737,7 +857,11 @@ fn build_packages(
         let composition = json(&serde_json::json!({
             "schema_version": "specimen-composition-v1", "generation_sha256": generation_sha256,
             "implementation_sha256": hash(include_bytes!("specimens.rs")), "harfrust_version": lock_version("harfrust"),
-            "layout_policy": "canonical-linear-26.6-plus-harfrust-run-adjustments",
+            "layout_policy": if variant.renderer() == RendererRole::Candidate {
+                "canonical-26.6-plus-projected-source-gap-pairs"
+            } else {
+                "canonical-linear-26.6-plus-harfrust-run-adjustments"
+            },
             "features": {"kern": true, "liga": false, "clig": false, "calt": false},
             "origin_rounding": "nearest-pixel-half-toward-positive", "overlap": "maximum-ink", "padding_px": PADDING,
             "palette": "255-round(level*255/(2^output_bits-1))", "items": compositions

@@ -6,12 +6,12 @@ use crate::{
     },
     validate_config, Error, FontMetrics, Hinting,
 };
-use sha2::{Digest, Sha256};
 use fitting_skrifa::{
     instance::Size,
     outline::{DrawSettings, Engine, HintingInstance, HintingOptions, SmoothMode, Target},
     FontRef, MetadataProvider,
 };
+use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 
 pub const EXTENSIONS_DIAGONAL_01: &str = "diagonal-01";
@@ -138,6 +138,11 @@ pub fn capture(
     }
     let advances = font.glyph_metrics(size, &location);
     let gray = request.profile == PROFILE_GRAY_3BIT;
+    let advance_policy = if enabled {
+        ADVANCE_POLICY
+    } else {
+        crate::reference::AdvancePolicy::Linear
+    };
     let target_name = if gray { "smooth" } else { "mono" }.to_string();
     let mut records = Vec::new();
     let mut missing_codepoints = Vec::new();
@@ -167,7 +172,16 @@ pub fn capture(
         let advance = advances
             .advance_width(gid)
             .ok_or_else(|| fail(format!("missing advance U+{:04X}", ch as u32)))?;
+        let advance = if advance_policy == crate::reference::AdvancePolicy::Hinted {
+            adjusted.advance_width.unwrap_or(advance)
+        } else {
+            advance
+        };
+        if !advance.is_finite() {
+            return Err(fail("nonfinite fitted advance"));
+        }
         records.push(ReferenceRecord {
+            side_bearing_deltas_26_6: side_bearing_deltas(&adjusted, enabled),
             raster_policy: raster_policy(enabled),
             diagonal_pairs: adjusted.diagonal_pairs,
             codepoint: ch as u32,
@@ -207,6 +221,7 @@ pub fn capture(
         return Err(fail("repertoire contains no available glyphs"));
     }
     Ok(ReferenceReport {
+        advance_policy,
         source_sha256: format!("{:x}", Sha256::digest(data)),
         size_px: config.size_px,
         axes: config.axes.clone(),

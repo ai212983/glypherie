@@ -3,6 +3,7 @@
 mod diagonal;
 mod edges;
 mod outline;
+mod round;
 
 use super::{
     metrics::{scale_style_metrics, Scale, UnscaledStyleMetrics},
@@ -126,6 +127,7 @@ fn hint_outline_impl(
             scaled_metrics.axes[0].widths[ix].fitted = fitted;
         }
     }
+    let natural_scale = *scale;
     let scale = &scaled_metrics.scale;
     let mut axis = Axis::default();
     let hint_top_to_bottom = metrics.style_class().script.hint_top_to_bottom;
@@ -138,6 +140,15 @@ fn hint_outline_impl(
     let mut diagonal_pairs = diagonal
         .as_ref()
         .map(|plan| [plan.len() as u32, 0, plan.len() as u32]);
+    // Independent compact-round dimensions are a candidate Mono experiment.
+    // Ordinary fitting supplies anchors; final contour-local transfer replaces
+    // its stem-width influence. Reference, Gray, disabled and AOT paths bypass it.
+    let round = (diagonal_enabled
+        && stem_relative
+        && scaled_metrics.scale.flags.contains(ScaleFlags::MONO)
+        && group == ScriptGroup::Default)
+        .then(|| round::Plan::new(outline, diagonal.as_ref(), Some(&natural_scale)))
+        .filter(|plan| plan.len() != 0);
     let diagonal_active = diagonal.as_ref().is_some_and(|plan| plan.len() != 0);
     let mut hard_y = if diagonal_active {
         alloc::vec![false; outline.points.len()]
@@ -258,6 +269,9 @@ fn hint_outline_impl(
     }
     if diagonal_active {
         outline::align_weak_points(outline, Dimension::Vertical);
+    }
+    if let Some(plan) = round {
+        plan.apply(outline, &mut hinted_metrics.edge_metrics);
     }
     HintedPlan {
         diagonal_pairs,

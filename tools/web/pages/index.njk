@@ -8,8 +8,8 @@ permalink: index.html
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Font preview</title>
   <link rel="stylesheet" href="./assets/index.css">
-  <script type="module" src="./assets/index.js"></script>
-  <script type="module" src="./assets/interactive.js"></script>
+  <script type="module" src="./assets/index.js?v={{ assetVersion }}"></script>
+  <script type="module" src="./assets/interactive.js?v={{ assetVersion }}"></script>
 </head>
 <body>
   <a class="skip-link" href="#specimens">Skip to specimens</a>
@@ -54,9 +54,14 @@ permalink: index.html
         <label for="zoom">Zoom</label>
         <output id="zoom-value" for="zoom">1×</output>
       </div>
-      <input id="zoom" type="range" min="0" max="3" step="1" value="0" aria-valuetext="1×" aria-describedby="zoom-help" disabled>
+      <input id="zoom" type="range" min="0" max="3" step="1" value="0" aria-valuetext="1×" disabled>
       <div class="zoom-stops" aria-hidden="true"><span>1×</span><span>2×</span><span>3×</span><span>4×</span></div>
-      <p id="zoom-help">Enlarge pixels to inspect detail.</p>
+      <p class="display-scale">Display scale: <output id="display-scale" title="Device pixels per CSS pixel, including browser zoom and display scaling.">—</output></p>
+      <label class="pixel-accurate" title="Each pixel of the interactive text maps to a whole number of screen pixels. Its displayed size adjusts slightly to the magnification actually achieved.">
+        <input id="pixel-accurate" type="checkbox" disabled>
+        <span>Pixel-accurate display</span>
+      </label>
+      <p class="pixel-accurate-status"><output id="pixel-accurate-status" aria-live="polite"></output></p>
     </div>
     </div>
     {% endif %}
@@ -94,6 +99,15 @@ permalink: index.html
         <div><dt>Classification</dt><dd>{{ family.metadataView.classificationLabel }}</dd></div>
         {% endif %}
       </dl>
+      <details class="font-kerning" data-kerning-details="{{ family.id }}">
+        <summary>Kerning pairs <span data-kerning-count></span></summary>
+        <p class="font-kerning-scope">Printable ASCII pairs at the selected size and axes. Values show the font’s adjustment in pixels.</p>
+        <label class="font-kerning-filter">Filter pairs
+          <input type="search" data-kerning-filter maxlength="8" autocomplete="off" spellcheck="false" placeholder="e.g. AV" aria-label="Filter kerning pairs for {{ family.name }}">
+        </label>
+        <p class="font-kerning-status" data-kerning-status role="status"></p>
+        <ul class="font-kerning-list" data-kerning-list aria-label="{{ family.name }} kerning pairs" tabindex="0"></ul>
+      </details>
       {% if family.interactive %}
       <section class="interactive-specimen" id="interactive-{{ family.id }}" data-interactive-family="{{ family.id }}"
         data-available="{{ family.interactive.available }}"
@@ -118,6 +132,30 @@ permalink: index.html
             </div>
           </div>
           {% endfor %}
+          <fieldset class="interactive-spacing">
+            <legend>Spacing and kerning</legend>
+            <div class="interactive-field">
+              <label for="interactive-{{ family.id }}-spacing">Spacing (px)</label>
+              <div class="interactive-axis">
+                <input id="interactive-{{ family.id }}-spacing" type="range" data-spacing
+                  min="-2" max="4" step="1" value="0">
+                <input type="number" data-spacing-number aria-label="Spacing (px)"
+                  min="-2" max="4" step="1" value="0">
+              </div>
+            </div>
+            <label class="interactive-field">Spacing model
+              <select data-spacing-model aria-describedby="interactive-{{ family.id }}-spacing-hint">
+                <option value="auto">Renderer default</option>
+                <option value="source">Source spacing</option>
+                <option value="fitted">Fitted metrics</option>
+                <option value="projected">Projected gap</option>
+              </select>
+            </label>
+            <label class="interactive-field">Kerning
+              <input type="checkbox" data-kerning checked>
+            </label>
+            <p class="interactive-spacing-hint" id="interactive-{{ family.id }}-spacing-hint" data-spacing-hint></p>
+          </fieldset>
           <label class="interactive-field">Preset
             <select data-preset>
               {% for preset in family.interactive.presets %}

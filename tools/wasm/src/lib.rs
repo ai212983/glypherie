@@ -1,7 +1,7 @@
 //! Browser WASM wrapper over the approved Rust font renderer.
 //!
 //! Thin ownership + conversion layer only: no fitting, no model code, no
-//! preview-matrix or attention logic lives here.
+//! preview-publication logic lives here.
 //!
 //! ## JS API
 //!
@@ -11,11 +11,13 @@
 //! const font = new Font(bytes); // `bytes`: Uint8Array; throws on invalid font
 //! try {
 //!   const meta = font.metadata(); // plain JS object (see below)
+//!   const kern = font.kerning_pairs(16, {}); // ASCII-subset source pair adjustments (see below)
 //!   const result = font.render({
 //!     text: "Hello", width: 200, height: 60,
 //!     size_px: 16, axes: {}, hinting: "auto", output_bits: 1,
 //!     mono_threshold: 128, gray_gamma: 1.0, kerning: true,
 //!     metric_rounding: "subpixel", missing_glyphs: "error",
+//!     letter_spacing_px: 0, // signed pixel offset, including spaces and kerned pairs
 //!     wrap: "word", align: "left",
 //!     foreground: [0, 0, 0, 255], background: [255, 255, 255, 255],
 //!     // palette: [[r,g,b,a], ...] // optional, exactly 1 << output_bits entries
@@ -55,9 +57,18 @@
 //! ### `renderer` selects the preview role
 //!
 //! `"baseline"` (the default) renders the approved production output.
-//! `"reference"` and `"candidate"` keep that output's validation, layout,
-//! advances, kerning and metrics and replace only monochrome glyph bitmaps
-//! with the role capture. Gray keeps the production target for every role.
+//! `"reference"` keeps the approved layout and replaces monochrome bitmaps.
+//! `"candidate"` uses its monochrome fitted advances and rounded source-gap
+//! pair placement, retaining source line metrics. Gray keeps the production target for every role.
+//! `letter_spacing_px` adds a signed pixel offset to each available glyph's
+//! advance after pair positioning. Negative offsets tighten letters while
+//! preserving neutral ASCII word gaps, including the preceding letter's
+//! trailing step; positive offsets also widen spaces. Mono rounds to whole
+//! pixels (half ties away from zero) and keeps normally separated source pairs
+//! at least one blank column. Source
+//! overlaps, fixed pitch and tabular digit pairs bypass the pair floor. Gray
+//! retains fractional tracking. Zero preserves neutral paths; finite values
+//! within -16..=16 are supported by every role and profile.
 //! Preview roles support 1-bit and 3-bit output; candidate uses automatic
 //! hinting. Unsupported combinations fail explicitly. The `candidate` role needs the crate's opt-in
 //! `preview` feature (the explicit preview artifact); a default production
@@ -74,6 +85,7 @@
 //! (`cargo run -p font_generator`), and a second raw export would widen this
 //! API for no browser use case. Reconsider if the host needs it.
 
+use font_generator::layout_spacing::SpacingModel;
 use font_generator::surface::{self, HAlign, RenderedText, TextRenderRequest, WrapMode};
 use font_generator::{renderer::RendererRole, Config, Hinting, MetricRounding, MissingGlyphs};
 use serde::{Deserialize, Serialize};
@@ -97,6 +109,17 @@ fn load_font(bytes: &[u8]) -> Result<Vec<u8>, String> {
 /// Pure-Rust core of [`Font::metadata`].
 fn metadata_value(data: &[u8]) -> Result<font_generator::metadata::FontMetadata, String> {
     font_generator::metadata::extract(data).map_err(|e| e.to_string())
+}
+
+/// Pure-Rust core of [`Font::kerning_pairs`]: ASCII-subset source pair
+/// adjustments at one size/axes coordinate. Returns the message as `String`
+/// so native tests can assert on it without touching `JsValue`.
+fn kerning_pairs_core(
+    data: &[u8],
+    size_px: f32,
+    axes: BTreeMap<String, f32>,
+) -> Result<font_generator::AsciiKerning, String> {
+    font_generator::ascii_kerning_pairs(data, size_px, &axes).map_err(|e| e.to_string())
 }
 
 /// Serialize a `Serialize` value to a *plain* JS object: `BTreeMap` fields
@@ -134,6 +157,28 @@ impl Font {
     pub fn metadata(&self) -> Result<JsValue, JsValue> {
         let meta = metadata_value(&self.data).map_err(js_error)?;
         to_plain_object(&meta)
+    }
+
+    /// Source-font horizontal pair adjustments for printable ASCII
+    /// (U+0020..=U+007E) at `size_px` with `axes` (a plain JS object mapping
+    /// axis tags to values, or null/undefined for font defaults). Returns a
+    /// plain JS object `{ pairs: [{ left, right, adjustment_26_6 }],
+    /// skipped_pairs }` with signed 26.6 pixel adjustments, omitting zero
+    /// pairs; `skipped_pairs` counts pairs that need more than scalar pair
+    /// kerning and are not listed. This is source data at the requested
+    /// size/axes, independent of the interactive render `kerning` toggle and
+    /// letter-spacing setting: no glyphs are rasterized and no render
+    /// requests or bitmaps change. Invalid settings and single-glyph shaping
+    /// failures throw their generator message as a JS string.
+    pub fn kerning_pairs(&self, size_px: f32, axes: JsValue) -> Result<JsValue, JsValue> {
+        let parsed: BTreeMap<String, f32> = if axes.is_undefined() || axes.is_null() {
+            BTreeMap::new()
+        } else {
+            serde_wasm_bindgen::from_value(axes)
+                .map_err(|e| js_error(format!("invalid axes: {e}")))?
+        };
+        let pairs = kerning_pairs_core(&self.data, size_px, parsed).map_err(js_error)?;
+        to_plain_object(&pairs)
     }
 
     /// Render bounded multi-line text; see the module docs for the spec shape.
@@ -176,6 +221,8 @@ fn validate_spec_keys(spec: &JsValue) -> Result<(), JsValue> {
                 | "background"
                 | "palette"
                 | "renderer"
+                | "letter_spacing_px"
+                | "spacing_model"
         ) {
             return Err(js_error(format!(
                 "invalid render spec: unknown field {key:?}"
@@ -216,6 +263,11 @@ fn default_background() -> [u8; 4] {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RenderSpec {
+    #[serde(default)]
+    spacing_model: SpacingModel,
+    /// Tracking offset; negative preserves word gaps, positive widens spaces.
+    #[serde(default)]
+    letter_spacing_px: f32,
     text: String,
     width: u32,
     height: u32,
@@ -325,11 +377,14 @@ fn render_parsed(font_data: &[u8], spec: &RenderSpec) -> Result<RenderedText, St
         palette: spec.palette.clone(),
     };
     // Baseline is the approved production path; other roles reuse its
-    // validation/layout and swap only glyph bitmaps.
-    match spec.renderer {
-        RendererArg::Baseline => surface::render_text(font_data, &request),
-        role => surface::render_text_with_renderer(font_data, &request, role.role()),
-    }
+    // validation, with candidate Mono spacing supplied by its model.
+    surface::render_text_with_spacing_model(
+        font_data,
+        &request,
+        spec.renderer.role(),
+        spec.letter_spacing_px,
+        spec.spacing_model,
+    )
     .map_err(|e| e.to_string())
 }
 
@@ -466,6 +521,55 @@ mod tests {
         assert_eq!(spec.foreground, [0, 0, 0, 255]);
         assert_eq!(spec.background, [255, 255, 255, 255]);
         assert!(spec.palette.is_none());
+        assert_eq!(spec.letter_spacing_px, 0.0);
+        assert_eq!(spec.spacing_model, SpacingModel::Auto);
+    }
+
+    #[test]
+    fn spacing_model_selection_is_explicit_and_independent_of_renderer() {
+        for name in ["auto", "source", "fitted", "projected"] {
+            let spec = spec_from(
+                json!({ "text": "A A", "width": 96, "height": 48, "spacing_model": name }),
+            )
+            .unwrap();
+            assert_eq!(spec.renderer, RendererArg::Baseline);
+            let output = render_parsed(FIXTURE, &spec).unwrap();
+            assert_eq!(output.lines.len(), 1);
+        }
+        assert!(spec_from(
+            json!({ "text": "A", "width": 64, "height": 32, "spacing_model": "guess" })
+        )
+        .is_err());
+        let mut gray = minimal_spec("A", 64, 32);
+        gray.output_bits = 3;
+        gray.spacing_model = SpacingModel::Projected;
+        assert!(render_parsed(FIXTURE, &gray).is_err());
+    }
+
+    #[test]
+    fn explicit_spacing_reaches_layout_including_spaces_and_kerning() {
+        let bytes = include_bytes!("../../../fonts/Roboto.ttf");
+        let mut spec = minimal_spec("AV A", 256, 48);
+        let neutral = render_parsed(bytes, &spec).unwrap();
+        spec.letter_spacing_px = 1.25;
+        let tracked = render_parsed(bytes, &spec).unwrap();
+        assert_eq!(
+            tracked.lines[0].width_26_6 - neutral.lines[0].width_26_6,
+            4 * 64
+        );
+        spec.output_bits = 3;
+        spec.letter_spacing_px = 0.0;
+        let gray_neutral = render_parsed(bytes, &spec).unwrap();
+        spec.letter_spacing_px = 1.25;
+        let gray_tracked = render_parsed(bytes, &spec).unwrap();
+        assert_eq!(
+            gray_tracked.lines[0].width_26_6 - gray_neutral.lines[0].width_26_6,
+            4 * 80
+        );
+        spec.letter_spacing_px = f32::NAN;
+        assert!(render_parsed(bytes, &spec)
+            .unwrap_err()
+            .contains("letter_spacing_px"));
     }
 
     #[test]
@@ -619,13 +723,31 @@ mod tests {
 
     #[cfg(feature = "preview")]
     #[test]
-    fn candidate_with_preview_feature_renders_shared_layout() {
+    fn candidate_with_preview_feature_preserves_line_structure_and_gray_layout() {
         let mut value = serde_json::to_value(minimal_spec("A A", 96, 48)).unwrap();
         value["renderer"] = serde_json::Value::String("candidate".into());
-        let spec: RenderSpec = serde_json::from_value(value).unwrap();
+        let spec: RenderSpec = serde_json::from_value(value.clone()).unwrap();
         let candidate = render_parsed(FIXTURE, &spec).unwrap();
         let baseline = render_parsed(FIXTURE, &minimal_spec("A A", 96, 48)).unwrap();
-        assert_eq!(candidate.lines, baseline.lines);
+        assert_eq!(candidate.lines.len(), baseline.lines.len());
+        for (candidate, baseline) in candidate.lines.iter().zip(&baseline.lines) {
+            assert_eq!(
+                (
+                    candidate.byte_start,
+                    candidate.byte_end,
+                    candidate.height_px
+                ),
+                (baseline.byte_start, baseline.byte_end, baseline.height_px)
+            );
+        }
+        value["output_bits"] = serde_json::json!(3);
+        let candidate_gray: RenderSpec = serde_json::from_value(value.clone()).unwrap();
+        value["renderer"] = serde_json::json!("baseline");
+        let baseline_gray: RenderSpec = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            render_parsed(FIXTURE, &candidate_gray).unwrap(),
+            render_parsed(FIXTURE, &baseline_gray).unwrap()
+        );
     }
 
     #[test]
@@ -652,5 +774,36 @@ mod tests {
             rendered.lines.len()
         );
         assert!(value["missing_codepoints"].is_array());
+    }
+
+    const ROBOTO: &[u8] = include_bytes!("../../../fonts/Roboto.ttf");
+
+    #[test]
+    fn kerning_pairs_core_reports_authentic_ascii_pairs_and_scales() {
+        let table = kerning_pairs_core(ROBOTO, 16.0, BTreeMap::new()).unwrap();
+        assert!(!table.pairs.is_empty());
+        let av = table
+            .pairs
+            .iter()
+            .find(|p| p.left == u32::from('A') && p.right == u32::from('V'))
+            .expect("Roboto should kern AV");
+        assert!(av.adjustment_26_6 < 0);
+        assert!(table.pairs.iter().all(|p| p.adjustment_26_6 != 0));
+        let doubled = kerning_pairs_core(ROBOTO, 32.0, BTreeMap::new()).unwrap();
+        let av2 = doubled
+            .pairs
+            .iter()
+            .find(|p| p.left == u32::from('A') && p.right == u32::from('V'))
+            .unwrap();
+        assert!((av2.adjustment_26_6 - 2 * av.adjustment_26_6).abs() <= 1);
+    }
+
+    #[test]
+    fn kerning_pairs_core_rejects_invalid_settings_explicitly() {
+        assert!(kerning_pairs_core(ROBOTO, 0.0, BTreeMap::new()).is_err());
+        assert!(kerning_pairs_core(ROBOTO, f32::NAN, BTreeMap::new()).is_err());
+        let bad = BTreeMap::from([("XXXX".to_string(), 400.0)]);
+        assert!(kerning_pairs_core(ROBOTO, 16.0, bad).is_err());
+        assert!(kerning_pairs_core(b"not a font", 16.0, BTreeMap::new()).is_err());
     }
 }

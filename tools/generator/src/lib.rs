@@ -8,7 +8,9 @@ pub mod candidate;
 pub mod comparison;
 pub mod dropout;
 pub mod evaluation;
+pub mod layout_spacing;
 pub mod metadata;
+pub mod mono_spacing;
 /// Compatibility name for earlier diagnostic callers; renderer selection uses roles.
 #[cfg(feature = "candidate")]
 pub use candidate as iteration;
@@ -18,6 +20,7 @@ mod raster;
 pub mod reference;
 pub mod renderer;
 mod spacing;
+pub use spacing::{ascii_kerning_pairs, AsciiKerning};
 #[cfg(feature = "native-io")]
 pub mod specimen_config;
 #[cfg(feature = "native-io")]
