@@ -17,7 +17,7 @@ See the [iteration lifecycle guidance](../README.md#iteration-lifecycle).
 
 The web index shows **001.02**. With no newer candidate, the approved renderer is available against the independent
 reference through the version switch and symbol routes at the agreed sizes. See the
-[001.02 acceptance record](02-light-continuity.md#acceptance-and-promotion-2026-10-02).
+[001.02 accepted scope](02-light-continuity.md).
 
 ## Validation
 

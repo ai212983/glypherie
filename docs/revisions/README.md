@@ -1,25 +1,42 @@
 # Development revisions
 
-Revisions group development work across issues.
+Revisions group iterations; each iteration groups related topics for review: corrections, improvements, capabilities or
+investigations.
+
+## Folder structure
+
+- `README.md`: this guide.
+- `NNN/README.md`: revision starting point, renderer identities and iteration index with brief outcomes or status.
+- `NNN/NN-topic.md`: iteration design and decision note; for example, `001/02-light-continuity.md` is iteration 001.02.
+
+## Iteration documents
+
+Write a design and decision note, grouping topics by a shared goal, model or invariant rather than by glyph or work
+step:
+
+- **Title and introduction:** motivation and adopted approach.
+- **Foundation and invariant:** shared sources and preserved relationships. Follow the
+  [evaluation rules](../evaluation.md); label project hypotheses. Put distinct foundations beside their topics.
+- **Topics:** one subsection per topic, numbered when useful, explaining the logic change and rationale. Retain rejected
+  alternatives only when they explain a decision or constraint.
+- **Scope and limits:** applicability, accepted review scope, limitations and unresolved work or assigned follow-up.
+  Keep essential assessment evidence beside the relevant topic or limitation.
+
+Describe the resulting behavior, not its implementation, testing or publication history. Replace superseded proposals;
+omit file maps, handoffs, command/build logs, verification ledgers and artifact metadata. Keep detailed diagnostics
+elsewhere. Avoid repeated status, unchanged-state reminders and document-routing prose; unchanged behavior matters only
+as an invariant or scope boundary.
+
+## Documentation ownership
+
+The revision index owns lifecycle status, closure dates and renderer identities; iteration notes own model decisions and
+scoped assessment. Evaluation principles belong in the [evaluation guide](../evaluation.md); commands, APIs and
+interface contracts belong in tool documentation. Preview selections belong in configuration and policy files. Link to
+the owner rather than repeat its content. Vendored baseline/candidate documentation remains independent.
 
 ## Iteration lifecycle
 
-Each iteration is dedicated to fixing one specific problem identified by user feedback. Continue implementation changes,
-experiments, tweaks, diagnostics, and validation for that problem under the same iteration identity.
-
-An iteration closes only when user and agent agree there are no further actions for that problem. Record the agreed
-outcome: resolved/closed, not fixable, or remaining work assigned to a specific follow-up. The user must explicitly
-agree to closure; an agent must not infer it from passing tests, published comparisons, or a new implementation
-approach. If there is still action to take on the current problem, keep the iteration open. Advance iteration numbering
-only after that agreement and identify the next problem from user feedback.
-
-The diagonal-weight problem in 001.01 is closed and accepted for production on 2026-10-02, following explicit user
-acceptance of the current quality. See the
-[iteration record](001/01-diagonal-weight.md#acceptance-and-production-promotion-2026-10-02) for the accepted scope and
-retained follow-up observations. [001.02](001/02-light-continuity.md) is accepted and closed on 2026-10-02. Production
-uses its approved light-continuity and fractional shared-width model; the remaining binary weight step is an accepted
-limitation. The index subtitle shows only the active 001.02 identity.
-
-## Index
-
-- [001](001/README.md): accepted diagonal fitting promoted to production; independent upstream reference retained.
+Feedback may extend an iteration's agreed topics. Close only with explicit user agreement and a disposition for each:
+completed, accepted with limits, declined or deferred to a specific follow-up. Passing tests, publishing a preview or
+completing one topic does not close the group. Advance numbering after closure, with the next scope agreed from
+feedback.
