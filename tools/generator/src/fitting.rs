@@ -146,9 +146,10 @@ pub fn capture(
     let target_name = if gray { "smooth" } else { "mono" }.to_string();
     let mut records = Vec::new();
     let mut missing_codepoints = Vec::new();
+    let mut present = Vec::new();
     for ch in config.characters.chars().collect::<BTreeSet<_>>() {
         crate::spacing::validate_request(ch)?;
-        let Some(gid) = font.charmap().map(ch).filter(|g| g.to_u32() != 0) else {
+        if font.charmap().map(ch).is_none_or(|g| g.to_u32() == 0) {
             if config.missing_glyphs == crate::MissingGlyphs::Error {
                 return Err(fail(format!("missing glyph U+{:04X}", ch as u32)));
             }
@@ -156,6 +157,16 @@ pub fn capture(
             continue;
         };
         crate::spacing::validate_character(ch)?;
+        present.push(ch);
+    }
+    // Same coordinate-selected glyphs as production generation and the
+    // independent reference: outlines, metrics and `glyph_id` use the
+    // scalar's shaper-resolved glyph.
+    let resolved =
+        crate::spacing::resolve_scalars(data, &config.axes, config.kerning, &present)?;
+    for scalar in &resolved {
+        let ch = char::from_u32(scalar.codepoint).unwrap();
+        let gid = fitting_skrifa::GlyphId::new(scalar.glyph_id);
         let outline = outlines
             .get(gid)
             .ok_or_else(|| fail(format!("missing outline U+{:04X}", ch as u32)))?;
@@ -169,13 +180,14 @@ pub fn capture(
             .map_err(|e| fail(format!("outline U+{:04X}: {e}", ch as u32)))?;
         let fitted = pen.into_commands();
         let output = rasterize_enabled(&fitted, config, enabled)?;
-        let advance = advances
+        let linear = advances
             .advance_width(gid)
             .ok_or_else(|| fail(format!("missing advance U+{:04X}", ch as u32)))?;
+
         let advance = if advance_policy == crate::reference::AdvancePolicy::Hinted {
-            adjusted.advance_width.unwrap_or(advance)
+            adjusted.advance_width.unwrap_or(linear)
         } else {
-            advance
+            linear
         };
         if !advance.is_finite() {
             return Err(fail("nonfinite fitted advance"));
@@ -185,7 +197,7 @@ pub fn capture(
             raster_policy: raster_policy(enabled),
             diagonal_pairs: adjusted.diagonal_pairs,
             codepoint: ch as u32,
-            glyph_id: gid.to_u32(),
+            glyph_id: scalar.glyph_id,
             selected_engine: selected.clone(),
             target: target_name.clone(),
             smooth_mode: if gray {

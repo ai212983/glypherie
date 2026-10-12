@@ -1,5 +1,8 @@
 use crate::{fail, fixed, Config, Error, Glyph, KerningPair, MetricRounding};
-use harfrust::{Feature, FontRef, ShapeOptions, ShaperData, ShaperInstance, Tag, UnicodeBuffer};
+use harfrust::{
+    font::{BuiltinFontFuncs, FontFuncs},
+    Feature, FontRef, ShapeOptions, ShaperData, ShaperInstance, Tag, UnicodeBuffer,
+};
 use skrifa_baseline::MetadataProvider;
 use std::collections::BTreeMap;
 use unicode_general_category::{get_general_category, GeneralCategory};
@@ -33,22 +36,129 @@ pub(crate) fn validate_character(ch: char) -> Result<(), Error> {
     Ok(())
 }
 
+/// One Unicode scalar resolved to the glyph actually drawn at an exact
+/// variation coordinate.
+///
+/// Source foundation: Required Variation Alternates are coordinate-dependent
+/// `GSUB` type 1 (single) substitutions selected through feature variations
+/// ([required variation alternates](https://learn.microsoft.com/en-us/typography/opentype/spec/features_pt#tag-rvrn),
+/// [GSUB](https://learn.microsoft.com/en-us/typography/opentype/spec/gsub)).
+/// The existing HarfRust instance at the exact axes resolves each scalar
+/// before outlines are read, so a substituted scalar draws, measures and
+/// kerns as its selected glyph. Unicode/codepoint identity is preserved;
+/// `glyph_id` records the selected glyph.
+pub(crate) struct ResolvedScalar {
+    pub codepoint: u32,
+    pub glyph_id: u32,
+}
+
+/// Observe HarfRust's built-in, unpositioned advances without changing them.
+/// The public FontFuncs callback runs after substitution and before positioning:
+/// https://docs.rs/harfrust/0.13.3/harfrust/font/trait.FontFuncs.html
+/// Compare within the shaper's own integer domain, avoiding a tolerance between
+/// its rounded HVAR/gvar deltas and Skrifa's fractional linear metrics.
+#[derive(Default)]
+struct ScalarMetrics {
+    advances: BTreeMap<u32, i32>,
+}
+
+impl FontFuncs for ScalarMetrics {
+    fn advance_width(&mut self, builtin: &BuiltinFontFuncs, glyph: harfrust::GlyphId) -> i32 {
+        let advance = builtin.advance_width(glyph);
+        self.advances.insert(glyph.to_u32(), advance);
+        advance
+    }
+}
+
+/// Shaping features shared by scalar resolution and pair extraction:
+/// ligatures and contextual alternates off, pair kerning per configuration.
+fn shape_features(kerning: bool) -> [Feature; 4] {
+    [
+        Feature::new(Tag::new(b"liga"), 0, ..),
+        Feature::new(Tag::new(b"clig"), 0, ..),
+        Feature::new(Tag::new(b"calt"), 0, ..),
+        Feature::new(Tag::new(b"kern"), u32::from(kerning), ..),
+    ]
+}
+
+/// Resolve each scalar to its coordinate-dependent selected glyph with one
+/// reusable shaper at the exact axes.
+///
+/// Only one-to-one scalar substitutions are accepted: a scalar must shape to
+/// exactly one non-`.notdef` glyph with no offsets and no `y_advance`.
+/// Anything else (glyph count changes, `.notdef`, offsets or vertical
+/// advances) is an explicit shaping error, never a silent fallback.
+/// Callers apply their own missing-cmap policy before resolving; a `.notdef`
+/// selected glyph for a cmap-present scalar is a shaping error here.
+/// Ligatures, contextual alternates and text runs remain unsupported: this
+/// resolves isolated scalars only, one `char` at a time.
+pub(crate) fn resolve_scalars(
+    data: &[u8],
+    axes: &BTreeMap<String, f32>,
+    kerning: bool,
+    chars: &[char],
+) -> Result<Vec<ResolvedScalar>, Error> {
+    let font = FontRef::from_index(data, 0).map_err(|e| fail(format!("shaper font: {e}")))?;
+    let instance =
+        ShaperInstance::from_variations(&font, axes.iter().map(|(t, v)| (t.as_str(), *v)));
+    let shaping = ShaperData::new(&font);
+    let shaper = shaping.shaper(&font).instance(Some(&instance)).build();
+    let features = shape_features(kerning);
+    let mut resolved = Vec::with_capacity(chars.len());
+    for ch in chars {
+        let text = ch.to_string();
+        let mut buffer = UnicodeBuffer::new();
+        buffer.push_str(&text);
+        buffer.guess_segment_properties();
+        let mut metrics = ScalarMetrics::default();
+        let out = shaper.shape(
+            buffer,
+            ShapeOptions::new()
+                .features(&features)
+                .font_funcs(Some(&mut metrics)),
+        );
+        let infos = out.glyph_infos();
+        let positions = out.glyph_positions();
+        let (info, position) = match (infos, positions) {
+            ([info], [position]) => (info, position),
+            _ => {
+                return Err(fail(format!("text {text:?} requires substitutions or positioning beyond scalar glyphs and pair kerning")));
+            }
+        };
+        if info.glyph_id == 0
+            || position.x_offset != 0
+            || position.y_offset != 0
+            || position.y_advance != 0
+            || metrics.advances.get(&info.glyph_id) != Some(&position.x_advance)
+        {
+            return Err(fail(format!("text {text:?} requires substitutions or positioning beyond scalar glyphs and pair kerning")));
+        }
+        resolved.push(ResolvedScalar {
+            codepoint: *ch as u32,
+            glyph_id: info.glyph_id,
+        });
+    }
+    Ok(resolved)
+}
+
 /// Bounded source-font kerning display: horizontal pair adjustments for the
 /// printable ASCII subset (U+0020..=U+007E) at one size/axes coordinate.
 ///
 /// Source foundation: the same scalar harfrust shaping path as fitted
 /// generation (pair kerning only, ligatures off), evaluated with
 /// `kerning = true` and `MetricRounding::Subpixel`. No outlines are drawn and
-/// no bitmaps are rasterized: shaping only reads each placeholder's
-/// codepoint and cmap glyph id. Numeric settings reuse
+/// no bitmaps are rasterized. Each scalar is first resolved to its
+/// coordinate-dependent selected glyph (see [`resolve_scalars`]); pair
+/// shaping then reads each placeholder's codepoint and selected glyph id.
+/// Numeric settings reuse
 /// `validate_settings` and variation coordinates reuse the shared axis
 /// validation; those failures and single-glyph shaping errors stay explicit
 /// errors. Codepoints absent from cmap are skipped. Pairs that need more
-/// than a scalar left-advance change (substitutions or text-run positioning)
-/// are omitted and reported in `skipped_pairs`, so one contextual pair
-/// cannot hide the subset; this display omission changes no layout path.
-/// The ASCII scope is explicit: this is not a complete font-table
-/// enumeration.
+/// than a scalar left-advance change (further substitutions or text-run
+/// positioning) are omitted and reported in `skipped_pairs`, so one
+/// contextual pair cannot hide the subset; this display omission changes no
+/// layout path. The ASCII scope is explicit: this is not a complete
+/// font-table enumeration.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct AsciiKerning {
     pub pairs: Vec<KerningPair>,
@@ -71,23 +181,31 @@ pub fn ascii_kerning_pairs(
     let font = crate::open_font(data)?;
     crate::validate_axes(&font, &config.axes)?;
     let cmap = font.charmap();
-    let mut glyphs = Vec::new();
+    let mut present = Vec::new();
     for codepoint in 0x20u32..=0x7E {
         let ch = char::from_u32(codepoint).unwrap();
         validate_character(ch)?;
-        if let Some(gid) = cmap.map(ch).filter(|g| g.to_u32() != 0) {
-            glyphs.push(Glyph {
-                codepoint,
-                glyph_id: gid.to_u32(),
-                advance_26_6: 0,
-                left: 0,
-                top: 0,
-                width: 0,
-                height: 0,
-                pixels: Vec::new(),
-            });
+        if cmap.map(ch).is_some_and(|g| g.to_u32() != 0) {
+            present.push(ch);
         }
     }
+    // Coordinate-dependent single substitutions resolve here, so pair shaping
+    // below compares against the glyphs actually drawn at these axes.
+    // Single-resolution failures stay explicit errors, like strict generation.
+    let resolved = resolve_scalars(data, &config.axes, true, &present)?;
+    let glyphs = resolved
+        .iter()
+        .map(|scalar| Glyph {
+            codepoint: scalar.codepoint,
+            glyph_id: scalar.glyph_id,
+            advance_26_6: 0,
+            left: 0,
+            top: 0,
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        })
+        .collect::<Vec<_>>();
     let (pairs, skipped_pairs) = extract_impl(data, &config, &glyphs, false)?;
     Ok(AsciiKerning {
         pairs,
@@ -104,7 +222,10 @@ pub(crate) fn extract(
     Ok(pairs)
 }
 
-/// Shared scalar-only shaping body: pair kerning on, ligatures off. Fitted
+/// Shared scalar-only shaping body: pair kerning on, ligatures off. Expected
+/// glyph ids are the coordinate-selected glyphs from [`resolve_scalars`];
+/// singles that no longer match fail here rather than kern against a glyph
+/// that is not drawn. Fitted
 /// generation (`strict`) keeps the exact previous contract: any pair beyond
 /// scalar advances is an error. The ASCII display table (`!strict`) omits
 /// such unrepresentable pairs and reports how many, so one contextual pair
@@ -122,12 +243,7 @@ fn extract_impl(
     let shaping = ShaperData::new(&font);
     let shaper = shaping.shaper(&font).instance(Some(&instance)).build();
     let scale = config.size_px / shaper.units_per_em() as f32;
-    let features = [
-        Feature::new(Tag::new(b"liga"), 0, ..),
-        Feature::new(Tag::new(b"clig"), 0, ..),
-        Feature::new(Tag::new(b"calt"), 0, ..),
-        Feature::new(Tag::new(b"kern"), u32::from(config.kerning), ..),
-    ];
+    let features = shape_features(config.kerning);
     let shape = |text: &str, expected: &[u32]| -> Result<Vec<i32>, Error> {
         let mut buffer = UnicodeBuffer::new();
         buffer.push_str(text);

@@ -1,6 +1,6 @@
 # Monochrome spacing and kerning
 
-<!-- cspell:words HarfBuzz -->
+<!-- cspell:words HarfBuzz GSUB GPOS -->
 
 Coordinate monochrome spacing and compact-mark dimensions; support assessment with pixel-aligned display and source
 kerning inspection.
@@ -123,3 +123,23 @@ Expose authentic source pair adjustments independently of experimental spacing t
 [WASM API](../../../tools/wasm/README.md#kerning-pairs). The
 [inspection interface](../../../tools/web/CONTRACT.md#specimens) distinguishes an unavailable API, absent font kerning
 and extraction failure; inspection failure does not block glyph rendering.
+
+### Coordinate-selected scalar glyphs
+
+Variable fonts can select different outlines for the same Unicode scalar. OpenType
+[required variation alternates](https://learn.microsoft.com/en-us/typography/opentype/spec/features_pt#tag-rvrn) and
+[GSUB feature variations](https://learn.microsoft.com/en-us/typography/opentype/spec/gsub#featurevariations-table)
+select single substitutions from the requested variation coordinates. Resolve each isolated scalar before drawing; keep
+its Unicode identity while outlines, source geometry, advances and pair expectations follow the selected glyph.
+
+The shaper's [built-in metric callback](https://docs.rs/harfrust/0.13.3/harfrust/font/trait.FontFuncs.html) supplies the
+advance before GPOS positioning. Compare the final shaped advance with that value in the same integer domain to detect
+standalone positioning, while retaining the renderer's fractional source metrics and rounding policy. This avoids
+confusing integer variation-delta rounding with positioning.
+
+The pinned Roboto Flex dollar at 14 px, optical size 14, width 100, other axes at defaults selects nominal glyph 7 at
+weight 400 and glyph 602 at weight 700, for slant 0 and -10. Classification: the previous rejection was a confirmed
+capability limitation; selecting the required outline resolves it across rendering and kerning inspection. The selected
+outline matches independent source capture. This establishes glyph selection and metric consistency, not optical
+acceptance. Pair-context substitutions, glyph count/order changes and unrepresentable positioning remain unsupported
+under the [generator contract](../../../tools/generator/README.md#supported-input-and-output).

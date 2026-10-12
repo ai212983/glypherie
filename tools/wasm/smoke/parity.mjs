@@ -30,6 +30,20 @@ for (const font of ["Roboto", "Literata", "SourceSans3"]) {
     }
   }
 }
+// Required variation substitutions must select the same outline and source
+// metrics through the production WASM build as through the native surface.
+for (const wght of [400, 700]) {
+  for (const slnt of [0, -10]) {
+    for (const output_bits of [1, 3]) {
+      for (const kerning of [true, false]) {
+        add("fonts/RobotoFlex.ttf", {
+          text: "$A A$ $$ AV To", size_px: 14, output_bits, kerning,
+          axes: { wght, slnt, opsz: 14, wdth: 100 },
+        });
+      }
+    }
+  }
+}
 for (const hinting of ["none", "auto", "interpreter", "auto_fallback"]) {
   for (const output_bits of [1, 3]) {
     add("fonts/Roboto.ttf", {

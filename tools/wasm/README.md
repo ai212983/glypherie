@@ -35,9 +35,10 @@ node tools/wasm/smoke/parity.mjs              # exact native/WASM comparison; ne
 node --check tools/wasm/smoke/render.mjs tools/wasm/examples/hello.mjs
 ```
 
-The parity harness recomputes native results for 51 cases spanning the shipped fonts, axes, fractional sizes, hinting,
+The parity harness recomputes native results for 67 cases spanning the shipped fonts, axes, fractional sizes, hinting,
 coverage depths, wrapping, clipping, alignment, transparency, palettes, blank text and CFF/CFF2 outlines. It compares
-RGBA bytes, layout and metadata with the actual WASM module, without historical pixel snapshots.
+RGBA bytes, layout and metadata with the actual WASM module, without historical pixel snapshots. Roboto Flex cases cover
+dollar variation substitutions at weights 400/700, slants 0/-10, mono/gray output and kerning on/off.
 
 ## Usage
 
@@ -67,10 +68,11 @@ try {
 `font.kerning_pairs(size_px, axes)` returns a plain object `{ pairs, skipped_pairs }`. Each pair has Unicode codepoints
 `left`, `right` and a signed `adjustment_26_6` in 1/64 pixels. It reads nonzero horizontal source adjustments for
 printable ASCII (U+0020 through U+007E), using the same shaper as native generation with kerning enabled and ligatures
-disabled. Missing characters are skipped; `skipped_pairs` counts pairs needing substitutions or positioning beyond a
-single left-advance change. Invalid settings and single-character shaping failures throw an error. This descriptive API
-draws no outlines and changes no rendering or layout policy; native generation retains its strict shaping errors. Size
-and axes use the same validation as rendering, with omitted axes at their font defaults.
+disabled. Isolated scalars resolve to their selected glyphs at those axes, including one-to-one variation substitutions.
+Missing characters are skipped; `skipped_pairs` counts pairs changing those glyph identities, order or count, or needing
+positioning beyond a single left-advance change. Invalid settings and single-character shaping failures throw an error.
+This descriptive API draws no outlines and changes no rendering or layout policy; native generation retains its strict
+shaping errors. Size and axes use the same validation as rendering, with omitted axes at their font defaults.
 
 ## Ownership
 

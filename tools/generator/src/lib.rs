@@ -146,7 +146,10 @@ pub(crate) fn fixed(value: f32, rounding: MetricRounding) -> i32 {
 /// Generate individual horizontal Latin, Greek, Cyrillic and common-symbol glyphs.
 /// Combining marks and other scripts require a text-run shaping adapter. Optional
 /// Latin ligatures and contextual alternates are disabled for pair extraction.
-/// Pair positioning is accepted only when representable as a left advance change.
+/// Coordinate-dependent one-to-one scalar substitutions resolve through the
+/// shaper at the exact axes; outlines, advances and `glyph_id` use the
+/// selected glyph while Unicode identity is preserved. Pair positioning is
+/// accepted only when representable as a left advance change.
 pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
     validate_config(config)?;
     let font = open_font(data)?;
@@ -208,11 +211,12 @@ pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
     let advances = font.glyph_metrics(size, &location);
     let mut glyphs = Vec::new();
     let mut missing_codepoints = Vec::new();
+    let mut present = Vec::new();
     for ch in config.characters.chars().collect::<BTreeSet<_>>() {
         // Missing-glyph policy covers unassigned scalars; controls and text-run
         // shaping requests remain capability errors even when absent in cmap.
         spacing::validate_request(ch)?;
-        let Some(gid) = font.charmap().map(ch).filter(|g| g.to_u32() != 0) else {
+        if font.charmap().map(ch).is_none_or(|g| g.to_u32() == 0) {
             if config.missing_glyphs == MissingGlyphs::Error {
                 return Err(fail(format!("missing glyph U+{:04X}", ch as u32)));
             }
@@ -220,6 +224,15 @@ pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
             continue;
         };
         spacing::validate_character(ch)?;
+        present.push(ch);
+    }
+    // One reusable shaper resolves every scalar to the glyph actually drawn
+    // at these axes (coordinate-dependent single substitutions included);
+    // outlines, metrics and kerning below all use the selected glyph.
+    let resolved = spacing::resolve_scalars(data, &config.axes, config.kerning, &present)?;
+    for scalar in &resolved {
+        let ch = char::from_u32(scalar.codepoint).unwrap();
+        let gid = production_skrifa::GlyphId::new(scalar.glyph_id);
         let outline = outlines
             .get(gid)
             .ok_or_else(|| fail(format!("missing outline U+{:04X}", ch as u32)))?;
@@ -238,10 +251,11 @@ pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
         let advance = advances
             .advance_width(gid)
             .ok_or_else(|| fail(format!("missing advance U+{:04X}", ch as u32)))?;
+        let advance_26_6 = fixed(advance, config.metric_rounding);
         glyphs.push(Glyph {
             codepoint: ch as u32,
-            glyph_id: gid.to_u32(),
-            advance_26_6: fixed(advance, config.metric_rounding),
+            glyph_id: scalar.glyph_id,
+            advance_26_6,
             left,
             top,
             width,

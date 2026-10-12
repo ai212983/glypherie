@@ -227,9 +227,10 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
     let target_name = if gray { "smooth" } else { "mono" }.to_string();
     let mut records = Vec::new();
     let mut missing_codepoints = Vec::new();
+    let mut present = Vec::new();
     for ch in config.characters.chars().collect::<BTreeSet<_>>() {
         crate::spacing::validate_request(ch)?;
-        let Some(gid) = font.charmap().map(ch).filter(|g| g.to_u32() != 0) else {
+        if font.charmap().map(ch).is_none_or(|g| g.to_u32() == 0) {
             if config.missing_glyphs == crate::MissingGlyphs::Error {
                 return Err(fail(format!("missing glyph U+{:04X}", ch as u32)));
             }
@@ -237,6 +238,14 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
             continue;
         };
         crate::spacing::validate_character(ch)?;
+        present.push(ch);
+    }
+    // Same coordinate-selected glyphs as production generation: outlines,
+    // metrics and `glyph_id` use the scalar's shaper-resolved glyph.
+    let resolved = crate::spacing::resolve_scalars(data, &config.axes, config.kerning, &present)?;
+    for scalar in &resolved {
+        let ch = char::from_u32(scalar.codepoint).unwrap();
+        let gid = skrifa::GlyphId::new(scalar.glyph_id);
         let outline = outlines
             .get(gid)
             .ok_or_else(|| fail(format!("missing outline U+{:04X}", ch as u32)))?;
@@ -253,12 +262,13 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
         let advance = advances
             .advance_width(gid)
             .ok_or_else(|| fail(format!("missing advance U+{:04X}", ch as u32)))?;
+        let advance_26_6 = fixed(advance, config.metric_rounding);
         records.push(ReferenceRecord {
             side_bearing_deltas_26_6: None,
             raster_policy: RasterPolicy::Coverage,
             diagonal_pairs: None,
             codepoint: ch as u32,
-            glyph_id: gid.to_u32(),
+            glyph_id: scalar.glyph_id,
             selected_engine: selected.clone(),
             target: target_name.clone(),
             smooth_mode: if gray {
@@ -284,7 +294,7 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
             width: output.width,
             height: output.height,
             pixels: output.pixels,
-            advance_26_6: fixed(advance, config.metric_rounding),
+            advance_26_6,
             hinted_has_overlaps: adjusted.has_overlaps,
             hinted_lsb: adjusted.lsb,
             hinted_advance_width: adjusted.advance_width,

@@ -92,6 +92,11 @@ The generation hash identifies the canonical render artifact separately from the
 provenance, geometry, and layout policy remain in the canonical artifacts; the display manifest carries the metadata
 needed to present the specimens.
 
+Canonical glyph records preserve Unicode `codepoint` identity and record the actually drawn, coordinate-selected
+`glyph_id`. Outlines, source geometry and metrics follow the
+[scalar-resolution contract](README.md#supported-input-and-output) for every renderer role; nominal character-map
+coverage remains descriptive metadata.
+
 New exports include each family's `metadata`, extracted once from the checksum-verified source bytes with the upstream
 Skrifa reader. Older immutable packages can omit this field. Metadata is descriptive and does not affect rendering,
 shaping, fitting or preview scope.

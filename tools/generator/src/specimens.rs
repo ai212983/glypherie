@@ -274,9 +274,17 @@ fn guard_reserved(checksum: &str, case: &RenderCase) -> Result<(), Error> {
 
 fn space(data: &[u8], case: &RenderCase) -> Result<Option<Space>, Error> {
     let font = FontRef::new(data).map_err(|e| fail(e.to_string()))?;
-    let Some(gid) = font.charmap().map(' ').filter(|g| g.to_u32() != 0) else {
+    if font.charmap().map(' ').is_none_or(|g| g.to_u32() == 0) {
         return Ok(None);
     };
+    // The space advance uses the coordinate-selected glyph, matching the
+    // capture records that layout pairs it with. Resolution failures carry
+    // their shaping message. Specimen captures and layout enable kerning.
+    let mut selected = crate::spacing::resolve_scalars(data, &case.axes, true, &[' '])?;
+    let selected = selected
+        .pop()
+        .ok_or_else(|| fail("missing source space glyph"))?;
+    let gid = skrifa::GlyphId::new(selected.glyph_id);
     let location = font
         .axes()
         .location(case.axes.iter().map(|(tag, value)| (tag.as_str(), *value)));
@@ -285,7 +293,7 @@ fn space(data: &[u8], case: &RenderCase) -> Result<Option<Space>, Error> {
         .advance_width(gid)
         .ok_or_else(|| fail("missing source space advance"))?;
     Ok(Some(Space {
-        glyph_id: gid.to_u32(),
+        glyph_id: selected.glyph_id,
         advance_26_6: fixed(advance, MetricRounding::Subpixel),
         side_bearing_deltas_26_6: None,
     }))

@@ -137,9 +137,23 @@ impl PairSpacing {
         );
         let metrics = font.glyph_metrics(Size::new(config.size_px), &location);
         let charmap = font.charmap();
-        let digits: Option<Vec<f32>> = ('0'..='9')
-            .map(|digit| metrics.advance_width(charmap.map(digit)?))
-            .collect();
+        // Tabular-digit equality uses the actually drawn (coordinate-selected)
+        // glyphs' variation-aware advances, matching the captures' metrics.
+        // A cmap-absent digit keeps the previous unknown-digits behavior;
+        // resolution failures for present digits stay explicit errors.
+        let digits: Option<Vec<f32>> = if ('0'..='9')
+            .all(|digit| charmap.map(digit).is_some_and(|g| g.to_u32() != 0))
+        {
+            let digit_chars: Vec<char> = ('0'..='9').collect();
+            let resolved =
+                crate::spacing::resolve_scalars(data, &config.axes, config.kerning, &digit_chars)?;
+            resolved
+                .iter()
+                .map(|scalar| metrics.advance_width(skrifa::GlyphId::new(scalar.glyph_id)))
+                .collect()
+        } else {
+            None
+        };
         let mut spacing = Self::build(source, candidate);
         spacing.monospace = font.post().is_ok_and(|table| table.is_fixed_pitch() != 0);
         spacing.tabular_digits = digits.is_some_and(|advances| {

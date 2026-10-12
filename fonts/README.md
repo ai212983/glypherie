@@ -74,12 +74,5 @@ follows the selected pixel size, as does Roboto Flex optical size; its configure
 equal the embedded defaults, and remaining axes use those defaults. Source Sans 3's embedded default weight is 200, so
 omitted axes do not reproduce the configured specimens.
 
-Known limitation: at `wght` 700 (size 14, `opsz` 14, `wdth` 100, other axes at defaults), the renderer rejects `$` at
-both `slnt` 0 and `slnt` -10; rendering and kerning-pair extraction report that the character requires substitutions or
-positioning beyond scalar glyphs and pair kerning. At `wght` 400 the same coordinates render `$` and return 936 kerning
-pairs with no skips, and the reading sample still renders at `wght` 700. This is a coordinate-specific instance of the
-generator's [supported input and output](../tools/generator/README.md#supported-input-and-output) contract, which covers
-nominal scalar glyphs and horizontal pair kerning; it is not a slant or fitting regression.
-
 Small original test fonts live in `tools/generator/tests/fixtures`. The generator verifies font hashes; it does not
 download fonts or establish their original provenance.

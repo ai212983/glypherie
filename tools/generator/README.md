@@ -181,10 +181,18 @@ and color fonts require a separate conversion or adapter. Axis tags and values a
 omitted axes use font defaults. Missing glyphs either fail the job or are listed as skipped.
 
 The current repertoire supports Latin, Greek, Cyrillic, and common symbols. Combining marks, control/format characters,
-and other scripts receive an explicit unsupported-shaping error. Output represents nominal scalar glyphs and horizontal
-pair kerning. Optional ligatures/contextual alternates are disabled; substitutions, offsets, or pair changes to the
-right glyph's advance fail rather than being lost. This API is for glyph tables; a complete text-run shaping adapter is
-separate work.
+and other scripts receive an explicit unsupported-shaping error. Each isolated scalar resolves through HarfRust at the
+requested axes before drawing. One-to-one substitutions, including
+[required variation alternates](https://learn.microsoft.com/en-us/typography/opentype/spec/features_pt#tag-rvrn), use
+the selected glyph for outlines, source geometry, advances and kerning. `codepoint` retains Unicode identity; `glyph_id`
+records the glyph actually drawn, which can differ from the nominal character map.
+
+Optional ligatures/contextual alternates are disabled. A scalar must produce exactly one non-missing glyph without
+positioning: offsets, vertical advances and standalone horizontal advance adjustments fail. The latter are checked
+against the shaper's own metric before positioning and pixel rounding, preserving fractional linear source metrics.
+Pairs must retain the isolated scalars' glyph IDs, order and count; only a left-advance adjustment is supported.
+Context-dependent substitutions, offsets and right-advance changes fail rather than being lost. This API is for glyph
+tables; a complete text-run shaping adapter is separate work.
 
 The library entry point is `generate(font_bytes, &Config)`. Its output contains sorted glyphs, skipped codepoints,
 sorted nonzero kerning pairs, and line metrics. Pixels are row-major **unpacked** levels from zero (no ink) through
@@ -207,7 +215,9 @@ uses the usual `font`, `provenance`, and `settings` fields plus `profile` (`mono
 rejected.
 
 Reference profiles use the targets described in [Generate reference specimens](#generate-reference-specimens). Reports
-retain controls, dependency identities, fitted command f32 bits, raw coverage, quantized pixels and placement. The
+retain controls, dependency identities, fitted command f32 bits, raw coverage, quantized pixels and placement. All
+reference, baseline, candidate and diagnostic captures resolve the same selected glyph IDs at the requested axes; their
+renderer-specific fitting and advance policies apply to those selected outlines. The
 [diagnostics guide](../../docs/references/font-diagnostics.md) describes capture and comparison tools.
 
 ### Accepted production fitting
