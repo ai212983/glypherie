@@ -3,11 +3,9 @@ use crate::{
     probe::{lock_sha256, lock_version},
     reference::{ReferenceReport, ReferenceRequest},
     specimen_config::{self, RenderCase, RendererRole, VariantKind},
-    Config, Error, Hinting, MetricRounding,
+    Config, Error, MetricRounding,
 };
-use harfrust::{
-    Feature, FontRef as ShapingFont, ShapeOptions, ShaperData, ShaperInstance, Tag, UnicodeBuffer,
-};
+use harfrust::{shape, Buffer, Feature, Font as ShapingFont, ShapeOptions, ShaperFont, Tag};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use skrifa::{instance::Size, FontRef, MetadataProvider};
@@ -211,16 +209,25 @@ fn renderer_identity(role: RendererRole) -> String {
         digest.update(source.as_bytes());
     }
     let (adapter, source) = match role {
-        RendererRole::Reference => ("", ""),
-        RendererRole::Baseline => (include_str!("baseline.rs"), env!("SKRIFA_BASELINE_SHA256")),
+        RendererRole::Reference => ("", String::new()),
+        RendererRole::Baseline => (
+            include_str!("baseline.rs"),
+            env!("SKRIFA_BASELINE_SHA256").to_string(),
+        ),
+        // The candidate hinter is registry Skrifa, so its identity is the
+        // registry version/checksum — never the inactive vendored fork hash.
         RendererRole::Candidate => (
             include_str!("candidate.rs"),
-            env!("SKRIFA_CANDIDATE_SHA256"),
+            format!(
+                "registry-skrifa:{}:{}",
+                lock_version("skrifa"),
+                crate::probe::skrifa_checksum()
+            ),
         ),
     };
     digest.update(adapter.as_bytes());
     digest.update(source.as_bytes());
-    if role != RendererRole::Reference {
+    if role == RendererRole::Baseline {
         digest.update(include_str!("fitting.rs").as_bytes());
     }
     if role == RendererRole::Candidate {
@@ -299,22 +306,137 @@ fn space(data: &[u8], case: &RenderCase) -> Result<Option<Space>, Error> {
     }))
 }
 
+/// One finalized candidate table for a size/axes/profile capture case,
+/// resolved beside capture rather than per sample.
+///
+/// Source pair kerning comes from the same strict isolated-pair
+/// extraction `generate()` uses, restricted to the ordered pairs this
+/// case actually places (including pairs involving the source space
+/// glyph). The capture repertoire plus the source space glyph are
+/// shaped once, so a pair's value cannot depend on a sample's prefix
+/// and pairs no sample uses cannot fail the case. Full-run sample
+/// shaping is retained only for validation (see
+/// `validate_attached_adjustments`).
+fn candidate_table(
+    data: &[u8],
+    report: &ReferenceReport,
+    space: Option<&Space>,
+    fitted_space: Option<&crate::reference::ReferenceRecord>,
+    sample_texts: &[&str],
+) -> Result<crate::layout_spacing::FinalizedBitmapMetrics, Error> {
+    let config = Config {
+        size_px: report.size_px,
+        axes: report.axes.clone(),
+        kerning: true,
+        metric_rounding: MetricRounding::Subpixel,
+        ..Config::default()
+    };
+    // Source identities built once over the capture repertoire plus
+    // the source space glyph, so selected-pair extraction shapes each
+    // scalar at most once per case.
+    let mut identities: Vec<crate::spacing::ResolvedScalar> = report
+        .records
+        .iter()
+        .map(|record| crate::spacing::ResolvedScalar {
+            codepoint: record.codepoint,
+            glyph_id: record.glyph_id,
+        })
+        .collect();
+    if let Some(space) = space {
+        if !identities.iter().any(|id| id.codepoint == ' ' as u32) {
+            identities.push(crate::spacing::ResolvedScalar {
+                codepoint: ' ' as u32,
+                glyph_id: space.glyph_id,
+            });
+        }
+    }
+    // Exactly the union of adjacent ordered pairs placed by this case's
+    // samples; unrequested combinations are never shaped.
+    let mut requested: BTreeSet<(u32, u32)> = BTreeSet::new();
+    for text in sample_texts {
+        for line in text.split('\n') {
+            let chars: Vec<char> = line.chars().collect();
+            for pair in chars.windows(2) {
+                requested.insert((pair[0] as u32, pair[1] as u32));
+            }
+        }
+    }
+    let extracted = crate::spacing::extract_selected(data, &config, &identities, &requested)?;
+    let mut source_kern: std::collections::HashMap<(u32, u32), i32> =
+        std::collections::HashMap::new();
+    for pair in extracted {
+        source_kern.insert((pair.left, pair.right), pair.adjustment_26_6);
+    }
+    let mut source_advances: std::collections::HashMap<u32, i32> = report
+        .records
+        .iter()
+        .map(|record| (record.codepoint, record.advance_26_6))
+        .collect();
+    if let Some(space) = space {
+        source_advances.insert(' ' as u32, space.advance_26_6);
+    }
+    let properties = crate::mono_spacing::font_spacing_properties(data, &config)?;
+    let mut finalize_records: Vec<crate::reference::ReferenceRecord> = report.records.clone();
+    if let Some(record) = fitted_space {
+        finalize_records.push(record.clone());
+    }
+    Ok(crate::layout_spacing::finalize_bitmap_metrics(
+        &finalize_records,
+        &source_advances,
+        &source_kern,
+        true,
+        properties.monospace,
+        properties.tabular_digits,
+    ))
+}
+
+/// Validate full-run attached adjustments against the isolated-pair table.
+///
+/// Full-run shaping attaches each pair adjustment to its left glyph, and
+/// the final glyph must attach zero. Any other value means the run used a
+/// contextual or right-advance adjustment beyond isolated-pair spacing,
+/// which candidate placement must reject rather than absorb. Synthetic
+/// positioned values can exercise this boundary without a shaped font.
+fn validate_attached_adjustments(
+    chars: &[char],
+    attached_26_6: &[i32],
+    isolated_pairs_26_6: &std::collections::HashMap<(u32, u32), i32>,
+) -> Result<(), Error> {
+    if attached_26_6.len() != chars.len() {
+        return Err(fail("shaped adjustment count does not match sample"));
+    }
+    for (index, adjustment) in attached_26_6.iter().enumerate() {
+        let expected = if index + 1 < chars.len() {
+            isolated_pairs_26_6
+                .get(&(chars[index] as u32, chars[index + 1] as u32))
+                .copied()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        if *adjustment != expected {
+            return Err(fail(
+                "sample requires contextual kerning beyond pair spacing",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn layout(
     data: &[u8],
     report: &ReferenceReport,
     space: Option<&Space>,
+    candidate_table: Option<&crate::layout_spacing::FinalizedBitmapMetrics>,
     text: &str,
+    role: RendererRole,
 ) -> Result<Layout, Error> {
-    let font = ShapingFont::from_index(data, 0).map_err(|e| fail(format!("shaper font: {e}")))?;
-    let instance = ShaperInstance::from_variations(
-        &font,
-        report
-            .axes
-            .iter()
-            .map(|(tag, value)| (tag.as_str(), *value)),
-    );
-    let shaping = ShaperData::new(&font);
-    let shaper = shaping.shaper(&font).instance(Some(&instance)).build();
+    let font = ShapingFont::new(data.to_vec(), 0).ok_or_else(|| fail("invalid shaper font"))?;
+    let font = font
+        .instance_builder()
+        .variations(report.axes.iter().map(|(t, v)| (t.as_str(), *v)))
+        .build();
+    let shaper = ShaperFont::new(&font);
     let scale = report.size_px / shaper.units_per_em() as f32;
     let features = [
         Feature::new(Tag::new(b"liga"), 0, ..),
@@ -338,43 +460,11 @@ fn layout(
     let mut glyphs = Vec::new();
     let mut bounds = [0, 0, 0, 0];
     let mut singles = BTreeMap::new();
-    // Experimental candidate pair-gap model, shared with the interactive
-    // surface. Built only for Hinted (candidate Mono) reports; reference,
-    // baseline, gray and disabled paths keep `None` and their prior behavior.
-    // The source capture is independent and unhinted; errors remain explicit.
-    let (pair_spacing, source_advances) = if report.advance_policy
-        == crate::reference::AdvancePolicy::Hinted
-    {
-        let mut characters: String = records
-            .keys()
-            .filter_map(|codepoint| char::from_u32(*codepoint))
-            .collect();
-        if space.is_some() {
-            characters.push(' ');
-        }
-        let settings = Config {
-            size_px: report.size_px,
-            axes: report.axes.clone(),
-            hinting: Hinting::None,
-            output_bits: 1,
-            characters,
-            ..Config::default()
-        };
-        let request = ReferenceRequest {
-            profile: crate::reference::PROFILE_MONO_1BIT.to_string(),
-            extensions: crate::reference::EXTENSIONS_NONE.to_string(),
-            settings,
-        };
-        let source = crate::reference::reference(data, &request)?;
-        let spacing =
-            crate::mono_spacing::PairSpacing::from_font(data, &request.settings, &source, report)?;
-        let advances = source
-            .records
-            .iter()
-            .map(|record| (record.codepoint, record.advance_26_6))
-            .collect::<std::collections::HashMap<_, _>>();
-        (Some(spacing), advances)
-    } else {
+    // Baseline and reference specimens keep source-linear layout. The
+    // working candidate uses the single bitmap policy: whole-pixel fitted
+    // advances (rounded source fallback, common tabular advance) from the
+    // same builder the preview and exported strike consume.
+    let source_advances = {
         let mut advances = records
             .iter()
             .map(|(cp, record)| (*cp, record.advance_26_6))
@@ -382,9 +472,23 @@ fn layout(
         if let Some(space) = space {
             advances.insert(' ' as u32, space.advance_26_6);
         }
-        (None, advances)
+        advances
     };
-    for (line_index, line) in text.split('\n').enumerate() {
+    let is_candidate = role == RendererRole::Candidate;
+    // Candidate placement uses the one table finalized beside capture;
+    // full-run shaping below only validates against that table and still
+    // supplies source layout for baseline and reference.
+    // First pass: full-run shaping per line, retained for unsupported-
+    // shaping validation (substitutions, offsets, contextual kerning
+    // beyond a pair table). Placement below does not use these shaped
+    // advances directly for the candidate; it uses the finalized table.
+    struct ShapedLine {
+        chars: Vec<char>,
+        nominal: Vec<u32>,
+    }
+    let mut shaped_lines = Vec::new();
+    let mut source_kern_table = std::collections::HashMap::new();
+    for line in text.split('\n') {
         let chars: Vec<_> = line.chars().collect();
         let nominal: Vec<_> = chars
             .iter()
@@ -401,10 +505,19 @@ fn layout(
                 }
             })
             .collect::<Result<_, _>>()?;
-        let mut buffer = UnicodeBuffer::new();
+        let mut buffer = Buffer::new();
         buffer.push_str(line);
         buffer.guess_segment_properties();
-        let shaped = shaper.shape(buffer, ShapeOptions::new().features(&features));
+        shape(
+            &shaper,
+            &mut buffer,
+            ShapeOptions::new().features(&features),
+        )
+        .map_err(|e| fail(format!("shaping failed: {e}")))?;
+        if !buffer.allocation_successful() {
+            return Err(fail("shaping allocation or operation limit exceeded"));
+        }
+        let shaped = buffer;
         if shaped
             .glyph_infos()
             .iter()
@@ -419,25 +532,24 @@ fn layout(
                 "sample requires unsupported substitutions or offset positioning",
             ));
         }
-        let baseline = coordinate(line_index as i64 * i64::from(line_height))?;
-        bounds[1] = bounds[1].min(coordinate(
-            i64::from(baseline) - (i64::from(metrics.ascent_26_6) + 63).div_euclid(64),
-        )?);
-        bounds[3] = bounds[3].max(coordinate(
-            i64::from(baseline) - i64::from(metrics.descent_26_6).div_euclid(64),
-        )?);
-        // Shaping attaches kerning to the left advance. Move that value into
-        // the engine's pair slot before the right glyph, applying it once.
-        // Keep the attached-left advance in exported placement metadata.
         let mut shaped_kerns = Vec::with_capacity(chars.len());
         for ((ch, gid), position) in chars.iter().zip(&nominal).zip(shaped.glyph_positions()) {
             let single = if let Some(advance) = singles.get(ch) {
                 *advance
             } else {
-                let mut buffer = UnicodeBuffer::new();
+                let mut buffer = Buffer::new();
                 buffer.push_str(&ch.to_string());
                 buffer.guess_segment_properties();
-                let result = shaper.shape(buffer, ShapeOptions::new().features(&features));
+                shape(
+                    &shaper,
+                    &mut buffer,
+                    ShapeOptions::new().features(&features),
+                )
+                .map_err(|e| fail(format!("shaping failed: {e}")))?;
+                if !buffer.allocation_successful() {
+                    return Err(fail("shaping allocation or operation limit exceeded"));
+                }
+                let result = buffer;
                 if result.glyph_infos().len() != 1 || result.glyph_infos()[0].glyph_id != *gid {
                     return Err(fail("sample scalar requires unsupported substitution"));
                 }
@@ -451,24 +563,9 @@ fn layout(
             );
             shaped_kerns.push(adjustment);
         }
-        let mut advances = records
-            .iter()
-            .map(|(cp, record)| (*cp, record.advance_26_6))
-            .collect::<std::collections::HashMap<_, _>>();
-        let mut deltas = records
-            .iter()
-            .filter_map(|(cp, record)| record.side_bearing_deltas_26_6.map(|value| (*cp, value)))
-            .collect::<std::collections::HashMap<_, _>>();
-        if let Some(space) = space {
-            advances.insert(' ' as u32, space.advance_26_6);
-            if let Some(value) = space.side_bearing_deltas_26_6 {
-                deltas.insert(' ' as u32, value);
-            }
-        }
-        let mut kern_table = std::collections::HashMap::new();
         for (pair, kern) in chars.windows(2).zip(&shaped_kerns) {
             let key = (pair[0] as u32, pair[1] as u32);
-            if let Some(old) = kern_table.insert(key, *kern) {
+            if let Some(old) = source_kern_table.insert(key, *kern) {
                 if old != *kern {
                     return Err(fail(
                         "sample requires contextual kerning beyond pair spacing",
@@ -476,34 +573,75 @@ fn layout(
                 }
             }
         }
-        let engine =
-            crate::layout_spacing::SpacingEngine::new(crate::layout_spacing::EngineInputs {
-                model: if pair_spacing.is_some() {
-                    crate::layout_spacing::SpacingModel::Projected
-                } else {
-                    crate::layout_spacing::SpacingModel::Source
-                },
-                source_advances_26_6: source_advances.clone(),
-                fitted_advances_26_6: advances,
-                kern_26_6: kern_table,
-                bearing_deltas_26_6: deltas,
-                pair: pair_spacing.as_ref(),
-                minimum: None,
-                apply_kerning: true,
-                mono: report.profile == crate::reference::PROFILE_MONO_1BIT,
-                letter_spacing_px: 0.0,
-            })?;
+        // Candidate placement must not absorb a run-only adjustment: each
+        // attached value, including the final glyph's zero, has to match
+        // the isolated-pair table finalized beside capture.
+        if let Some(table) = candidate_table {
+            validate_attached_adjustments(&chars, &shaped_kerns, &table.source_kern_26_6)?;
+        }
+        shaped_lines.push(ShapedLine { chars, nominal });
+    }
+    // Placement table for this sample. Source controls keep their
+    // fractional source advances and shaped pair values; the candidate
+    // consumes the one table finalized beside capture, so no shaped
+    // value can override candidate placement.
+    let (final_advances, pair_adjustments, guard_kern_table) = if is_candidate {
+        let table = candidate_table.ok_or_else(|| fail("missing finalized candidate table"))?;
+        if space.is_some()
+            && !table.advances_26_6.contains_key(&(' ' as u32))
+            && shaped_lines.iter().any(|line| line.chars.contains(&' '))
+        {
+            return Err(fail("missing fitted space glyph for candidate layout"));
+        }
+        (
+            table.advances_26_6.clone(),
+            table.pair_adjustments_26_6.clone(),
+            table.source_kern_26_6.clone(),
+        )
+    } else {
+        (
+            source_advances.clone(),
+            source_kern_table.clone(),
+            source_kern_table.clone(),
+        )
+    };
+    let engine = crate::layout_spacing::SpacingEngine::new(crate::layout_spacing::EngineInputs {
+        advances_26_6: final_advances.clone(),
+        pair_adjustments_26_6: pair_adjustments.clone(),
+        guard_kern_26_6: guard_kern_table,
+        minimum: None,
+        mono: report.profile == crate::reference::PROFILE_MONO_1BIT,
+        integer_positions: is_candidate,
+        letter_spacing_px: 0.0,
+    })?;
+    for (line_index, shaped_line) in shaped_lines.iter().enumerate() {
+        let chars = &shaped_line.chars;
+        let nominal = &shaped_line.nominal;
+        let baseline = coordinate(line_index as i64 * i64::from(line_height))?;
+        bounds[1] = bounds[1].min(coordinate(
+            i64::from(baseline) - (i64::from(metrics.ascent_26_6) + 63).div_euclid(64),
+        )?);
+        bounds[3] = bounds[3].max(coordinate(
+            i64::from(baseline) - i64::from(metrics.descent_26_6).div_euclid(64),
+        )?);
         let mut pen = 0_i64;
         let mut previous = None;
-        for ((ch, gid), adjustment) in chars.iter().zip(&nominal).zip(&shaped_kerns) {
-            let linear = if *ch == ' ' {
-                space.unwrap().advance_26_6
+        for (index, (ch, gid)) in chars.iter().zip(nominal).enumerate() {
+            let linear = *final_advances
+                .get(&(*ch as u32))
+                .ok_or_else(|| fail("missing finalized advance"))?;
+            let outgoing = if index + 1 < chars.len() {
+                pair_adjustments
+                    .get(&(*ch as u32, chars[index + 1] as u32))
+                    .copied()
+                    .unwrap_or(0)
             } else {
-                records[&(*ch as u32)].advance_26_6
+                0
             };
             let advance = linear
-                .checked_add(*adjustment)
+                .checked_add(outgoing)
                 .ok_or_else(|| fail("layout advance overflow"))?;
+            let adjustment = &outgoing;
             let (origin, next) = engine
                 .place(pen, previous, *ch as u32)
                 .ok_or_else(|| fail("layout advance overflow"))?;
@@ -656,7 +794,7 @@ fn capture(loaded: &specimen_config::LoadedSpecimens) -> Result<CapturedFonts, E
             .iter()
             .find(|f| f.id == case.family_id)
             .unwrap();
-        let mut space = space(data, &case)?;
+        let space = space(data, &case)?;
         let settings = Config {
             size_px: case.size_px,
             axes: case.axes.clone(),
@@ -670,35 +808,81 @@ fn capture(loaded: &specimen_config::LoadedSpecimens) -> Result<CapturedFonts, E
         let request = ReferenceRequest {
             profile: case.profile.clone(),
             extensions: variant.extensions.clone(),
-            settings,
+            settings: settings.clone(),
         };
         let result = crate::renderer::render(data, &request, variant.renderer());
         let (report, reason) = match result {
             Ok(report) => (Some(report), None),
             Err(error) => (None, Some(error.to_string())),
         };
-        if report
-            .as_ref()
-            .is_some_and(|report| report.advance_policy == crate::reference::AdvancePolicy::Hinted)
-        {
-            if let Some(space) = space.as_mut() {
-                let mut space_request = request.clone();
-                space_request.settings.characters = " ".into();
-                let space_report =
-                    crate::renderer::render(data, &space_request, variant.renderer())?;
-                let record = &space_report.records[0];
-                space.advance_26_6 = record.advance_26_6;
-                space.side_bearing_deltas_26_6 = record.side_bearing_deltas_26_6;
-            }
-        }
+        // The candidate finalizes its fitted space through the common
+        // bitmap table, so capture that one glyph at the same fitting;
+        // other roles keep the source space above as their layout input.
+        let fitted_space = if variant.renderer() == RendererRole::Candidate && space.is_some() {
+            let mut space_settings = settings.clone();
+            space_settings.characters = " ".into();
+            let space_request = ReferenceRequest {
+                profile: case.profile.clone(),
+                extensions: variant.extensions.clone(),
+                settings: space_settings,
+            };
+            let space_report = crate::renderer::render(data, &space_request, variant.renderer())?;
+            space_report
+                .records
+                .into_iter()
+                .find(|record| record.codepoint == ' ' as u32)
+        } else {
+            None
+        };
+        // One finalized candidate table per size/axes/profile case,
+        // beside capture. Its failure fails this case's samples like a
+        // capture failure, rather than falling back to per-sample metrics.
+        let candidate_table_result = if variant.renderer() == RendererRole::Candidate {
+            report.as_ref().map(|report| {
+                let sample_texts: Vec<&str> = loaded
+                    .config
+                    .samples
+                    .iter()
+                    .map(|sample| sample.text.as_str())
+                    .collect();
+                candidate_table(
+                    data,
+                    report,
+                    space.as_ref(),
+                    fitted_space.as_ref(),
+                    &sample_texts,
+                )
+                .map_err(|e| e.to_string())
+            })
+        } else {
+            None
+        };
         let layouts = loaded
             .config
             .samples
             .iter()
             .map(|sample| match &report {
-                Some(report) => {
-                    layout(data, report, space.as_ref(), &sample.text).map_err(|e| e.to_string())
-                }
+                Some(report) => match &candidate_table_result {
+                    Some(Err(message)) => Err(message.clone()),
+                    Some(Ok(table)) => layout(
+                        data,
+                        report,
+                        space.as_ref(),
+                        Some(table),
+                        &sample.text,
+                        variant.renderer(),
+                    )
+                    .map_err(|e| e.to_string()),
+                    None => layout(
+                        data,
+                        report,
+                        space.as_ref(),
+                        None,
+                        &sample.text,
+                        variant.renderer(),
+                    )
+                    .map_err(|e| e.to_string()),
+                },
                 None => Err(reason.clone().unwrap()),
             })
             .collect();
@@ -865,11 +1049,7 @@ fn build_packages(
         let composition = json(&serde_json::json!({
             "schema_version": "specimen-composition-v1", "generation_sha256": generation_sha256,
             "implementation_sha256": hash(include_bytes!("specimens.rs")), "harfrust_version": lock_version("harfrust"),
-            "layout_policy": if variant.renderer() == RendererRole::Candidate {
-                "canonical-26.6-plus-projected-source-gap-pairs"
-            } else {
-                "canonical-linear-26.6-plus-harfrust-run-adjustments"
-            },
+            "layout_policy": "candidate-bitmap-integer-or-source-linear-by-renderer-role",
             "features": {"kern": true, "liga": false, "clig": false, "calt": false},
             "origin_rounding": "nearest-pixel-half-toward-positive", "overlap": "maximum-ink", "padding_px": PADDING,
             "palette": "255-round(level*255/(2^output_bits-1))", "items": compositions
@@ -1215,4 +1395,50 @@ pub(crate) fn atomic_file(path: &Path, bytes: &[u8]) -> Result<(), Error> {
     io(temp.as_file().sync_all())?;
     temp.persist(path).map_err(|e| fail(e.to_string()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_attached_adjustments;
+    use std::collections::HashMap;
+
+    fn pairs(entries: &[((u32, u32), i32)]) -> HashMap<(u32, u32), i32> {
+        entries.iter().copied().collect()
+    }
+
+    #[test]
+    fn attached_adjustments_matching_isolated_pairs_are_accepted() {
+        let chars = vec!['A', 'V', ' ', 'A'];
+        // AV isolated -96, V-space 0 (absent), space-A 12, final glyph 0.
+        let isolated = pairs(&[((65, 86), -96), ((32, 65), 12)]);
+        assert!(validate_attached_adjustments(&chars, &[-96, 0, 12, 0], &isolated).is_ok());
+    }
+
+    #[test]
+    fn contextual_discrepancy_on_a_unique_pair_is_rejected() {
+        // AV occurs once, after prefix X. The full run attaches -140,
+        // but isolated AV is -96: a context-dependent value must not
+        // enter candidate placement through specimen shaping.
+        let chars = vec!['X', 'A', 'V'];
+        let isolated = pairs(&[((65, 86), -96)]);
+        assert!(validate_attached_adjustments(&chars, &[0, -140, 0], &isolated).is_err());
+    }
+
+    #[test]
+    fn nonzero_final_glyph_adjustment_is_rejected() {
+        // A right-advance or run-only adjustment on the last glyph has
+        // no following pair; its isolated expectation is exactly zero.
+        let chars = vec!['A', 'V'];
+        let isolated = pairs(&[((65, 86), -96)]);
+        assert!(validate_attached_adjustments(&chars, &[-96, 20], &isolated).is_err());
+    }
+
+    #[test]
+    fn right_advance_change_on_a_middle_glyph_is_rejected() {
+        // The middle glyph's attached value mixes its isolated left-pair
+        // adjustment (-96) with a run-only right-advance change (-30).
+        let chars = vec!['A', 'V', 'A'];
+        let isolated = pairs(&[((65, 86), -96), ((86, 65), -40)]);
+        assert!(validate_attached_adjustments(&chars, &[-96, -70, 0], &isolated).is_err());
+    }
 }

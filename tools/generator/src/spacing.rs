@@ -1,10 +1,8 @@
-use crate::{fail, fixed, Config, Error, Glyph, KerningPair, MetricRounding};
-use harfrust::{
-    font::{BuiltinFontFuncs, FontFuncs},
-    Feature, FontRef, ShapeOptions, ShaperData, ShaperInstance, Tag, UnicodeBuffer,
-};
+use crate::{fail, fixed, Config, Error, KerningPair, MetricRounding};
+use harfrust::{shape, Buffer, Feature, Font, FontFuncs, ShapeOptions, ShaperFont, Tag};
 use skrifa_baseline::MetadataProvider;
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use unicode_general_category::{get_general_category, GeneralCategory};
 use unicode_script::{Script, UnicodeScript};
 
@@ -54,18 +52,18 @@ pub(crate) struct ResolvedScalar {
 
 /// Observe HarfRust's built-in, unpositioned advances without changing them.
 /// The public FontFuncs callback runs after substitution and before positioning:
-/// https://docs.rs/harfrust/0.13.3/harfrust/font/trait.FontFuncs.html
+/// https://docs.rs/harfrust/0.14.0/harfrust/trait.FontFuncs.html
 /// Compare within the shaper's own integer domain, avoiding a tolerance between
 /// its rounded HVAR/gvar deltas and Skrifa's fractional linear metrics.
 #[derive(Default)]
 struct ScalarMetrics {
-    advances: BTreeMap<u32, i32>,
+    advances: RefCell<BTreeMap<u32, i32>>,
 }
 
 impl FontFuncs for ScalarMetrics {
-    fn advance_width(&mut self, builtin: &BuiltinFontFuncs, glyph: harfrust::GlyphId) -> i32 {
-        let advance = builtin.advance_width(glyph);
-        self.advances.insert(glyph.to_u32(), advance);
+    fn glyph_h_advance(&self, font: &ShaperFont, glyph: harfrust::GlyphId) -> i32 {
+        let advance = font.default_glyph_h_advance(glyph);
+        self.advances.borrow_mut().insert(glyph.to_u32(), advance);
         advance
     }
 }
@@ -98,27 +96,31 @@ pub(crate) fn resolve_scalars(
     kerning: bool,
     chars: &[char],
 ) -> Result<Vec<ResolvedScalar>, Error> {
-    let font = FontRef::from_index(data, 0).map_err(|e| fail(format!("shaper font: {e}")))?;
-    let instance =
-        ShaperInstance::from_variations(&font, axes.iter().map(|(t, v)| (t.as_str(), *v)));
-    let shaping = ShaperData::new(&font);
-    let shaper = shaping.shaper(&font).instance(Some(&instance)).build();
+    let font = Font::new(data.to_vec(), 0).ok_or_else(|| fail("invalid shaper font"))?;
+    let font = font
+        .instance_builder()
+        .variations(axes.iter().map(|(t, v)| (t.as_str(), *v)))
+        .build();
     let features = shape_features(kerning);
     let mut resolved = Vec::with_capacity(chars.len());
     for ch in chars {
         let text = ch.to_string();
-        let mut buffer = UnicodeBuffer::new();
+        let mut buffer = Buffer::new();
         buffer.push_str(&text);
         buffer.guess_segment_properties();
-        let mut metrics = ScalarMetrics::default();
-        let out = shaper.shape(
-            buffer,
-            ShapeOptions::new()
-                .features(&features)
-                .font_funcs(Some(&mut metrics)),
-        );
-        let infos = out.glyph_infos();
-        let positions = out.glyph_positions();
+        let metrics = ScalarMetrics::default();
+        let shaper = ShaperFont::new(&font).with_font_funcs(Some(&metrics));
+        shape(
+            &shaper,
+            &mut buffer,
+            ShapeOptions::new().features(&features),
+        )
+        .map_err(|e| fail(format!("shaping failed: {e}")))?;
+        if !buffer.allocation_successful() {
+            return Err(fail("shaping allocation or operation limit exceeded"));
+        }
+        let infos = buffer.glyph_infos();
+        let positions = buffer.glyph_positions();
         let (info, position) = match (infos, positions) {
             ([info], [position]) => (info, position),
             _ => {
@@ -129,7 +131,7 @@ pub(crate) fn resolve_scalars(
             || position.x_offset != 0
             || position.y_offset != 0
             || position.y_advance != 0
-            || metrics.advances.get(&info.glyph_id) != Some(&position.x_advance)
+            || metrics.advances.borrow().get(&info.glyph_id) != Some(&position.x_advance)
         {
             return Err(fail(format!("text {text:?} requires substitutions or positioning beyond scalar glyphs and pair kerning")));
         }
@@ -193,20 +195,7 @@ pub fn ascii_kerning_pairs(
     // below compares against the glyphs actually drawn at these axes.
     // Single-resolution failures stay explicit errors, like strict generation.
     let resolved = resolve_scalars(data, &config.axes, true, &present)?;
-    let glyphs = resolved
-        .iter()
-        .map(|scalar| Glyph {
-            codepoint: scalar.codepoint,
-            glyph_id: scalar.glyph_id,
-            advance_26_6: 0,
-            left: 0,
-            top: 0,
-            width: 0,
-            height: 0,
-            pixels: Vec::new(),
-        })
-        .collect::<Vec<_>>();
-    let (pairs, skipped_pairs) = extract_impl(data, &config, &glyphs, false)?;
+    let (pairs, skipped_pairs) = extract_impl(data, &config, &resolved, false, None)?;
     Ok(AsciiKerning {
         pairs,
         skipped_pairs,
@@ -216,9 +205,28 @@ pub fn ascii_kerning_pairs(
 pub(crate) fn extract(
     data: &[u8],
     config: &Config,
-    glyphs: &[Glyph],
+    identities: &[ResolvedScalar],
 ) -> Result<Vec<KerningPair>, Error> {
-    let (pairs, _) = extract_impl(data, config, glyphs, true)?;
+    let (pairs, _) = extract_impl(data, config, identities, true, None)?;
+    Ok(pairs)
+}
+
+/// Strict isolated-pair extraction for an explicit ordered-pair set.
+///
+/// Shares [`extract_impl`] with [`extract`] and the ASCII inspection
+/// path, so requested pairs are validated with the same strict shape
+/// algorithm (isolated pair must keep each scalar's selected glyph and
+/// only change the left advance). Unrequested ordered combinations are
+/// skipped before shaping or validation; a requested pair with an
+/// unsupported substitution or right-advance change remains an error.
+#[cfg(any(feature = "native-io", test))]
+pub(crate) fn extract_selected(
+    data: &[u8],
+    config: &Config,
+    identities: &[ResolvedScalar],
+    requested: &BTreeSet<(u32, u32)>,
+) -> Result<Vec<KerningPair>, Error> {
+    let (pairs, _) = extract_impl(data, config, identities, true, Some(requested))?;
     Ok(pairs)
 }
 
@@ -230,25 +238,38 @@ pub(crate) fn extract(
 /// scalar advances is an error. The ASCII display table (`!strict`) omits
 /// such unrepresentable pairs and reports how many, so one contextual pair
 /// cannot hide the whole subset; single-glyph failures stay errors in both
-/// modes. Returns the pairs plus the omitted-pair count (zero when strict).
+/// modes. When `requested` is `Some`, only those ordered pairs are shaped
+/// and checked; other combinations are skipped without shaping. Returns
+/// the pairs plus the omitted-pair count (zero when strict).
 fn extract_impl(
     data: &[u8],
     config: &Config,
-    glyphs: &[Glyph],
+    identities: &[ResolvedScalar],
     strict: bool,
+    requested: Option<&BTreeSet<(u32, u32)>>,
 ) -> Result<(Vec<KerningPair>, u32), Error> {
-    let font = FontRef::from_index(data, 0).map_err(|e| fail(format!("shaper font: {e}")))?;
-    let instance =
-        ShaperInstance::from_variations(&font, config.axes.iter().map(|(t, v)| (t.as_str(), *v)));
-    let shaping = ShaperData::new(&font);
-    let shaper = shaping.shaper(&font).instance(Some(&instance)).build();
+    let font = Font::new(data.to_vec(), 0).ok_or_else(|| fail("invalid shaper font"))?;
+    let font = font
+        .instance_builder()
+        .variations(config.axes.iter().map(|(t, v)| (t.as_str(), *v)))
+        .build();
+    let shaper = ShaperFont::new(&font);
     let scale = config.size_px / shaper.units_per_em() as f32;
     let features = shape_features(config.kerning);
     let shape = |text: &str, expected: &[u32]| -> Result<Vec<i32>, Error> {
-        let mut buffer = UnicodeBuffer::new();
+        let mut buffer = Buffer::new();
         buffer.push_str(text);
         buffer.guess_segment_properties();
-        let out = shaper.shape(buffer, ShapeOptions::new().features(&features));
+        shape(
+            &shaper,
+            &mut buffer,
+            ShapeOptions::new().features(&features),
+        )
+        .map_err(|e| fail(format!("shaping failed: {e}")))?;
+        if !buffer.allocation_successful() {
+            return Err(fail("shaping allocation or operation limit exceeded"));
+        }
+        let out = buffer;
         if out
             .glyph_infos()
             .iter()
@@ -263,15 +284,37 @@ fn extract_impl(
         }
         Ok(out.glyph_positions().iter().map(|p| p.x_advance).collect())
     };
-    let mut singles = Vec::with_capacity(glyphs.len());
-    for glyph in glyphs {
-        let ch = char::from_u32(glyph.codepoint).unwrap();
-        singles.push(shape(&ch.to_string(), &[glyph.glyph_id])?[0]);
+    // Singles are needed only for identities that participate in a
+    // requested pair; unrequested combinations never shape.
+    let mut singles: Vec<Option<i32>> = vec![None; identities.len()];
+    let needed_codepoints: Option<HashSet<u32>> = requested.map(|filter| {
+        let mut needed = HashSet::new();
+        for (left, right) in filter {
+            needed.insert(*left);
+            needed.insert(*right);
+        }
+        needed
+    });
+    for (index, identity) in identities.iter().enumerate() {
+        let needed = match &needed_codepoints {
+            Some(set) => set.contains(&identity.codepoint),
+            None => true,
+        };
+        if !needed {
+            continue;
+        }
+        let ch = char::from_u32(identity.codepoint).unwrap();
+        singles[index] = Some(shape(&ch.to_string(), &[identity.glyph_id])?[0]);
     }
     let mut pairs = Vec::new();
     let mut skipped: u32 = 0;
-    for (i, left) in glyphs.iter().enumerate() {
-        for (j, right) in glyphs.iter().enumerate() {
+    for (i, left) in identities.iter().enumerate() {
+        for (j, right) in identities.iter().enumerate() {
+            if let Some(filter) = requested {
+                if !filter.contains(&(left.codepoint, right.codepoint)) {
+                    continue;
+                }
+            }
             let text: String = [
                 char::from_u32(left.codepoint).unwrap(),
                 char::from_u32(right.codepoint).unwrap(),
@@ -286,7 +329,8 @@ fn extract_impl(
                 }
                 Err(error) => return Err(error),
             };
-            if advances[1] != singles[j] {
+            let single_right = singles[j].expect("requested pair glyph has a single");
+            if advances[1] != single_right {
                 if !strict {
                     skipped += 1;
                     continue;
@@ -295,8 +339,9 @@ fn extract_impl(
                     "pair {text:?} changes the right advance; requires text-run positioning"
                 )));
             }
+            let single_left = singles[i].expect("requested pair glyph has a single");
             let adjustment = fixed(
-                (advances[0] - singles[i]) as f32 * scale,
+                (advances[0] - single_left) as f32 * scale,
                 config.metric_rounding,
             );
             if adjustment != 0 {
@@ -309,4 +354,81 @@ fn extract_impl(
         }
     }
     Ok((pairs, skipped))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract, extract_selected, resolve_scalars, ResolvedScalar};
+    use crate::{Config, MetricRounding};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn literata() -> Vec<u8> {
+        std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fonts")
+                .join("Literata.ttf"),
+        )
+        .unwrap()
+    }
+
+    fn config() -> Config {
+        Config {
+            size_px: 14.0,
+            kerning: true,
+            metric_rounding: MetricRounding::Subpixel,
+            ..Config::default()
+        }
+    }
+
+    fn identities(data: &[u8], chars: &[char]) -> Vec<ResolvedScalar> {
+        resolve_scalars(data, &BTreeMap::new(), true, chars).unwrap()
+    }
+
+    #[test]
+    fn selected_extraction_skips_unrequested_unsupported_pairs() {
+        let data = literata();
+        let cfg = config();
+        let repertoire = identities(&data, &['A', '_', '`']);
+        // From coverage: the valid ordered pair actually placed is
+        // underscore -> grave. Unrequested grave->grave and A->grave
+        // must not be shaped or validated.
+        let requested = BTreeSet::from([('_' as u32, '`' as u32)]);
+        let pairs = extract_selected(&data, &cfg, &repertoire, &requested).unwrap();
+        assert!(
+            pairs
+                .iter()
+                .all(|pair| (pair.left, pair.right) != ('`' as u32, '`' as u32)),
+            "selected extraction must not invent failures from unrequested pairs"
+        );
+        // The same repertoire under full-Cartesian extraction still
+        // fails, proving the filter is what isolates the requested set.
+        assert!(extract(&data, &cfg, &repertoire).is_err());
+    }
+
+    #[test]
+    fn selected_extraction_still_fails_for_requested_unsupported_pair() {
+        let data = literata();
+        let cfg = config();
+        let repertoire = identities(&data, &['A', '_', '`']);
+        let requested = BTreeSet::from([('`' as u32, '`' as u32)]);
+        assert!(extract_selected(&data, &cfg, &repertoire, &requested).is_err());
+    }
+
+    #[test]
+    fn selected_extraction_supports_valid_self_pair() {
+        let data = literata();
+        let cfg = config();
+        let repertoire = identities(&data, &['m']);
+        let requested = BTreeSet::from([('m' as u32, 'm' as u32)]);
+        let pairs = extract_selected(&data, &cfg, &repertoire, &requested).unwrap();
+        // m -> m is the strict isolated pair contract: it shapes as
+        // "mm" with the same glyph in both slots; a non-zero kerning
+        // value is optional, but the pair must be representable.
+        assert!(
+            pairs
+                .iter()
+                .all(|pair| pair.left == 'm' as u32 && pair.right == 'm' as u32),
+            "unexpected pairs from m->m extraction: {pairs:?}"
+        );
+    }
 }

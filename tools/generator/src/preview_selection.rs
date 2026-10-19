@@ -1,11 +1,11 @@
-//! Explicit renderer roles compare candidate with approved baseline, or baseline
+//! Explicit renderer roles compare candidate with legacy baseline, or baseline
 //! with reference. Roleless historical manifests retain their original policy.
 use crate::renderer::RendererRole;
 use crate::{fail, Error};
 use std::collections::BTreeSet;
 
-/// Explicit roles compare a working candidate with the approved baseline.
-/// With no newer candidate, the approved baseline is shown against reference.
+/// Explicit roles compare a working candidate with the legacy baseline.
+/// With no newer candidate, the legacy baseline is shown against reference.
 /// Older manifests without roles retain their historical selection policy.
 pub fn select_roles<'a>(
     variants: impl IntoIterator<Item = (&'a str, Option<&'a str>, Option<RendererRole>)>,
@@ -35,9 +35,7 @@ pub fn select_roles<'a>(
         if variants.iter().any(|(_, _, role)| role.is_some())
             && variants.iter().any(|(_, label, _)| label.is_some())
         {
-            return Err(fail(
-                "explicit working preview requires an approved baseline",
-            ));
+            return Err(fail("explicit working preview requires a legacy baseline"));
         }
         return select(variants.iter().map(|(id, version, _)| (*id, *version)));
     };

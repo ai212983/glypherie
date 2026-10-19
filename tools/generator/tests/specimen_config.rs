@@ -156,6 +156,7 @@ fn checked_in_config_resolves_reference_corpus_and_pinned_fonts() {
         Some(font_generator::baseline::VERSION)
     );
     assert_eq!(loaded.config.variants[1].extensions, "diagonal-01");
+    assert_eq!(loaded.config.variants[2].extensions, "font-hints-01");
     assert_eq!(
         loaded.config.variants[1].renderer(),
         font_generator::renderer::RendererRole::Baseline
@@ -485,10 +486,34 @@ fn stable_renderer_roles_distinguish_approval_from_working_version_metadata() {
     let mut candidate = current["variants"][1].clone();
     candidate["id"] = json!("working");
     candidate["renderer"] = json!("candidate");
+    candidate["extensions"] = json!("font-hints-01");
     candidate["version"] = json!("100.500");
     working["variants"].as_array_mut().unwrap().push(candidate);
     working["defaults"]["variants"] = json!([current["variants"][1]["id"], "working"]);
     assert!(resolve(working).is_ok());
     current["variants"][1]["renderer"] = json!("candidate");
-    assert!(resolve(current).unwrap_err().contains("approved baseline"));
+    assert!(resolve(current).unwrap_err().contains("legacy baseline"));
+}
+
+#[test]
+fn effective_candidate_role_rejects_stale_fitting_policy_early() {
+    for explicit in [false, true] {
+        let mut config: Value = serde_json::from_str(include_str!("../specimens.json")).unwrap();
+        config.as_object_mut().unwrap().remove("preview_policy");
+        if !explicit {
+            config["variants"][2]
+                .as_object_mut()
+                .unwrap()
+                .remove("renderer");
+        }
+        config["variants"][2]["extensions"] = json!("diagonal-01");
+        assert!(resolve(config.clone())
+            .unwrap_err()
+            .contains("candidate requires extensions none, font-hints-01 or mono-width-01"));
+        for extensions in ["none", "font-hints-01", "mono-width-01"] {
+            config["variants"][2]["extensions"] = json!(extensions);
+            config["variants"][2]["hinting"] = json!("auto");
+            assert!(resolve(config.clone()).is_ok());
+        }
+    }
 }

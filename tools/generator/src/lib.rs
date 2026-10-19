@@ -11,6 +11,8 @@ pub mod evaluation;
 pub mod layout_spacing;
 pub mod metadata;
 pub mod mono_spacing;
+#[cfg(feature = "candidate")]
+pub mod overlap;
 /// Compatibility name for earlier diagnostic callers; renderer selection uses roles.
 #[cfg(feature = "candidate")]
 pub use candidate as iteration;
@@ -19,12 +21,14 @@ pub mod probe;
 mod raster;
 pub mod reference;
 pub mod renderer;
+pub(crate) mod source;
 mod spacing;
 pub use spacing::{ascii_kerning_pairs, AsciiKerning};
 #[cfg(feature = "native-io")]
 pub mod specimen_config;
 #[cfg(feature = "native-io")]
 pub mod specimens;
+pub mod stem_fitting;
 pub mod surface;
 
 use production_skrifa::{
@@ -266,7 +270,7 @@ pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
     if glyphs.is_empty() {
         return Err(fail("repertoire contains no available glyphs"));
     }
-    let kerning = spacing::extract(data, config, &glyphs)?;
+    let kerning = spacing::extract(data, config, &resolved)?;
     Ok(GeneratedFont {
         source_sha256: format!("{:x}", Sha256::digest(data)),
         config: config.clone(),

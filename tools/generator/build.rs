@@ -22,9 +22,9 @@ fn collect(root: &Path, directory: &Path, digest: &mut Sha256) {
 }
 
 fn main() {
-    for role in ["baseline", "candidate"] {
-        renderer(role);
-    }
+    // Only the baseline fork is vendored; its hash input is unchanged so
+    // SKRIFA_BASELINE_SHA256 stays stable.
+    renderer("baseline");
 }
 
 fn renderer(role: &str) {

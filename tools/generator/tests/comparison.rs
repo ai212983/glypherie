@@ -297,6 +297,7 @@ fn candidate_compares_to_approved_baseline_across_versions() {
     // Hypothetical future iterations exercise selection after explicit user closure.
     let mut newer = source["variants"][1].clone();
     newer["renderer"] = json!("candidate");
+    newer["extensions"] = json!("font-hints-01");
     newer["id"] = json!("future-iteration");
     newer["version"] = json!("001.03");
     source["variants"].as_array_mut().unwrap().push(newer);

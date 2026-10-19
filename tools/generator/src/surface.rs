@@ -13,14 +13,13 @@
 //! the 26.6 pen with `(pen + 32).div_euclid(64)`, matching specimen placement.
 use crate::{
     fail,
-    layout_spacing::{fitted_advance_26_6, EngineInputs, SpacingEngine},
+    layout_spacing::{finalize_bitmap_metrics, EngineInputs, SpacingEngine},
+    mono_spacing::font_spacing_properties,
     renderer::RendererRole,
+    stem_fitting::StemFittingStrategy,
     Config, Error, GeneratedFont, Glyph, MissingGlyphs,
 };
 use std::collections::{BTreeSet, HashMap};
-
-/// Selectable spacing model; see [`SpacingModel`] for the model contracts.
-pub use crate::layout_spacing::SpacingModel;
 
 /// Maximum canvas width or height in pixels.
 pub const MAX_CANVAS_DIM: u32 = 4096;
@@ -147,24 +146,20 @@ pub struct RenderedText {
 /// shape, then canvas allocation. Blank requests validate settings, font,
 /// axes and palette before returning the background canvas.
 pub fn render_text(font_data: &[u8], request: &TextRenderRequest) -> Result<RenderedText, Error> {
-    render_inner(font_data, request, None, 0.0, SpacingModel::Auto)
+    render_inner(font_data, request, None, 0.0, None)
 }
 
 /// Render bounded multi-line text with an explicit stable renderer role.
 ///
 /// `Baseline` is the approved production path: shaping, metrics, kerning and
 /// bitmaps come from `generate()` unchanged, so this equals [`render_text`]
-/// bit-for-bit. `Reference` keeps its layout and replaces monochrome bitmaps.
-/// `Candidate` uses fitted advances and experimental rounded source-gap pair
-/// placement, with bearing-delta fallback and source line metrics.
-/// The role capture uses `mono_1bit`;
-/// extensions `none` for reference, `diagonal-01` for candidate). Preview
-/// depths other than 1/3-bit, candidate hinting other than `Auto`, and a
-/// candidate request without the `candidate` feature fail explicitly.
-///
-/// Gray is outside the monochrome experiment: every role uses the unchanged
-/// production gray target and coverage. Published captures separately use
-/// the reference gray target; baseline and candidate agree within each target.
+/// bit-for-bit. `Reference` keeps source layout and replaces monochrome
+/// bitmaps. `Candidate` replaces Mono and Gray bitmaps with its capture and
+/// lays out with the single bitmap policy: whole-pixel fitted advances and
+/// whole-pixel pair adjustments. The role capture uses extensions `none`
+/// for reference and `font-hints-01` by default for candidate. Preview
+/// depths other than 1/3-bit, candidate hinting other than automatic, and
+/// a candidate request without the `candidate` feature fail explicitly.
 pub fn render_text_with_renderer(
     font_data: &[u8],
     request: &TextRenderRequest,
@@ -175,50 +170,42 @@ pub fn render_text_with_renderer(
 
 /// Preview tracking: add a signed pixel offset to every available glyph's
 /// advance. Negative offsets preserve neutral ASCII word gaps; positive
-/// offsets widen spaces too. Source kerning and geometric corrections remain
-/// intact. Mono rounds the offset to whole pixels and limits
-/// tightening so normally separated source pairs retain a blank column. Fixed
-/// pitch, tabular digits and intentional source overlaps bypass the pair floor;
-/// Gray retains fractional tracking with the same word-gap policy.
-/// Glyph outlines and bitmaps never change. Zero retains the existing rendering
-/// path; line measurement and wrapping use the same constrained advances.
+/// offsets widen spaces too. Pair adjustments remain intact. Mono rounds
+/// the offset to whole pixels and limits tightening so normally separated
+/// source pairs retain a blank column. Fixed pitch, tabular digits and
+/// intentional source overlaps bypass the pair floor. The candidate uses
+/// whole-pixel tracking at any depth; baseline and reference Gray retain
+/// fractional tracking with the same word-gap policy. Glyph outlines and
+/// bitmaps never change. Line measurement and wrapping use the same
+/// constrained advances.
 pub fn render_text_with_renderer_and_spacing(
     font_data: &[u8],
     request: &TextRenderRequest,
     role: RendererRole,
     letter_spacing_px: f32,
 ) -> Result<RenderedText, Error> {
-    render_text_with_spacing_model(
-        font_data,
-        request,
-        role,
-        letter_spacing_px,
-        SpacingModel::Auto,
-    )
+    render_inner(font_data, request, Some(role), letter_spacing_px, None)
 }
 
 /// Render bounded multi-line text with an explicit renderer role, preview
-/// tracking and a selectable [`SpacingModel`].
+/// tracking and selectable [`StemFittingStrategy`].
 ///
-/// `Auto` keeps the default contracts: the working candidate lays out with
-/// fitted advances and the projected source-gap pair model, while the
-/// approved baseline and the independent reference use source linear
-/// advances plus source pair kerning. Explicit `Source` keeps source linear
-/// advances and source kerning with the same role's glyph bitmaps; explicit
-/// `Fitted` uses the same role report's returned hinted advances with
-/// bearing correction where that role provides metadata; explicit
-/// `Projected` uses same-role fitted metrics with the source-gap pair model
-/// (fitted fallback for unsupported pairs). Gray and other non-monochrome
-/// depths always use source layout: explicit non-`Auto` models fail there.
-/// A disabled source kern config stays off under every model. The baseline's
-/// own render report is captured only for explicit `Fitted`/`Projected`,
-/// never for default production.
-pub fn render_text_with_spacing_model(
+/// Layout is determined by role, not by a user-selectable spacing model:
+/// baseline and reference keep source layout (fractional source advances
+/// and source kerning); the working candidate uses the single bitmap
+/// policy (whole-pixel advances and pair adjustments) for Mono and Gray.
+/// `None` keeps the current default exactly: the candidate role renders
+/// the `FontHintsFirst` (`font-hints-01`) fit. An explicit strategy routes
+/// the candidate capture to that strategy's extension instead; anything
+/// else is rejected before blank-text handling. A compatible blank request
+/// produces the normal background canvas. Gray rejects an explicit
+/// strategy; the default `None` gray path is unchanged in fitting.
+pub fn render_text_with_fitting_strategy(
     font_data: &[u8],
     request: &TextRenderRequest,
     role: RendererRole,
     letter_spacing_px: f32,
-    model: SpacingModel,
+    strategy: Option<StemFittingStrategy>,
 ) -> Result<RenderedText, Error> {
     #[cfg(not(feature = "candidate"))]
     if role == RendererRole::Candidate {
@@ -229,39 +216,45 @@ pub fn render_text_with_spacing_model(
     if !letter_spacing_px.is_finite() || !(-16.0..=16.0).contains(&letter_spacing_px) {
         return Err(fail("letter_spacing_px must be finite and within -16..=16"));
     }
-    if model != SpacingModel::Auto && request.config.output_bits != 1 {
-        return Err(fail(format!(
-            "spacing model {} requires monochrome output_bits 1, got {}",
-            spacing_model_name(model),
-            request.config.output_bits
-        )));
-    }
-    render_inner(font_data, request, Some(role), letter_spacing_px, model)
+    // Explicit-strategy validation lives in `render_inner`, before blank
+    // handling, so every entry point shares one gate.
+    render_inner(font_data, request, Some(role), letter_spacing_px, strategy)
 }
 
-/// Stable lowercase spacing-model name for capability errors.
-fn spacing_model_name(model: SpacingModel) -> &'static str {
-    match model {
-        SpacingModel::Auto => "auto",
-        SpacingModel::Source => "source",
-        SpacingModel::Fitted => "fitted",
-        SpacingModel::Projected => "projected",
-    }
-}
-
-/// Shared validation/layout/compositing pipeline behind [`render_text`],
-/// [`render_text_with_renderer`] and [`render_text_with_spacing_model`];
-/// `None` and `Some(Baseline)` with [`SpacingModel::Auto`] both take the
-/// approved `generate()` path unchanged. All numerical spacing decisions
-/// (advance choice, kern, bearing/projected corrections, tracking, minimum)
-/// run through the [`SpacingEngine`] built below.
+/// Shared validation/layout/compositing pipeline behind [`render_text`]
+/// and [`render_text_with_renderer`]; `None` and `Some(Baseline)` both
+/// take the approved `generate()` path unchanged. All numerical spacing
+/// decisions (finalized advances, single pair application, tracking and
+/// the tracking floor) run through the [`SpacingEngine`] built below.
 fn render_inner(
     font_data: &[u8],
     request: &TextRenderRequest,
     role: Option<RendererRole>,
     letter_spacing_px: f32,
-    model: SpacingModel,
+    strategy: Option<StemFittingStrategy>,
 ) -> Result<RenderedText, Error> {
+    if !letter_spacing_px.is_finite() || !(-16.0..=16.0).contains(&letter_spacing_px) {
+        return Err(fail("letter_spacing_px must be finite and within -16..=16"));
+    }
+    // The Mono strategy owns automatic engine selection. Normalize the
+    // effective configuration before validation, blank handling or generation
+    // so report settings and layout provenance match the actual draw.
+    let mut effective_request;
+    let request = if role == Some(RendererRole::Candidate)
+        && matches!(
+            request.config.hinting,
+            crate::Hinting::Auto | crate::Hinting::AutoFallback
+        ) {
+        effective_request = request.clone();
+        effective_request.config.hinting = if request.config.output_bits == 1 {
+            strategy.unwrap_or_default().hinting()
+        } else {
+            crate::Hinting::Auto
+        };
+        &effective_request
+    } else {
+        request
+    };
     if !(1..=MAX_CANVAS_DIM).contains(&request.width) {
         return Err(fail("canvas width must be within 1..=4096"));
     }
@@ -285,7 +278,7 @@ fn render_inner(
             )));
         }
         match (role, request.config.hinting) {
-            (RendererRole::Candidate, crate::Hinting::Auto) => {}
+            (RendererRole::Candidate, crate::Hinting::Auto | crate::Hinting::AutoFallback) => {}
             (RendererRole::Reference, crate::Hinting::AutoFallback) => {
                 return Err(fail(format!(
                     "preview role {} requires explicit hinting, got auto_fallback",
@@ -298,6 +291,42 @@ fn render_inner(
                 )));
             }
             _ => {}
+        }
+    }
+    // Explicit fitting strategies are gated here, before blank-text
+    // handling: candidate role with monochrome automatic hinting and the
+    // candidate feature, nothing else. In particular an explicit strategy
+    // on an incompatible blank request is an error. Compatible blank text
+    // retains normal rendering semantics; default gray remains unchanged.
+    if strategy.is_some() {
+        #[cfg(not(feature = "candidate"))]
+        {
+            return Err(fail(
+                "explicit fitting strategy requires the candidate Cargo feature",
+            ));
+        }
+        #[cfg(feature = "candidate")]
+        {
+            if role != Some(RendererRole::Candidate) {
+                return Err(fail(
+                    "explicit fitting strategy requires the candidate preview role",
+                ));
+            }
+            if request.config.output_bits != 1 {
+                return Err(fail(format!(
+                    "explicit fitting strategy requires monochrome output_bits 1, got {}",
+                    request.config.output_bits
+                )));
+            }
+            if !matches!(
+                request.config.hinting,
+                crate::Hinting::Auto | crate::Hinting::AutoFallback
+            ) {
+                return Err(fail(format!(
+                    "explicit fitting strategy requires automatic hinting, got {:?}",
+                    request.config.hinting
+                )));
+            }
         }
     }
     let paragraphs = split_paragraphs(&request.text);
@@ -330,146 +359,179 @@ fn render_inner(
     // `characters` is derived from `text`; the request value is ignored.
     let mut config = request.config.clone();
     config.characters = repertoire.iter().collect();
-    // Reuses the approved baseline path: shaping support, missing-glyph policy
-    // and `fixed()` rounding all come from `generate()` unchanged. When every
-    // repertoire glyph is skipped, the render contract is a blank canvas
-    // naming each codepoint — no surrogate placeholder is rendered. The Error
-    // policy keeps the `generate()` failure unchanged.
-    let generated = match crate::generate(font_data, &config) {
-        Ok(generated) => generated,
-        Err(error)
-            if request.config.missing_glyphs == MissingGlyphs::Skip
-                && error.0 == "repertoire contains no available glyphs" =>
-        {
-            // `generate()` validated settings, font, axes and per-character
-            // shaping support before reporting the empty repertoire; re-check
-            // shaping support here so this path can never mask a capability
-            // error, then report the sorted repertoire as skipped.
-            for ch in &repertoire {
-                crate::spacing::validate_request(*ch)?;
+    let is_candidate = role == Some(RendererRole::Candidate);
+    let mono = config.output_bits == 1;
+    // Candidate: source advances/kerning and line metrics come from
+    // source preparation (no raster), then the fitted capture supplies
+    // the one bitmap per unique character. Other roles keep the
+    // approved `generate()` path unchanged; reference Mono swaps its
+    // independently captured bitmaps over that output.
+    let (generated, role_report) = if is_candidate {
+        let source = match crate::source::prepare_source(font_data, &config) {
+            Ok(source) => source,
+            Err(error)
+                if request.config.missing_glyphs == MissingGlyphs::Skip
+                    && error.0 == "repertoire contains no available glyphs" =>
+            {
+                for ch in &repertoire {
+                    crate::spacing::validate_request(*ch)?;
+                }
+                let levels = 1u32 << request.config.output_bits;
+                palette_map(&request.foreground, request.palette.as_deref(), levels)?;
+                let missing: Vec<u32> = repertoire.iter().map(|ch| *ch as u32).collect();
+                return blank(request.width, request.height, &request.background, missing);
             }
-            let levels = 1u32 << request.config.output_bits;
-            palette_map(&request.foreground, request.palette.as_deref(), levels)?;
-            let missing: Vec<u32> = repertoire.iter().map(|ch| *ch as u32).collect();
-            return blank(request.width, request.height, &request.background, missing);
+            Err(error) => return Err(error),
+        };
+        let preview = crate::reference::ReferenceRequest {
+            profile: if mono {
+                crate::reference::PROFILE_MONO_1BIT.to_string()
+            } else {
+                crate::reference::PROFILE_GRAY_3BIT.to_string()
+            },
+            extensions: StemFittingStrategy::extension(strategy).to_string(),
+            settings: config.clone(),
+        };
+        let report = crate::renderer::render(font_data, &preview, RendererRole::Candidate)?;
+        let source_advance_by_codepoint: HashMap<u32, i32> = source
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.codepoint, glyph.advance_26_6))
+            .collect();
+        let mut glyphs = Vec::with_capacity(report.records.len());
+        for record in &report.records {
+            let advance = source_advance_by_codepoint
+                .get(&record.codepoint)
+                .copied()
+                .ok_or_else(|| {
+                    fail(format!("missing source advance U+{:04X}", record.codepoint))
+                })?;
+            glyphs.push(Glyph {
+                codepoint: record.codepoint,
+                glyph_id: record.glyph_id,
+                advance_26_6: advance,
+                left: record.left,
+                top: record.top,
+                width: record.width,
+                height: record.height,
+                pixels: record.pixels.clone(),
+            });
         }
-        Err(error) => return Err(error),
+        glyphs.sort_by_key(|glyph| glyph.codepoint);
+        let generated = GeneratedFont {
+            source_sha256: source.source_sha256.clone(),
+            config: config.clone(),
+            metrics: source.metrics.clone(),
+            glyphs,
+            missing_codepoints: source.missing_codepoints.clone(),
+            kerning: source.kerning.clone(),
+        };
+        (generated, Some(report))
+    } else {
+        let generated = match crate::generate(font_data, &config) {
+            Ok(generated) => generated,
+            Err(error)
+                if request.config.missing_glyphs == MissingGlyphs::Skip
+                    && error.0 == "repertoire contains no available glyphs" =>
+            {
+                // `generate()` validated settings, font, axes and
+                // per-character shaping support before reporting the
+                // empty repertoire; re-check shaping support here so
+                // this path can never mask a capability error, then
+                // report the sorted repertoire as skipped.
+                for ch in &repertoire {
+                    crate::spacing::validate_request(*ch)?;
+                }
+                let levels = 1u32 << request.config.output_bits;
+                palette_map(&request.foreground, request.palette.as_deref(), levels)?;
+                let missing: Vec<u32> = repertoire.iter().map(|ch| *ch as u32).collect();
+                return blank(request.width, request.height, &request.background, missing);
+            }
+            Err(error) => return Err(error),
+        };
+        let mut generated = generated;
+        let needs_report = matches!(role, Some(RendererRole::Reference)) && mono;
+        let role_report = if needs_report {
+            let selected_role = role.unwrap_or(RendererRole::Baseline);
+            let preview = crate::reference::ReferenceRequest {
+                profile: if mono {
+                    crate::reference::PROFILE_MONO_1BIT.to_string()
+                } else {
+                    crate::reference::PROFILE_GRAY_3BIT.to_string()
+                },
+                extensions: crate::reference::EXTENSIONS_NONE.to_string(),
+                settings: generated.config.clone(),
+            };
+            Some(crate::renderer::render(font_data, &preview, selected_role)?)
+        } else {
+            None
+        };
+        if let Some(report) = &role_report {
+            swap_bitmaps(
+                &mut generated,
+                report,
+                role.unwrap_or(RendererRole::Baseline),
+            )?;
+        }
+        (generated, role_report)
     };
-    let mut generated = generated;
-    let mono = generated.config.output_bits == 1;
-    // Source advances before any role swap; explicit Source restores these
-    // while fitted-family models take the same role report's advances.
+    // Source advances before any role swap; baseline and reference keep
+    // them as their layout, while the candidate finalizes bitmap metrics
+    // from its own capture below.
     let source_advances: HashMap<u32, i32> = generated
         .glyphs
         .iter()
         .map(|glyph| (glyph.codepoint, glyph.advance_26_6))
         .collect();
-    // Auto retains the current paths exactly: the working candidate in
-    // monochrome lays out projected, every other role/profile lays out source.
-    let legacy_projected =
-        model == SpacingModel::Auto && role == Some(RendererRole::Candidate) && mono;
-    let resolved = match model {
-        SpacingModel::Auto => {
-            if legacy_projected {
-                SpacingModel::Projected
-            } else {
-                SpacingModel::Source
-            }
-        }
-        explicit => explicit,
-    };
-    let explicit = model != SpacingModel::Auto;
-    // Role captures reuse the approved `generate()` output above for shaping
-    // support, missing-glyph policy, line metrics and source kerning. The
-    // baseline's own report is captured only for explicit fitted-family
-    // models, never for default production; like the candidate capture it
-    // needs automatic hinting.
-    let needs_report = mono
-        && match role {
-            Some(RendererRole::Reference | RendererRole::Candidate) => true,
-            Some(RendererRole::Baseline) => {
-                explicit && matches!(resolved, SpacingModel::Fitted | SpacingModel::Projected)
-            }
-            None => false,
+    let source_kern: HashMap<(u32, u32), i32> = generated
+        .kerning
+        .iter()
+        .map(|k| ((k.left, k.right), k.adjustment_26_6))
+        .collect();
+    // Finalize the one layout this role consumes. The candidate resolves
+    // fitted advances and pair adjustments to whole pixels once, here and
+    // in the exported strike, so preview, measurement and wrapping cannot
+    // diverge; other roles keep fractional source layout.
+    let (advances, pair_adjustments, guard_kern, integer_positions) = if is_candidate {
+        let report = role_report
+            .as_ref()
+            .ok_or_else(|| fail("candidate layout requires its fitted capture"))?;
+        let properties = font_spacing_properties(font_data, &generated.config)?;
+        // The one finalized bitmap table, resolved exactly as in the
+        // exported strike; placement applies its pair values once.
+        let finalized = finalize_bitmap_metrics(
+            &report.records,
+            &source_advances,
+            &source_kern,
+            generated.config.kerning,
+            properties.monospace,
+            properties.tabular_digits,
+        );
+        let guard = if generated.config.kerning {
+            finalized.source_kern_26_6.clone()
+        } else {
+            HashMap::new()
         };
-    if needs_report
-        && role == Some(RendererRole::Baseline)
-        && generated.config.hinting != crate::Hinting::Auto
-    {
-        return Err(fail(format!(
-            "spacing model {} for baseline requires automatic hinting, got {:?}",
-            spacing_model_name(resolved),
-            generated.config.hinting
-        )));
-    }
-    let role_report = if needs_report {
-        let selected_role = role.unwrap_or(RendererRole::Baseline);
-        let preview = crate::reference::ReferenceRequest {
-            profile: crate::reference::PROFILE_MONO_1BIT.to_string(),
-            extensions: if selected_role == RendererRole::Reference {
-                crate::reference::EXTENSIONS_NONE.to_string()
-            } else {
-                crate::baseline::EXTENSIONS_DIAGONAL_01.to_string()
-            },
-            settings: generated.config.clone(),
-        };
-        Some(crate::renderer::render(font_data, &preview, selected_role)?)
+        (
+            finalized.advances_26_6,
+            finalized.pair_adjustments_26_6,
+            guard,
+            true,
+        )
     } else {
-        None
+        let guard = if generated.config.kerning {
+            source_kern.clone()
+        } else {
+            HashMap::new()
+        };
+        (source_advances.clone(), source_kern.clone(), guard, false)
     };
-    if let Some(report) = &role_report {
-        swap_bitmaps(
-            &mut generated,
-            report,
-            role.unwrap_or(RendererRole::Baseline),
-        )?;
-    }
-    // Capture adapters supply immutable metric alternatives. The spacing
-    // engine chooses between them; changing a model never mutates glyphs.
-    let fitted_advances = role_report
-        .as_ref()
-        .map(|report| {
-            report
-                .records
-                .iter()
-                .map(|record| {
-                    (
-                        record.codepoint,
-                        fitted_advance_26_6(record, generated.config.metric_rounding).0,
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_else(|| source_advances.clone());
-    let bearing_deltas = role_report
-        .as_ref()
-        .map(|report| {
-            report
-                .records
-                .iter()
-                .filter_map(|record| {
-                    record
-                        .side_bearing_deltas_26_6
-                        .map(|deltas| (record.codepoint, deltas))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let tracking_26_6 = SpacingEngine::normalize_tracking_offset(mono, letter_spacing_px);
-    let geometry = if mono && (resolved == SpacingModel::Projected || tracking_26_6 != 0) {
-        let mut settings = generated.config.clone();
-        settings.hinting = crate::Hinting::None;
-        let source = crate::reference::reference(
-            font_data,
-            &crate::reference::ReferenceRequest {
-                profile: crate::reference::PROFILE_MONO_1BIT.to_string(),
-                extensions: crate::reference::EXTENSIONS_NONE.to_string(),
-                settings,
-            },
-        )?;
-        Some(crate::mono_spacing::PairSpacing::for_output(
-            font_data, &source, &generated,
-        )?)
+    let tracking_26_6 =
+        SpacingEngine::normalize_tracking_offset(mono || integer_positions, letter_spacing_px);
+    // Nonzero Mono tracking needs only unhinted source extents:
+    // geometry is drawn without any coverage or raster.
+    let geometry = if mono && tracking_26_6 != 0 {
+        Some(crate::mono_spacing::TrackingGuard::for_output_from_geometry(font_data, &generated)?)
     } else {
         None
     };
@@ -478,23 +540,12 @@ fn render_inner(
     let glyphs: HashMap<u32, &Glyph> = generated.glyphs.iter().map(|g| (g.codepoint, g)).collect();
     // Bounded by repertoire^2 (<= 1024^2) via `generate()`; per-pair lookup is O(1).
     let engine = SpacingEngine::new(EngineInputs {
-        model: resolved,
-        source_advances_26_6: source_advances,
-        fitted_advances_26_6: fitted_advances,
-        kern_26_6: generated
-            .kerning
-            .iter()
-            .map(|k| ((k.left, k.right), k.adjustment_26_6))
-            .collect(),
-        bearing_deltas_26_6: bearing_deltas,
-        pair: if resolved == SpacingModel::Projected {
-            geometry.as_ref()
-        } else {
-            None
-        },
+        advances_26_6: advances,
+        pair_adjustments_26_6: pair_adjustments,
+        guard_kern_26_6: guard_kern,
         minimum: geometry.as_ref(),
-        apply_kerning: generated.config.kerning,
         mono,
+        integer_positions,
         letter_spacing_px,
     })?;
     let metrics = &generated.metrics;
@@ -617,9 +668,8 @@ fn role_name(role: RendererRole) -> &'static str {
 }
 
 /// Replace only each glyph's bitmap box with the role capture's record for
-/// the same codepoint. Advances follow the spacing model and are applied
-/// separately; glyph ids, line metrics, source kerning and the skipped set
-/// remain shared.
+/// the same codepoint. Advances are finalized separately by role; glyph
+/// ids, line metrics, source kerning and the skipped set remain shared.
 fn swap_bitmaps(
     generated: &mut GeneratedFont,
     report: &crate::reference::ReferenceReport,
@@ -926,6 +976,90 @@ impl Canvas {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "candidate"))]
+mod tests {
+    use super::{render_text_with_renderer_and_spacing, HAlign, TextRenderRequest, WrapMode};
+    use crate::{renderer::RendererRole, source::raster_counter, Config};
+    use std::path::Path;
+
+    fn roboto() -> Vec<u8> {
+        std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fonts/Roboto.ttf")).unwrap()
+    }
+
+    fn request(text: &str) -> TextRenderRequest {
+        let mut config = Config {
+            size_px: 14.0,
+            ..Config::default()
+        };
+        config.axes.insert("wght".into(), 400.0);
+        config.axes.insert("wdth".into(), 100.0);
+        TextRenderRequest {
+            config,
+            text: text.into(),
+            width: 300,
+            height: 64,
+            wrap: WrapMode::Clip,
+            align: HAlign::Left,
+            foreground: [0, 0, 0, 255],
+            background: [255, 255, 255, 255],
+            palette: None,
+        }
+    }
+
+    #[test]
+    fn candidate_surface_rasterizes_once_per_unique_and_tracking_draws_geometry_only() {
+        let data = roboto();
+        // "hello world" has 8 unique scalars; repeated letters must not reraster.
+        raster_counter::reset();
+        let neutral = render_text_with_renderer_and_spacing(
+            &data,
+            &request("hello world"),
+            RendererRole::Candidate,
+            0.0,
+        )
+        .unwrap();
+        assert_eq!(raster_counter::logical_rasters(), 8);
+        assert_eq!(
+            raster_counter::source_geometry_draws(),
+            0,
+            "neutral tracking needs no source geometry"
+        );
+        assert!(!neutral.pixels.is_empty());
+
+        raster_counter::reset();
+        let tracked = render_text_with_renderer_and_spacing(
+            &data,
+            &request("hello world"),
+            RendererRole::Candidate,
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(
+            raster_counter::logical_rasters(),
+            8,
+            "tracking must not add a source raster beyond the final capture"
+        );
+        assert_eq!(
+            raster_counter::source_geometry_draws(),
+            8,
+            "tracking guard draws each unique glyph's unhinted geometry once"
+        );
+        assert_ne!(tracked.lines[0].width_26_6, neutral.lines[0].width_26_6);
+
+        // A single repeated character rasterizes and draws geometry once.
+        raster_counter::reset();
+        render_text_with_renderer_and_spacing(
+            &data,
+            &request("oooo"),
+            RendererRole::Candidate,
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(raster_counter::logical_rasters(), 1);
+        assert_eq!(raster_counter::source_geometry_draws(), 1);
     }
 }
 

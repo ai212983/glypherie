@@ -13,7 +13,7 @@ use std::{fs, path::PathBuf, process::Command};
 const CFF: &[u8] = include_bytes!("fixtures/static-cff.otf");
 const CFF2: &[u8] = include_bytes!("fixtures/variable-cff2.otf");
 const SKRIFA_REGISTRY_CHECKSUM: &str =
-    "d4febebda507fb889c545a37a135517769d1391941013561292897961d1887d6";
+    "a5213b4825bac3587046330052d61bfac7bd3bd0d203c758d7c2ef726fcea034";
 
 fn roboto() -> Vec<u8> {
     fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fonts/Roboto.ttf")).unwrap()
@@ -43,7 +43,7 @@ fn mode_name(hinting: Hinting) -> &'static str {
 }
 
 fn check_identity(report: &font_generator::reference::ReferenceReport) {
-    assert_eq!(report.skrifa_version, "0.46.2");
+    assert_eq!(report.skrifa_version, "0.48.0");
     assert_eq!(report.skrifa_version, skrifa_version());
     assert_eq!(report.skrifa_registry_checksum, SKRIFA_REGISTRY_CHECKSUM);
     assert_eq!(report.skrifa_registry_checksum, skrifa_checksum());

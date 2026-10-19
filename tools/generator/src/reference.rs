@@ -18,6 +18,9 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const PROFILE_MONO_1BIT: &str = "mono_1bit";
 pub const PROFILE_GRAY_3BIT: &str = "gray_3bit";
 pub const EXTENSIONS_NONE: &str = "none";
+/// Vertical-only candidate policy: ttfautohint fits the Y axis only
+/// (<https://freetype.org/ttfautohint/index.html>) and applies no special
+/// diagonal handling (<https://freetype.org/ttfautohint/doc/ttfautohint.html#diagonals>).
 pub const IMPLEMENTATION_UPSTREAM: &str = "upstream";
 
 fn default_extensions() -> String {
@@ -75,6 +78,7 @@ pub enum RasterPolicy {
     #[default]
     Coverage,
     CoverageDropout,
+    CoverageOverlap4xDropout,
 }
 
 /// The design advance or the advance returned by the actual fitted outline.
@@ -160,10 +164,61 @@ pub(crate) fn resolve(request: &ReferenceRequest) -> Result<(Target, String), Er
     Ok((target, selected.to_string()))
 }
 
+/// Capture policy shared by the independent reference and the Mono
+/// candidate. Callers own extension/hinting validation and target choice;
+/// glyph resolution, linear metrics and raster settings stay identical so
+/// role captures remain directly comparable.
+#[derive(Clone)]
+pub(crate) struct CapturePolicy {
+    pub target: Target,
+    pub target_name: String,
+    pub smooth_mode: Option<String>,
+    pub symmetric_rendering: Option<bool>,
+    pub preserve_linear_metrics: Option<bool>,
+    pub dropout: bool,
+    /// Candidate-only bounded 4x overlap mitigation (FreeType-style
+    /// per-sample reduction, uniform across glyphs). Only Mono candidates
+    /// set this; every other capture leaves it false.
+    pub overlap_4x: bool,
+    pub implementation: String,
+    pub fork: bool,
+    pub extensions: String,
+}
+
 pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceReport, Error> {
     let config = &request.settings;
     validate_config(config)?;
     let (target, selected) = resolve(request)?;
+    let gray = request.profile == PROFILE_GRAY_3BIT;
+    let policy = CapturePolicy {
+        target,
+        target_name: if gray { "smooth" } else { "mono" }.to_string(),
+        smooth_mode: if gray {
+            Some(String::from("normal"))
+        } else {
+            None
+        },
+        symmetric_rendering: if gray { Some(true) } else { None },
+        preserve_linear_metrics: if gray { Some(false) } else { None },
+        dropout: false,
+        overlap_4x: false,
+        implementation: String::from(IMPLEMENTATION_UPSTREAM),
+        fork: false,
+        extensions: request.extensions.clone(),
+    };
+    capture_with_policy(data, request, &selected, &policy)
+}
+
+pub(crate) fn capture_with_policy(
+    data: &[u8],
+    request: &ReferenceRequest,
+    selected: &str,
+    policy: &CapturePolicy,
+) -> Result<ReferenceReport, Error> {
+    let config = &request.settings;
+    validate_config(config)?;
+    let requested = selected.to_string();
+    let target = policy.target;
     if !matches!(data.get(..4), Some(b"\0\x01\0\0" | b"OTTO")) {
         return Err(fail("supported input is a single sfnt TTF/OTF outline font; collections, WOFF and bitmap formats require conversion"));
     }
@@ -204,8 +259,19 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
     let engine = match config.hinting {
         Hinting::Auto => Some(Engine::Auto(None)),
         Hinting::Interpreter => Some(Engine::Interpreter),
-        _ => None,
+        Hinting::AutoFallback => Some(Engine::AutoFallback),
+        Hinting::None => None,
     };
+    let selected = if config.hinting == Hinting::AutoFallback {
+        if outlines.prefer_interpreter() {
+            "interpreter"
+        } else {
+            "auto"
+        }
+    } else {
+        selected
+    }
+    .to_string();
     let hinting = match engine {
         Some(engine) => Some(
             HintingInstance::new(
@@ -223,8 +289,7 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
         return Err(fail("font has invalid units per em"));
     }
     let advances = font.glyph_metrics(size, &location);
-    let gray = request.profile == PROFILE_GRAY_3BIT;
-    let target_name = if gray { "smooth" } else { "mono" }.to_string();
+    let target_name = policy.target_name.clone();
     let mut records = Vec::new();
     let mut missing_codepoints = Vec::new();
     let mut present = Vec::new();
@@ -258,26 +323,45 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
             .draw(settings, &mut pen)
             .map_err(|e| fail(format!("outline U+{:04X}: {e}", ch as u32)))?;
         let fitted = pen.into_commands();
-        let output = rasterize(&fitted, config)?;
+        // Both Mono policies rasterize the unmodified upstream outline
+        // through the same bounded overlap reduction and dropout pipeline.
+        let output = if policy.overlap_4x {
+            #[cfg(feature = "candidate")]
+            {
+                crate::overlap::rasterize(&fitted, config)?
+            }
+            #[cfg(not(feature = "candidate"))]
+            {
+                return Err(fail("overlap 4x raster requires the candidate feature"));
+            }
+        } else if policy.dropout {
+            crate::dropout::rasterize(&fitted, config)?
+        } else {
+            rasterize(&fitted, config)?
+        };
         let advance = advances
             .advance_width(gid)
             .ok_or_else(|| fail(format!("missing advance U+{:04X}", ch as u32)))?;
         let advance_26_6 = fixed(advance, config.metric_rounding);
         records.push(ReferenceRecord {
+            // Source-layout policy deliberately omits fitted phantom-bearing
+            // corrections, independently of how the selected hinter moves X.
             side_bearing_deltas_26_6: None,
-            raster_policy: RasterPolicy::Coverage,
+            raster_policy: if policy.overlap_4x {
+                RasterPolicy::CoverageOverlap4xDropout
+            } else if policy.dropout {
+                RasterPolicy::CoverageDropout
+            } else {
+                RasterPolicy::Coverage
+            },
             diagonal_pairs: None,
             codepoint: ch as u32,
             glyph_id: scalar.glyph_id,
             selected_engine: selected.clone(),
             target: target_name.clone(),
-            smooth_mode: if gray {
-                Some(String::from("normal"))
-            } else {
-                None
-            },
-            symmetric_rendering: if gray { Some(true) } else { None },
-            preserve_linear_metrics: if gray { Some(false) } else { None },
+            smooth_mode: policy.smooth_mode.clone(),
+            symmetric_rendering: policy.symmetric_rendering,
+            preserve_linear_metrics: policy.preserve_linear_metrics,
             draw_pedantic: false,
             skrifa_version: skrifa_version(),
             skrifa_registry_checksum: skrifa_checksum(),
@@ -309,19 +393,15 @@ pub fn reference(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceRep
         size_px: config.size_px,
         axes: config.axes.clone(),
         profile: request.profile.clone(),
-        extensions: request.extensions.clone(),
-        hinting_requested: selected,
+        extensions: policy.extensions.clone(),
+        hinting_requested: requested,
         target: target_name,
-        smooth_mode: if gray {
-            Some(String::from("normal"))
-        } else {
-            None
-        },
-        symmetric_rendering: if gray { Some(true) } else { None },
-        preserve_linear_metrics: if gray { Some(false) } else { None },
+        smooth_mode: policy.smooth_mode.clone(),
+        symmetric_rendering: policy.symmetric_rendering,
+        preserve_linear_metrics: policy.preserve_linear_metrics,
         draw_pedantic: false,
-        implementation: String::from("upstream"),
-        fork: false,
+        implementation: policy.implementation.clone(),
+        fork: policy.fork,
         skrifa_version: skrifa_version(),
         skrifa_registry_checksum: skrifa_checksum(),
         zeno_version: zeno_version(),

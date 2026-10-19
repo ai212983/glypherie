@@ -335,13 +335,36 @@ impl SpecimenConfig {
                     || variant.extensions != crate::baseline::EXTENSIONS_DIAGONAL_01)
             {
                 return Err(fail(
-                    "baseline must identify the approved version and fitting policy",
+                    "baseline must identify the legacy version and fitting policy",
                 ));
             }
-            if !["none", "diagonal-01"].contains(&variant.extensions.as_str())
-                || variant.hinting != Hinting::Auto
+            // Validate the effective route, including roleless iterations.
+            // `none` remains the explicit upstream-reference bypass.
+            if variant.renderer() == RendererRole::Candidate
+                && ![
+                    crate::reference::EXTENSIONS_NONE,
+                    crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST,
+                    crate::stem_fitting::EXTENSIONS_MONO_WIDTH_01,
+                ]
+                .contains(&variant.extensions.as_str())
             {
-                return Err(fail("specimen variants support automatic fitting with extensions none or diagonal-01"));
+                return Err(fail(
+                    "candidate requires extensions none, font-hints-01 or mono-width-01",
+                ));
+            }
+            if ![
+                "none",
+                "diagonal-01",
+                crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST,
+                crate::stem_fitting::EXTENSIONS_MONO_WIDTH_01,
+            ]
+            .contains(&variant.extensions.as_str())
+                || !(variant.hinting == Hinting::Auto
+                    || (variant.renderer() == RendererRole::Candidate
+                        && variant.extensions == crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST
+                        && variant.hinting == Hinting::AutoFallback))
+            {
+                return Err(fail("specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"));
             }
             if variant.kind == VariantKind::Reference && variant.extensions != "none" {
                 return Err(fail("reference variants require extensions none"));

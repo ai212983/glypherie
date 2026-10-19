@@ -171,6 +171,26 @@ impl OutlinePen for FittedPen {
     }
 }
 
+// The legacy comparison fork uses an older read-fonts pen trait. Forward
+// commands into the same capture pen; no geometry is adapted or refitted.
+impl skrifa_baseline::outline::OutlinePen for FittedPen {
+    fn move_to(&mut self, x: f32, y: f32) {
+        <Self as OutlinePen>::move_to(self, x, y);
+    }
+    fn line_to(&mut self, x: f32, y: f32) {
+        <Self as OutlinePen>::line_to(self, x, y);
+    }
+    fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
+        <Self as OutlinePen>::quad_to(self, x1, y1, x, y);
+    }
+    fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
+        <Self as OutlinePen>::curve_to(self, x1, y1, x2, y2, x, y);
+    }
+    fn close(&mut self) {
+        <Self as OutlinePen>::close(self);
+    }
+}
+
 pub fn to_zeno(commands: &[FittedCommand]) -> Vec<Command> {
     let mut out = Vec::with_capacity(commands.len());
     for command in commands {
@@ -202,6 +222,8 @@ pub struct RasterOutput {
 }
 
 pub fn rasterize(commands: &[FittedCommand], config: &Config) -> Result<RasterOutput, Error> {
+    #[cfg(test)]
+    crate::source::raster_counter::record_logical(1);
     if commands.is_empty() {
         return Ok(RasterOutput {
             pixels: vec![],

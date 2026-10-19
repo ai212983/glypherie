@@ -2,9 +2,9 @@
 
 <!-- cspell:words rustup bindgen BINDGEN rgba COLR CBDT sbix texel texels -->
 
-Browser/Node port of the approved Rust font renderer. It reuses `generate()` through
-`font_generator::surface::render_text` with the approved skrifa-baseline snapshot: no fitting or model code lives here,
-so rendering parity with the native path is the contract.
+Browser/Node port of the Rust font renderer. It reuses `generate()` through `font_generator::surface::render_text` with
+the legacy skrifa-baseline snapshot: no fitting or model code lives here, so rendering parity with the native path is
+the contract.
 
 ## Build
 
@@ -63,6 +63,30 @@ try {
 }
 ```
 
+## Stem-fitting strategies
+
+Candidate 1-bit rendering defaults to **Font hints first**: upstream `Target::Mono` with `Engine::AutoFallback`, using
+embedded instructions when upstream prefers them and otherwise its automatic hinter. Optional `stem_fitting:
+"font_hints_first" | "upstream_mono"` selects that default explicitly or forces automatic Mono fitting. Both consume the
+supplied font bytes directly; no font-specific preparation, names or glyph rules are required. `vertical_only` is
+removed and rejected.
+
+```js
+const result = font.render({
+  text: "minimum mut Avo", width: 300, height: 80, size_px: 14,
+  renderer: "candidate", output_bits: 1, hinting: "auto_fallback",
+  // stem_fitting: "upstream_mono", // optional forced automatic comparison
+});
+```
+
+Strategy selection controls the effective automatic engine policy; the shared generator records the normalized policy
+and actual selected engine. The WASM layer forwards the shared enum and adds no fitting logic. Explicit selection
+requires a preview build, candidate role and 1-bit output, including for blank text. Automatic policy inputs `auto` and
+`auto_fallback` are accepted; `none`, `interpreter`, unknown names and incompatible role/profile combinations fail. Gray
+keeps upstream Normal automatic fitting. Both Mono choices share the project raster and the candidate bitmap layout;
+upstream fitted-outline identity does not imply FreeType raster identity or optical acceptance. See the
+[generator API](../generator/API.md#working-candidate-fitting).
+
 ## Kerning pairs
 
 `font.kerning_pairs(size_px, axes)` returns a plain object `{ pairs, skipped_pairs }`. Each pair has Unicode codepoints
@@ -82,10 +106,9 @@ thrown JS strings carrying the generator message only.
 
 ## Input restrictions
 
-Font formats and supported shaping follow the
-[generator capabilities](../generator/README.md#supported-input-and-output). Color-font tables (`COLR`, `SVG`, `CBDT`,
-`sbix`) are rejected by this surface; there is no color-font adapter. Tabs, combining marks and unsupported shaping
-remain errors.
+Font formats and supported shaping follow the [generator capabilities](../generator/API.md#supported-input-and-output).
+Color-font tables (`COLR`, `SVG`, `CBDT`, `sbix`) are rejected by this surface; there is no color-font adapter. Tabs,
+combining marks and unsupported shaping remain errors.
 
 - The render spec has no `characters` field: the repertoire always comes from `text`, and unknown spec fields (including
   `characters`) are rejected.
@@ -94,15 +117,15 @@ remain errors.
 
 Only `text`, `width` and `height` are required. Top-level glyph controls `size_px`, `axes`, `hinting`, `output_bits`,
 `mono_threshold`, `gray_gamma`, `kerning`, `metric_rounding` and `missing_glyphs` inherit the
-[generator settings and defaults](../generator/README.md#rendering-settings). The table below covers surface-specific
+[generator settings and defaults](../generator/README.md#builds-and-settings). The table below covers surface-specific
 controls.
 
 | Field               | Default             | Meaning                                                                                                                                                                                                                                                                                                                   |
 | ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `text`              | (required)          | Source text; lines split on `\n`, `\r\n`, `\r`. Max 8192 characters.                                                                                                                                                                                                                                                      |
 | `width`, `height`   | (required)          | Exact canvas size, each 1..=4096.                                                                                                                                                                                                                                                                                         |
-| `letter_spacing_px` | 0                   | Signed finite offset, -16..=16; follows the [shared tracking policy](../generator/README.md#tracking-policy).                                                                                                                                                                                                             |
-| `spacing_model`     | `"auto"`            | `"auto"`, `"source"`, `"fitted"`, `"projected"`; explicit choices require 1-bit output. See the [spacing API](../generator/README.md#live-spacing-api).                                                                                                                                                                   |
+| `letter_spacing_px` | 0                   | Signed finite offset, -16..=16; follows the [shared tracking policy](../generator/API.md#tracking-policy).                                                                                                                                                                                                                |
+| `spacing_model`     | (retired)           | Removed with the single bitmap policy; passing it is rejected like any other unknown field. Layout follows `renderer`: candidate bitmap placement, baseline/reference source layout.                                                                                                                                      |
 | `wrap`              | `"word"`            | `"clip"` (truncate at the edge), `"word"` (wrap at spaces; an overlong word falls back to character breaks), `"char"` (break anywhere).                                                                                                                                                                                   |
 | `align`             | `"left"`            | `"left"`, `"center"` (odd remainders truncate), `"right"`.                                                                                                                                                                                                                                                                |
 | `foreground`        | `[0,0,0,255]`       | Glyph ink color, RGBA bytes.                                                                                                                                                                                                                                                                                              |

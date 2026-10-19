@@ -203,7 +203,7 @@ fn probe_records_explicit_engine_evidence() {
         assert_eq!(report.hinting_requested, name);
         assert_eq!(record.target, "mono");
         assert!(!record.draw_hinted);
-        assert_eq!(record.skrifa_version, "0.46.2");
+        assert_eq!(record.skrifa_version, "0.48.0");
         assert_eq!(record.zeno_version, "0.3.3");
         assert_eq!(report.skrifa_version, skrifa_version());
         assert_eq!(report.zeno_version, zeno_version());

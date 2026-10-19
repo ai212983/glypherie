@@ -188,6 +188,100 @@ fn hinted_advance_policy_checks_scaler_metrics_without_allowing_arbitrary_change
     assert!(!evaluate(&source, &upstream, &gray).hard_invariants_pass);
 }
 
+#[cfg(feature = "candidate")]
+fn font_hints_reports() -> (ReferenceReport, ReferenceReport, ReferenceReport) {
+    let (source, upstream, _) = reports("mono_1bit");
+    let candidate = font_generator::candidate::render(
+        include_bytes!("fixtures/static-cff.otf"),
+        &ReferenceRequest {
+            profile: "mono_1bit".into(),
+            extensions: "font-hints-01".into(),
+            settings: Config {
+                size_px: 16.0,
+                characters: "A".into(),
+                ..Config::default()
+            },
+        },
+    )
+    .unwrap();
+    (source, upstream, candidate)
+}
+
+#[test]
+#[cfg(feature = "candidate")]
+fn font_hints_candidate_target_is_declared_exactly() {
+    let (source, upstream, mut candidate) = font_hints_reports();
+    let checked = evaluate(&source, &upstream, &candidate);
+    assert!(checked.hard_invariants_pass, "{:?}", checked.hard_failures);
+    candidate.target = "smooth".into();
+    candidate.records[0].target = "smooth".into();
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(evaluation.hard_failures.iter().any(|failure| {
+        failure.invariant == "Mono candidate must declare the upstream mono target"
+    }));
+}
+
+#[test]
+#[cfg(feature = "candidate")]
+fn font_hints_evaluation_checks_raster_and_engine_metadata() {
+    use font_generator::reference::RasterPolicy;
+    let (source, upstream, candidate) = font_hints_reports();
+    let mut mislabeled = candidate.clone();
+    mislabeled.hinting_requested = "auto".into();
+    assert!(evaluate(&source, &upstream, &mislabeled)
+        .hard_failures
+        .iter()
+        .any(|f| f.invariant == "font-hints candidate requires the upstream fallback policy"));
+
+    // Recompute a valid coverage-only bitmap: raster reproduction alone
+    // must not permit the candidate to silently drop the overlap policy.
+    let mut coverage_only = candidate.clone();
+    let commands = coverage_only.records[0].fitted_commands.clone();
+    replace_outline(&mut coverage_only, commands);
+    coverage_only.records[0].raster_policy = RasterPolicy::Coverage;
+    assert!(evaluate(&source, &upstream, &coverage_only)
+        .hard_failures
+        .iter()
+        .any(|failure| {
+            failure.invariant
+                == "font-hints candidate requires overlap 4x dropout without horizontal correction metadata"
+        }));
+
+    // A valid plain-dropout bitmap must not satisfy the font-hints candidate
+    // either: only the overlap 4x policy is accepted.
+    let mut plain_dropout = candidate.clone();
+    let commands = plain_dropout.records[0].fitted_commands.clone();
+    let config = Config {
+        output_bits: 1,
+        ..Config::default()
+    };
+    let bitmap = font_generator::dropout::rasterize(&commands, &config).unwrap();
+    plain_dropout.records[0].left = bitmap.left;
+    plain_dropout.records[0].top = bitmap.top;
+    plain_dropout.records[0].width = bitmap.width;
+    plain_dropout.records[0].height = bitmap.height;
+    plain_dropout.records[0].pixels = bitmap.pixels;
+    plain_dropout.records[0].coverage = bitmap.coverage;
+    plain_dropout.records[0].coverage_sha256 =
+        format!("{:x}", Sha256::digest(&plain_dropout.records[0].coverage));
+    plain_dropout.records[0].raster_policy = RasterPolicy::CoverageOverlap4xDropout;
+    assert!(
+        evaluate(&source, &upstream, &plain_dropout)
+            .hard_failures
+            .iter()
+            .any(|failure| failure.invariant
+                == "stored raster does not reproduce from fitted outline")
+    );
+    plain_dropout.records[0].raster_policy = RasterPolicy::CoverageDropout;
+    assert!(evaluate(&source, &upstream, &plain_dropout)
+        .hard_failures
+        .iter()
+        .any(|failure| {
+            failure.invariant
+                == "font-hints candidate requires overlap 4x dropout without horizontal correction metadata"
+        }));
+}
+
 #[test]
 fn dropout_policy_reproduces_delivered_pixels_and_keeps_independent_coverage_hard() {
     use font_generator::reference::RasterPolicy;
@@ -218,8 +312,27 @@ fn dropout_policy_reproduces_delivered_pixels_and_keeps_independent_coverage_har
 
 #[test]
 fn dropout_policy_cannot_be_declared_for_gray() {
+    use font_generator::reference::RasterPolicy;
     let (source, upstream, mut candidate) = reports("gray_3bit");
-    candidate.records[0].raster_policy = font_generator::reference::RasterPolicy::CoverageDropout;
+    for policy in [
+        RasterPolicy::CoverageDropout,
+        RasterPolicy::CoverageOverlap4xDropout,
+    ] {
+        candidate.records[0].raster_policy = policy;
+        assert!(evaluate(&source, &upstream, &candidate)
+            .hard_failures
+            .iter()
+            .any(|failure| failure.invariant
+                == "unsupported raster policy for this profile or build"));
+    }
+}
+
+#[cfg(not(feature = "candidate"))]
+#[test]
+fn overlap_policy_requires_candidate_feature() {
+    let (source, upstream, mut candidate) = reports("mono_1bit");
+    candidate.records[0].raster_policy =
+        font_generator::reference::RasterPolicy::CoverageOverlap4xDropout;
     assert!(evaluate(&source, &upstream, &candidate)
         .hard_failures
         .iter()

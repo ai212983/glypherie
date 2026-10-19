@@ -1,6 +1,6 @@
 use crate::{
     fail, fixed,
-    probe::{lock_sha256, skrifa_checksum, skrifa_version, zeno_version, FittedPen},
+    probe::{lock_sha256, zeno_version, FittedPen},
     reference::{
         ReferenceRecord, ReferenceReport, ReferenceRequest, PROFILE_GRAY_3BIT, PROFILE_MONO_1BIT,
     },
@@ -8,7 +8,7 @@ use crate::{
 };
 use fitting_skrifa::{
     instance::Size,
-    outline::{DrawSettings, Engine, HintingInstance, HintingOptions, SmoothMode, Target},
+    outline::{DrawSettings, Engine, HintingInstance, HintingOptions, Target},
     FontRef, MetadataProvider,
 };
 use sha2::{Digest, Sha256};
@@ -33,36 +33,39 @@ pub fn render(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceReport
     capture(data, request, true)
 }
 
+/// Capture with the legacy fork, or, when disabled, the independent
+/// reference unchanged. Disabled capture therefore reports the current
+/// registry identity, not the legacy fork's.
 pub fn capture(
     data: &[u8],
     request: &ReferenceRequest,
     enabled: bool,
 ) -> Result<ReferenceReport, Error> {
+    if !enabled {
+        if request.extensions != "none" {
+            return Err(fail("disabled fork capture requires extensions none"));
+        }
+        return crate::reference::reference(data, request);
+    }
+    capture_enabled(data, request)
+}
+
+fn capture_enabled(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceReport, Error> {
     let config = &request.settings;
     validate_config(config)?;
-    let mut upstream_request = request.clone();
-    upstream_request.extensions = String::from("none");
-    if request.extensions != "none" && request.extensions != EXTENSIONS_DIAGONAL_01 {
-        return Err(fail("unsupported iteration extension policy"));
-    }
-    if !enabled && request.extensions != "none" {
-        return Err(fail("disabled fork capture requires extensions none"));
-    }
-    if enabled
-        && (request.extensions != EXTENSIONS_DIAGONAL_01
-            || request.settings.hinting != Hinting::Auto
-            || request.profile != PROFILE_MONO_1BIT)
+    if request.extensions != EXTENSIONS_DIAGONAL_01
+        || request.settings.hinting != Hinting::Auto
+        || request.profile != PROFILE_MONO_1BIT
     {
         return Err(fail(
             "diagonal fitting requires mono_1bit automatic hinting",
         ));
     }
+    let mut upstream_request = request.clone();
+    upstream_request.extensions = String::from("none");
+    // Profile/bits validation and the selected-engine name stay with the
+    // reference contract; the draw below is the legacy Mono capture.
     let (_, selected) = crate::reference::resolve(&upstream_request)?;
-    let target = if request.profile == PROFILE_MONO_1BIT {
-        Target::Mono
-    } else {
-        SmoothMode::Normal.into()
-    };
     if !matches!(data.get(..4), Some(b"\0\x01\0\0" | b"OTTO")) {
         return Err(fail("supported input is a single sfnt TTF/OTF outline font; collections, WOFF and bitmap formats require conversion"));
     }
@@ -100,50 +103,27 @@ pub fn capture(
         .location(config.axes.iter().map(|(t, v)| (t.as_str(), *v)));
     let size = Size::new(config.size_px);
     let outlines = font.outline_glyphs();
-    let engine = match config.hinting {
-        Hinting::Auto => Some(Engine::Auto(None)),
-        Hinting::Interpreter => Some(Engine::Interpreter),
-        _ => None,
-    };
-    let mut hinting = match engine {
-        Some(engine) => Some(
-            HintingInstance::new(
-                &outlines,
-                size,
-                &location,
-                HintingOptions { engine, target },
-            )
-            .map_err(|e| fail(format!("hinting setup failed: {e}")))?,
-        ),
-        None => None,
-    };
-    if enabled
-        && !hinting
-            .as_mut()
-            .is_some_and(|h| h.set_diagonal_constraints(true))
-    {
+    let mut hinting = HintingInstance::new(
+        &outlines,
+        size,
+        &location,
+        HintingOptions {
+            engine: Engine::Auto(None),
+            target: Target::Mono,
+        },
+    )
+    .map_err(|e| fail(format!("hinting setup failed: {e}")))?;
+    if !hinting.set_diagonal_constraints(true) {
         return Err(fail("diagonal extension could not be enabled"));
     }
-    if enabled {
-        if !hinting
-            .as_mut()
-            .is_some_and(|h| h.set_diagonal_stem_relative(true))
-        {
-            return Err(fail("stem-relative diagonal policy could not be enabled"));
-        }
+    if !hinting.set_diagonal_stem_relative(true) {
+        return Err(fail("stem-relative diagonal policy could not be enabled"));
     }
     let metrics = font.metrics(size, &location);
     if metrics.units_per_em == 0 {
         return Err(fail("font has invalid units per em"));
     }
     let advances = font.glyph_metrics(size, &location);
-    let gray = request.profile == PROFILE_GRAY_3BIT;
-    let advance_policy = if enabled {
-        ADVANCE_POLICY
-    } else {
-        crate::reference::AdvancePolicy::Linear
-    };
-    let target_name = if gray { "smooth" } else { "mono" }.to_string();
     let mut records = Vec::new();
     let mut missing_codepoints = Vec::new();
     let mut present = Vec::new();
@@ -171,45 +151,35 @@ pub fn capture(
             .get(gid)
             .ok_or_else(|| fail(format!("missing outline U+{:04X}", ch as u32)))?;
         let mut pen = FittedPen::default();
-        let settings = match &hinting {
-            Some(h) => DrawSettings::hinted(h, false),
-            None => DrawSettings::unhinted(size, &location),
-        };
         let adjusted = outline
-            .draw(settings, &mut pen)
+            .draw(DrawSettings::hinted(&hinting, false), &mut pen)
             .map_err(|e| fail(format!("outline U+{:04X}: {e}", ch as u32)))?;
         let fitted = pen.into_commands();
-        let output = rasterize_enabled(&fitted, config, enabled)?;
-        let linear = advances
+        // Approved dropout applies only to this enabled Mono automatic
+        // instance; raw coverage is never modified.
+        let output = crate::dropout::rasterize(&fitted, config)?;
+        let advance = advances
             .advance_width(gid)
             .ok_or_else(|| fail(format!("missing advance U+{:04X}", ch as u32)))?;
-
-        let advance = if advance_policy == crate::reference::AdvancePolicy::Hinted {
-            adjusted.advance_width.unwrap_or(linear)
-        } else {
-            linear
-        };
         if !advance.is_finite() {
             return Err(fail("nonfinite fitted advance"));
         }
         records.push(ReferenceRecord {
-            side_bearing_deltas_26_6: side_bearing_deltas(&adjusted, enabled),
-            raster_policy: raster_policy(enabled),
+            // Source-layout policy deliberately omits fitted phantom-bearing
+            // corrections, independently of how the selected hinter moves X.
+            side_bearing_deltas_26_6: None,
+            raster_policy: crate::reference::RasterPolicy::CoverageDropout,
             diagonal_pairs: adjusted.diagonal_pairs,
             codepoint: ch as u32,
             glyph_id: scalar.glyph_id,
             selected_engine: selected.clone(),
-            target: target_name.clone(),
-            smooth_mode: if gray {
-                Some(String::from("normal"))
-            } else {
-                None
-            },
-            symmetric_rendering: if gray { Some(true) } else { None },
-            preserve_linear_metrics: if gray { Some(false) } else { None },
+            target: String::from("mono"),
+            smooth_mode: None,
+            symmetric_rendering: None,
+            preserve_linear_metrics: None,
             draw_pedantic: false,
-            skrifa_version: skrifa_version(),
-            skrifa_registry_checksum: skrifa_checksum(),
+            skrifa_version: fitting_skrifa_version(),
+            skrifa_registry_checksum: fitting_skrifa_checksum(),
             zeno_version: zeno_version(),
             zeno_format: String::from("alpha"),
             output_bits: config.output_bits,
@@ -233,34 +203,26 @@ pub fn capture(
         return Err(fail("repertoire contains no available glyphs"));
     }
     Ok(ReferenceReport {
-        advance_policy,
+        advance_policy: ADVANCE_POLICY,
         source_sha256: format!("{:x}", Sha256::digest(data)),
         size_px: config.size_px,
         axes: config.axes.clone(),
         profile: request.profile.clone(),
         extensions: request.extensions.clone(),
         hinting_requested: selected,
-        target: target_name,
-        smooth_mode: if gray {
-            Some(String::from("normal"))
-        } else {
-            None
-        },
-        symmetric_rendering: if gray { Some(true) } else { None },
-        preserve_linear_metrics: if gray { Some(false) } else { None },
+        target: String::from("mono"),
+        smooth_mode: None,
+        symmetric_rendering: None,
+        preserve_linear_metrics: None,
         draw_pedantic: false,
         implementation: format!(
             "skrifa-{}:{}",
-            if enabled {
-                request.extensions.as_str()
-            } else {
-                EXTENSIONS_DIAGONAL_01
-            },
+            request.extensions.as_str(),
             FITTING_SHA256
         ),
         fork: true,
-        skrifa_version: skrifa_version(),
-        skrifa_registry_checksum: skrifa_checksum(),
+        skrifa_version: fitting_skrifa_version(),
+        skrifa_registry_checksum: fitting_skrifa_checksum(),
         zeno_version: zeno_version(),
         dependency_lock_sha256: lock_sha256(),
         metrics: FontMetrics {

@@ -288,15 +288,31 @@ pub fn rasterize(commands: &[FittedCommand], config: &Config) -> Result<RasterOu
     if config.output_bits != 1 || raster.pixels.is_empty() {
         return Ok(raster);
     }
+    apply_to_raster(commands, &mut raster)?;
+    Ok(raster)
+}
+
+/// Apply the outline-derived mono dropout scan to an already thresholded
+/// native raster built from the same original geometry. Coverage is never
+/// modified; rescued pixels are set to 1. The caller owns coverage
+/// conversion (plain or oversampled); the scan itself always runs on the
+/// original fitted outline at native placement.
+pub(crate) fn apply_to_raster(
+    commands: &[FittedCommand],
+    raster: &mut RasterOutput,
+) -> Result<(), Error> {
+    if raster.pixels.is_empty() {
+        return Ok(());
+    }
     let shape = segments(commands)?;
     let mut rescue = vec![false; raster.pixels.len()];
     let mut work = shape.len();
-    scan_axis(&shape, &raster, false, &mut rescue, &mut work)?;
-    scan_axis(&shape, &raster, true, &mut rescue, &mut work)?;
+    scan_axis(&shape, raster, false, &mut rescue, &mut work)?;
+    scan_axis(&shape, raster, true, &mut rescue, &mut work)?;
     for (pixel, rescue) in raster.pixels.iter_mut().zip(rescue) {
         if rescue {
             *pixel = 1;
         }
     }
-    Ok(raster)
+    Ok(())
 }

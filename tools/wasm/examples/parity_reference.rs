@@ -1,7 +1,10 @@
 //! Native oracle for smoke/parity.mjs. Recomputes the approved renderer's
 //! output on each run; no historical pixel snapshots constrain model changes.
-use font_generator::surface::{render_text, HAlign, TextRenderRequest, WrapMode};
+use font_generator::surface::{
+    render_text, render_text_with_fitting_strategy, HAlign, TextRenderRequest, WrapMode,
+};
 use font_generator::{metadata, Config};
+use font_generator::{renderer::RendererRole, stem_fitting::StemFittingStrategy};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::{self, Read};
@@ -27,6 +30,9 @@ fn reference(case: &Value) -> Value {
         "foreground",
         "background",
         "palette",
+        "renderer",
+        "stem_fitting",
+        "letter_spacing_px",
     ] {
         config.remove(key);
     }
@@ -62,7 +68,22 @@ fn reference(case: &Value) -> Value {
             .get("palette")
             .map(|p| serde_json::from_value(p.clone()).unwrap()),
     };
-    match render_text(&data, &request) {
+    let rendered = if let Some(role) = spec.get("renderer") {
+        let role: RendererRole = serde_json::from_value(role.clone()).unwrap();
+        let strategy: Option<StemFittingStrategy> = spec
+            .get("stem_fitting")
+            .map(|v| serde_json::from_value(v.clone()).unwrap());
+        render_text_with_fitting_strategy(
+            &data,
+            &request,
+            role,
+            spec["letter_spacing_px"].as_f64().unwrap_or(0.0) as f32,
+            strategy,
+        )
+    } else {
+        render_text(&data, &request)
+    };
+    match rendered {
         Ok(result) => json!({
             "id": case["id"], "width": result.width, "height": result.height,
             "pixel_sha256": format!("{:x}", Sha256::digest(&result.pixels)),

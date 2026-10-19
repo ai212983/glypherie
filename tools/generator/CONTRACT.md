@@ -2,38 +2,25 @@
 
 <!-- cspell:words fvar kerx vkrn subtables -->
 
-The specimen generator publishes a self-contained package of native-resolution PNG specimens and display metadata. This
-interface is independent of the generator's implementation language. The web generator consumes the package according to
-the [web generator contract](../web/CONTRACT.md).
+The specimen generator publishes a self-contained package of native-resolution PNG specimens and display metadata,
+independent of the generator's implementation language. This document covers only that published interface.
 
 ## Generation selection
 
-[specimens.json](specimens.json) supplies family sources, sizes, renderer variants, and output profiles. See the
-[configuration guide](README.md#specimen-configuration) for inheritance and per-family/per-size overrides.
+[specimens.json](specimens.json) supplies family sources, sizes, renderer variants, and output profiles; the
+[configuration guide](README.md#specimen-configuration) defines inheritance and overrides. The resolved configuration
+yields explicit family/size/variant/profile cases, one published package per selected renderer variant, verified against
+those cases.
 
-Resolve the [specimen configuration](README.md#specimen-configuration) into explicit family/size/variant/profile cases.
-Publish one package per selected renderer variant and verify its coverage against those cases.
+When configured, `preview_policy` must match the resolved family/size coverage. Missing or invalid policy or coverage
+drift fails before rendering or publication and preserves existing pointers.
 
-The checked-in configuration's `preview_policy` points to [preview-policy.json](preview-policy.json), using schema
-`preview-policy-v1` and a `families` map of agreed size arrays. The configuration and policy own the actual preview
-selections. Check exact family coverage and effective sizes for every variant/profile after resolving overrides.
-Missing/invalid policy, additions, removals or matrix drift fail before rendering/publication and preserve existing
-pointers. Change configuration, policy and guard expectations together only for an explicitly requested scope change.
-Broader diagnostic configurations may omit the policy and use isolated output; the normal configuration must retain it.
-
-The configuration's variant ID is a logical name such as `reference`. Published package IDs identify immutable
-render/composition snapshots. Iteration versions are unique positive numeric `revision.iteration` pairs, for example
-`001.01`; compare both components numerically. The active pointer always selects the latest iteration of the latest
-revision, or reference when no iteration exists. The latest configured variant must have render cases. There is no
-manual active-variant override. Record resolved selections and variant/profile settings in the canonical render
-artifact.
-
-`published.json` records the latest completed generation's logical-variant-to-package mapping using schema
-`specimen-publication-v1` and a `variants` object. Derive the current comparison input from the latest revision and
-iteration in this mapping. Explicit renderer roles select a working candidate against the approved baseline; with no
-newer candidate, select baseline against reference. Versions identify states rather than compile-time features. Retain
-the approved baseline and reference variants in the configuration. Older packages without roles retain their historical
-previous-revision comparison policy.
+`published.json` (schema `specimen-publication-v1`) maps logical variants to packages. Iteration versions are unique
+numeric `revision.iteration` pairs compared numerically. Renderer roles select the latest candidate newer than the
+baseline against that baseline, or baseline against reference when no newer candidate exists. Without renderer roles,
+selection uses the latest iteration against the latest iteration of an earlier revision, or reference when none exists.
+The active pointer selects the current input of that comparison, or reference when no iteration exists. The selected
+variant and comparison baseline must each have render cases.
 
 ## Output location and selection
 
@@ -47,31 +34,13 @@ out/specimens/
     manifest.json
     assets/
       <image-sha256>.png
-  canonical/
-    <generation-sha256>.json
-    <composition-sha256>.json
 ```
 
-The generator owns `out/specimens/`. Each package is immutable. Changes to source rendering, sample text, composition,
-dimensions, or assets create a new package ID. Content-addressed images can be reused when their bytes match.
+The generator owns `out/specimens/`. Each package is immutable: changes to source rendering, sample text, composition,
+dimensions, or assets create a new package ID; content-addressed images may be reused when their bytes match.
 
-`active.json` records the automatically selected latest working variant. Publication and production approval are
-separate; current approved/candidate identities belong in the
-[revision index](../../docs/revisions/001/README.md#iterations).
-
-### Active pointer
-
-```json
-{
-  "schema_version": "web-active-v1",
-  "variant_id": "skrifa-reference-001",
-  "manifest": "skrifa-reference-001/manifest.json"
-}
-```
-
-The manifest path is relative to `out/specimens/` and is exactly `<variant_id>/manifest.json`. Variant IDs are single
-path segments containing ASCII letters, digits, hyphens, and underscores. Publish the complete, validated package first,
-then update the active pointer atomically.
+`active.json` uses schema `web-active-v1` with `variant_id` and `manifest` exactly `<variant_id>/manifest.json`. Variant
+IDs are single path segments of ASCII letters, digits, hyphens, and underscores.
 
 ## Package manifest
 
@@ -88,135 +57,37 @@ then update the active pointer atomically.
 | `profiles`                   | Definitions of the included configured profiles: `mono_1bit` with output bits 1 and/or `gray_3bit` with output bits 3 |
 | `families`                   | Ordered family records with a stable `id`, display `name`, original-font `source_sha256`, and `sizes`                 |
 
-The generation hash identifies the canonical render artifact separately from the exported specimen composition. Full
-provenance, geometry, and layout policy remain in the canonical artifacts; the display manifest carries the metadata
-needed to present the specimens.
-
-Canonical glyph records preserve Unicode `codepoint` identity and record the actually drawn, coordinate-selected
-`glyph_id`. Outlines, source geometry and metrics follow the
-[scalar-resolution contract](README.md#supported-input-and-output) for every renderer role; nominal character-map
-coverage remains descriptive metadata.
-
-New exports include each family's `metadata`, extracted once from the checksum-verified source bytes with the upstream
-Skrifa reader. Older immutable packages can omit this field. Metadata is descriptive and does not affect rendering,
-shaping, fitting or preview scope.
-
-- `names`: nullable strings for `family`, `style`, `full`, `postscript`, `version`, `copyright`, `manufacturer`,
-  `designer`, `description`, `vendor_url`, `designer_url`, `license` and `license_url`. Prefer English, otherwise the
-  first nonempty localized value. Family/style prefer typographic name IDs 16/17, falling back to 1/2. License fields
-  are embedded text, not verified provenance or a substitute for the supplied license.
-- `axes`: source-ordered records with `tag`, nullable localized `name`, `min`, `default`, `max` and `hidden`. An empty
-  list identifies a static font. These describe supported coordinates, separately from each size group's selected axes.
-- `kerning`: `horizontal` and `vertical` booleans, with `sources` identifying `GPOS kern`, `GPOS vkrn`, `kern` or
-  `kerx`. Detect nonempty positioning lookups under the registered kerning features or populated legacy kerning
-  subtables; GPOS presence alone is insufficient. This reports available data, not an assurance that a particular pair
-  or script receives an adjustment. Missing kerning tables mean no kerning; malformed tables fail extraction.
-- `style`: nullable `slope` (`upright`, `italic`, `oblique`), raw OS/2 `weight_class` and `width_class`, and
-  `italic_angle` in degrees. Values describe the font's default instance, not a preview's selected variation
-  coordinates.
-- `classification`: nullable raw IBM `family_class` (class in the high byte, subclass in the low byte), ten-byte
-  `panose`, and `monospaced` from the post table's fixed-pitch declaration. Missing or unspecified classification does
-  not authorize guessing from a filename or outlines.
-- `coverage`: nullable `character_count` and sorted, disjoint, inclusive `ranges` of Unicode scalar values from the
-  renderer's selected nominal character map. Exclude missing glyphs, out-of-range glyph IDs and surrogate codepoints.
-  Missing/unsupported Unicode maps and symbol encodings have unknown coverage. This is character mapping coverage, not a
-  guarantee of language shaping support.
-- `declared_unicode_ranges`: nullable four-word OS/2 range flags, separate from actual character-map coverage.
-
-Definitions follow the OpenType [name](https://learn.microsoft.com/en-us/typography/opentype/spec/name),
+Exports include each family's descriptive `metadata`; consumers also accept packages without it. It has these fields:
+`names` (nullable `family`, `style`, `full`, `postscript`, `version`, `copyright`, `manufacturer`, `designer`,
+`description`, `vendor_url`, `designer_url`, `license`, `license_url`); `axes` (source-ordered `tag`, nullable `name`,
+`min`, `default`, `max`, `hidden`); `kerning` (`horizontal`, `vertical`, and `sources` drawn from `GPOS kern`, `GPOS
+vkrn`, `kern`, `kerx`); `style` (nullable `slope` of `upright`/`italic`/`oblique`, raw `weight_class` and `width_class`,
+`italic_angle` in degrees); `classification` (nullable raw IBM `family_class`, ten-byte `panose`, `monospaced`);
+`coverage` (nullable `character_count` and sorted, disjoint, inclusive scalar `ranges`); and `declared_unicode_ranges`
+(nullable four OS/2 range words). Definitions follow the OpenType
+[name](https://learn.microsoft.com/en-us/typography/opentype/spec/name),
 [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar),
-[OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2),
-[kerning features](https://learn.microsoft.com/en-us/typography/opentype/spec/features_ko) and
-[kern](https://learn.microsoft.com/en-us/typography/opentype/spec/kern) specifications, plus Apple's
-[kerx](https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6kerx.html) definition.
+[OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2), and
+[kern](https://learn.microsoft.com/en-us/typography/opentype/spec/kern) specifications.
 
-Each family has a nonempty `sizes` array. Each size group contains:
-
-- `size_px`: requested native rendering size.
-- `axes`: actual resolved variation coordinates used for the group.
-- `thumbnail`: positive integer `width_px` and `height_px`, shared by every image in the group across samples and output
-  profiles.
-- `items`: explicitly ordered specimen records.
-
-Each item contains a package-wide unique `id`, `profile`, readable `label`, exact sample `text`, and `outcome`:
-
-- `rendered`: includes `image.path` and `image.sha256`. The path is relative to the manifest directory and has the form
-  `assets/<image.sha256>.png`.
-- `failed` or `unsupported`: includes a nonempty `reason` describing the problem.
-
-Family and item array order carry the intended presentation order. IDs provide stable references for content and
-observations. Each size appears once per family.
-
-### Example
-
-This illustrative excerpt shows one family, size, and sample. The all-zero hashes are placeholders. A complete export
-includes every group and profile sample selected by the resolved configuration for this variant.
-
-```json
-{
-  "schema_version": "web-specimens-v1",
-  "variant": {
-    "id": "skrifa-reference-001",
-    "kind": "reference",
-    "version": null,
-    "generation_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-    "composition_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-  },
-  "profiles": [
-    {"id": "mono_1bit", "output_bits": 1},
-    {"id": "gray_3bit", "output_bits": 3}
-  ],
-  "families": [
-    {
-      "id": "roboto",
-      "name": "Roboto",
-      "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "sizes": [
-        {
-          "size_px": 14,
-          "axes": {"wght": 400, "wdth": 100},
-          "thumbnail": {"width_px": 480, "height_px": 128},
-          "items": [
-            {
-              "id": "roboto-14-mono-reading",
-              "profile": "mono_1bit",
-              "label": "Reading sample",
-              "text": "Pack my box with five dozen liquor jugs.",
-              "outcome": "rendered",
-              "image": {
-                "path": "assets/0000000000000000000000000000000000000000000000000000000000000000.png",
-                "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
-              }
-            }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
+Each family has a nonempty `sizes` array; array order is the intended presentation order. Each size group contains
+`size_px`, the resolved `axes` coordinates, a `thumbnail` (`width_px`, `height_px`, shared by every image in the group),
+and explicitly ordered `items`, each appearing once per family and size. Each item has a package-wide unique `id`,
+`profile`, `label`, exact sample `text`, and `outcome`: `rendered` includes `image.path` of the form
+`assets/<image.sha256>.png` with `image.sha256`; `failed` or `unsupported` includes a nonempty `reason`.
 
 ## Specimen images
 
-Compose each PNG directly from canonical generated pixels and declared layout metrics at native resolution. Use the
-generator's declared spacing policy and record layout limitations in the canonical artifact. Represent failures or
-unsupported samples explicitly through their item outcomes and reasons.
-
-Choose one canvas width and height per family/size group. Pad smaller samples with white space. Fit larger samples
-through deliberate text wrapping or a larger shared canvas, preserving all sample content and source pixels. Each PNG's
-actual dimensions equal the group's declared thumbnail dimensions.
-
-Images contain specimen pixels; labels and captions are supplied as manifest metadata. Use lossless PNG encoding, a
-white background, black/white pixels for 1-bit specimens, and the declared eight display levels for 3-bit specimens.
+Each PNG is composed at native resolution, its dimensions equal the group's declared thumbnail dimensions. Encoding is
+lossless PNG on a white background: black/white pixels for 1-bit specimens, the declared eight display levels for 3-bit.
+Failures and unsupported samples appear only through item outcomes and reasons, never as substitute images.
 
 ## Glyph comparison export
 
-`comparisons.json` uses schema `comparison-config-v2` and an `id` containing a numeric route ID such as `01`. It cannot
-select renderer inputs or labels. Derive them using [generation selection](#generation-selection), with labels from
-package versions. A reference-only publication exports an empty comparison index; invalid or ambiguous versions fail
-publication.
+Comparison inputs and labels derive from [generation selection](#generation-selection) and package versions. A
+reference-only publication exports an empty comparison index; invalid or ambiguous versions fail publication.
 
-The comparison exporter reads canonical rendered pixels and publishes:
+The exporter publishes:
 
 ```text
 out/specimens/comparisons/
@@ -227,40 +98,25 @@ out/specimens/comparisons/
 ```
 
 `index.json` uses schema `web-comparisons-v1` with entries containing `id` and `manifest`. Each manifest uses
-`web-glyph-comparison-v1`, identifies its two input packages and labels, and contains profiles and families. Each family
-contains ascending size groups with resolved axes, a shared canvas, and Unicode glyph records.
+`web-glyph-comparison-v1`, identifies its two input packages and labels, and contains profiles and families with
+ascending size groups, resolved axes, and a shared canvas (`width_px`, `height_px`, `origin_x`, `baseline_y`,
+`padding_px`) under one baseline and pen origin.
 
-- A canvas declares `width_px`, `height_px`, `origin_x`, `baseline_y`, and `padding_px`. Its bounds include both inputs
-  across profiles, retaining the same baseline and pen origin for all images.
-- Each glyph declares its Unicode `codepoint`, `character`, and selected `profiles`. Each profile includes `id`, rounded
-  native `advance_px`, and `previous`, `current`, and `difference` image references using `path` and `sha256`.
-- Compare aligned native pixels per size/profile before encoding. Export comparison images only when pixel values
-  differ; omit identical profiles and glyphs. Size groups may have an empty `glyphs` array. Missing glyphs, size/profile
-  cases, or render reports fail comparison publication with input, family, size, profile, and codepoint details.
-- Export a `statistics` array with one record per output profile: `profile`, `same_symbols`, `changed_symbols`,
-  `average_changed_pixels`, and `median_changed_pixels`. Count each drawable character once per selected
-  family/size/profile, including identical glyphs omitted from the image records. A changed pixel is an aligned native
-  pixel whose quantized value differs, regardless of the magnitude of that difference. Average and median use changed
-  symbols only; both are zero when no symbols changed. Every counted symbol has both renderer inputs.
-- Native 8-bit RGB PNGs retain the configured black/white or eight gray levels. Differences use blue `#0060ff` for
-  increased ink and red `#e02020` for decreased ink; unchanged pixels retain their shade.
-- Every exported profile has previous, current, and difference images, with `reason` set to null. Missing inputs are
-  errors; failed publication leaves the existing comparison index unchanged.
-- Validate input identities, font/axis compatibility, bitmap dimensions/levels, and asset integrity. Publish complete
-  content-addressed packages before atomically updating the index. Active selection remains unchanged.
+Each glyph record declares `codepoint`, `character`, and selected `profiles`. Each profile includes `id`, rounded native
+`advance_px`, and `previous`, `current`, and `difference` image references (`path`, `sha256`, `reason` null), exported
+only when aligned native pixels differ. Difference images use blue `#0060ff` for increased ink and red `#e02020` for
+decreased ink; unchanged pixels retain their shade.
+
+Each manifest carries a `statistics` array with one record per profile: `profile`, `same_symbols`, `changed_symbols`,
+`average_changed_pixels`, and `median_changed_pixels`. Each drawable character counts once per family/size/profile,
+including identical glyphs omitted from image records; a changed pixel is an aligned native pixel whose quantized value
+differs, and averages/medians over changed symbols are zero when none changed. Missing glyphs, cases, inputs, or render
+reports fail publication with identifying details and leave the existing comparison index unchanged.
 
 ## Publication checks
 
-Before publishing, verify:
-
-- Schema versions, pointer/package identity, safe variant IDs, and SHA-256 values.
-- Family identities, unique size groups, resolved axes, and unique item IDs.
-- Profile definitions, item profile references, and outcome-specific fields.
-- Asset existence, content hashes, and native PNG dimensions and pixel levels.
-- Relative paths that resolve within the package, including symlink resolution.
-- Coverage of the resolved configuration for the exported variant. Missing selected families, groups, or profile samples
-  are publication errors; explicit item failures remain available for inspection.
-- Complete immutable package publication followed by an atomic pointer update.
-
-The [generator README](README.md) describes the reference rendering policy and configuration. Reserved evaluation slices
-remain excluded from ordinary specimen selection. See the [web README](../web/README.md) for tooling.
+Publishing guarantees: schema versions, pointer/package identity, safe variant IDs, and SHA-256 values agree; family
+identities, resolved axes, size groups, and item IDs are unique and complete against the resolved configuration; profile
+references and outcome-specific fields are valid; assets exist with matching hashes, native dimensions, and pixel
+levels; and every relative path resolves within its package, including through symlinks. A complete, validated package
+is published before any pointer or index update; each update is atomic.

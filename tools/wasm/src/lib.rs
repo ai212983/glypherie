@@ -24,6 +24,8 @@
 //!     // renderer: "baseline" // optional stable role: "baseline" (default,
 //!     //   approved output), "reference", or "candidate" (preview builds only;
 //!     //   a default build rejects it visibly instead of substituting)
+//!     // stem_fitting: "upstream_mono", // optional candidate strategy:
+//!     //   "font_hints_first" (default) or "upstream_mono" (preview builds only)
 //!   });
 //!   try {
 //!     // `result.pixels()` returns a *fresh Uint8Array copy* on every call.
@@ -58,17 +60,21 @@
 //!
 //! `"baseline"` (the default) renders the approved production output.
 //! `"reference"` keeps the approved layout and replaces monochrome bitmaps.
-//! `"candidate"` uses its monochrome fitted advances and rounded source-gap
-//! pair placement, retaining source line metrics. Gray keeps the production target for every role.
+//! `"candidate"` defaults to font hints with automatic fallback for monochrome fitting, with optional
+//! `stem_fitting` selection of another implemented strategy. It lays out
+//! Mono and Gray with the single bitmap policy (whole-pixel advances and
+//! pair adjustments), retaining source line metrics. Baseline and
+//! reference Gray keep the production target and source layout.
 //! `letter_spacing_px` adds a signed pixel offset to each available glyph's
 //! advance after pair positioning. Negative offsets tighten letters while
 //! preserving neutral ASCII word gaps, including the preceding letter's
 //! trailing step; positive offsets also widen spaces. Mono rounds to whole
 //! pixels (half ties away from zero) and keeps normally separated source pairs
 //! at least one blank column. Source
-//! overlaps, fixed pitch and tabular digit pairs bypass the pair floor. Gray
-//! retains fractional tracking. Zero preserves neutral paths; finite values
-//! within -16..=16 are supported by every role and profile.
+//! overlaps, fixed pitch and tabular digit pairs bypass the pair floor.
+//! Candidate Gray also uses whole-pixel tracking; baseline and reference
+//! Gray retain fractional tracking. Finite values within -16..=16 are
+//! supported by every role and profile.
 //! Preview roles support 1-bit and 3-bit output; candidate uses automatic
 //! hinting. Unsupported combinations fail explicitly. The `candidate` role needs the crate's opt-in
 //! `preview` feature (the explicit preview artifact); a default production
@@ -85,7 +91,7 @@
 //! (`cargo run -p font_generator`), and a second raw export would widen this
 //! API for no browser use case. Reconsider if the host needs it.
 
-use font_generator::layout_spacing::SpacingModel;
+use font_generator::stem_fitting::StemFittingStrategy;
 use font_generator::surface::{self, HAlign, RenderedText, TextRenderRequest, WrapMode};
 use font_generator::{renderer::RendererRole, Config, Hinting, MetricRounding, MissingGlyphs};
 use serde::{Deserialize, Serialize};
@@ -222,7 +228,7 @@ fn validate_spec_keys(spec: &JsValue) -> Result<(), JsValue> {
                 | "palette"
                 | "renderer"
                 | "letter_spacing_px"
-                | "spacing_model"
+                | "stem_fitting"
         ) {
             return Err(js_error(format!(
                 "invalid render spec: unknown field {key:?}"
@@ -263,8 +269,6 @@ fn default_background() -> [u8; 4] {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RenderSpec {
-    #[serde(default)]
-    spacing_model: SpacingModel,
     /// Tracking offset; negative preserves word gaps, positive widens spaces.
     #[serde(default)]
     letter_spacing_px: f32,
@@ -299,9 +303,14 @@ struct RenderSpec {
     background: [u8; 4],
     #[serde(default)]
     palette: Option<Vec<[u8; 4]>>,
-    /// Stable preview role; the default keeps the approved baseline path.
+    /// Stable preview role; the default keeps the legacy baseline path.
     #[serde(default)]
     renderer: RendererArg,
+    /// Selectable stem-fitting strategy for the candidate role; the default
+    /// `None` keeps the font-hints-first Mono fit. Unknown values (there is
+    /// no StrokeStyles strategy) fail deserialization.
+    #[serde(default)]
+    stem_fitting: Option<StemFittingStrategy>,
 }
 
 // `surface::WrapMode`/`HAlign` implement `Default` (Word/Left) but not
@@ -377,13 +386,14 @@ fn render_parsed(font_data: &[u8], spec: &RenderSpec) -> Result<RenderedText, St
         palette: spec.palette.clone(),
     };
     // Baseline is the approved production path; other roles reuse its
-    // validation, with candidate Mono spacing supplied by its model.
-    surface::render_text_with_spacing_model(
+    // validation, with candidate layout supplied by its bitmap policy. The
+    // optional strategy forwards thinly; `None` keeps current behavior.
+    surface::render_text_with_fitting_strategy(
         font_data,
         &request,
         spec.renderer.role(),
         spec.letter_spacing_px,
-        spec.spacing_model,
+        spec.stem_fitting,
     )
     .map_err(|e| e.to_string())
 }
@@ -522,28 +532,21 @@ mod tests {
         assert_eq!(spec.background, [255, 255, 255, 255]);
         assert!(spec.palette.is_none());
         assert_eq!(spec.letter_spacing_px, 0.0);
-        assert_eq!(spec.spacing_model, SpacingModel::Auto);
     }
 
     #[test]
-    fn spacing_model_selection_is_explicit_and_independent_of_renderer() {
-        for name in ["auto", "source", "fitted", "projected"] {
-            let spec = spec_from(
-                json!({ "text": "A A", "width": 96, "height": 48, "spacing_model": name }),
-            )
-            .unwrap();
-            assert_eq!(spec.renderer, RendererArg::Baseline);
-            let output = render_parsed(FIXTURE, &spec).unwrap();
-            assert_eq!(output.lines.len(), 1);
+    fn spacing_model_field_is_retired_and_rejected() {
+        // Retired with the single bitmap policy: the field is now unknown,
+        // consistent with every other unknown render-spec field.
+        for name in ["auto", "source", "fitted", "projected", "guess"] {
+            assert!(
+                spec_from(
+                    json!({ "text": "A A", "width": 96, "height": 48, "spacing_model": name }),
+                )
+                .is_err(),
+                "spacing_model {name} must be rejected"
+            );
         }
-        assert!(spec_from(
-            json!({ "text": "A", "width": 64, "height": 32, "spacing_model": "guess" })
-        )
-        .is_err());
-        let mut gray = minimal_spec("A", 64, 32);
-        gray.output_bits = 3;
-        gray.spacing_model = SpacingModel::Projected;
-        assert!(render_parsed(FIXTURE, &gray).is_err());
     }
 
     #[test]
@@ -601,6 +604,67 @@ mod tests {
     }
 
     #[test]
+    fn stem_fitting_defaults_to_none_and_rejects_unknown_strategies() {
+        // `None` keeps the font-hints-first Mono fit: the default spec must
+        // equal the strategy-unset render byte-for-byte.
+        let spec = minimal_spec("A A", 96, 48);
+        assert!(spec.stem_fitting.is_none());
+        let routed = render_parsed(FIXTURE, &spec).unwrap();
+        let request = TextRenderRequest {
+            config: Config {
+                characters: " A".into(),
+                ..Default::default()
+            },
+            text: "A A".into(),
+            width: 96,
+            height: 48,
+            wrap: WrapMode::Word,
+            align: HAlign::Left,
+            foreground: [0, 0, 0, 255],
+            background: [255, 255, 255, 255],
+            palette: None,
+        };
+        let direct = surface::render_text(FIXTURE, &request).unwrap();
+        assert_eq!(routed.pixels, direct.pixels);
+        for name in ["font_hints_first", "upstream_mono"] {
+            let parsed = spec_from(json!({
+                "text": "A", "width": 64, "height": 32, "stem_fitting": name,
+            }))
+            .unwrap();
+            assert!(parsed.stem_fitting.is_some());
+        }
+        // There is no StrokeStyles strategy: unknown values fail, and the
+        // explicit selector reaches the strategy gate on a default build
+        // (which lacks the candidate feature) instead of rendering.
+        assert!(spec_from(json!({
+            "text": "A", "width": 64, "height": 32, "stem_fitting": "strokestyles",
+        }))
+        .is_err());
+        let mut explicit = minimal_spec("A", 64, 32);
+        explicit.renderer = RendererArg::Candidate;
+        explicit.stem_fitting = Some(StemFittingStrategy::UpstreamMono);
+        #[cfg(not(feature = "preview"))]
+        assert!(render_parsed(FIXTURE, &explicit)
+            .unwrap_err()
+            .contains("candidate Cargo feature"));
+        #[cfg(feature = "preview")]
+        {
+            assert!(render_parsed(FIXTURE, &explicit).is_ok());
+            explicit.text.clear();
+            assert!(render_parsed(FIXTURE, &explicit).is_ok());
+            explicit.output_bits = 3;
+            assert!(render_parsed(FIXTURE, &explicit)
+                .unwrap_err()
+                .contains("monochrome output_bits 1"));
+            explicit.output_bits = 1;
+            explicit.renderer = RendererArg::Baseline;
+            assert!(render_parsed(FIXTURE, &explicit)
+                .unwrap_err()
+                .contains("candidate preview role"));
+        }
+    }
+
+    #[test]
     fn renderer_defaults_to_baseline_and_rejects_unknown_roles() {
         let spec = minimal_spec("A", 96, 48);
         assert_eq!(spec.renderer, RendererArg::Baseline);
@@ -653,11 +717,7 @@ mod tests {
 
     #[test]
     fn preview_bits_and_hinting_reject_explicitly() {
-        for patch in [
-            json!({ "output_bits": 8 }),
-            json!({ "hinting": "none" }),
-            json!({ "hinting": "auto_fallback" }),
-        ] {
+        for patch in [json!({ "output_bits": 8 }), json!({ "hinting": "none" })] {
             let mut value = serde_json::to_value(minimal_spec("A", 96, 48)).unwrap();
             value["renderer"] = serde_json::Value::String("candidate".into());
             for (key, val) in patch.as_object().unwrap() {
@@ -685,7 +745,7 @@ mod tests {
     #[test]
     fn candidate_role_reaches_candidate_capture() {
         // Routing proof without pixel snapshots: the candidate role must go
-        // through `candidate::render` (CoverageDropout policy), not silently
+        // through `candidate::render` (CoverageOverlap4xDropout policy), not silently
         // reuse the upstream coverage path.
         use font_generator::reference::{RasterPolicy, ReferenceRequest};
         let mut config = Config::default();
@@ -694,17 +754,26 @@ mod tests {
             FIXTURE,
             &ReferenceRequest {
                 profile: "mono_1bit".into(),
-                extensions: "diagonal-01".into(),
+                extensions: "font-hints-01".into(),
                 settings: config.clone(),
             },
             font_generator::renderer::RendererRole::Candidate,
         )
         .unwrap();
         assert!(!candidate.records.is_empty());
+        assert_eq!(candidate.extensions, "font-hints-01");
+        assert_eq!(candidate.target, "mono");
+        assert_eq!(candidate.smooth_mode, None);
+        assert_eq!(candidate.preserve_linear_metrics, None);
+        assert_eq!(
+            candidate.advance_policy,
+            font_generator::reference::AdvancePolicy::Linear
+        );
+        assert!(!candidate.fork);
         assert!(candidate
             .records
             .iter()
-            .all(|record| record.raster_policy == RasterPolicy::CoverageDropout));
+            .all(|record| record.raster_policy == RasterPolicy::CoverageOverlap4xDropout));
         let upstream = font_generator::renderer::render(
             FIXTURE,
             &ReferenceRequest {
@@ -744,9 +813,17 @@ mod tests {
         let candidate_gray: RenderSpec = serde_json::from_value(value.clone()).unwrap();
         value["renderer"] = serde_json::json!("baseline");
         let baseline_gray: RenderSpec = serde_json::from_value(value).unwrap();
+        let candidate_gray_rendered = render_parsed(FIXTURE, &candidate_gray).unwrap();
+        let baseline_gray_rendered = render_parsed(FIXTURE, &baseline_gray).unwrap();
+        // Candidate Gray uses the same bitmap policy as candidate Mono:
+        // whole-pixel line widths, unlike fractional source Gray layout.
+        assert!(candidate_gray_rendered
+            .lines
+            .iter()
+            .all(|line| line.width_26_6 % 64 == 0));
         assert_eq!(
-            render_parsed(FIXTURE, &candidate_gray).unwrap(),
-            render_parsed(FIXTURE, &baseline_gray).unwrap()
+            candidate_gray_rendered.lines.len(),
+            baseline_gray_rendered.lines.len()
         );
     }
 
@@ -806,4 +883,5 @@ mod tests {
         assert!(kerning_pairs_core(ROBOTO, 16.0, bad).is_err());
         assert!(kerning_pairs_core(b"not a font", 16.0, BTreeMap::new()).is_err());
     }
+
 }

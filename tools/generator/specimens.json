@@ -44,8 +44,8 @@
       "id": "iteration-03",
       "kind": "iteration",
       "version": "001.03",
-      "hinting": "auto",
-      "extensions": "diagonal-01",
+      "hinting": "auto_fallback",
+      "extensions": "font-hints-01",
       "renderer": "candidate"
     }
   ],

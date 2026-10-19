@@ -47,7 +47,7 @@ fn request(config: Config, text: &str, width: u32, height: u32) -> TextRenderReq
 
 #[cfg(feature = "candidate")]
 #[test]
-fn mono_experiment_roles_leave_production_gray_target_and_layout_unchanged() {
+fn gray_baseline_and_reference_keep_production_while_candidate_uses_bitmap_layout() {
     use font_generator::{renderer::RendererRole, surface::render_text_with_renderer};
     let data = font_bytes();
     for weight in [100.0, 200.0, 400.0] {
@@ -57,16 +57,19 @@ fn mono_experiment_roles_leave_production_gray_target_and_layout_unchanged() {
         config.axes.insert("wght".into(), weight);
         let req = request(config, "aHmwxy", 180, 40);
         let production = render_text(&data, &req).unwrap();
-        for role in [
-            RendererRole::Reference,
-            RendererRole::Baseline,
-            RendererRole::Candidate,
-        ] {
+        for role in [RendererRole::Reference, RendererRole::Baseline] {
             assert_eq!(
                 render_text_with_renderer(&data, &req, role).unwrap(),
-                production
+                production,
+                "{role:?} gray must keep production layout"
             );
         }
+        // Candidate Gray shares the candidate bitmap policy: whole-pixel
+        // advances and pair adjustments, so its line width is a whole
+        // number of pixels rather than the fractional source width.
+        let candidate = render_text_with_renderer(&data, &req, RendererRole::Candidate).unwrap();
+        assert_eq!(candidate.lines.len(), production.lines.len());
+        assert!(candidate.lines.iter().all(|line| line.width_26_6 % 64 == 0));
     }
 }
 

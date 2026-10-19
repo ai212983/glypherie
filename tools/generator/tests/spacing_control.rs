@@ -61,7 +61,10 @@ fn zero_is_identity_and_signed_tracking_includes_spaces_and_kerned_pairs() {
                     let tracked =
                         render_text_with_renderer_and_spacing(&bytes, &req, role, spacing).unwrap();
                     assert_eq!(tracked.lines.len(), 1);
-                    let effective = if bits == 1 {
+                    // Mono is whole-pixel for every role; Gray is
+                    // fractional except for the candidate, whose bitmap
+                    // policy accumulates whole pixels at any depth.
+                    let effective = if bits == 1 || role == RendererRole::Candidate {
                         spacing.round() * 64.0
                     } else {
                         spacing * 64.0
@@ -239,7 +242,7 @@ fn negative_tracking_keeps_word_gaps_at_neutral_width() {
                 render_text_with_renderer_and_spacing(&bytes, &req, role, spacing).unwrap()
             };
             for spacing in [-1.0f32, -2.0] {
-                let step = if bits == 1 {
+                let step = if bits == 1 || role == RendererRole::Candidate {
                     spacing.round() as i32 * 64
                 } else {
                     (spacing * 64.0) as i32

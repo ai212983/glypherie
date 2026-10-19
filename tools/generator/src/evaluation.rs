@@ -87,7 +87,7 @@ pub struct RasterDiagnostics {
 
 /// Evaluate reports for the same font/axes/size/profile/repertoire. Source must be
 /// unhinted and upstream must be independently captured with extensions disabled.
-/// Gray identity is a hard invariant of the current mono-only diagonal iteration.
+/// Gray identity is a hard invariant of the current Mono fitting policies.
 /// Failures are returned as data so a corpus run can finish all cases.
 pub fn evaluate(
     source: &ReferenceReport,
@@ -137,6 +137,26 @@ pub fn evaluate(
             );
         }
     }
+    let font_hints_candidate = candidate.extensions
+        == crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST
+        && candidate.profile != PROFILE_GRAY_3BIT;
+    let mono_width_candidate = candidate.extensions
+        == crate::stem_fitting::EXTENSIONS_MONO_WIDTH_01
+        && candidate.profile != PROFILE_GRAY_3BIT;
+    if (font_hints_candidate || mono_width_candidate) && candidate.target != "mono" {
+        push(
+            "candidate",
+            None,
+            "Mono candidate must declare the upstream mono target",
+        );
+    }
+    if font_hints_candidate && candidate.hinting_requested != "auto_fallback" {
+        push(
+            "candidate",
+            None,
+            "font-hints candidate requires the upstream fallback policy",
+        );
+    }
     for (name, report) in [("source", source), ("candidate", candidate)] {
         if report.source_sha256 != upstream.source_sha256
             || report.size_px != upstream.size_px
@@ -144,14 +164,16 @@ pub fn evaluate(
         {
             push(name, None, "font, size or variation identity changed");
         }
-        if report.profile != upstream.profile
-            || report.target != upstream.target
-            || report.smooth_mode != upstream.smooth_mode
-            || report.symmetric_rendering != upstream.symmetric_rendering
-            || report.preserve_linear_metrics != upstream.preserve_linear_metrics
+        let target_changed = report.profile != upstream.profile
             || report.draw_pedantic != upstream.draw_pedantic
             || report.zeno_version != upstream.zeno_version
-        {
+            || {
+                report.target != upstream.target
+                    || report.smooth_mode != upstream.smooth_mode
+                    || report.symmetric_rendering != upstream.symmetric_rendering
+                    || report.preserve_linear_metrics != upstream.preserve_linear_metrics
+            };
+        if target_changed {
             push(name, None, "render profile or rasterizer policy changed");
         }
         if report.metrics != upstream.metrics
@@ -160,7 +182,7 @@ pub fn evaluate(
             push(name, None, "layout metrics or missing repertoire changed");
         }
     }
-    if candidate.hinting_requested != upstream.hinting_requested {
+    if candidate.hinting_requested != upstream.hinting_requested && !font_hints_candidate {
         push("candidate", None, "requested hinting policy changed");
     }
     if candidate.advance_policy == crate::reference::AdvancePolicy::Hinted
@@ -189,7 +211,9 @@ pub fn evaluate(
                 push(name, Some(record.codepoint), invariant);
             }
             if record.target != report.target
-                || record.selected_engine != report.hinting_requested
+                || (record.selected_engine != report.hinting_requested
+                    && !(report.hinting_requested == "auto_fallback"
+                        && matches!(record.selected_engine.as_str(), "auto" | "interpreter")))
                 || record.smooth_mode != report.smooth_mode
                 || record.symmetric_rendering != report.symmetric_rendering
                 || record.preserve_linear_metrics != report.preserve_linear_metrics
@@ -234,21 +258,46 @@ pub fn evaluate(
             if record.glyph_id != baseline.glyph_id || record.advance_26_6 != expected_advance {
                 push(name, Some(codepoint), "glyph mapping or advance changed");
             }
-            if record.target != baseline.target
+            let target_fields_changed = record.target != baseline.target
+                || record.smooth_mode != baseline.smooth_mode
+                || record.symmetric_rendering != baseline.symmetric_rendering
+                || record.preserve_linear_metrics != baseline.preserve_linear_metrics;
+            if target_fields_changed
                 || record.output_bits != baseline.output_bits
                 || record.mono_threshold != baseline.mono_threshold
                 || record.gray_gamma != baseline.gray_gamma
                 || record.zeno_format != baseline.zeno_format
                 || record.zeno_version != baseline.zeno_version
-                || record.smooth_mode != baseline.smooth_mode
-                || record.symmetric_rendering != baseline.symmetric_rendering
-                || record.preserve_linear_metrics != baseline.preserve_linear_metrics
                 || record.draw_pedantic != baseline.draw_pedantic
             {
                 push(name, Some(codepoint), "glyph render policy changed");
             }
         }
-        if fitted.selected_engine != baseline.selected_engine {
+        // The bounded 4x overlap Mono raster without horizontal correction
+        // metadata is shared by both mono candidates.
+        if font_hints_candidate || mono_width_candidate {
+            let kind = if font_hints_candidate {
+                "font-hints"
+            } else {
+                "mono-width"
+            };
+            if fitted.raster_policy != RasterPolicy::CoverageOverlap4xDropout
+                || fitted.side_bearing_deltas_26_6.is_some()
+                || fitted.diagonal_pairs.is_some()
+            {
+                push(
+                    "candidate",
+                    Some(codepoint),
+                    &format!(
+                        "{kind} candidate requires overlap 4x dropout without horizontal correction metadata"
+                    ),
+                );
+            }
+        }
+        if (font_hints_candidate
+            && !matches!(fitted.selected_engine.as_str(), "auto" | "interpreter"))
+            || (!font_hints_candidate && fitted.selected_engine != baseline.selected_engine)
+        {
             push(
                 "candidate",
                 Some(codepoint),
@@ -413,6 +462,10 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
         RasterPolicy::Coverage => rasterize(&record.fitted_commands, &config),
         RasterPolicy::CoverageDropout if record.output_bits == 1 => {
             crate::dropout::rasterize(&record.fitted_commands, &config)
+        }
+        #[cfg(feature = "candidate")]
+        RasterPolicy::CoverageOverlap4xDropout if record.output_bits == 1 => {
+            crate::overlap::rasterize(&record.fitted_commands, &config)
         }
         _ => {
             return {

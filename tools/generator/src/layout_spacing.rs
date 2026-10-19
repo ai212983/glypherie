@@ -1,113 +1,254 @@
-//! Reusable line-layout spacing engine.
+//! Shared line-placement logic for source and bitmap layout.
 //!
 //! Source foundation: FreeType's advance/bearing model plus pair kerning
-//! (source metrics and source kerning), fitted advances returned by the
-//! scaler and its documented bearing deltas, and the
-//! projected source-gap pair target (current project
-//! hypothesis — see [`crate::mono_spacing::PairSpacing`]).
+//! (https://freetype.org/freetype2/docs/glyphs/glyphs-3.html) and its
+//! integer bearing correction for fitted phantom-point deltas
+//! (https://freetype.org/freetype2/docs/reference/ft2-glyph_retrieval.html#ft_glyphslotrec).
+//! Bitmap strikes store integer advances, bitmap offsets and sparse integer
+//! pair adjustments separately, as in OpenType EBDT and BMFont; see
+//! `docs/revisions/001/03-spacing-kerning.md`.
 //!
-//! Geometric invariant: spacing only chooses whole-string pen positions. It
-//! never refits, rescales or reinterprets glyph bitmaps; scalar glyph pixels
-//! and source roles are owned by the input adapters.
+//! Geometric invariant: placement only chooses pen positions. It never
+//! refits, rescales or reinterprets glyph bitmaps. Callers finalize the
+//! advances and pair adjustments for their renderer role before calling
+//! [`SpacingEngine::place`]; measurement, wrapping and drawing all share
+//! that one operation, so they cannot diverge.
 //!
-//! The engine is input-adapter agnostic: the surface renderer feeds it
-//! `generate()` advances, the source kern table and role-report metadata,
-//! while a native adapter may feed an attached-left shaping kern as the pair
-//! kern input. The pair kern is applied exactly once per pair, shifting the
-//! current glyph's origin; adapters that receive left-attached kern values
-//! must relocate the attachment into this pair slot before calling
-//! [`SpacingEngine::place`]. Drawing, wrapping and line parsing stay with
-//! the caller; wrapping simulation and placement must both go through
-//! [`SpacingEngine::place`] so measurement and placement never diverge.
-//!
-//! New pair algorithms plug in behind the same [`SpacingEngine::place`]
-//! contract: add a correction source to [`EngineInputs`] and combine it in
-//! `neutral_pair_adjustment`, keeping the single-application rule.
+//! Two finalized policies feed this engine, and neither is user-selectable
+//! as a spacing model:
+//! - Legacy baseline and independent reference roles keep source layout:
+//!   fractional source advances and fractional source pair kerning.
+//! - The working candidate uses one bitmap policy for Mono and Gray:
+//!   fitted advances when the fitter returns one, otherwise the rounded
+//!   source advance; source kerning and any available fitted bearing
+//!   correction are resolved once into integer pair adjustments. Pen
+//!   positions therefore accumulate in whole pixels and the same pair has
+//!   the same relative placement regardless of preceding text.
 
-use crate::{mono_spacing::PairSpacing, reference::ReferenceRecord, MetricRounding};
-use serde::{Deserialize, Serialize};
+use crate::{mono_spacing::TrackingGuard, reference::ReferenceRecord};
 use std::collections::HashMap;
 
-/// Selectable spacing model for monochrome layout.
+/// Quantize a signed 26.6 value to a whole pixel, returned in 26.6.
 ///
-/// `Auto` (default) retains the current rendering paths exactly: the working
-/// candidate uses fitted advances with the projected source-gap pair model,
-/// while the approved baseline and the independent reference use source
-/// linear advances plus source pair kerning. Gray (and any non-monochrome
-/// depth) is always source layout; explicit non-`Auto` models are rejected
-/// there. Explicit `Source` uses source linear advances plus the existing
-/// source kern table with the same role's glyph bitmaps. Explicit `Fitted`
-/// uses the actual returned hinted advance from the same role's report with
-/// FreeType bearing correction where same-role metadata is available.
-/// Explicit `Projected` uses same-role fitted metrics with the source-gap
-/// pair model, falling back to fitted placement for
-/// empty/fixed-pitch/tabular/unknown pairs.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum SpacingModel {
-    #[default]
-    Auto,
-    Source,
-    Fitted,
-    Projected,
+/// Nearest pixel with ties away from zero, so negating an adjustment
+/// negates its quantization: signed kerning and overhang keep their sign
+/// symmetry. This is a documented project rounding choice for bitmap
+/// strikes; it is not a claim of full FreeType layout parity.
+pub fn quantize_26_6(value_26_6: i32) -> i32 {
+    let value = i64::from(value_26_6);
+    let pixels = if value >= 0 {
+        (value + 32) / 64
+    } else {
+        -((-value + 32) / 64)
+    };
+    i32::try_from(pixels * 64).unwrap_or(if value >= 0 {
+        i32::MAX / 64 * 64
+    } else {
+        i32::MIN / 64 * 64
+    })
+}
+
+/// Bitmap advance for one fitted record in 26.6.
+///
+/// Uses the fitter's returned advance width when it is finite, quantized
+/// with [`quantize_26_6`]'s whole-pixel rule; otherwise falls back to the
+/// rounded source (linear) advance carried by the record. No glyph-specific
+/// handling: the fallback is the same general rule for every glyph whose
+/// fitter returns no advance.
+pub fn bitmap_advance_26_6(record: &ReferenceRecord) -> i32 {
+    match record.hinted_advance_width {
+        Some(width) if width.is_finite() => {
+            let pixels = width.round();
+            if pixels >= i32::MAX as f32 / 64.0 {
+                i32::MAX / 64 * 64
+            } else if pixels <= i32::MIN as f32 / 64.0 {
+                i32::MIN / 64 * 64
+            } else {
+                pixels as i32 * 64
+            }
+        }
+        _ => quantize_26_6(record.advance_26_6),
+    }
+}
+
+/// Finalized bitmap metrics for one strike: the single metric table the
+/// exported strike, the interactive preview and native specimens consume.
+///
+/// `advances_26_6` are whole-pixel advances. `pair_adjustments_26_6` are
+/// sparse whole-pixel pair adjustments with source kerning and any
+/// available fitted bearing correction already baked in exactly once, so
+/// placement never reapplies a correction. `source_kern_26_6` retains the
+/// fractional source pair values for tracking classification and kerning
+/// inspection only; it is not a placement input.
+pub struct FinalizedBitmapMetrics {
+    pub advances_26_6: HashMap<u32, i32>,
+    pub pair_adjustments_26_6: HashMap<(u32, u32), i32>,
+    pub source_kern_26_6: HashMap<(u32, u32), i32>,
+}
+
+/// Resolve the finalized bitmap metric table from fitted records.
+///
+/// Advances: the fitter's returned advance when available, otherwise the
+/// rounded source advance (see [`bitmap_advance_26_6`]). Two font-level
+/// rules override per-glyph fitted advances, following FreeType's autofit
+/// loader, which preserves a common rounded advance for equal-width
+/// glyphs and zeroes their bearing deltas
+/// (https://github.com/freetype/freetype/blob/master/src/autofit/afloader.c):
+/// source fixed-pitch glyphs (including space) use the rounded source
+/// advance so differing hinted advances cannot break the source cells,
+/// and source-tabular digits retain the quantized common source advance.
+/// Fixed pitch and tabular digits likewise carry no bearing deltas.
+/// Every record is part of the table as supplied, so an adapter that
+/// captures its fitted space as a record gets the fitted space advance
+/// from this same rule, with no adapter-specific space override.
+pub fn finalize_bitmap_metrics(
+    records: &[ReferenceRecord],
+    source_advances_26_6: &HashMap<u32, i32>,
+    source_kern_26_6: &HashMap<(u32, u32), i32>,
+    kerning_enabled: bool,
+    monospace: bool,
+    tabular_digits: bool,
+) -> FinalizedBitmapMetrics {
+    let common_digit_advance = if tabular_digits {
+        ('0'..='9')
+            .filter_map(|digit| source_advances_26_6.get(&(digit as u32)))
+            .next()
+            .map(|advance| quantize_26_6(*advance))
+    } else {
+        None
+    };
+    let mut advances = HashMap::new();
+    for record in records {
+        // Fixed pitch: rounded source advance for every glyph, so equal
+        // source cells stay equal regardless of fitted advances.
+        let mut advance = if monospace {
+            quantize_26_6(
+                source_advances_26_6
+                    .get(&record.codepoint)
+                    .copied()
+                    .unwrap_or(record.advance_26_6),
+            )
+        } else {
+            bitmap_advance_26_6(record)
+        };
+        if let Some(common) = common_digit_advance {
+            if (u32::from(b'0')..=u32::from(b'9')).contains(&record.codepoint) {
+                advance = common;
+            }
+        }
+        advances.insert(record.codepoint, advance);
+    }
+    let bearing_deltas: HashMap<u32, [i32; 2]> = if monospace {
+        HashMap::new()
+    } else {
+        records
+            .iter()
+            .filter_map(|record| {
+                record
+                    .side_bearing_deltas_26_6
+                    .map(|deltas| (record.codepoint, deltas))
+            })
+            .filter(|(codepoint, _)| {
+                !(tabular_digits && (u32::from(b'0')..=u32::from(b'9')).contains(codepoint))
+            })
+            .collect()
+    };
+    // Sparse integer pair table: quantized source kerning (when enabled)
+    // plus the available fitted bearing correction, applied once here.
+    // A fitting correction therefore survives kerning being disabled.
+    let mut pair_adjustments = HashMap::new();
+    for left in advances.keys() {
+        for right in advances.keys() {
+            let previous_rsb = bearing_deltas.get(left).map_or(0, |deltas| deltas[1]);
+            let current_lsb = bearing_deltas.get(right).map_or(0, |deltas| deltas[0]);
+            let adjustment = bitmap_pair_adjustment_26_6(
+                source_kern_26_6.get(&(*left, *right)).copied().unwrap_or(0),
+                kerning_enabled,
+                previous_rsb,
+                current_lsb,
+            );
+            if adjustment != 0 {
+                pair_adjustments.insert((*left, *right), adjustment);
+            }
+        }
+    }
+    FinalizedBitmapMetrics {
+        advances_26_6: advances,
+        pair_adjustments_26_6: pair_adjustments,
+        source_kern_26_6: source_kern_26_6.clone(),
+    }
+}
+
+/// Integer pair adjustment for one pair: quantized source kerning (when
+/// kerning is enabled) plus the available fitted bearing correction.
+/// Each source contributes exactly once.
+pub fn bitmap_pair_adjustment_26_6(
+    kern_26_6: i32,
+    apply_kerning: bool,
+    previous_rsb_26_6: i32,
+    current_lsb_26_6: i32,
+) -> i32 {
+    let kern = if apply_kerning {
+        quantize_26_6(kern_26_6)
+    } else {
+        0
+    };
+    kern.saturating_add(crate::mono_spacing::bearing_adjustment(
+        previous_rsb_26_6,
+        current_lsb_26_6,
+    ))
 }
 
 /// Immutable per-engine inputs assembled by the calling adapter.
 ///
-/// Advances and the kern table are snapshots: source advances come from
-/// `generate()` before any role swap, fitted advances from the same role's
-/// report via [`fitted_advance_26_6`], and the kern table from the font's
-/// source pair extraction (or a host shaping kern relocated to the pair
-/// slot). A disabled source kern config must reach the engine as
-/// `apply_kerning: false` (and/or an empty table) and then stays off under
-/// every model.
+/// Advances and pair adjustments are already finalized for the caller's
+/// role: source layout passes fractional advances with fractional source
+/// pair values as the pair adjustments, while bitmap layout passes the
+/// whole-pixel table from [`finalize_bitmap_metrics`], whose pair
+/// adjustments already contain kerning and any fitting correction exactly
+/// once. Placement therefore never looks up bearings or kerning again.
+/// `guard_kern_26_6` keeps fractional source pair values, resolved by the
+/// caller for its kerning switch, solely for the tracking guard's
+/// source-gap classification.
 pub struct EngineInputs<'a> {
-    /// Selected model, with the renderer default resolved by the adapter.
-    pub model: SpacingModel,
-    /// Immutable source advances per codepoint in 26.6 pixels.
-    pub source_advances_26_6: HashMap<u32, i32>,
-    /// Same-renderer fitted advances, including documented metadata fallbacks.
-    pub fitted_advances_26_6: HashMap<u32, i32>,
-    /// Source pair kern adjustments in 26.6, applied exactly once per pair.
-    pub kern_26_6: HashMap<(u32, u32), i32>,
-    /// Fitted phantom-point side-bearing deltas per codepoint in 26.6.
-    pub bearing_deltas_26_6: HashMap<u32, [i32; 2]>,
-    /// Projected source-gap pair model, if the selected model uses one.
-    pub pair: Option<&'a PairSpacing>,
-    /// Minimum-separation model for explicit tracking; usually the same
-    /// spacing as `pair`, or a capture over the selected output bitmaps.
-    pub minimum: Option<&'a PairSpacing>,
-    /// False keeps every kern lookup at zero under all models.
-    pub apply_kerning: bool,
-    /// True for 1-bit layout (whole-pixel tracking, space floor).
+    /// Finalized advances per codepoint in 26.6 pixels.
+    pub advances_26_6: HashMap<u32, i32>,
+    /// Finalized pair adjustments in 26.6, applied exactly once per pair.
+    pub pair_adjustments_26_6: HashMap<(u32, u32), i32>,
+    /// Fractional source kern for the tracking guard's source-gap target.
+    pub guard_kern_26_6: HashMap<(u32, u32), i32>,
+    /// Minimum-separation guard for explicit Mono tracking, if available.
+    pub minimum: Option<&'a TrackingGuard>,
+    /// True for 1-bit layout (whole-pixel tracking, space floor, guard).
     pub mono: bool,
+    /// True when pen positions are whole pixels (candidate Mono and Gray):
+    /// tracking is then quantized to whole pixels at any output depth.
+    pub integer_positions: bool,
     /// User-selected tracking in pixels; the engine normalizes it
-    /// (whole-pixel steps with ties away from zero at mono, 26.6 otherwise).
+    /// (whole-pixel steps with ties away from zero for integer or Mono
+    /// layout, 26.6 otherwise).
     pub letter_spacing_px: f32,
 }
 
-/// Line-layout spacing engine: advance choice, single kern application,
-/// bearing correction, projected pair correction, tracking normalization
-/// and the minimum-separation floor behind one placement operation.
+/// Line-layout placement engine: finalized advance choice, single kern
+/// application, available bearing correction, tracking normalization and
+/// the minimum-separation floor behind one placement operation.
 #[derive(Clone)]
 pub struct SpacingEngine<'a> {
-    model: SpacingModel,
     advances: HashMap<u32, i32>,
-    kern: HashMap<(u32, u32), i32>,
-    deltas: HashMap<u32, [i32; 2]>,
-    pair: Option<&'a PairSpacing>,
-    minimum: Option<&'a PairSpacing>,
-    apply_kerning: bool,
+    pair_adjustments: HashMap<(u32, u32), i32>,
+    guard_kern: HashMap<(u32, u32), i32>,
+    minimum: Option<&'a TrackingGuard>,
     mono: bool,
     tracking_26_6: i32,
 }
 
 impl<'a> SpacingEngine<'a> {
-    /// Normalize a user tracking offset: whole-pixel steps at mono (ties
-    /// away from zero, matching the UI convention) and 26.6 otherwise.
+    /// Normalize a user tracking offset: whole-pixel steps (ties away
+    /// from zero) for Mono or integer-position layout, 26.6 otherwise.
     /// This is a user-policy normalization, not an optical threshold.
-    pub(crate) fn normalize_tracking_offset(mono: bool, letter_spacing_px: f32) -> i32 {
-        if mono {
+    pub(crate) fn normalize_tracking_offset(integer: bool, letter_spacing_px: f32) -> i32 {
+        if integer {
             letter_spacing_px.round() as i32 * 64
         } else {
             (letter_spacing_px * 64.0).round() as i32
@@ -122,45 +263,16 @@ impl<'a> SpacingEngine<'a> {
                 "letter_spacing_px must be finite and within -16..=16",
             ));
         }
-        if inputs.model == SpacingModel::Auto {
-            return Err(crate::fail("spacing engine requires a resolved model"));
-        }
-        if inputs.model != SpacingModel::Source && !inputs.mono {
-            return Err(crate::fail(
-                "experimental spacing models require monochrome output",
-            ));
-        }
-        if inputs.model == SpacingModel::Projected && inputs.pair.is_none() {
-            return Err(crate::fail(
-                "projected spacing requires source and output geometry",
-            ));
-        }
-        let tracking_26_6 = Self::normalize_tracking_offset(inputs.mono, inputs.letter_spacing_px);
-        let advances = match inputs.model {
-            SpacingModel::Source => inputs.source_advances_26_6,
-            SpacingModel::Fitted | SpacingModel::Projected => inputs.fitted_advances_26_6,
-            SpacingModel::Auto => unreachable!(),
-        };
+        let integer = inputs.mono || inputs.integer_positions;
+        let tracking_26_6 = Self::normalize_tracking_offset(integer, inputs.letter_spacing_px);
         Ok(SpacingEngine {
-            model: inputs.model,
-            advances,
-            kern: inputs.kern_26_6,
-            deltas: inputs.bearing_deltas_26_6,
-            pair: if inputs.model == SpacingModel::Projected {
-                inputs.pair
-            } else {
-                None
-            },
+            advances: inputs.advances_26_6,
+            pair_adjustments: inputs.pair_adjustments_26_6,
+            guard_kern: inputs.guard_kern_26_6,
             minimum: if inputs.mono { inputs.minimum } else { None },
-            apply_kerning: inputs.apply_kerning,
             mono: inputs.mono,
             tracking_26_6,
         })
-    }
-
-    /// Selected (already `Auto`-resolved) model this engine was built for.
-    pub fn model(&self) -> SpacingModel {
-        self.model
     }
 
     /// Normalized tracking offset in 26.6 pixels.
@@ -173,43 +285,19 @@ impl<'a> SpacingEngine<'a> {
         self.advances.contains_key(&codepoint)
     }
 
-    /// Pair kern for `previous`/`current` as applied by placement: zero when
-    /// kerning is disabled or the pair has no entry. Single-application
-    /// accessor for adapters carrying attached-left shaping kern.
+    /// Finalized pair adjustment for `previous`/`current` as applied by
+    /// placement: zero when the pair has no entry. Kerning enablement and
+    /// any fitting correction were already resolved into this table by
+    /// the adapter, so placement applies the value exactly once.
     pub fn pair_kern(&self, previous: Option<u32>, current: u32) -> i32 {
-        if !self.apply_kerning {
-            return 0;
-        }
         previous
-            .and_then(|left| self.kern.get(&(left, current)))
+            .and_then(|left| self.pair_adjustments.get(&(left, current)))
             .copied()
             .unwrap_or(0)
     }
 
-    /// Source pair kerning plus, for supported pairs, the projected
-    /// source-gap extra correction. Unsupported pairs keep the prior
-    /// integer-bearing correction. Feeds both placement and wrapping
-    /// simulation, so measurement and placement never diverge.
     fn neutral_pair_adjustment(&self, previous: Option<u32>, current: u32) -> i64 {
-        let kern = i64::from(self.pair_kern(previous, current));
-        if self.model == SpacingModel::Source {
-            return kern;
-        }
-        if let (Some(left), Some(spacing)) = (previous, self.pair) {
-            if let Some(advance) = self.advances.get(&left) {
-                if let Some(extra) = spacing.correction(left, current, kern as i32, *advance) {
-                    return kern + i64::from(extra);
-                }
-            }
-        }
-        let previous_rsb = previous
-            .and_then(|left| self.deltas.get(&left))
-            .map_or(0, |deltas| deltas[1]);
-        let current_lsb = self.deltas.get(&current).map_or(0, |deltas| deltas[0]);
-        kern + i64::from(crate::mono_spacing::bearing_adjustment(
-            previous_rsb,
-            current_lsb,
-        ))
+        i64::from(self.pair_kern(previous, current))
     }
 
     /// Glyph advance with tracking. Explicit user policy: negative tracking
@@ -267,10 +355,14 @@ impl<'a> SpacingEngine<'a> {
         let proposed_origin = pen_26_6.checked_add(neutral)?;
         previous_origin.checked_add(32)?;
         proposed_origin.checked_add(32)?;
+        let guard_kern = previous
+            .and_then(|left_code| self.guard_kern.get(&(left_code, current)))
+            .copied()
+            .unwrap_or_else(|| self.pair_kern(previous, current));
         neutral.checked_add(spacing.minimum_tracking_correction(
             left,
             current,
-            self.pair_kern(previous, current),
+            guard_kern,
             previous_origin,
             proposed_origin,
         ))
@@ -293,19 +385,161 @@ impl<'a> SpacingEngine<'a> {
     }
 }
 
-/// Fitted advance choice from a same-role report record.
-///
-/// Uses the returned hinted advance width converted to 26.6 with the
-/// report's metric rounding when the capture provides one; otherwise falls
-/// back to the reported advance and returns `false`.
-///
-/// Documented metadata limit: under a linear advance policy the reported
-/// advance is the design advance, not a fitted metric, so a `false` return
-/// carries no hinted-advance information and fitted placement degrades to
-/// the reported value.
-pub fn fitted_advance_26_6(record: &ReferenceRecord, rounding: MetricRounding) -> (i32, bool) {
-    match record.hinted_advance_width {
-        Some(width) if width.is_finite() => (crate::fixed(width, rounding), true),
-        _ => (record.advance_26_6, false),
+#[cfg(test)]
+mod tests {
+    use super::{finalize_bitmap_metrics, quantize_26_6};
+    use crate::reference::{RasterPolicy, ReferenceRecord};
+    use std::collections::HashMap;
+
+    fn record(
+        codepoint: u32,
+        advance_26_6: i32,
+        hinted: Option<f32>,
+        deltas: Option<[i32; 2]>,
+    ) -> ReferenceRecord {
+        ReferenceRecord {
+            side_bearing_deltas_26_6: deltas,
+            raster_policy: RasterPolicy::Coverage,
+            diagonal_pairs: None,
+            codepoint,
+            glyph_id: codepoint,
+            selected_engine: String::from("none"),
+            target: String::from("mono"),
+            smooth_mode: None,
+            symmetric_rendering: None,
+            preserve_linear_metrics: None,
+            draw_pedantic: false,
+            skrifa_version: String::new(),
+            skrifa_registry_checksum: String::new(),
+            zeno_version: String::new(),
+            zeno_format: String::from("alpha"),
+            output_bits: 1,
+            mono_threshold: 128,
+            gray_gamma: 1.0,
+            fitted_commands: Vec::new(),
+            coverage: Vec::new(),
+            coverage_sha256: String::new(),
+            left: 0,
+            top: 0,
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+            advance_26_6,
+            hinted_has_overlaps: false,
+            hinted_lsb: None,
+            hinted_advance_width: hinted,
+        }
+    }
+
+    fn finalize(
+        records: &[ReferenceRecord],
+        source: &HashMap<u32, i32>,
+        kern: &HashMap<(u32, u32), i32>,
+        kerning: bool,
+        monospace: bool,
+        tabular: bool,
+    ) -> super::FinalizedBitmapMetrics {
+        finalize_bitmap_metrics(records, source, kern, kerning, monospace, tabular)
+    }
+
+    #[test]
+    fn fitted_advance_wins_and_missing_fitted_falls_back_to_rounded_source() {
+        let records = vec![
+            record(65, 6 * 64 + 20, Some(7.6), None),
+            record(66, 6 * 64 + 20, None, None),
+            record(67, 6 * 64 + 20, Some(f32::NAN), None),
+        ];
+        let source = HashMap::from([(65, 6 * 64 + 20), (66, 6 * 64 + 20), (67, 6 * 64 + 20)]);
+        let metrics = finalize(&records, &source, &HashMap::new(), true, false, false);
+        assert_eq!(metrics.advances_26_6[&65], 8 * 64);
+        assert_eq!(metrics.advances_26_6[&66], 6 * 64);
+        assert_eq!(metrics.advances_26_6[&67], 6 * 64);
+        assert_eq!(quantize_26_6(506), 512);
+    }
+
+    #[test]
+    fn tabular_digits_share_the_common_rounded_source_advance() {
+        let mut records = Vec::new();
+        let mut source = HashMap::new();
+        for digit in b'0'..=b'9' {
+            // Fitted advances deliberately disagree; the common source
+            // value (7.90625 px) must still win for every digit.
+            records.push(record(
+                u32::from(digit),
+                506,
+                Some(7.0 + f32::from(digit - b'0') * 0.4),
+                Some([10, 10]),
+            ));
+            source.insert(u32::from(digit), 506);
+        }
+        records.push(record(65, 6 * 64, Some(6.2), Some([10, 10])));
+        source.insert(65, 6 * 64);
+        let kern = HashMap::from([((u32::from(b'3'), u32::from(b'4')), -70)]);
+        let metrics = finalize(&records, &source, &kern, true, false, true);
+        for digit in b'0'..=b'9' {
+            assert_eq!(metrics.advances_26_6[&u32::from(digit)], 8 * 64);
+        }
+        assert_eq!(metrics.advances_26_6[&65], 6 * 64);
+        // Tabular pairs carry no bearing delta: only quantized kern remains.
+        assert_eq!(
+            metrics.pair_adjustments_26_6[&(u32::from(b'3'), u32::from(b'4'))],
+            -64
+        );
+    }
+
+    #[test]
+    fn fixed_pitch_uses_rounded_source_cells_and_no_bearing_deltas() {
+        // Equal source cells (8 px) with deliberately differing fitted
+        // advances (7 px, 9 px) and a fitted space: the source cells win
+        // for every glyph, including space, so the grid cannot break.
+        let records = vec![
+            record(65, 8 * 64, Some(7.0), Some([40, 40])),
+            record(66, 8 * 64, Some(9.0), Some([40, 40])),
+            record(32, 8 * 64, Some(3.0), Some([40, 40])),
+        ];
+        let source = HashMap::from([(65, 8 * 64), (66, 8 * 64), (32, 8 * 64)]);
+        let metrics = finalize(&records, &source, &HashMap::new(), true, true, false);
+        assert_eq!(metrics.advances_26_6[&65], 8 * 64);
+        assert_eq!(metrics.advances_26_6[&66], 8 * 64);
+        assert_eq!(metrics.advances_26_6[&32], 8 * 64);
+        assert!(
+            metrics.pair_adjustments_26_6.is_empty(),
+            "fixed pitch must carry no bearing correction: {:?}",
+            metrics.pair_adjustments_26_6
+        );
+    }
+
+    #[test]
+    fn fitted_space_advance_is_carried_through_finalization() {
+        // Space source advance 228 (3.5625 px) rounds to 256, but the
+        // fitted space advance (5 px) is what every adapter must consume.
+        let records = vec![
+            record(65, 6 * 64, Some(6.0), None),
+            record(32, 228, Some(5.0), None),
+        ];
+        let source = HashMap::from([(65, 6 * 64), (32, 228)]);
+        let metrics = finalize(&records, &source, &HashMap::new(), true, false, false);
+        assert_eq!(metrics.advances_26_6[&32], 5 * 64);
+    }
+
+    #[test]
+    fn fitting_correction_survives_kerning_off_and_applies_once() {
+        // AV source kern -100 quantizes to -128; bearing rsb 48 vs lsb 0
+        // crosses the +32 limit and adds -64 exactly once when baked.
+        let records = vec![
+            record(65, 6 * 64, Some(6.0), Some([0, 48])),
+            record(86, 7 * 64, Some(7.0), Some([0, 0])),
+        ];
+        let source = HashMap::from([(65, 6 * 64), (86, 7 * 64)]);
+        let kern = HashMap::from([((65, 86), -100)]);
+        let on = finalize(&records, &source, &kern, true, false, false);
+        assert_eq!(on.pair_adjustments_26_6[&(65, 86)], -128 - 64);
+        let off = finalize(&records, &source, &kern, false, false, false);
+        assert_eq!(
+            off.pair_adjustments_26_6[&(65, 86)],
+            -64,
+            "only the fitting correction remains with kerning off"
+        );
+        assert_eq!(off.source_kern_26_6[&(65, 86)], -100);
     }
 }

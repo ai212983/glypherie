@@ -256,15 +256,21 @@ fn reference_baseline_and_candidate_agree_on_the_selected_glyph() {
     // must not change.
     let mut fitted_settings = settings.clone();
     fitted_settings.hinting = Hinting::Auto;
-    for role in [
-        font_generator::renderer::RendererRole::Baseline,
-        font_generator::renderer::RendererRole::Candidate,
+    for (role, extensions) in [
+        (
+            font_generator::renderer::RendererRole::Baseline,
+            font_generator::baseline::EXTENSIONS_DIAGONAL_01,
+        ),
+        (
+            font_generator::renderer::RendererRole::Candidate,
+            font_generator::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST,
+        ),
     ] {
         let report = font_generator::renderer::render(
             &data,
             &font_generator::reference::ReferenceRequest {
                 profile: font_generator::reference::PROFILE_MONO_1BIT.to_string(),
-                extensions: "diagonal-01".to_string(),
+                extensions: extensions.to_string(),
                 settings: fitted_settings.clone(),
             },
             role,

@@ -2,9 +2,16 @@
 //! https://freetype.org/freetype2/docs/reference/ft2-glyph_retrieval.html#ft_glyphslotrec
 //! The asymmetric limits implement the documented 26.6 rounding boundary;
 //! they are source constants, not optical thresholds tuned to a pair.
+//!
+//! This module also owns the general source/ink geometry retained for the
+//! explicit-tracking minimum-clearance guard; it is not a placement policy.
 
-use crate::{probe::FittedCommand, reference::ReferenceReport, Config, Error, GeneratedFont};
-use skrifa::{instance::Size, raw::TableProvider, MetadataProvider};
+use crate::{
+    fail, fixed, probe::FittedCommand, reference::ReferenceReport, Config, Error, GeneratedFont,
+};
+use sha2::{Digest, Sha256};
+use skrifa::MetadataProvider as RegistryMetadataProvider;
+use skrifa_baseline::{instance::Size, raw::TableProvider, MetadataProvider};
 use std::collections::BTreeMap;
 
 pub fn bearing_adjustment(previous_rsb: i32, current_lsb: i32) -> i32 {
@@ -18,53 +25,65 @@ pub fn bearing_adjustment(previous_rsb: i32, current_lsb: i32) -> i32 {
     }
 }
 
-/// PROJECT HYPOTHESIS: rounded projected source white gap as the pair target.
+/// Font-level spacing properties determined from the source font at the
+/// exact axes, independently of the selected repertoire.
 ///
-/// Source metric foundation: the FreeType advance/bearing model plus pair
-/// kerning. For glyphs `L` (left) and `R` (right) with source kerning `K`,
-/// all in 26.6 except the outline extents in pixels:
+/// Fixed pitch comes from the source `post` table. Tabular digits use the
+/// actually drawn (coordinate-selected) glyphs' variation-aware advances:
+/// all ten digits must be present with equal advances. A cmap-absent digit
+/// keeps the unknown-digits behavior (not tabular); resolution failures
+/// for present digits stay explicit errors.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FontSpacingProperties {
+    pub monospace: bool,
+    pub tabular_digits: bool,
+}
+
+pub fn font_spacing_properties(
+    data: &[u8],
+    config: &Config,
+) -> Result<FontSpacingProperties, Error> {
+    let font = crate::open_font(data)?;
+    let location = font.axes().location(
+        config
+            .axes
+            .iter()
+            .map(|(tag, value)| (tag.as_str(), *value)),
+    );
+    let metrics = font.glyph_metrics(Size::new(config.size_px), &location);
+    let charmap = font.charmap();
+    let digits: Option<Vec<f32>> =
+        if ('0'..='9').all(|digit| charmap.map(digit).is_some_and(|g| g.to_u32() != 0)) {
+            let digit_chars: Vec<char> = ('0'..='9').collect();
+            let resolved =
+                crate::spacing::resolve_scalars(data, &config.axes, config.kerning, &digit_chars)?;
+            resolved
+                .iter()
+                .map(|scalar| metrics.advance_width(skrifa::GlyphId::new(scalar.glyph_id)))
+                .collect()
+        } else {
+            None
+        };
+    Ok(FontSpacingProperties {
+        monospace: font.post().is_ok_and(|table| table.is_fixed_pitch() != 0),
+        tabular_digits: digits.is_some_and(|advances| {
+            advances[0].is_finite() && advances.iter().all(|value| *value == advances[0])
+        }),
+    })
+}
+
+/// General geometry retained for the explicit-tracking minimum-clearance
+/// guard. This is not a placement policy: neutral layout never consults it.
 ///
-/// ```text
-/// G = src_adv(L) / 64 + K / 64 + src_min_x(R) - src_max_x(L)
-/// ```
-///
-/// `G` is the signed source white gap in pixels between the projected pair's
-/// tight outline extents. The target blank-column gap is `floor(G + 0.5)`,
-/// the same nearest-pixel rounding the compositor applies to origins;
-/// negative values (intended source overhangs) are preserved, never clamped.
-///
-/// The layout then chooses the whole-pixel relative origin of `R` that
-/// delivers that blank-column gap between the *fitted* ink columns:
-///
-/// ```text
-/// desired = ink_max_col(L) + 1 - ink_min_col(R) + target_gap
-/// extra   = desired * 64 - (candidate_adv(L) + K)
-/// ```
-///
-/// Hersch (1993, sections 5-6) supplies the placement foundation and Shamir
-/// (2003, section 3) the signed-distance constraint reading; neither
-/// establishes this whole-string optical model directly, hence the hypothesis
-/// label. Known limit, recorded by the host: projected bounding extents can
-/// misrepresent bowls, diagonal pairs and serif overhangs, where a common
-/// facing contour at shared heights would be needed. No glyph-specific gap
-/// targets, no optical thresholds, no row selection and no phase exceptions
-/// are encoded here.
-///
-/// Contract:
-/// - Only pair layout changes. Scalar glyph metrics keep the current
-///   `Hinted` advance policy; individual glyph bitmaps are untouched.
-/// - First glyphs have no geometric pair correction; existing bearing
-///   positioning still applies at line starts.
-/// - Empty, space and missing glyphs break geometric pairing: lookup returns
-///   `None` and the caller keeps the prior FreeType integer-bearing
-///   correction. Space is never squeezed from empty extents.
-/// - Newlines and wrap boundaries reset pairing (no previous).
-/// - Fixed-width fonts skip projection entirely; equal-width digit runs skip
-///   projection while both sides are tabular digits. Fixed pitch comes from
-///   the source post table; digit equality uses all ten source advances at
-///   the exact axes, independently of the text's selected repertoire.
-/// - Fields stay private; `None` always means "use the existing fallback".
-pub struct PairSpacing {
+/// Source foundation: the FreeType advance/bearing model plus pair kerning.
+/// For glyphs `L` (left) and `R` (right) with source kerning `K`, all in 26.6
+/// except the outline extents in pixels, the signed source white gap is
+/// `G = src_adv(L)/64 + K/64 + src_min_x(R) - src_max_x(L)`. The guard only
+/// asks whether that gap, rounded with `floor(G + 0.5)`, is at least one
+/// blank column; negative values (intended source overhangs) are preserved
+/// and never trigger a floor. Fixed-pitch fonts, tabular digit pairs,
+/// spaces and empty glyphs return no target and bypass the floor.
+pub struct TrackingGuard {
     source_min_x: BTreeMap<u32, f64>,
     source_max_x: BTreeMap<u32, f64>,
     source_advance: BTreeMap<u32, i32>,
@@ -76,16 +95,16 @@ pub struct PairSpacing {
     source_sha256: String,
 }
 
-impl PairSpacing {
-    /// Build pair extents from an independent unhinted source report and the
-    /// candidate report at the same size, axes and repertoire. Never fails:
-    /// unusable or mismatched input yields a spacing that answers `None`
-    /// for every pair, leaving layout on its existing behavior.
+impl TrackingGuard {
+    /// Build guard extents from an independent unhinted source report and
+    /// the delivered report at the same size, axes and repertoire. Never
+    /// fails: unusable or mismatched input yields a guard that answers
+    /// `None` for every pair, leaving tracking without a floor.
     pub fn build(source: &ReferenceReport, candidate: &ReferenceReport) -> Self {
         let usable = source.source_sha256 == candidate.source_sha256
             && source.size_px == candidate.size_px
             && source.axes == candidate.axes;
-        let mut spacing = PairSpacing {
+        let mut guard = TrackingGuard {
             source_min_x: BTreeMap::new(),
             source_max_x: BTreeMap::new(),
             source_advance: BTreeMap::new(),
@@ -97,14 +116,14 @@ impl PairSpacing {
             source_sha256: source.source_sha256.clone(),
         };
         if !usable {
-            return spacing;
+            return guard;
         }
         for record in &source.records {
             if let Some((min_x, max_x)) = tight_source_x(&record.fitted_commands) {
-                spacing.source_min_x.insert(record.codepoint, min_x);
-                spacing.source_max_x.insert(record.codepoint, max_x);
+                guard.source_min_x.insert(record.codepoint, min_x);
+                guard.source_max_x.insert(record.codepoint, max_x);
             }
-            spacing
+            guard
                 .source_advance
                 .insert(record.codepoint, record.advance_26_6);
         }
@@ -112,78 +131,127 @@ impl PairSpacing {
             if let Some((min_col, max_col)) =
                 ink_columns(&record.pixels, record.left, record.width, record.height)
             {
-                spacing.ink_min_col.insert(record.codepoint, min_col);
-                spacing.ink_max_col.insert(record.codepoint, max_col);
+                guard.ink_min_col.insert(record.codepoint, min_col);
+                guard.ink_max_col.insert(record.codepoint, max_col);
             }
         }
-        spacing
+        guard
     }
 
     /// Add source font properties independently of the selected repertoire.
-    /// Equal advances in a short sample do not imply a fixed-pitch font.
-    /// FreeType's fixed/tabular advance contract supplies these guards.
     pub fn from_font(
         data: &[u8],
         config: &Config,
         source: &ReferenceReport,
         candidate: &ReferenceReport,
     ) -> Result<Self, Error> {
-        let font = crate::open_font(data)?;
+        let properties = font_spacing_properties(data, config)?;
+        let mut guard = Self::build(source, candidate);
+        guard.monospace = properties.monospace;
+        guard.tabular_digits = properties.tabular_digits;
+        Ok(guard)
+    }
+
+    /// Guard from unhinted source geometry only, matching the former
+    /// unhinted registry reference capture exactly: registry Skrifa
+    /// outlines are drawn to commands and their tight x-extents taken,
+    /// source advances are registry `GlyphMetrics::advance_width`
+    /// rounded with the configured fixed rule, and no coverage,
+    /// thresholding or raster is produced. Ink columns come from the
+    /// actual delivered bitmaps in `output`.
+    pub(crate) fn for_output_from_geometry(
+        data: &[u8],
+        output: &GeneratedFont,
+    ) -> Result<Self, Error> {
+        let properties = font_spacing_properties(data, &output.config)?;
+        if !matches!(data.get(..4), Some(b"\0\x01\0\0" | b"OTTO")) {
+            return Err(fail("supported input is a single sfnt TTF/OTF outline font; collections, WOFF and bitmap formats require conversion"));
+        }
+        let font = skrifa::FontRef::new(data).map_err(|e| fail(format!("invalid font: {e}")))?;
+        for tag in [b"COLR", b"SVG ", b"CBDT", b"sbix"] {
+            if font.table_data(skrifa::Tag::new(tag)).is_some() {
+                return Err(fail("color fonts require a color output adapter"));
+            }
+        }
+        if ![b"glyf", b"CFF ", b"CFF2"]
+            .iter()
+            .any(|t| font.table_data(skrifa::Tag::new(t)).is_some())
+        {
+            return Err(fail("font has no supported glyf/CFF/CFF2 outlines"));
+        }
+        for (tag, value) in &output.config.axes {
+            if tag.len() != 4 || !tag.is_ascii() {
+                return Err(fail(format!("axis tag {tag:?} must be four ASCII bytes")));
+            }
+            let axis = font
+                .axes()
+                .iter()
+                .find(|a| a.tag().to_string() == *tag)
+                .ok_or_else(|| fail(format!("unsupported axis {tag}")))?;
+            if !value.is_finite() || *value < axis.min_value() || *value > axis.max_value() {
+                return Err(fail(format!(
+                    "axis {tag} must be within {}..={}",
+                    axis.min_value(),
+                    axis.max_value()
+                )));
+            }
+        }
         let location = font.axes().location(
-            config
+            output
+                .config
                 .axes
                 .iter()
                 .map(|(tag, value)| (tag.as_str(), *value)),
         );
-        let metrics = font.glyph_metrics(Size::new(config.size_px), &location);
-        let charmap = font.charmap();
-        // Tabular-digit equality uses the actually drawn (coordinate-selected)
-        // glyphs' variation-aware advances, matching the captures' metrics.
-        // A cmap-absent digit keeps the previous unknown-digits behavior;
-        // resolution failures for present digits stay explicit errors.
-        let digits: Option<Vec<f32>> = if ('0'..='9')
-            .all(|digit| charmap.map(digit).is_some_and(|g| g.to_u32() != 0))
-        {
-            let digit_chars: Vec<char> = ('0'..='9').collect();
-            let resolved =
-                crate::spacing::resolve_scalars(data, &config.axes, config.kerning, &digit_chars)?;
-            resolved
-                .iter()
-                .map(|scalar| metrics.advance_width(skrifa::GlyphId::new(scalar.glyph_id)))
-                .collect()
-        } else {
-            None
+        let size = skrifa::instance::Size::new(output.config.size_px);
+        let outlines = font.outline_glyphs();
+        let advances = font.glyph_metrics(size, &location);
+        let mut guard = TrackingGuard {
+            source_min_x: BTreeMap::new(),
+            source_max_x: BTreeMap::new(),
+            source_advance: BTreeMap::new(),
+            ink_min_col: BTreeMap::new(),
+            ink_max_col: BTreeMap::new(),
+            monospace: properties.monospace,
+            tabular_digits: properties.tabular_digits,
+            usable: true,
+            source_sha256: format!("{:x}", Sha256::digest(data)),
         };
-        let mut spacing = Self::build(source, candidate);
-        spacing.monospace = font.post().is_ok_and(|table| table.is_fixed_pitch() != 0);
-        spacing.tabular_digits = digits.is_some_and(|advances| {
-            advances[0].is_finite() && advances.iter().all(|value| *value == advances[0])
-        });
-        Ok(spacing)
-    }
-
-    /// Source classification with the actual surface bitmaps for the selected
-    /// role. Used only by explicit live Mono tracking, not neutral fitting.
-    pub(crate) fn for_output(
-        data: &[u8],
-        source: &ReferenceReport,
-        output: &GeneratedFont,
-    ) -> Result<Self, Error> {
-        let mut spacing = Self::from_font(data, &output.config, source, source)?;
-        spacing.usable &= source.source_sha256 == output.source_sha256
-            && source.size_px == output.config.size_px
-            && source.axes == output.config.axes;
-        spacing.ink_min_col.clear();
-        spacing.ink_max_col.clear();
+        for glyph in &output.glyphs {
+            let gid = skrifa::GlyphId::new(glyph.glyph_id);
+            let outline = outlines
+                .get(gid)
+                .ok_or_else(|| fail(format!("missing outline U+{:04X}", glyph.codepoint)))?;
+            let mut pen = crate::probe::FittedPen::default();
+            #[cfg(test)]
+            crate::source::raster_counter::record_source_geometry(1);
+            outline
+                .draw(
+                    skrifa::outline::DrawSettings::unhinted(size, &location),
+                    &mut pen,
+                )
+                .map_err(|e| fail(format!("outline U+{:04X}: {e}", glyph.codepoint)))?;
+            if let Some((min_x, max_x)) = tight_source_x(&pen.into_commands()) {
+                guard.source_min_x.insert(glyph.codepoint, min_x);
+                guard.source_max_x.insert(glyph.codepoint, max_x);
+            }
+            let advance = advances
+                .advance_width(gid)
+                .ok_or_else(|| fail(format!("missing advance U+{:04X}", glyph.codepoint)))?;
+            guard.source_advance.insert(
+                glyph.codepoint,
+                fixed(advance, output.config.metric_rounding),
+            );
+        }
         for glyph in &output.glyphs {
             if let Some((lo, hi)) =
                 ink_columns(&glyph.pixels, glyph.left, glyph.width, glyph.height)
             {
-                spacing.ink_min_col.insert(glyph.codepoint, lo);
-                spacing.ink_max_col.insert(glyph.codepoint, hi);
+                guard.ink_min_col.insert(glyph.codepoint, lo);
+                guard.ink_max_col.insert(glyph.codepoint, hi);
             }
         }
-        Ok(spacing)
+        Ok(guard)
     }
 
     /// Explicit USER POLICY: live Mono spacing must leave at least one blank
@@ -207,7 +275,7 @@ impl PairSpacing {
         proposed_origin: i64,
     ) -> i64 {
         if !self
-            .target_gap(previous, current, kern_26_6)
+            .source_target_gap(previous, current, kern_26_6)
             .is_some_and(|gap| gap >= 1)
         {
             return 0;
@@ -225,15 +293,15 @@ impl PairSpacing {
         (1 - gap).max(0) * 64
     }
 
-    /// Provenance of the source capture this spacing was derived from.
+    /// Provenance of the source capture this guard was derived from.
     pub fn source_sha256(&self) -> &str {
         &self.source_sha256
     }
 
-    /// Rounded source white-gap target in whole pixels for `previous`/`current`
-    /// with source pair kerning `kern_26_6`, or `None` when the pair is not
-    /// geometrically supported. Signed: negative source overhangs stay negative.
-    pub fn target_gap(&self, previous: u32, current: u32, kern_26_6: i32) -> Option<i64> {
+    /// Rounded source white-gap target in whole pixels, or `None` when the
+    /// pair is not geometrically supported. Signed: negative source
+    /// overhangs stay negative. Internal to the tracking guard.
+    fn source_target_gap(&self, previous: u32, current: u32, kern_26_6: i32) -> Option<i64> {
         if !self.usable || self.monospace {
             return None;
         }
@@ -252,28 +320,6 @@ impl PairSpacing {
             f64::from(advance_left) / 64.0 + f64::from(kern_26_6) / 64.0 + f64::from(min_right)
                 - f64::from(max_left);
         Some((gap + 0.5).floor() as i64)
-    }
-
-    /// Extra 26.6 correction applied before `current`, on top of the source
-    /// pair kerning `kern_26_6` which the caller applies exactly once.
-    /// `candidate_adv_left_26_6` is the candidate advance of `previous`.
-    /// Returns `None` when the pair is unsupported so the caller keeps the
-    /// prior integer-bearing correction.
-    pub fn correction(
-        &self,
-        previous: u32,
-        current: u32,
-        kern_26_6: i32,
-        candidate_adv_left_26_6: i32,
-    ) -> Option<i32> {
-        let target = self.target_gap(previous, current, kern_26_6)?;
-        let (&ink_max_left, &ink_min_right) = (
-            self.ink_max_col.get(&previous)?,
-            self.ink_min_col.get(&current)?,
-        );
-        let desired = i64::from(ink_max_left) + 1 - i64::from(ink_min_right) + target;
-        let extra = desired * 64 - (i64::from(candidate_adv_left_26_6) + i64::from(kern_26_6));
-        i32::try_from(extra).ok()
     }
 }
 
@@ -398,7 +444,7 @@ pub fn tight_source_x(commands: &[FittedCommand]) -> Option<(f64, f64)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{bearing_adjustment, ink_columns, tight_source_x, PairSpacing};
+    use super::{bearing_adjustment, ink_columns, tight_source_x, TrackingGuard};
     use crate::{
         probe::FittedCommand,
         reference::{AdvancePolicy, RasterPolicy, ReferenceRecord, ReferenceReport},
@@ -623,7 +669,7 @@ mod tests {
             (65, 4 * 64, rect_commands(0.0, 2.0), 0, vec![1, 1], 2, 1),
             (66, 4 * 64, rect_commands(1.0, 3.0), 1, vec![1, 1], 2, 1),
         ]);
-        let mut spacing = PairSpacing::build(&source, &source);
+        let mut spacing = TrackingGuard::build(&source, &source);
         for translation in [-17, 0, 23] {
             for phase in [-32, -1, 0, 31, 32, 63] {
                 let left = translation * 64 + phase;
@@ -678,14 +724,10 @@ mod tests {
             (u32::from(b'A'), 6 * 64, vec![], 0, vec![1, 1], 2, 1),
             (u32::from(b'B'), 5 * 64, vec![], 4, vec![1, 1], 2, 1),
         ]);
-        let spacing = PairSpacing::build(&source, &candidate);
+        let spacing = TrackingGuard::build(&source, &candidate);
         assert_eq!(
-            spacing.target_gap(u32::from(b'A'), u32::from(b'B'), 0),
+            spacing.source_target_gap(u32::from(b'A'), u32::from(b'B'), 0),
             Some(5)
-        );
-        assert_eq!(
-            spacing.correction(u32::from(b'A'), u32::from(b'B'), 0, 6 * 64),
-            Some(3 * 64 - 6 * 64)
         );
         // Negative source gap (overlapping extents) stays negative: no clamping.
         let over = reports(vec![
@@ -708,16 +750,16 @@ mod tests {
                 1,
             ),
         ]);
-        let spacing = PairSpacing::build(&over, &candidate);
+        let spacing = TrackingGuard::build(&over, &candidate);
         // G = 2 + 1 - 4 = -1.
         assert_eq!(
-            spacing.target_gap(u32::from(b'A'), u32::from(b'B'), 0),
+            spacing.source_target_gap(u32::from(b'A'), u32::from(b'B'), 0),
             Some(-1)
         );
     }
 
     #[test]
-    fn empty_space_and_unknown_pairs_fall_back() {
+    fn empty_space_and_unknown_pairs_have_no_guard_target() {
         let source = reports(vec![
             (
                 u32::from(b'A'),
@@ -734,54 +776,23 @@ mod tests {
             (u32::from(b'A'), 6 * 64, vec![], 0, vec![1, 1], 2, 1),
             (u32::from(b' '), 4 * 64, vec![], 0, vec![], 0, 0),
         ]);
-        let spacing = PairSpacing::build(&source, &candidate);
+        let spacing = TrackingGuard::build(&source, &candidate);
         assert_eq!(
-            spacing.correction(u32::from(b'A'), u32::from(b' '), 0, 6 * 64),
+            spacing.source_target_gap(u32::from(b'A'), u32::from(b' '), 0),
             None
         );
         assert_eq!(
-            spacing.correction(u32::from(b' '), u32::from(b'A'), 0, 4 * 64),
+            spacing.source_target_gap(u32::from(b' '), u32::from(b'A'), 0),
             None
         );
         assert_eq!(
-            spacing.correction(u32::from(b'A'), u32::from(b'Z'), 0, 6 * 64),
-            None
-        );
-        // Empty candidate ink (space-like box) breaks pairing too.
-        let blank_candidate = reports(vec![
-            (u32::from(b'A'), 6 * 64, vec![], 0, vec![0, 0], 2, 1),
-            (u32::from(b'B'), 5 * 64, vec![], 0, vec![1, 1], 2, 1),
-        ]);
-        let full_source = reports(vec![
-            (
-                u32::from(b'A'),
-                6 * 64,
-                rect_commands(0.0, 2.0),
-                0,
-                vec![1],
-                1,
-                1,
-            ),
-            (
-                u32::from(b'B'),
-                5 * 64,
-                rect_commands(1.0, 3.0),
-                0,
-                vec![1],
-                1,
-                1,
-            ),
-        ]);
-        let spacing = PairSpacing::build(&full_source, &blank_candidate);
-        assert_eq!(
-            spacing.correction(u32::from(b'A'), u32::from(b'B'), 0, 6 * 64),
+            spacing.source_target_gap(u32::from(b'A'), u32::from(b'Z'), 0),
             None
         );
     }
 
     #[test]
-    fn monospace_and_tabular_digit_runs_skip_projection() {
-        // Fixed-width source: every advance identical.
+    fn monospace_and_tabular_digit_runs_have_no_guard_target() {
         let source = reports(vec![
             (
                 u32::from(b'A'),
@@ -806,16 +817,12 @@ mod tests {
             (u32::from(b'A'), 8 * 64, vec![], 0, vec![1], 1, 1),
             (u32::from(b'B'), 8 * 64, vec![], 5, vec![1], 1, 1),
         ]);
-        let mut spacing = PairSpacing::build(&source, &candidate);
-        // Synthetic source fixed-pitch property, supplied explicitly rather
-        // than inferred from the subset of captured advances.
+        let mut spacing = TrackingGuard::build(&source, &candidate);
         spacing.monospace = true;
         assert_eq!(
-            spacing.correction(u32::from(b'A'), u32::from(b'B'), 0, 8 * 64),
+            spacing.source_target_gap(u32::from(b'A'), u32::from(b'B'), 0),
             None
         );
-        // Proportional source with equal digit advances: digit-digit skips,
-        // letter pairs still project.
         let mut entries = Vec::new();
         for digit in b'0'..=b'9' {
             entries.push((
@@ -848,14 +855,71 @@ mod tests {
         ));
         let source = reports(entries.clone());
         let candidate = reports(entries);
-        let mut spacing = PairSpacing::build(&source, &candidate);
+        let mut spacing = TrackingGuard::build(&source, &candidate);
         spacing.tabular_digits = true;
         assert_eq!(
-            spacing.correction(u32::from(b'3'), u32::from(b'4'), 0, 7 * 64),
+            spacing.source_target_gap(u32::from(b'3'), u32::from(b'4'), 0),
             None
         );
         assert!(spacing
-            .correction(u32::from(b'A'), u32::from(b'B'), 0, 6 * 64)
+            .source_target_gap(u32::from(b'A'), u32::from(b'B'), 0)
             .is_some());
+    }
+
+    #[test]
+    fn geometry_guard_matches_unhinted_registry_reference_at_variation_and_pixel_rounding() {
+        use crate::{
+            generate,
+            reference::{reference, ReferenceRequest},
+            Config, Hinting, MetricRounding,
+        };
+        use std::path::Path;
+        let data =
+            std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fonts/RobotoFlex.ttf"))
+                .unwrap();
+        let mut axes = BTreeMap::new();
+        axes.insert("opsz".into(), 14.0);
+        axes.insert("wght".into(), 700.0);
+        axes.insert("wdth".into(), 100.0);
+        axes.insert("slnt".into(), 0.0);
+        // Pixel rounding pins the registry advance rounding; variation
+        // axes (incl. the substituted `$`) pin the exact coordinates.
+        let config = Config {
+            size_px: 14.0,
+            axes: axes.clone(),
+            characters: "AV$09 ".into(),
+            metric_rounding: MetricRounding::Pixel,
+            ..Config::default()
+        };
+        let output = generate(&data, &config).unwrap();
+        let mut source_settings = config.clone();
+        source_settings.hinting = Hinting::None;
+        let source_report = reference(
+            &data,
+            &ReferenceRequest {
+                profile: "mono_1bit".into(),
+                extensions: "none".into(),
+                settings: source_settings,
+            },
+        )
+        .unwrap();
+        let registry = TrackingGuard::build(&source_report, &source_report);
+        let geometry = TrackingGuard::for_output_from_geometry(&data, &output).unwrap();
+        assert_eq!(geometry.source_min_x, registry.source_min_x);
+        assert_eq!(geometry.source_max_x, registry.source_max_x);
+        assert_eq!(geometry.source_advance, registry.source_advance);
+        assert_eq!(geometry.source_sha256, registry.source_sha256);
+        // Every delivered advance is a whole pixel under Pixel rounding.
+        assert!(geometry
+            .source_advance
+            .values()
+            .all(|advance| advance % 64 == 0));
+        // Ink still comes from the delivered output, not the source capture.
+        for glyph in &output.glyphs {
+            assert_eq!(
+                geometry.ink_min_col.get(&glyph.codepoint).copied(),
+                ink_columns(&glyph.pixels, glyph.left, glyph.width, glyph.height).map(|(lo, _)| lo)
+            );
+        }
     }
 }

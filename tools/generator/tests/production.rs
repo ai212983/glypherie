@@ -131,9 +131,21 @@ fn role_dispatch_keeps_reference_and_baseline_available_without_candidate() {
     );
     request.extensions = font_generator::baseline::EXTENSIONS_DIAGONAL_01.into();
     assert!(render(data, &request, RendererRole::Baseline).unwrap().fork);
+    // The candidate no longer accepts the baseline's diagonal policy.
     let candidate = render(data, &request, RendererRole::Candidate);
     if cfg!(feature = "candidate") {
-        assert!(candidate.unwrap().fork);
+        assert!(candidate.is_err());
+    } else {
+        assert!(candidate
+            .unwrap_err()
+            .to_string()
+            .contains("candidate Cargo feature"));
+    }
+    request.extensions = font_generator::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST.into();
+    let candidate = render(data, &request, RendererRole::Candidate);
+    if cfg!(feature = "candidate") {
+        // Registry-based candidate: no fork identity is reported.
+        assert!(!candidate.unwrap().fork);
     } else {
         assert!(candidate
             .unwrap_err()
