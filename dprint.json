@@ -3,9 +3,11 @@
   "newLineKind": "lf",
   "includes": [
     "README.md",
+    "AGENTS.md",
     "fonts/**/*.md",
     "docs/**/*.md",
     "tools/**/*.md",
+    "experiments/**/*.md",
     "**/*.{json,jsonc}"
   ],
   "excludes": [

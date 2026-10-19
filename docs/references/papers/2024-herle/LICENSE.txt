@@ -1,0 +1,7 @@
+© The Authors. Published by SPIE under a Creative Commons Attribution 4.0 International License.
+License: https://creativecommons.org/licenses/by/4.0/
+Source: PDF page 1; DOI https://doi.org/10.1117/1.JOM.4.2.020901
+Attribution: Dorian Herle, Olivier J. F. Martin, Luis Guillermo Villanueva and Niels Quack (2024), Emulating paper: a review of reflective display technologies, Journal of Optical Microsystems 4(2), 020901.
+Individual third-party figure notices and permissions remain as printed in the paper; do not assume the article license overrides them.
+Extraction reformats the text and crops source images; original PDF bytes are unchanged.
+The repository code license does not replace this paper license.

@@ -28,9 +28,10 @@ Research sources relevant to the project, grouped by topic. Local papers are lis
 - [Hersch (1993), Font Rasterization: The State of the Art](1993-hersch/) — survey of scan conversion and grid fitting.
   Sections 5–6, pp. 90–99, cover shared widths, symmetry, and diagonals; Figure 25 fits parallel borders to integer
   horizontal separation.
-- [Hobby (1993), Generating Automatically-Tuned Bitmaps from Outlines](https://doi.org/10.1145/138027.138040)
-  ([report](https://telecom.wiki/download/attachments/819301/CSTR%20148.pdf)) — automatic bitmap generation using
-  distortion, stroke/white-space features, and font-wide consistency (§3), including curved outlines (§6).
+- [Hobby (1993), Generating Automatically Tuned Bitmaps from Outlines](1993-hobby/) — stored report version; automatic
+  bitmap generation using distortion, stroke/white-space features, approximate symmetry, diagonal integer offset vectors
+  and font-wide consistency (§§2–4), including curved outlines (§6). The diagonal argument assumes center-fill scan
+  conversion, so adaptation to coverage threshold conversion needs separate validation.
 - [Herz & Hersch (1994), Towards a Universal Auto-Hinting System for Typographic Shapes](https://lspwww.epfl.ch/publications/typography/tuahsts.pdf)
   — black/white stem detection, shared metrics, and ordered displacement; curved stems and terminals remain future work.
 - [Hersch & Bétrisey (1991), Model-based Matching and Hinting of Fonts](https://lspwww.epfl.ch/publications/typography/mbmahof.pdf)
@@ -94,6 +95,21 @@ Research sources relevant to the project, grouped by topic. Local papers are lis
   [Zhang et al. (1997), spatial color fidelity](https://web.stanford.edu/~jefarrel/Publications/1990s/1997_Zhang_Silverstein_Farrell_Wandell.pdf)
   — spatial filtering for image comparison. Grayscale adaptations need explicit luminance, viewing geometry, and
   filters.
+
+## Reflective display optics
+
+<!-- cspell:words BRDF Kelley Germer Darling Ferwerda Herle Hertel Penczek -->
+
+- [Kelley, Jones & Germer (1998), Display reflectance model based on the BRDF](1998-kelley/) — diffuse, specular and
+  haze decomposition; §§2–3 and Eqs. (1)–(12) checked against the original.
+- [Darling & Ferwerda (2012), Seeing Virtual Objects](2012-darling-ferwerda/) — reflective surface rendering on emissive
+  monitors; spectral rendering, calibration and reproduction limits.
+- [Herle et al. (2024), Emulating paper](2024-herle/) — technology survey; §§2, 4–5 inform the scope, not target-panel
+  calibration or universal readability thresholds.
+- [Hertel & Penczek (2020), Evaluating Display Reflections in Reflective Displays and Beyond](https://sid.onlinelibrary.wiley.com/doi/10.1002/msid.1099)
+  — full publisher text inspected; source superposition and geometry-dependent reflective-display response. Original PDF
+  retrieval returned HTTP 403. Access boundaries and the complete literature list are recorded in the
+  [reflective display model](../../reflective-display-model.md#literature-and-technical-sources).
 
 ## Font formats and conversion
 

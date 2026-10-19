@@ -1,0 +1,342 @@
+{
+  "source_pdf": "paper.pdf",
+  "source_url": "https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=24685",
+  "source_sha256": "a58f987d0c24c5c0b286941516935d9bfcc3c4bd486352590cb23472b47b31b2",
+  "pdf_pages": 8,
+  "first_printed_page": 27,
+  "page_labels": {},
+  "versions": {
+    "docling": "2.131.0",
+    "docling-core": "2.99.0",
+    "docling-ibm-models": "4.0.3",
+    "docling-parse": "7.22.1",
+    "torch": "2.14.1+cpu",
+    "pymupdf": "1.28.2"
+  },
+  "pipeline": {
+    "mode": "ocr-native",
+    "ocr": true,
+    "formula_enrichment": false,
+    "code_enrichment": false,
+    "page_batch_size": null,
+    "code_formula_model": null,
+    "device": "cpu",
+    "dtype": "float32",
+    "image_dpi": 144,
+    "prose_decoder": "Tesseract full-page OCR",
+    "ocr_language": [
+      "eng"
+    ],
+    "ocr_dpi": 288,
+    "tesseract_version": "tesseract 5.5.3"
+  },
+  "model_revisions": {
+    "docling-project/docling-layout-heron": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+    "docling-project/docling-models": "fc0f2d45e2218ea24bce5045f58a389aed16dc23"
+  },
+  "detected_item_counts": {
+    "picture": 16,
+    "section_header": 11,
+    "text": 43,
+    "formula": 14,
+    "footnote": 2,
+    "caption": 14,
+    "table": 1,
+    "list_item": 8
+  },
+  "figures": [
+    {
+      "file": "figures/figure-01.png",
+      "pdf_page": 1,
+      "caption": "",
+      "bbox": {
+        "l": 56.70298258115983,
+        "t": 739.5189324355595,
+        "r": 112.16767356671758,
+        "b": 679.054511791152,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-02.png",
+      "pdf_page": 1,
+      "caption": "",
+      "bbox": {
+        "l": 470.18956100214245,
+        "t": 720.9395620575276,
+        "r": 554.391649665008,
+        "b": 698.3775791660628,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-03.png",
+      "pdf_page": 2,
+      "caption": "Fig. I. [llustration of the three types of reflection found in modem electronic displays. B refers to the BRDF that can have a diffuse (Lambertian) component, D, a mirror-like specular component that produces a distinct image, S, and a haze component, H. At least one component must exist. There are four combinations of the three components. Any or all of the three components can exist nontrivially, or one component can dominate while the other two components make a trivial contribution to the reflection (as in the case of the first three illustrations).",
+      "bbox": {
+        "l": 170.18438752384168,
+        "t": 259.4812980046613,
+        "r": 490.9749769116542,
+        "b": 108.14569310348168,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-04.png",
+      "pdf_page": 3,
+      "caption": "Fig. 2. Anin-planc BRDF of a nmplemdaidhiving;n'fl:mcompmmofmflecfioneontfibufing nonuivia!ly.Tbcgr;phonmcrighlisdwsmdauusing a log scale on the abscissa. We plot the 6 = 0° values at @ = 0.01° so that they are visible on the graph. The negative 6 values are plotted as positive values. The data were collected with the detector at 3° using a point light source. The angle specifies the position of the light source as measured from the specular direction (at — 3° from the normal) for which the angle is set to § = 0°.",
+      "bbox": {
+        "l": 106.89199851439903,
+        "t": 729.7791392404358,
+        "r": 294.8398897734282,
+        "b": 590.6263409510982,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-05.png",
+      "pdf_page": 3,
+      "caption": "",
+      "bbox": {
+        "l": 301.078795323364,
+        "t": 729.1057980639241,
+        "r": 487.09606694611585,
+        "b": 592.6899175529492,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-06.png",
+      "pdf_page": 4,
+      "caption": "Fig. 3. Comparison of BRDFs taken at different specular angles on the same display. Detector at 37, 10°, 20°, and 30° from normal.",
+      "bbox": {
+        "l": 95.73002351842382,
+        "t": 717.5741099397835,
+        "r": 317.44164589441874,
+        "b": 550.4927393752694,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-07.png",
+      "pdf_page": 4,
+      "caption": "Fig 4. For many displays, the image of the source appears to have appros mately the same shape as viewed at posinons all over the screen from a single observation pomt near the normal",
+      "bbox": {
+        "l": 101.88227451165372,
+        "t": 285.3344567631789,
+        "r": 311.0857901980772,
+        "b": 95.34980086691996,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-08.png",
+      "pdf_page": 4,
+      "caption": "Fig. 5. A display BRDF that is not symmetrical about the normal.",
+      "bbox": {
+        "l": 350.6880384227809,
+        "t": 715.9110678387481,
+        "r": 586.5722426149775,
+        "b": 535.8857919916625,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-09.png",
+      "pdf_page": 4,
+      "caption": "Fig 6 Comparisons of m-plane BRDEs for CRTs and FPDs. The data tor the FPDs employed an apparitus with a 027 dewector aperture. Both FPD. are LOCDs",
+      "bbox": {
+        "l": 350.1423549200682,
+        "t": 277.3330415983187,
+        "r": 589.0536935390795,
+        "b": 93.4390898153232,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-10.png",
+      "pdf_page": 5,
+      "caption": "Fig. 7. BRDF of FPD1 and FPD2H showing that the value of the BRDF can change substantially over even 0.5°.",
+      "bbox": {
+        "l": 51.299820078731145,
+        "t": 729.7514742678809,
+        "r": 289.1076467410958,
+        "b": 545.5824263757981,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-11.png",
+      "pdf_page": 5,
+      "caption": "Fig. 8. Common reflection measurement configurations.",
+      "bbox": {
+        "l": 54.199374977484645,
+        "t": 213.8007658312123,
+        "r": 289.298472442212,
+        "b": 87.71616223404283,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-12.png",
+      "pdf_page": 5,
+      "caption": "Fig. 9. BRDFs off normal for two FPD surfaces.",
+      "bbox": {
+        "l": 331.5353640687421,
+        "t": 240.28506112351033,
+        "r": 537.3418129102246,
+        "b": 88.08905585915113,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-13.png",
+      "pdf_page": 6,
+      "caption": "Fig. 10. Integrand for large-source specular contrnibution from haze using the data for FPDI.",
+      "bbox": {
+        "l": 130.69128581365942,
+        "t": 227.81245682769338,
+        "r": 307.8878059654981,
+        "b": 95.12330743867062,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-14.png",
+      "pdf_page": 6,
+      "caption": "Fig. 11. Two BRDFs that could produce the same measurement result: using conventional techniques. However, the displays would appear very different to the eye if a point source were observed in the reflection as in the above images.",
+      "bbox": {
+        "l": 364.4391505943835,
+        "t": 324.9590597677764,
+        "r": 598.1324534356892,
+        "b": 117.2668897935066,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-15.png",
+      "pdf_page": 7,
+      "caption": "Fig. 12. The diffuse (Lambertian) term, if nontrivial, will be indicated by the haze asymptotically reaching a constant as the angle of the light source from the normal increases toward 90°. Note that the detector would have to measure the entirety of the elongated illuminated area. Otherwise, the detector would have to measure within the illuminated area, correct the reading with 1/cos 6, and the illumination would have to be very uniform over its cross-section.",
+      "bbox": {
+        "l": 94.54200202415014,
+        "t": 729.6798891741817,
+        "r": 251.88955780062042,
+        "b": 561.7413082849685,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-16.png",
+      "pdf_page": 7,
+      "caption": "Fig. 13. The haze peak added to the diffuse component may be observable at the center of an annulus that is sufficiently small. The specular component would be obtained with the same apparatus by subtracting off the haze peak and the diffuse component making appropriate corrections for glare.",
+      "bbox": {
+        "l": 336.8945706796781,
+        "t": 727.9500730791183,
+        "r": 533.706015917355,
+        "b": 580.4089534127098,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    }
+  ],
+  "reviewed_corrections": [
+    {
+      "pdf_page": 1,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 1,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 2,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 5,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 5,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 5,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 6,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 6,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Equation (12) visually rechecked at enlarged scale: the second form prints exponent n in both denominators; retained as printed."
+    },
+    {
+      "pdf_page": 1,
+      "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+    },
+    {
+      "pdf_page": 1,
+      "note": "Restored the reviewed inline LaTeX subscript after Markdown export escaping."
+    },
+    {
+      "pdf_page": 1,
+      "note": "Restored the reviewed inline LaTeX subscript after Markdown export escaping."
+    },
+    {
+      "pdf_page": 1,
+      "note": "Restored the reviewed inline LaTeX subscript after Markdown export escaping."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Removed isolated duplicate OCR equation-number fragment after restoring Eq. (4)."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Restored section number from original PDF."
+    },
+    {
+      "pdf_page": 7,
+      "note": "Table 1 headers, parameter symbols and decimal values visually restored from PDF page 7."
+    }
+  ],
+  "review_status": "targeted corrections; not a fully proofread transcription",
+  "omitted_illustration_items": [],
+  "review_notes": [
+    "All 8 PDF pages surveyed; numbered equations (1)-(12) visually checked and restored. Eq. (8) retains the source double integral with only d theta printed, rather than silently adding a differential.",
+    "All 13 numbered figures have source image coverage. Additional detector images are unnumbered. Most inline notation, prose and bibliography remain machine OCR and are not fully proofread.",
+    "Table 1 is restored from the source separately. The source scan clips some right-edge prose and bibliography text; no missing words were invented."
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "version": "0.2",
-  "files": ["README.md", "fonts/**/*.md", "docs/**/*.md", "tools/**/*.md"],
+  "files": ["README.md", "AGENTS.md", "fonts/**/*.md", "docs/**/*.md", "tools/**/*.md", "experiments/**/*.md"],
   "ignorePaths": [
     "docs/references/VisualTrueType/**",
     "docs/references/specs/**",

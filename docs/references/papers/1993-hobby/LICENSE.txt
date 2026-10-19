@@ -1,0 +1,25 @@
+Copyright and licensing record
+
+John D. Hobby, Generating Automatically Tuned Bitmaps from Outlines.
+Journal of the ACM 40(1), January 1993, pp. 48-94.
+DOI: 10.1145/138027.138040
+
+Stored copy: CSTR 148 report version, downloaded 2026-10-15 from
+https://telecom.wiki/download/attachments/819301/CSTR%20148.pdf
+
+No explicit open license or permission notice was identified in the downloaded
+report. Public availability does not establish an open license. The journal
+publisher page was unavailable during retrieval; its current licensing terms
+have not been verified. The report and journal versions have not been compared
+for equivalence.
+
+The PDF is retained unchanged for research. The extracted Markdown and figure
+copies retain the source's licensing status; the repository's software license
+does not relicense this material.
+
+Additional source copy: author-report.pdf, downloaded unchanged 2026-10-15 from
+https://9p.io/who/hobby/89_2-17.pdf (linked by the author's publication list).
+SHA-256: ed617671e7fe98dca882f4d9e83d543c0853380c07f0ed0a3822db74dd21b4df
+No explicit open license was identified in this report either. Its availability
+on the author's site does not grant redistribution or relicensing permission.
+The same research-only provenance and unresolved licensing status apply.

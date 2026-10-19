@@ -1,0 +1,449 @@
+{
+  "source_pdf": "paper.pdf",
+  "source_url": "https://infoscience.epfl.ch/server/api/core/bitstreams/bbef8e44-17de-4b0e-aa0b-649fe35f51b5/content",
+  "source_sha256": "bf4dd0b49ecb975609a4893f1951cfc2ada8c80671d4388865e77e2803d9a5c9",
+  "pdf_pages": 34,
+  "first_printed_page": 1,
+  "page_labels": {
+    "1": "020901-1",
+    "2": "020901-2",
+    "3": "020901-3",
+    "4": "020901-4",
+    "5": "020901-5",
+    "6": "020901-6",
+    "7": "020901-7",
+    "8": "020901-8",
+    "9": "020901-9",
+    "10": "020901-10",
+    "11": "020901-11",
+    "12": "020901-12",
+    "13": "020901-13",
+    "14": "020901-14",
+    "15": "020901-15",
+    "16": "020901-16",
+    "17": "020901-17",
+    "18": "020901-18",
+    "19": "020901-19",
+    "20": "020901-20",
+    "21": "020901-21",
+    "22": "020901-22",
+    "23": "020901-23",
+    "24": "020901-24",
+    "25": "020901-25",
+    "26": "020901-26",
+    "27": "020901-27",
+    "28": "020901-28",
+    "29": "020901-29",
+    "30": "020901-30",
+    "31": "020901-31",
+    "32": "020901-32",
+    "33": "020901-33",
+    "34": "020901-34"
+  },
+  "versions": {
+    "docling": "2.131.0",
+    "docling-core": "2.99.0",
+    "docling-ibm-models": "4.0.3",
+    "docling-parse": "7.22.1",
+    "torch": "2.14.1+cpu",
+    "pymupdf": "1.28.2"
+  },
+  "pipeline": {
+    "mode": "native",
+    "ocr": false,
+    "formula_enrichment": false,
+    "code_enrichment": false,
+    "page_batch_size": null,
+    "code_formula_model": null,
+    "device": "cpu",
+    "dtype": "float32",
+    "image_dpi": 144,
+    "prose_decoder": "PyMuPDF using Docling bounding boxes"
+  },
+  "model_revisions": {
+    "docling-project/docling-layout-heron": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8",
+    "docling-project/docling-models": "fc0f2d45e2218ea24bce5045f58a389aed16dc23"
+  },
+  "detected_item_counts": {
+    "picture": 26,
+    "section_header": 64,
+    "text": 136,
+    "footnote": 1,
+    "caption": 26,
+    "formula": 11,
+    "table": 2,
+    "list_item": 173
+  },
+  "figures": [
+    {
+      "file": "figures/figure-01.png",
+      "pdf_page": 1,
+      "caption": "",
+      "bbox": {
+        "l": 34.78050994873047,
+        "t": 764.4105739593506,
+        "r": 276.6474914550781,
+        "b": 723.1519927978516,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-02.png",
+      "pdf_page": 2,
+      "caption": "Fig. 1 Qualitative photographs of a representative emissive display under different ambient conditions. Photographs are taken in darkness (0 lux), indoor lighting (1k lux), overcast sky (5k lux), and outdoor sunlight (40k lux). Adapted with permission from Ref. 9, copyright (2021), DisplayMate Technologies.",
+      "bbox": {
+        "l": 179.5814208984375,
+        "t": 187.25634765625,
+        "r": 427.7923889160156,
+        "b": 106.60614013671875,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-03.png",
+      "pdf_page": 4,
+      "caption": "Fig. 2 Reflectance spectra for white and black states of a high-quality magazine print (National Geographic), standard print, and a reflective LCD. CRs are indicated on top of the white reflectance lines. Data for Reflective LCD and National Geographic are sourced from Ref. 12.",
+      "bbox": {
+        "l": 153.6001739501953,
+        "t": 734.4070777893066,
+        "r": 453.8237609863281,
+        "b": 513.20751953125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-04.png",
+      "pdf_page": 4,
+      "caption": "Fig. 3 Schematic representation of different color systems. (a) Red-green-blue (RGB) color filters on top of white-black switching pixels, results in a maximum reflection of 33% and a color fraction (the effective area over which saturated color can be displayed) of 33%' (b) red-green-blue-white (RGBW) color filters add an additional white filter, increasing maximum reflection to 50%, although at the cost of a reduced color fraction of 25%; and (c) three-layer cyan-magenta-yellow pixels with a white reflector yield an exceptional maximum reflection and a color fraction of 100%. This configuration is mostly used in print media. Adapted with permission from Ref. 5, copyright (2011), Society for Information Display.",
+      "bbox": {
+        "l": 127.77603912353516,
+        "t": 450.12615966796875,
+        "r": 480.0268859863281,
+        "b": 377.3113708496094,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-05.png",
+      "pdf_page": 5,
+      "caption": "Fig. 4 Schematic visualization of the discussed reflective display technologies. Light manipulation principles across these display technologies: LCDs - polarization, MEMS (IMOD) - interference, electrowetting and electrophoretic - absorptive media transport, phase-change - refractive index, electrochromic - band-gap adjustment, and photonic crystals - diffraction.",
+      "bbox": {
+        "l": 166.2178955078125,
+        "t": 736.0419235229492,
+        "r": 448.0755615234375,
+        "b": 590.5639038085938,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-06.png",
+      "pdf_page": 6,
+      "caption": "Fig. 5 Microcapsule electrophoretic display. (a) Schematic representation of an electrophoretic microencapsulated black and white ink, wherein the displayed color is controlled by the polarization of the electric field and the resulting vertical position of the charged nano-pigments. (b) Microscope image of microcapsules in a working prototype. Image adapted with permission from Ref. 20, used under a Creative Commons Attribution 2.0 Generic (CC BY 2.0) license. (c) A photograph of the Amazon Kindle e-reader tablet adapted with permission from Ref. 21, used under a Creative Commons Attribution 2.0 Generic (CC BY 2.0) license.",
+      "bbox": {
+        "l": 114.61880493164062,
+        "t": 373.71661376953125,
+        "r": 493.98822021484375,
+        "b": 139.7469482421875,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-07.png",
+      "pdf_page": 7,
+      "caption": "Fig. 6 Color electrophoretic reflective display technology, based on (a) superimposed color-filter arrays. Adapted with permission from Ref. 31, copyright (2006), Society for Information Display. (b) A multi-color particle system. 32 (c) CFA based device \"Inknote Color Plus\" on the left and \"Bigme Galy\" device on the right with a multi-particle system offering brighter colors. 33 The image is taken at the same location and same illumination, showcasing the increased brightness of multiparticle systems. Image adapted with permission from Ref. 34, copyright (2023), Good e-reader.",
+      "bbox": {
+        "l": 150.2942657470703,
+        "t": 457.6327819824219,
+        "r": 464.9849548339844,
+        "b": 142.51885986328125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-08.png",
+      "pdf_page": 8,
+      "caption": "Fig. 7 TIR electrophoretic display concept. (a) Schematic representation 43 of the working principle, showing TIR reflection and frustrated TIR when the polarity of the applied electric field draws the absorptive charged black particles into the evanescence wave field. (b) SEM image (left) of a fabricated reflection plane consisting of spheres in an index matching layer, as well as an optical microscope image showing the reflection rings and dark areas of normal incident light. Image adapted with permission from Ref. 173.",
+      "bbox": {
+        "l": 114.41494750976562,
+        "t": 203.0997314453125,
+        "r": 493.2821960449219,
+        "b": 129.10333251953125,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-09.png",
+      "pdf_page": 9,
+      "caption": "",
+      "bbox": {
+        "l": 131.00167846679688,
+        "t": 734.3919410705566,
+        "r": 295.1935119628906,
+        "b": 629.0226135253906,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-10.png",
+      "pdf_page": 9,
+      "caption": "Fig. 8 TIR electrophoretic color display. (a) Schematic of TIR display with an RGB CFA; green is in the reflective state, and red and blue are in the absorptive state. (b) A picture of a tablet implementing this technology. Adapted with permission from Ref. 48, copyright (2019), Wiley.",
+      "bbox": {
+        "l": 307.25799560546875,
+        "t": 724.056510925293,
+        "r": 480.9910888671875,
+        "b": 625.0600891113281,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-11.png",
+      "pdf_page": 10,
+      "caption": "Fig. 9 Reflective TN display: (a) schematic representation: unpolarized light first passes through polarizer A, where it is linearly polarized. In the OFF-state, the liquid crystal rotates this polarization by 90 deg, enabling it to pass through polarizer B and reflect off the back-reflector. In the ON-state, polarization is not rotated; hence it is blocked by polarizer B. (b) Early TN LCD prototype 1972. Adapted with permission from Ref. 47 under a Creative Commons Attribution-Share Alike 3.0 license.",
+      "bbox": {
+        "l": 128.9475860595703,
+        "t": 287.2928466796875,
+        "r": 480.0115966796875,
+        "b": 129.296630859375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-12.png",
+      "pdf_page": 12,
+      "caption": "Fig. 10 The Zenithal Bistable Display. (a) A schematic depiction of the basic structure consisting of a front polarizer, grating, liquid crystal (LC) layer, rubbed polymer, and reflector. An electric potential causes the LC layer to switch between a TN state and a HAN state, both of which are bistable. (b) Photograph illustrating a typical use case of ZBDs as a shelf label, specifically the ZBD EPOP 900 model. (Datasheet, copyright 2011 ZBD Displays Ltd.).",
+      "bbox": {
+        "l": 115.38468170166016,
+        "t": 734.5370140075684,
+        "r": 494.482666015625,
+        "b": 602.1309967041016,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-13.png",
+      "pdf_page": 13,
+      "caption": "Fig. 11 Bistable cholesteric reflective display design and examples. (a) The schematic design of a bistable cholesteric reflective display, 67 illustrating the layered composition and functional elements. (b) Exemplary reflection spectrum of said cell showing the reflection bandwidth Δλ and central wavelength λ0 67 and (c) two-layer stacked cell with and without surface treatment (rubbing) to improve reflection. (d) 7.5-inch full-color ChLCD display. Image adapted with permission from Ref. 68, copyright (2023), AUO. (e) A flexible cholesteric display, demonstrating the technology's adaptability and potential for diverse applications. Image adapted with permission from Ref. 69, copyright (2008), radtech.",
+      "bbox": {
+        "l": 117.18987274169922,
+        "t": 733.8311996459961,
+        "r": 495.52203369140625,
+        "b": 447.6744079589844,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-14.png",
+      "pdf_page": 14,
+      "caption": "Fig. 12 Schematic drawing of the IMOD concept. Incoming light strikes a semi-transparent layer, where it is partially reflected and partially transmitted into a resonant cavity. Within this cavity, the light undergoes multiple reflections between the layers. Outgoing light of a specific wavelength then constructively interferes with the incoming light, leading to the color perception of that element. This process allows for precise control over the displayed color by tuning the gap g between the layers.",
+      "bbox": {
+        "l": 213.83277893066406,
+        "t": 240.97674560546875,
+        "r": 394.30517578125,
+        "b": 127.81884765625,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-15.png",
+      "pdf_page": 15,
+      "caption": "Fig. 13 The IMod architecture and full-sized display prototype. (a) Schematic drawing of a pixel element showing the on (color) and off (state); 82 (b) picture of a prototype tablet utilizing the Qualcomm Mirasol.",
+      "bbox": {
+        "l": 147.55410766601562,
+        "t": 205.1025390625,
+        "r": 461.7518310546875,
+        "b": 100.35394287109375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-16.png",
+      "pdf_page": 16,
+      "caption": "Fig. 14 Schematic view of a QualcommMirasol display unit, including, in particular, a front-facing diffuser film to reduce angle dependence. Adapted with permission from from Ref. 84, copyright (1999), Society of Photo-Optical Instrumentation Engineers (SPIE).",
+      "bbox": {
+        "l": 128.95358276367188,
+        "t": 733.1064796447754,
+        "r": 480.33935546875,
+        "b": 538.1244201660156,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-17.png",
+      "pdf_page": 16,
+      "caption": "Fig. 15 Interferometric absorption-based continuous color tuning: (a) schematic illustrating the principle of color regulation through strategic placement of absorbers in standing light waves. (b) Off-axis viewing examples: camera directed at 10 deg off surface normal, 20 deg, and 40 deg. Image adapted with permission from Ref. 86, copyright (2015), Optica.",
+      "bbox": {
+        "l": 130.26223754882812,
+        "t": 475.4289855957031,
+        "r": 480.2416076660156,
+        "b": 369.5398254394531,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-18.png",
+      "pdf_page": 17,
+      "caption": "Fig. 16 Micro-mechanical light shutter. (a) Schematic of the actuation method and (b) optical microscope image of the final prototype device. 90 The applied voltage was 135 V. Images adapted with permission from Ref. 89, copyright (2010), SPIE Proceedings.",
+      "bbox": {
+        "l": 131.93519592285156,
+        "t": 208.214111328125,
+        "r": 482.21337890625,
+        "b": 95.42864990234375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-19.png",
+      "pdf_page": 18,
+      "caption": "Fig. 17 Mechanically tunable metasurface reflectivity modulator. (a) Schematic drawing of working principle, aligned surfaces reflect light, whereas displaced surfaces absorb it. (b) An optical microscope image shows the EPFL logo on a segmented display, visible when switched from idle to actuated states. Image under open access CC-BY 4.0. from Ref. 91, copyright (2023), ACS Photonics.",
+      "bbox": {
+        "l": 128.47601318359375,
+        "t": 734.4648742675781,
+        "r": 476.6643371582031,
+        "b": 560.0486907958984,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-20.png",
+      "pdf_page": 18,
+      "caption": "Fig. 18 Electrowetting display mechanism: (a) schematic of a unit pixel cell demonstrating the transition between expanded and contracted oil states, indicative of the \"curtain-like\" movement of the colored oil film modulated by potential application; (b) Actual device implementation showcasing the technology in practice. Image source from Ref. 97. Video: The Electrowetting Display IEEE Spectrum YouTube channel.",
+      "bbox": {
+        "l": 114.95818328857422,
+        "t": 216.97265625,
+        "r": 493.50714111328125,
+        "b": 117.92828369140625,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-21.png",
+      "pdf_page": 19,
+      "caption": "Fig. 19 Electrowetting challenges. (a) Relationship between pixel size and aperture across different oil film thicknesses. In smaller pixels, thicker films decrease the visible white/transparent area. However, thinner films let more light through, which can lower the contrast. (b) Optical microscope images showing contact angle hysteresis. 100 Adapted with permission from Ref. 100 under CC BY 4.0 DEED, copyright (2021), Frontiers in Physics.",
+      "bbox": {
+        "l": 117.99187469482422,
+        "t": 250.74072265625,
+        "r": 495.6578063964844,
+        "b": 117.1502685546875,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-22.png",
+      "pdf_page": 20,
+      "caption": "Fig. 20 Electrochromic display. (a) Schematic diagrams of three types of electrochromic devices are shown: (a) type I, which operates in a solution-phase; (b) type II, a hybrid system; and (c) type III, also known as the \"battery-like\" ECD. K þ represents cations, which could be Li þ or H þ , and A - represents anions, for instance, ClO - 4 , Cl - , BF - 4 , or PF - 6 . Images adapted with permission from Ref. 115 under CC BY 4.0 DEED, copyright (2020), Chemistry Europe.",
+      "bbox": {
+        "l": 115.0390853881836,
+        "t": 213.522705078125,
+        "r": 492.6026916503906,
+        "b": 119.4642333984375,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-23.png",
+      "pdf_page": 22,
+      "caption": "Fig. 21 Multi-layered full-color reflective electrochromic pixel. (a) Schematic representation of a unit and (b) a photograph depicting a full-color, flexible, active-matrix-based implementation of the display design. Images adapted with permission from Ref. 129 (permission pending), copyright (2013), Ricoh.",
+      "bbox": {
+        "l": 115.34880828857422,
+        "t": 733.5505905151367,
+        "r": 492.59576416015625,
+        "b": 632.9793853759766,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-24.png",
+      "pdf_page": 23,
+      "caption": "Fig. 22 Microheater-based phase change display system (Fig. 21). (a) Schematic of the SRD pixel structure (b) microheater array, (c) the assembly comprising a mirror and thin-film interference stack, and (d) a microscope photograph demonstrating a 24 × 24 pixel region being dynamically updated with a sequence of letter. Images adapted with permission from Ref. 140 (permission pending), copyright (2019), Society for Information Display.",
+      "bbox": {
+        "l": 117.69293975830078,
+        "t": 734.2997703552246,
+        "r": 495.5559997558594,
+        "b": 633.7003479003906,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-25.png",
+      "pdf_page": 24,
+      "caption": "Fig. 23 Photonic display pixel. (a) Schematic design of the photonic display pixel. (b) Photographs at varying bias voltages: 1.0 V, 2.5 V, and 4.0 V. (c) Reflection spectra recorded at increasing bias voltage levels. (d) The 165 nm shift of the photonic band position from 655 to 490 nm, governed by the applied voltage. Images adapted with permission from Ref. 148, copyright (2010), Advanced Materials.",
+      "bbox": {
+        "l": 114.77620697021484,
+        "t": 340.06787109375,
+        "r": 493.67529296875,
+        "b": 116.85272216796875,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    },
+    {
+      "file": "figures/figure-26.png",
+      "pdf_page": 26,
+      "caption": "Fig. 24 Performance map for reflective display technologies: this representation compares diverse reflective display technologies based on their essential performance parameters. Microcapsule electrophoretic displays (reflectance: 44%, 154 contrast: 23, 155 and frequency: 2.1 Hz 156 ) and their ChLCD (reflectance: 35%, 77 contrast: 10, 159 and frequency: 0.8 Hz 77 ) and electrochromic counterparts (reflectance: 47%, 112 contrast: 12, frequency: 1 Hz 162 ) find their niche in applications demanding static images given their constrained refresh rates. Conversely, emerging electrowetting displays, exhibiting up to 65% reflectance and a remarkable 62 Hz frequency, 155 signal promise for dynamic video renditions. Phase change displays, with a reflectance mirroring that of electrophoretic at 44%, 160 however, are marked by a considerable refresh energy density of 104 mJ∕cm 2 . 160 Albeit discontinued commercially, MEMS-based Qualcomm designs achieve a stellar 90% reflectance, 81 contrast-ratio of 1∶30, 84 and a swift 120 Hz, 84 while being impressively efficient at 0.004 mJ∕cm 2 . 84 Numeric values can be found in Appendix A, Table 2.",
+      "bbox": {
+        "l": 116.12834167480469,
+        "t": 732.7023887634277,
+        "r": 492.596923828125,
+        "b": 467.61334228515625,
+        "coord_origin": "BOTTOMLEFT"
+      }
+    }
+  ],
+  "reviewed_corrections": [
+    {
+      "pdf_page": 3,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 3,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 5,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 9,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 9,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 12,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 15,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 18,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 24,
+      "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+    },
+    {
+      "pdf_page": 9,
+      "note": "Checked source paragraph and retained its clean text; excluded adjacent Eq. (5) bracket glyphs captured by the native prose bounding box. Equation (5) is restored separately."
+    }
+  ],
+  "review_status": "targeted corrections; not a fully proofread transcription",
+  "omitted_illustration_items": [],
+  "review_notes": [
+    "All 34 source pages are included. All 11 numbered equations were visually checked against original source crops. This is a transcription check, not validation of every surveyed formula.",
+    "Sections 2, 4 and 5 were inspected for the model proposal. The other technology discussions, comparison Table 2 and most inline notation remain machine extraction and need checking before quantitative reuse.",
+    "The source labels a display luminance example in lux in section 2.1; this is retained, not corrected to an inferred quantity. The generic ACR formula is not adopted as the state-dependent project model.",
+    "All 24 numbered figure captions have detected source image coverage; two extra detector images have no numbered caption. A complete visual audit of every figure and comparison-table value is not claimed."
+  ]
+}

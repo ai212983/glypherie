@@ -1,16 +1,22 @@
 # Reference papers
 
+<!-- cspell:words Germer BRDF Ferwerda Herle -->
+
 Each folder contains the original PDF, agent-readable Markdown, figure images, extraction provenance, and copyright or
 license information. The [research corpus](CORPUS.md) groups research sources and supporting references by topic. Read
 `paper.md` for searchable text and consult `paper.pdf` when exact notation or visual evidence matters. Each folder's
 README records retrieval and extraction dates.
 
-| Folder                                                    | Paper                                                                                |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [1993-hersch](1993-hersch/)                               | Roger D. Hersch, _Font Rasterization: the State of the Art_                          |
-| [2003-shamir](2003-shamir/)                               | Ariel Shamir, _Constraint-Based Approach for Automatic Hinting of Digital Typefaces_ |
-| [2003-turner-lemberg](2003-turner-lemberg/)               | David Turner & Werner Lemberg, _Real-Time Grid Fitting of Typographic Outlines_      |
-| [2006-gallager-quantization](2006-gallager-quantization/) | Robert Gallager, _Quantization_ (course text, Chapter 3)                             |
+| Folder                                                    | Paper                                                                                                                  |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| [1993-hersch](1993-hersch/)                               | Roger D. Hersch, _Font Rasterization: the State of the Art_                                                            |
+| [1993-hobby](1993-hobby/)                                 | John D. Hobby, _Generating Automatically Tuned Bitmaps from Outlines_ (report version)                                 |
+| [1998-kelley](1998-kelley/)                               | Edward F. Kelley, George R. Jones & Thomas A. Germer, _Display reflectance model based on the BRDF_                    |
+| [2003-shamir](2003-shamir/)                               | Ariel Shamir, _Constraint-Based Approach for Automatic Hinting of Digital Typefaces_                                   |
+| [2003-turner-lemberg](2003-turner-lemberg/)               | David Turner & Werner Lemberg, _Real-Time Grid Fitting of Typographic Outlines_                                        |
+| [2006-gallager-quantization](2006-gallager-quantization/) | Robert Gallager, _Quantization_ (course text, Chapter 3)                                                               |
+| [2012-darling-ferwerda](2012-darling-ferwerda/)           | Benjamin A. Darling & James A. Ferwerda, _Seeing Virtual Objects: Simulating Reflective Surfaces on Emissive Displays_ |
+| [2024-herle](2024-herle/)                                 | Dorian Herle et al., _Emulating paper: a review of reflective display technologies_                                    |
 
 ## Paper rules
 

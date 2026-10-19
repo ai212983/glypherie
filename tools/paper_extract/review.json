@@ -1158,5 +1158,1904 @@
         "note": "Checked against the original page: repaired inline mathematics, soft hyphens, reading order, and figure labels; all exercise text on PDF pages 21–24 was transcribed with its original numbering."
       }
     ]
+  },
+  "hobby-1993-automatically-tuned-bitmaps": {
+    "mode": "ocr-enriched",
+    "figure_regions": [
+      {
+        "page": 2,
+        "file": "source-figure-01.png",
+        "bbox": [
+          85,
+          305,
+          530,
+          362
+        ],
+        "anchor": "Figure 1:",
+        "keep_text": false,
+        "note": "Figure 1: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 2,
+        "file": "source-figure-02.png",
+        "bbox": [
+          85,
+          490,
+          530,
+          617
+        ],
+        "anchor": "Figure 2:",
+        "keep_text": false,
+        "note": "Figure 2: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 3,
+        "file": "source-figure-03.png",
+        "bbox": [
+          70,
+          130,
+          555,
+          217
+        ],
+        "anchor": "Figure 3:",
+        "keep_text": false,
+        "note": "Figure 3: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 3,
+        "file": "source-figure-04.png",
+        "bbox": [
+          70,
+          247,
+          555,
+          336
+        ],
+        "anchor": "Figure 4:",
+        "keep_text": false,
+        "note": "Figure 4: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 3,
+        "file": "source-figure-05.png",
+        "bbox": [
+          70,
+          553,
+          555,
+          628
+        ],
+        "anchor": "Figure 5:",
+        "keep_text": false,
+        "note": "Figure 5: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 4,
+        "file": "source-figure-06.png",
+        "bbox": [
+          70,
+          53,
+          555,
+          128
+        ],
+        "anchor": "Figure 6:",
+        "keep_text": false,
+        "note": "Figure 6: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 4,
+        "file": "source-figure-07.png",
+        "bbox": [
+          85,
+          438,
+          530,
+          607
+        ],
+        "anchor": "Figure 7:",
+        "keep_text": false,
+        "note": "Figure 7: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 5,
+        "file": "source-figure-08.png",
+        "bbox": [
+          85,
+          188,
+          530,
+          299
+        ],
+        "anchor": "Figure 8:",
+        "keep_text": false,
+        "note": "Figure 8: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 5,
+        "file": "source-figure-09.png",
+        "bbox": [
+          85,
+          404,
+          530,
+          527
+        ],
+        "anchor": "Figure 9:",
+        "keep_text": false,
+        "note": "Figure 9: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 6,
+        "file": "source-figure-10.png",
+        "bbox": [
+          85,
+          52,
+          530,
+          159
+        ],
+        "anchor": "Figure 10:",
+        "keep_text": false,
+        "note": "Figure 10: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 6,
+        "file": "source-figure-11.png",
+        "bbox": [
+          85,
+          195,
+          530,
+          344
+        ],
+        "anchor": "Figure 11:",
+        "keep_text": false,
+        "note": "Figure 11: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 7,
+        "file": "source-figure-12.png",
+        "bbox": [
+          85,
+          130,
+          530,
+          259
+        ],
+        "anchor": "Figure 12:",
+        "keep_text": false,
+        "note": "Figure 12: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 7,
+        "file": "source-figure-13.png",
+        "bbox": [
+          85,
+          462,
+          530,
+          613
+        ],
+        "anchor": "Figure 13:",
+        "keep_text": false,
+        "note": "Figure 13: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 8,
+        "file": "source-figure-14.png",
+        "bbox": [
+          85,
+          389,
+          530,
+          523
+        ],
+        "anchor": "Figure 14:",
+        "keep_text": false,
+        "note": "Figure 14: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 10,
+        "file": "source-figure-15.png",
+        "bbox": [
+          85,
+          474,
+          530,
+          571
+        ],
+        "anchor": "Figure 15:",
+        "keep_text": false,
+        "note": "Figure 15: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 11,
+        "file": "source-figure-16.png",
+        "bbox": [
+          85,
+          356,
+          530,
+          526
+        ],
+        "anchor": "Figure 16:",
+        "keep_text": false,
+        "note": "Figure 16: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 12,
+        "file": "source-figure-17.png",
+        "bbox": [
+          85,
+          48,
+          530,
+          170
+        ],
+        "anchor": "Figure 17:",
+        "keep_text": false,
+        "note": "Figure 17: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 12,
+        "file": "source-figure-18.png",
+        "bbox": [
+          85,
+          342,
+          530,
+          571
+        ],
+        "anchor": "Figure 18:",
+        "keep_text": false,
+        "note": "Figure 18: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 13,
+        "file": "source-figure-19.png",
+        "bbox": [
+          85,
+          151,
+          530,
+          316
+        ],
+        "anchor": "Figure 19:",
+        "keep_text": false,
+        "note": "Figure 19: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 13,
+        "file": "source-figure-20.png",
+        "bbox": [
+          85,
+          492,
+          530,
+          603
+        ],
+        "anchor": "Figure 20:",
+        "keep_text": false,
+        "note": "Figure 20: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 15,
+        "file": "source-figure-21.png",
+        "bbox": [
+          85,
+          53,
+          530,
+          247
+        ],
+        "anchor": "Figure 21:",
+        "keep_text": false,
+        "note": "Figure 21: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 16,
+        "file": "source-figure-22.png",
+        "bbox": [
+          85,
+          164,
+          530,
+          290
+        ],
+        "anchor": "Figure 22:",
+        "keep_text": false,
+        "note": "Figure 22: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 16,
+        "file": "source-figure-23.png",
+        "bbox": [
+          85,
+          510,
+          530,
+          648
+        ],
+        "anchor": "Figure 23:",
+        "keep_text": false,
+        "note": "Figure 23: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 17,
+        "file": "source-figure-24.png",
+        "bbox": [
+          85,
+          195,
+          530,
+          395
+        ],
+        "anchor": "Figure 24:",
+        "keep_text": false,
+        "note": "Figure 24: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 18,
+        "file": "source-figure-25.png",
+        "bbox": [
+          85,
+          149,
+          530,
+          283
+        ],
+        "anchor": "Figure 25:",
+        "keep_text": false,
+        "note": "Figure 25: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 18,
+        "file": "source-figure-26.png",
+        "bbox": [
+          85,
+          319,
+          530,
+          475
+        ],
+        "anchor": "Figure 26:",
+        "keep_text": false,
+        "note": "Figure 26: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 19,
+        "file": "source-figure-27.png",
+        "bbox": [
+          85,
+          258,
+          530,
+          574
+        ],
+        "anchor": "Figure 27:",
+        "keep_text": false,
+        "note": "Figure 27: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 21,
+        "file": "source-figure-28.png",
+        "bbox": [
+          85,
+          220,
+          530,
+          372
+        ],
+        "anchor": "Figure 28:",
+        "keep_text": false,
+        "note": "Figure 28: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 22,
+        "file": "source-figure-29.png",
+        "bbox": [
+          85,
+          53,
+          530,
+          139
+        ],
+        "anchor": "Figure 29:",
+        "keep_text": false,
+        "note": "Figure 29: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 25,
+        "file": "source-figure-30.png",
+        "bbox": [
+          85,
+          165,
+          530,
+          483
+        ],
+        "anchor": "Figure 30:",
+        "keep_text": false,
+        "note": "Figure 30: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 27,
+        "file": "source-figure-31.png",
+        "bbox": [
+          85,
+          214,
+          530,
+          500
+        ],
+        "anchor": "Figure 31:",
+        "keep_text": false,
+        "note": "Figure 31: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 28,
+        "file": "source-figure-32.png",
+        "bbox": [
+          85,
+          210,
+          530,
+          503
+        ],
+        "anchor": "Figure 32:",
+        "keep_text": false,
+        "note": "Figure 32: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 30,
+        "file": "source-figure-33.png",
+        "bbox": [
+          85,
+          158,
+          530,
+          281
+        ],
+        "anchor": "Figure 33:",
+        "keep_text": false,
+        "note": "Figure 33: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 31,
+        "file": "source-figure-34.png",
+        "bbox": [
+          85,
+          281,
+          530,
+          382
+        ],
+        "anchor": "Figure 34:",
+        "keep_text": false,
+        "note": "Figure 34: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 32,
+        "file": "source-figure-35.png",
+        "bbox": [
+          85,
+          53,
+          530,
+          111
+        ],
+        "anchor": "Figure 35:",
+        "keep_text": false,
+        "note": "Figure 35: crop and mathematical algorithm transcription checked against the rendered PDF; illustration OCR replaced.",
+        "transcription": "**Transcription of Figure 35 (checked against the PDF):**\n\nFor $k\\leftarrow N_V-2,N_V-3,\\ldots,1$, do\n\n$$\n\\bar V_P[k]\\leftarrow\\operatorname{round}\\left(\\frac{1}{\\bar R[k,k]}\\left(Z[k]-\\sum_{j=k+1}^{N_V-2}\\bar R[k,j]\\bar V_P[j]\\right)\\right).\n$$"
+      },
+      {
+        "page": 32,
+        "file": "source-figure-36.png",
+        "bbox": [
+          85,
+          236,
+          530,
+          385
+        ],
+        "anchor": "Figure 36:",
+        "keep_text": false,
+        "note": "Figure 36: crop and mathematical algorithm transcription checked against the rendered PDF; illustration OCR replaced.",
+        "transcription": "**Transcription of Figure 36 (checked against the PDF):**\n\n1. Find the matrix $R$ from the $QR$-factorization of $A$.\n2. Apply the Lovász basis reduction algorithm to the subblock $R_{PP}$, keeping track of the transformation matrix $T$ used to create the reduced basis matrix $R_{PP}T$.\n3. Find the $QR$ factorization $R_{PP}T=\\bar Q\\bar R$ and use it to evaluate (25).\n4. Use back substitution with rounding to find an integer vector $\\bar V_P$ where $\\bar R\\bar V_P\\approx Z$ as shown in Figure 35.\n5. Use the relation $V_P=T^{-1}\\bar V_P$ to find $V_P$."
+      },
+      {
+        "page": 34,
+        "file": "source-figure-37.png",
+        "bbox": [
+          85,
+          132,
+          530,
+          222
+        ],
+        "anchor": "Figure 37:",
+        "keep_text": false,
+        "note": "Figure 37: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 34,
+        "file": "source-figure-38.png",
+        "bbox": [
+          85,
+          390,
+          530,
+          567
+        ],
+        "anchor": "Figure 38:",
+        "keep_text": false,
+        "note": "Figure 38: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      },
+      {
+        "page": 35,
+        "file": "source-figure-39.png",
+        "bbox": [
+          85,
+          360,
+          530,
+          508
+        ],
+        "anchor": "Figure 39:",
+        "keep_text": false,
+        "note": "Figure 39: crop and mathematical algorithm transcription checked against the rendered PDF; illustration OCR replaced.",
+        "transcription": "**Transcription of Figure 39 (checked against the PDF):**\n\n1. Find the matrix $R$ from the $QR$-factorization of $A$.\n2. Apply the Lovász basis reduction algorithm to the subblock $R_{II}$, keeping track of the transformation matrix $T$ used to create the reduced basis matrix $R_{II}T$.\n3. Find the $QR$ factorization $R_{II}T=\\bar Q\\bar R$ and use it to evaluate (27).\n4. Use back substitution with rounding to find an integer vector $\\bar V_I$ where $\\bar R\\bar V_I\\approx Z$ as shown in Figure 35, except with $\\bar V_I$ and $N_I$ instead of $\\bar V_P$ and $N_V-2$.\n5. Use (28) to evaluate $V_X$ and obtain the $X$ and $Y$-variables that define the adjusted contours."
+      },
+      {
+        "page": 37,
+        "file": "source-figure-40.png",
+        "bbox": [
+          85,
+          287,
+          530,
+          372
+        ],
+        "anchor": "Figure 40:",
+        "keep_text": false,
+        "note": "Figure 40: crop and mathematical algorithm transcription checked against the rendered PDF; illustration OCR replaced.",
+        "transcription": "**Transcription of Figure 40 (checked against the PDF):**\n\n$$\n\\begin{aligned}\nx_{\\mathrm{lo}}&\\leftarrow a+b;\\\\\nx_{\\mathrm{hi}}&\\leftarrow a\\sigma_{\\mathrm{hi}}+b;\\\\\ni_{\\mathrm{lo}}&\\leftarrow\\operatorname{round}(x_{\\mathrm{lo}}-d);\\\\\ni_{\\mathrm{hi}}&\\leftarrow\\operatorname{round}(x_{\\mathrm{hi}}+d);\\\\\n\\textbf{if }i_{\\mathrm{hi}}=i_{\\mathrm{lo}}&\\quad\\{\\ a\\leftarrow0;\\ d\\leftarrow0;\\ b\\leftarrow i_{\\mathrm{hi}}\\ \\}\\\\\n\\textbf{else }d&\\leftarrow\\min\\left(d+\\tfrac12,\\max(i_{\\mathrm{hi}}-x_{\\mathrm{lo}},x_{\\mathrm{hi}}-i_{\\mathrm{lo}})\\right);\n\\end{aligned}\n$$"
+      },
+      {
+        "page": 38,
+        "file": "source-figure-41.png",
+        "bbox": [
+          85,
+          174,
+          530,
+          570
+        ],
+        "anchor": "Figure 41:",
+        "keep_text": false,
+        "note": "Figure 41: source region checked on rendered PDF; illustration OCR replaced by original figure pixels."
+      }
+    ],
+    "review_notes": [
+      "Prepared 2026-10-15 with full-page English OCR because native Type 3 font decoding produced missing and duplicated prose. The original PDF bytes are unchanged.",
+      "All 43 PDF pages were visually surveyed for reading order, sections and numbered figure coverage. Figure crops are reviewed source regions, not trusted native detector output.",
+      "OCR prose and inline mathematical notation are not a fully proofread transcription. Verify exact symbols, subscripts, signs and constants against the PDF before implementation.",
+      "Formula enrichment is machine transcription, not mathematical verification. Specific corrections below identify the equations actually checked.",
+      "All 43 page markers, 41 figure crops/captions and 33 display-equation labels were checked for complete coverage. Original PDF SHA-256 remains c97bd9a7bcebfeda5ea3d62bce266372f59fbc3c466239e222cf9b8c2465ff87.",
+      "Focused audit checked the bodies of equations (1)–(22), (31)–(33), their displayed definitions/weights, and selected necessary inline definitions against stored PDF pages 9–30 and 39–41. This is source transcription verification, not blanket endorsement of printed mathematics. Other prose and section 5 mathematics are not fully proofread.",
+      "See audit.md for per-equation provenance, source inconsistencies, derivative linearity assumptions, the separate 1/3 correspondence and 1/2 quadrature, and comparison against the author-hosted report (different equation numbering).",
+      "The stored report uses tangential D dot in section 3.5 and sqrt(theta) in section 4.2; the author-hosted report instead uses the rotated normal and sqrt(w). Both copies print 9 radians in psi_1 and the inconsistent coefficient count (26)/(25). Preserve the stored text; corrected interpretations are separate audit notes."
+    ],
+    "items": [
+      {
+        "ref": "#/texts/103",
+        "before": "a1d;j and (AJ - Az) 12 (1) dij = /(& = &)* + (nj — mi)?",
+        "after": "(\\Delta_i+\\tilde\\Delta_j)\\sqrt{\\frac{\\alpha_1d_{ij}}4}\\quad\\text{and}\\quad(\\tilde\\Delta_j-\\Delta_i)\\sqrt{\\frac{\\alpha_1d_{ij}}{12}}\\tag{1}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 10; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/109",
+        "before": "—— (& =&)X = Xi+ & = &) + (0 —0) (Y5 = Yi+ i — ) i (& — &)+ (nj —mi)? @",
+        "after": "\\sqrt { \\alpha _ { 2 } d _ { i j } } \\, \\frac { ( \\xi _ { j } - \\xi _ { i } ) ( X _ { j } - X _ { i } + \\bar { \\xi } _ { i } - \\bar { \\xi } _ { j } ) + ( \\eta _ { j } - \\eta _ { i } ) ( Y _ { j } - Y _ { i } + \\bar { \\eta } _ { i } - \\bar { \\eta } _ { j } ) } { ( \\xi _ { j } - \\xi _ { i } ) ^ { 2 } + ( \\eta _ { j } - \\eta _ { i } ) ^ { 2 } }\\tag{2}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 10; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/112",
+        "before": "— (i =) (X = Xi +& = &)+ (& =&)Y —Yi+m —n) Vs G — G (1~ ) | ?",
+        "after": "\\sqrt { \\alpha _ { 3 } d _ { i j } } \\, \\frac { ( \\eta _ { i } - \\eta _ { j } ) ( X _ { j } - X _ { i } + \\bar { \\xi } _ { i } - \\bar { \\xi } _ { j } ) + ( \\xi _ { j } - \\xi _ { i } ) ( Y _ { j } - Y _ { i } + \\bar { \\eta } _ { i } - \\bar { \\eta } _ { j } ) } { ( \\xi _ { j } - \\xi _ { i } ) ^ { 2 } + ( \\eta _ { j } - \\eta _ { i } ) ^ { 2 } } .\\tag{3}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 11; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/150",
+        "before": "wp =264 — P + (04— P)*. (1)",
+        "after": "w _ { P } = 2 \\sqrt { ( \\xi _ { A } - P _ { x } ) ^ { 2 } + ( \\eta _ { A } - P _ { y } ) ^ { 2 } } .\\tag{4}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 14; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/154",
+        "before": "mdAB'(EA_EB_XA'i'XB)fiA_fiB_YA\"FYB)' (5) wp",
+        "after": "\\sqrt { \\alpha _ { 4 } s _ { P } } \\, \\frac { d _ { A B } \\cdot ( \\bar { \\xi } _ { A } - \\bar { \\xi } _ { B } - X _ { A } + X _ { B } , \\, \\bar { \\eta } _ { A } - \\bar { \\eta } _ { B } - Y _ { A } + Y _ { B } ) } { w _ { P } } ,\\tag{5}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 14; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/178",
+        "before": "",
+        "after": "\\sqrt { \\beta _ { 1 } } \\left ( X _ { m } + \\bar { \\xi } _ { M } - \\bar { \\xi } _ { m } - I _ { k } \\right ) ,\\tag{6}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 15; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/181",
+        "before": "L (X = 6 €+ 260 — 2X0), 4dsp d;; 3 3 m()fiNj—&tg) \"",
+        "after": "\\begin{gathered}\\sqrt { \\frac { \\beta _ { 1 } d _ { i j } } { 4 d _ { A B } } } \\left ( X _ { i } + X _ { j } - \\bar { \\xi } _ { i } - \\bar { \\xi } _ { j } + 2 \\bar { \\xi } _ { m } - 2 X _ { m } \\right ) , \\\\ \\sqrt { \\frac { \\beta _ { 1 } d _ { i j } } { 1 2 d _ { A B } } } \\left ( X _ { i } - X _ { j } - \\bar { \\xi } _ { i } + \\bar { \\xi } _ { j } \\right )\\end{gathered}\\tag{7}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 15; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/186",
+        "before": "\\/@(Ym — I = 0.5), ®",
+        "after": "\\sqrt { \\frac { \\beta _ { 2 } ( 2 . 5 \\Delta x - \\Delta y ) } { 2 . 5 \\Delta x } } \\left ( Y _ { m } - I _ { k } - 0 . 5 \\right ) ,\\tag{8}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 16; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/196",
+        "before": "VBl +05+a—X,n) and /Bs(Iep1 + 0.5+ b— V), (9)",
+        "after": "\\sqrt{\\beta_3}(I_k+0.5+a-X_m)\\quad\\text{and}\\quad\\sqrt{\\beta_3}(I_{k+1}+0.5+b-Y_m),\\tag{9}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 16; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/216",
+        "before": "T and Wmax — Wmin < ik (10) = ) wmax \\V wmax emax - emin S",
+        "after": "\\theta _ { \\max } - \\theta _ { \\min } \\leq \\frac { \\gamma _ { 1 } } { w _ { \\max } } \\quad \\text {and} \\quad w _ { \\max } - w _ { \\min } \\leq \\frac { \\gamma _ { 2 } } { \\sqrt { w _ { \\max } } } ,\\tag{10}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 17; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/254",
+        "before": "VBasp dap - (It + Xa — Xp, Iys1 +Ya —Yp), (11)",
+        "after": "\\sqrt { \\beta _ { 4 } s _ { P } } \\, d _ { A B } \\cdot ( I _ { k } + X _ { A } - X _ { B } , \\ I _ { k + 1 } + Y _ { A } - Y _ { B } ) ,\\tag{11}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 20; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/257",
+        "before": "V0Bssp dap - (Yp —Ya, Xa — XB) (12)",
+        "after": "\\sqrt { \\beta _ { 5 } s _ { P } } \\, d _ { A B } \\cdot ( Y _ { B } - Y _ { A } , \\, X _ { A } - X _ { B } )\\tag{12}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 20; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/264",
+        "before": "dap - (Ips1, —1 faresp Sap Ui, 1) (13) wp",
+        "after": "\\sqrt { \\alpha _ { 5 } s _ { P } } \\, \\frac { d _ { A B } \\cdot ( I _ { k + 1 } , - I _ { k } ) } { w _ { P } ^ { 2 } } .\\tag{13}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 21; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/278",
+        "before": "M(z,y) = 2z —z, y) (14)",
+        "after": "\\mathcal { M } ( x , y ) = ( 2 x _ { B } - x , \\, y )\\tag{14}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 21; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/289",
+        "before": "M(z,y) = (Fr — 2, y) (15)",
+        "after": "\\bar { \\mathcal { M } } ( x , y ) = ( F _ { k } - x , \\, y )\\tag{15}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 22; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/300",
+        "before": "agd, agdy, (Ao +Ap)\\ /= and (A = Ag)y /=5 (16)",
+        "after": "( \\Delta _ { a } + \\Delta _ { b } ) \\sqrt { \\frac { \\alpha _ { 6 } d _ { a b } } { 4 } } \\quad \\text {and} \\quad ( \\Delta _ { b } - \\Delta _ { a } ) \\sqrt { \\frac { \\alpha _ { 6 } d _ { a b } } { 1 2 } }\\tag{16}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 23; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/309",
+        "before": "(E(P;) — E(Pj))y/sisjtr(w(P;), w(Py), d(P), d(P;)) (17)",
+        "after": "\\left ( E ( P _ { i } ) - E ( P _ { j } ) \\right ) \\sqrt { s _ { i } s _ { j } \\psi _ { 1 } ( w ( P _ { i } ) , w ( P _ { j } ) , d ( P _ { i } ) , d ( P _ { j } ) ) }\\tag{17}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 23; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/318",
+        "before": "",
+        "after": "\\sqrt { \\psi _ { 2 } ( \\xi _ { m } - \\xi _ { n } ) } \\left ( X _ { m } - \\bar { \\xi } _ { m } + \\bar { \\xi } _ { n } - X _ { n } \\right )\\tag{18}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 24; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/320",
+        "before": "1/}2(77m_77n) (Ym_fim\"f'fin_yn) (19)",
+        "after": "\\sqrt{\\psi_2(\\eta_m-\\eta_n)}(Y_m-\\bar\\eta_m+\\bar\\eta_n-Y_n)\\tag{19}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 24; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/330",
+        "before": "1o — Iz = P3 = width of curved horizontal strokes Iy — I = Py = width of straight horizontal strokes 19 — I14 = P4 = width of straight horizontal strokes I1p = P = cap height I, = P5 = baseline height (20)",
+        "after": "\\begin{aligned}I _ { 1 0 } - I _ { 7 } & = P _ { 3 } = \\text {width of curved horizontal strokes} \\\\ I _ { 4 } - I _ { 2 } & = P _ { 4 } = \\text {width of straight horizontal strokes} \\\\ I _ { 1 2 } - I _ { 1 4 } & = P _ { 4 } = \\text {width of straight horizontal strokes} \\\\ I _ { 1 0 } & = P _ { 1 } = \\text {cap height} \\\\ I _ { 1 } & = P _ { 5 } = \\text {baseline height}\\end{aligned}\\tag{20}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 24; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/344",
+        "before": "(Pi = Pj + 7 — mi)\\/ ¥s(mi, m5), (21)",
+        "after": "( P _ { i } - P _ { j } + \\bar { \\pi } _ { j } - \\bar { \\pi } _ { i } ) \\sqrt { \\psi _ { 3 } ( \\pi _ { i } , \\pi _ { j } ) } ,\\tag{21}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 25; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/409",
+        "before": "(u, v) = ((9_ 6oy, §w3/2> . (22)",
+        "after": "( u , v ) = \\left ( ( \\theta - \\theta _ { 0 } ) w , \\, \\frac { 2 } { 3 } w ^ { 3 / 2 } \\right ) .\\tag{22}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 29; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/445",
+        "before": "AV (23)",
+        "after": "\\| A V \\| ^ { 2 } \\, .\\tag{23}",
+        "note": "Restored equation (23) numbering from the rendered original, PDF page 30. Formula symbols remain machine transcription unless separately reviewed.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/451",
+        "before": "[|[RppVp + Rp1 V4| (24)",
+        "after": "\\| R _ { P P } V _ { P } + R _ { P 1 } V _ { 1 } \\|\\tag{24}",
+        "note": "Restored equation (24) numbering from the rendered original, PDF page 31. Formula symbols remain machine transcription unless separately reviewed.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/459",
+        "before": "Z=-QTRp V1. (25)",
+        "after": "Z = - \\bar { Q } ^ { T } R _ { P _ { 1 } } V _ { 1 } .\\tag{25}",
+        "note": "Restored equation (25) numbering from the rendered original, PDF page 31. Formula symbols remain machine transcription unless separately reviewed.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/486",
+        "before": "(Ny —2)(Ny — 1) (26) Ny —1 -3",
+        "after": "(N_V-2)^2+\\left(N_V-\\frac{N_V-1}{2}\\right)=\\frac32(N_V-2)(N_V-1)\\tag{26}",
+        "note": "Equation (26): restored the omitted leading square term from PDF page 33 and retained the printed expression. The source expression appears algebraically inconsistent with the preceding count; it has not been silently corrected.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/513",
+        "before": "Z ==QY(RipVp + RnV1). (27)",
+        "after": "Z = - \\bar { Q } ^ { T } ( R _ { I P } V _ { P } + R _ { I 1 } V _ { 1 } ) .\\tag{27}",
+        "note": "Restored equation (27) numbering from the rendered original, PDF page 35. Formula symbols remain machine transcription unless separately reviewed.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/515",
+        "before": "Vx = —RyN(RxiT™ \"W+ RxpVp + Rx1V4), (28)",
+        "after": "V _ { X } = - R _ { X X } ^ { - 1 } ( R _ { X I } T ^ { - 1 } \\bar { V } _ { I } + R _ { X P } V _ { P } + R _ { X 1 } V _ { 1 } ) ,\\tag{28}",
+        "note": "Restored equation (28) numbering from the rendered original, PDF page 35. Formula symbols remain machine transcription unless separately reviewed.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/529",
+        "before": "(2Nx + N1)(N7 + Np +2) — w (29)",
+        "after": "( 2 N _ { X } + N _ { I } ) ( N _ { I } + N _ { P } + 2 ) - \\frac { N _ { I } ( N _ { I } + 1 ) } { 2 } .\\tag{29}",
+        "note": "Restored equation (29) numbering from the rendered original, PDF page 36. Formula symbols remain machine transcription unless separately reviewed.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/537",
+        "before": "ci P+ cq0 + cp, (30)",
+        "after": "c _ { i } P _ { i } + c _ { a } \\sigma + c _ { b } ,\\tag{30}",
+        "note": "Restored equation (30) numbering from the rendered original, PDF page 36. Formula symbols remain machine transcription unless separately reviewed.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/656",
+        "before": "(1 —)>(X3;, Ys;) + 3t(1 — 1)*(X3iq1, Yaig1) + 3t2(1 — t)(Xaiga, Yaige) +12(Xaiy3, Yaigs). (31)",
+        "after": "( 1 - t ) ^ { 3 } ( X _ { 3 i } , Y _ { 3 i } ) + 3 t ( 1 - t ) ^ { 2 } ( X _ { 3 i + 1 } , Y _ { 3 i + 1 } ) + 3 t ^ { 2 } ( 1 - t ) ( X _ { 3 i + 2 } , Y _ { 3 i + 2 } ) + t ^ { 3 } ( X _ { 3 i + 3 } , Y _ { 3 i + 3 } ) .\\tag{31}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 39; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/670",
+        "before": "(32)",
+        "after": "t=\\frac{j+\\tfrac12}{k_i};\\tag{32}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 40; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/672",
+        "before": "B vij (Xij = &ij) — wij(Yij — nij) Varsig, (33) VATRES",
+        "after": "\\frac { v _ { i j } ( X _ { i j } - \\bar { \\xi } _ { i j } ) - u _ { i j } ( Y _ { i j } - \\bar { \\eta } _ { i j } ) } { \\sqrt { u _ { i j } ^ { 2 } + v _ { i j } ^ { 2 } } } \\sqrt { \\alpha _ { 1 } s _ { i j } } ,\\tag{33}",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 40; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/100",
+        "before": "1 1 / (AZ' + t(Aj - AZ'))Z dt = / A? + QtAi(Aj - AZ') + tz(A]' - Ai)2 dt 0 0 - Aj— A)? = AT+ A(A; - A)+ % B e— (Ai +4))% (A — Ay 4 12 ' +",
+        "after": "\\begin{aligned}\\int _ { 0 } ^ { 1 } \\left ( \\Delta _ { i } + t ( \\tilde { \\Delta } _ { j } - \\Delta _ { i } ) \\right ) ^ { 2 } d t & = \\int _ { 0 } ^ { 1 } \\Delta _ { i } ^ { 2 } + 2 t \\Delta _ { i } ( \\tilde { \\Delta } _ { j } - \\Delta _ { i } ) + t ^ { 2 } ( \\tilde { \\Delta } _ { j } - \\Delta _ { i } ) ^ { 2 } \\, d t \\\\ & = \\Delta _ { i } ^ { 2 } + \\Delta _ { i } ( \\tilde { \\Delta } _ { j } - \\Delta _ { i } ) + \\frac { ( \\tilde { \\Delta } _ { j } - \\Delta _ { i } ) ^ { 2 } } { 3 } \\\\ & = \\frac { \\Delta _ { i } ^ { 2 } + \\Delta _ { i } \\tilde { \\Delta } _ { j } + \\tilde { \\Delta } _ { j } ^ { 2 } } { 3 } \\\\ & = \\frac { ( \\Delta _ { i } + \\tilde { \\Delta } _ { j } ) ^ { 2 } } { 4 } + \\frac { ( \\tilde { \\Delta } _ { j } - \\Delta _ { i } ) ^ { 2 } } { 1 2 } .\\end{aligned}",
+        "kind": "formula",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 10; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/333",
+        "before": "L =P =1+ Py I; =P — Ps Lo=P Lo =T+ Py",
+        "after": "\\begin{aligned}I _ { 1 } & = P _ { 5 } \\\\ I _ { 4 } & = I _ { 2 } + P _ { 4 } \\\\ I _ { 7 } & = P _ { 1 } - P _ { 3 } \\\\ I _ { 1 0 } & = P _ { 1 } \\\\ I _ { 1 2 } & = I _ { 1 4 } + P _ { 4 } .\\end{aligned}",
+        "kind": "formula",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 25; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/463",
+        "before": "fork — Ny —2, Ny —3,...,1 do Vp[k] — round(fi (Z[k] - NEZ R[lc,j]Vp[k])> ! j=k+1",
+        "after": "\\begin{aligned}& \\text { for } k \\leftarrow N _ { V } - 2 , N _ { V } - 3 , \\dots , 1 \\\\ & \\text { do } \\bar { V } _ { P } [ k ] \\leftarrow \\text { round} \\left ( \\frac { 1 } { \\bar { R } [ k , k ] } \\left ( Z [ k ] - \\sum _ { j = k + 1 } ^ { N _ { V } - 2 } \\bar { R } [ k , j ] \\bar { V } _ { P } [ k ] \\right ) \\right )\\end{aligned}",
+        "kind": "formula",
+        "note": "Restored a missing LaTeX alignment environment for the multiline formula on PDF page 32; symbol accuracy remains subject to the general transcription note."
+      },
+      {
+        "ref": "#/texts/509",
+        "before": "Vp = —Rpp(RpxVx + RpiVi+ RppVe + R Vi) Vx = —Ryx(Rx/Vi + RxpVp + Rx1V1),",
+        "after": "\\begin{aligned}V _ { F } & = - R _ { F F } ^ { - 1 } ( R _ { F X } V _ { X } + R _ { F I } V _ { I } + R _ { F P } V _ { P } + R _ { F 1 } V _ { 1 } ) \\\\ V _ { X } & = - R _ { X X } ^ { - 1 } ( R _ { X I } V _ { I } + R _ { X P } V _ { P } + R _ { X 1 } V _ { 1 } ) ,\\end{aligned}",
+        "kind": "formula",
+        "note": "Restored a missing LaTeX alignment environment for the multiline formula on PDF page 35; symbol accuracy remains subject to the general transcription note."
+      },
+      {
+        "ref": "#/texts/543",
+        "before": "(a0 + by £dy)+ (ago + by ds) = (a1 + az)o + (by + ba) £ (dy + da), c(ac + b=+ d) = (ac)o + be £ cd.",
+        "after": "\\begin{aligned}( a _ { 1 } \\sigma + b _ { 1 } \\pm d _ { 1 } ) + ( a _ { 2 } \\sigma + b _ { 2 } \\pm d _ { 2 } ) & = ( a _ { 1 } + a _ { 2 } ) \\sigma + ( b _ { 1 } + b _ { 2 } ) \\pm ( d _ { 1 } + d _ { 2 } ) , \\\\ c ( a \\sigma + b \\pm d ) & = ( a c ) \\sigma + b c \\pm c d .\\end{aligned}",
+        "kind": "formula",
+        "note": "Restored a missing LaTeX alignment environment for the multiline formula on PDF page 37; symbol accuracy remains subject to the general transcription note."
+      },
+      {
+        "ref": "#/texts/545",
+        "before": "T — a+ b; Tpi < aopi + b; ijo — round(z), — d); ini — round(zp; + d); ifipi=do{a—0;d—0;b—ip } else d — min(d+ %, maz(ini — Tio, Thi — Go));",
+        "after": "\\begin{aligned}x _ { l o } & \\leftarrow a + b ; \\\\ x _ { h i } & \\leftarrow a \\sigma _ { h i } + b ; \\\\ i _ { l o } & \\leftarrow r o u n d ( x _ { l o } - d ) ; \\\\ i _ { h i } & \\leftarrow r o u n d ( x _ { h i } + d ) ; \\\\ \\text {if } i _ { h i } & = i _ { l o } \\left \\{ \\ a \\leftarrow 0 ; \\, d \\leftarrow 0 ; \\, b \\leftarrow i _ { h i } \\right \\} \\\\ \\text {else } d & \\leftarrow \\min ( d + \\frac { 1 } { 2 } , \\ m a x ( i _ { h i } - x _ { l o } , \\, x _ { h i } - i _ { l o } ) ) ;\\end{aligned}",
+        "kind": "formula",
+        "note": "Restored a missing LaTeX alignment environment for the multiline formula on PDF page 37; symbol accuracy remains subject to the general transcription note."
+      },
+      {
+        "ref": "#/texts/3",
+        "before": "Consider the problem of generating bitmaps from character shapes given as outlines. The obvious scan-conversion process does not produce acceptable results unless important features such as stem widths are carefully controlled during the scan-conversion process. This paper describes a method for automatically extracting the necessary feature information and generating high quality bitmaps without resorting to hand editing. Almost all of the work is done in a preprocessing step, the result of which is an intermediate form that can be quickly converted into bitmaps once the font size and device resolution are known. A heuristically defined system of linear equations describes how the ideal outlines should be distorted in order to produce the best possible results when scan converted in a straight-forward manner. The Lovasz basis reduction algorithm then reduces the system of equations to a form that makes it easy to find an approximate solution subject to the constraint that some variables must be integers. The heuristic information is of such a general nature that it applies equally well to Roman fonts and Japanese Kanji. Categories and Subject Descriptors: 1.3.3 [Computer Graphics]: Picture/Image Generation—digitizing and scanning; 1.5.4 [Pattern Recognition]: Applications—text processing General Terms: Algorithms Additional Key Words and Phrases: Scan-conversion; Fonts; Feature recognition; Lovasz",
+        "after": "Consider the problem of generating bitmaps from character shapes given as outlines. The obvious scan-conversion process does not produce acceptable results unless important features such as stem widths are carefully controlled during the scan-conversion process. This paper describes a method for automatically extracting the necessary feature information and generating high quality bitmaps without resorting to hand editing. Almost all of the work is done in a preprocessing step, the result of which is an intermediate form that can be quickly converted into bitmaps once the font size and device resolution are known. A heuristically defined system of linear equations describes how the ideal outlines should be distorted in order to produce the best possible results when scan converted in a straight-forward manner. The Lovász basis reduction algorithm then reduces the system of equations to a form that makes it easy to find an approximate solution subject to the constraint that some variables must be integers. The heuristic information is of such a general nature that it applies equally well to Roman fonts and Japanese Kanji. Categories and Subject Descriptors: 1.3.3 [Computer Graphics]: Picture/Image Generation—digitizing and scanning; 1.5.4 [Pattern Recognition]: Applications—text processing General Terms: Algorithms Additional Key Words and Phrases: Scan-conversion; Fonts; Feature recognition; Lovász",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 1; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/29",
+        "before": "Well known ideas based on work by Lovéasz [13] give good approximate minima for both versions of the distortion function. By implementing this as a two step process, we retain the idea that a single set of character outlines can be used to generate bitmaps at any desired size. Section 5 describes a way to generate a fairly compact set of instructions that can be used to find low distortion bitmaps once a scale factor is chosen. Finally, Section 6 explains how to adapt the distortion function to the case where the character outlines are curved rather than polygonal.",
+        "after": "Well known ideas based on work by Lovász [13] give good approximate minima for both versions of the distortion function. By implementing this as a two step process, we retain the idea that a single set of character outlines can be used to generate bitmaps at any desired size. Section 5 describes a way to generate a fairly compact set of instructions that can be used to find low distortion bitmaps once a scale factor is chosen. Finally, Section 6 explains how to adapt the distortion function to the case where the character outlines are curved rather than polygonal.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 4; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/38",
+        "before": "Figure 8: (a) Portions of two strokes with their outlines shown as bold lines. (b) The same outlines with their integer offset vectors and the pixel grid with shaded squares for the scan-converted bitmap. (¢) The bitmaps for the two strokes",
+        "after": "Figure 8: (a) Portions of two strokes with their outlines shown as bold lines. (b) The same outlines with their integer offset vectors and the pixel grid with shaded squares for the scan-converted bitmap. (c) The bitmaps for the two strokes",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 5; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/42",
+        "before": "Figure 9: (a) Portions of three strokes with their outlines shown as bold lines. (b) The same outlines with the pixel grid and shaded squares for the scan-converted bitmap. (¢) The bitmaps for the three strokes",
+        "after": "Figure 9: (a) Portions of three strokes with their outlines shown as bold lines. (b) The same outlines with the pixel grid and shaded squares for the scan-converted bitmap. (c) The bitmaps for the three strokes",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 5; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/49",
+        "before": "Figure 10: (a) Portions of two strokes with their outlines shown as bold lines. (b) The same outlines with the pixel grid and shaded squares for the scan-converted bitmap. (¢) The bitmaps for the three strokes with boundary curves showing various degrees of distortion.",
+        "after": "Figure 10: (a) Portions of two strokes with their outlines shown as bold lines. (b) The same outlines with the pixel grid and shaded squares for the scan-converted bitmap. (c) The bitmaps for the three strokes with boundary curves showing various degrees of distortion.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 6; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/56",
+        "before": "Other important features deal with overall shape and positioning. Most of these are conceptually simple and are readily measured by the distortion function as we see in the next section. One of the less obvious features of this type is the alignment of different parts of a character shape that fall at similar & or y coordinates. Figure 12 illustrates what can happen when this type of alignment is poorly controlled. In the outline version of the character in Figure 12a, points A and B have nearly identical z coordinates, while the corresponding points on the scan-converted characters in Figure 12¢ have z coordinates that differ by one pixel unit. Thus the difference in # coordinates between points A and B is a feature that needs to be controlled in order to get a good bitmap version of Figure 12a.",
+        "after": "Other important features deal with overall shape and positioning. Most of these are conceptually simple and are readily measured by the distortion function as we see in the next section. One of the less obvious features of this type is the alignment of different parts of a character shape that fall at similar x or y coordinates. Figure 12 illustrates what can happen when this type of alignment is poorly controlled. In the outline version of the character in Figure 12a, points A and B have nearly identical x coordinates, while the corresponding points on the scan-converted characters in Figure 12c have x coordinates that differ by one pixel unit. Thus the difference in x coordinates between points A and B is a feature that needs to be controlled in order to get a good bitmap version of Figure 12a.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 6; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/60",
+        "before": "Figure 12: (a) Outlines for an \"¢\" with points A and B almost vertically aligned. (b) The same outlines with the pixel grid and shaded squares for the scan-converted bitmap. (c) The resulting bitmap showing loss of vertical alignment.",
+        "after": "Figure 12: (a) Outlines for an \"e\" with points A and B almost vertically aligned. (b) The same outlines with the pixel grid and shaded squares for the scan-converted bitmap. (c) The resulting bitmap showing loss of vertical alignment.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 7; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/78",
+        "before": "Figure 14: (a) An adjusted character shape and its polygonal outline. (b) The same outlines with the pixel grid and shaded squares for the scan-converted bitmap. (¢) The resulting bitmapped character.",
+        "after": "Figure 14: (a) An adjusted character shape and its polygonal outline. (b) The same outlines with the pixel grid and shaded squares for the scan-converted bitmap. (c) The resulting bitmapped character.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 8; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/107",
+        "before": "Figure 15: (a) A typical edge of the scaled outlines. (b) A corresponding edge from the adjusted outline showing 50% stretching distortion. (¢) An alternative version of the adjusted edge showing 31% bending distortion.",
+        "after": "Figure 15: (a) A typical edge of the scaled outlines. (b) A corresponding edge from the adjusted outline showing 50% stretching distortion. (c) An alternative version of the adjusted edge showing 31% bending distortion.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 10; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/124",
+        "before": "Figure 18: (a) The polygonal outline of an \"a\" shown in bold with its Voronoi Diagram drawn with thinner lines. (b) The result of throwing away parts of the Voronoi Diagram where the opposition angle is less than 157°. (¢) The same diagram with the threshold set at 146°.",
+        "after": "Figure 18: (a) The polygonal outline of an \"a\" shown in bold with its Voronoi Diagram drawn with thinner lines. (b) The result of throwing away parts of the Voronoi Diagram where the opposition angle is less than 157°. (c) The same diagram with the threshold set at 146°.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 12; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/166",
+        "before": "Figure 21: (a) A character outline and its z-extrema. (b) The construction for important verticals between z-extrema. The verticals occur at the intervals AB and C'D and at extrema 1 and 2.",
+        "after": "Figure 21: (a) A character outline and its x-extrema. (b) The construction for important verticals between x-extrema. The verticals occur at the intervals AB and CD and at extrema 1 and 2.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 15; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/188",
+        "before": "Figure 22: (a) An outline and an z extreme that should be treated as a sharp corner because of its small Ay value. (b) The outline and the scan-converted bitmap where the y coordinate indicated by the dashed line is poorly placed relative to the pixel grid. (c¢) The outline shifted prior to scan conversion so that the y coordinate of the dotted line is an integer plus %",
+        "after": "Figure 22: (a) An outline and an x extreme that should be treated as a sharp corner because of its small Δy value. (b) The outline and the scan-converted bitmap where the y coordinate indicated by the dashed line is poorly placed relative to the pixel grid. (c) The outline shifted prior to scan conversion so that the y coordinate of the dotted line is an integer plus ½.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 16; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/198",
+        "before": "Figure 23: (a) A scan-converted outline with a local extreme point in both z and y poorly positioned on the pixel grid as indicated by the dashed line through the medial axis. (b) The same outline shifted so that the medial axis line passes through a pixel center % pixel unit away.",
+        "after": "Figure 23: (a) A scan-converted outline with a local extreme point in both x and y poorly positioned on the pixel grid as indicated by the dashed line through the medial axis. (b) The same outline shifted so that the medial axis line passes through a pixel center ½ pixel unit away.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 16; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/241",
+        "before": "that is positive when the interval is worth considering, it suffices to find the set of non-overlapping intervals that maximize the total score. This can be done easily using dynamic programming or by treating it as a problem on interval graphs and using Groetschel, Lovasz and Shrijver's maximum weighted independent set algorithm.[6]",
+        "after": "that is positive when the interval is worth considering, it suffices to find the set of non-overlapping intervals that maximize the total score. This can be done easily using dynamic programming or by treating it as a problem on interval graphs and using Groetschel, Lovász and Shrijver's maximum weighted independent set algorithm.[6]",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 18; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/455",
+        "before": "Van Emde Boas has shown that this problem is N P-complete [17], but good approximate solutions can often be found using the Lovasz lattice basis reduction algorithm.[13] (See also Babai [3] for more details and an analysis of the approximation algorithm). When applied to Rpp, the algorithm finds a transformed matrix RppT such that the matrices 7 and 7~! both have integer entries and the columns of RppT are in some sense \"more orthogonal\" those of Rpp. (See [13] for details). The point is that a straight-forward rounding process is likely to do a better job of finding find an integer vector Vp that makes",
+        "after": "Van Emde Boas has shown that this problem is N P-complete [17], but good approximate solutions can often be found using the Lovász lattice basis reduction algorithm.[13] (See also Babai [3] for more details and an analysis of the approximation algorithm). When applied to Rpp, the algorithm finds a transformed matrix RppT such that the matrices 7 and 7~! both have integer entries and the columns of RppT are in some sense \"more orthogonal\" those of Rpp. (See [13] for details). The point is that a straight-forward rounding process is likely to do a better job of finding find an integer vector Vp that makes",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 31; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/465",
+        "before": "large, but it is faster in practice to find an alternative that takes full advantage of the fact that A has only a constant number of nonzeros per row. This can be done by computing AT A and then taking the Cholesky factorization, resulting in an O(M + N{) time bound.® One of these alternatives is likely to be fast enough so that the overall running time is dominated the Lovasz basis reduction in Step 2. Fortunately, this algorithm is reasonably fast for practical values of the problem size Ny even though the time bound given in [13] is worse than O(Ny.).",
+        "after": "large, but it is faster in practice to find an alternative that takes full advantage of the fact that A has only a constant number of nonzeros per row. This can be done by computing AT A and then taking the Cholesky factorization, resulting in an O(M + N{) time bound.® One of these alternatives is likely to be fast enough so that the overall running time is dominated the Lovász basis reduction in Step 2. Fortunately, this algorithm is reasonably fast for practical values of the problem size Ny even though the time bound given in [13] is worse than O(Ny.).",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 32; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/467",
+        "before": "2. Apply the Lovasz basis reduction algorithm to the subblock Rpp, keeping track of the transformation matrix 7\" used to create the reduced basis matrix RppT.",
+        "after": "Apply the Lovász basis reduction algorithm to the subblock Rpp, keeping track of the transformation matrix 7\" used to create the reduced basis matrix RppT.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 32; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/472",
+        "before": "A noteworthy feature of the distortion minimization algorithm is that the time consuming steps involving Q R factorization and Lovasz basis reduction are all done before the scale factor o is needed in steps 4 and 5. Section 5.1 shows how to take advantage of this by producing an output file that contains encoded instructions for performing steps 4 and 5 once ¢ is known. Evaluating these encoded instructions produces a vector Vp of low-distortion P-variables that can be substituted into the single-character distortion function of Section 3.",
+        "after": "A noteworthy feature of the distortion minimization algorithm is that the time consuming steps involving Q R factorization and Lovász basis reduction are all done before the scale factor o is needed in steps 4 and 5. Section 5.1 shows how to take advantage of this by producing an output file that contains encoded instructions for performing steps 4 and 5 once ¢ is known. Evaluating these encoded instructions produces a vector Vp of low-distortion P-variables that can be substituted into the single-character distortion function of Section 3.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 32; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/504",
+        "before": "Figure 38: Block structure for the problem remaining after choosing ¢ and the P-variables. The vector of F-variables in V' is Vp; the X and Y-variables are in Vx; V7 and Vp contain the I-variables and P-variables respectively; and Vi = (1 o)T.",
+        "after": "Figure 38: Block structure for the problem remaining after choosing c and the P-variables. The vector of F-variables in V' is Vp; the X and Y-variables are in Vx; V7 and Vp contain the I-variables and P-variables respectively; and Vi = (1 o)T.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 34; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/518",
+        "before": "2. Apply the Lovasz basis reduction algorithm to the subblock Ry, keeping track of the transformation matrix 7\" used to create the reduced basis matrix Ry;7\".",
+        "after": "Apply the Lovász basis reduction algorithm to the subblock Ry, keeping track of the transformation matrix 7\" used to create the reduced basis matrix Ry;7\".",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 35; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/692",
+        "before": "3] L. Babai. On Lovasz' lattice reduction and the nearest lattice point problem. Combinatorica, 6(1):1-13, 1986.",
+        "after": "3] L. Babai. On Lovász' lattice reduction and the nearest lattice point problem. Combinatorica, 6(1):1-13, 1986.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 42; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/695",
+        "before": "6] M. Grotschel, L. Lovasz, and A. Shrijver. Relaxation of vertex packing. Journal of Combinatorial Theory, Series B, 40(3):330-343, 1986.",
+        "after": "6] M. Grotschel, L. Lovász, and A. Shrijver. Relaxation of vertex packing. Journal of Combinatorial Theory, Series B, 40(3):330-343, 1986.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 42; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/702",
+        "before": "13] A. K. Lenstra, H. W. Lenstra, Jr., and L. Lovasz. Factoring polynomials with rational coefficients. Mathematische Annalen, 261:515-534, 1982.",
+        "after": "13] A. K. Lenstra, H. W. Lenstra, Jr., and L. Lovász. Factoring polynomials with rational coefficients. Mathematische Annalen, 261:515-534, 1982.",
+        "note": "Prose/caption correction checked against the rendered original, PDF page 42; restored author name, subfigure labels or coordinate notation."
+      },
+      {
+        "ref": "#/texts/95",
+        "before": "A, = iz )X - €) + (& —&)(Yi — ) (& —&)* + (n; — mi)?",
+        "after": "\\Delta _ { i } = \\frac { ( \\eta _ { i } - \\eta _ { j } ) ( X _ { i } - \\bar { \\xi } _ { i } ) + ( \\xi _ { j } - \\xi _ { i } ) ( Y _ { i } - \\bar { \\eta } _ { i } ) } { \\sqrt { ( \\xi _ { j } - \\xi _ { i } ) ^ { 2 } + ( \\eta _ { j } - \\eta _ { i } ) ^ { 2 } } }",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 9; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/97",
+        "before": "A = Wi m) (X — &)+ (& - &) - i) ! (& —&)? + (nj — mi)?",
+        "after": "\\tilde { \\Delta } _ { j } = \\frac { ( \\eta _ { i } - \\eta _ { j } ) ( X _ { j } - \\bar { \\xi } _ { j } ) + ( \\xi _ { j } - \\xi _ { i } ) ( Y _ { j } - \\bar { \\eta } _ { j } ) } { \\sqrt { ( \\xi _ { j } - \\xi _ { i } ) ^ { 2 } + ( \\eta _ { j } - \\eta _ { i } ) ^ { 2 } } } .",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 9; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/152",
+        "before": "(a—&B,na—1B) V(€4 —€8)*+ (na—np)? dap =",
+        "after": "d _ { A B } = \\frac { ( \\xi _ { A } - \\xi _ { B } , \\eta _ { A } - \\eta _ { B } ) } { \\sqrt { ( \\xi _ { A } - \\xi _ { B } ) ^ { 2 } + ( \\eta _ { A } - \\eta _ { B } ) ^ { 2 } } } .",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 14; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/240",
+        "before": "a — 0.75(Wmin + Wmax) — 1.0",
+        "after": "a - 0 . 7 5 ( w _ { \\min } + w _ { \\max } ) - 1 . 0",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 18; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/252",
+        "before": "(€4 —&B,na—1B) V(€4 —&)\" + (na — np)\" dap =",
+        "after": "d _ { A B } = \\frac { ( \\xi _ { A } - \\xi _ { B } , \\eta _ { A } - \\eta _ { B } ) } { \\sqrt { ( \\xi _ { A } - \\xi _ { B } ) ^ { 2 } + ( \\eta _ { A } - \\eta _ { B } ) ^ { 2 } } } .",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 20; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/261",
+        "before": "wp = 24/(€a — Po)? + (na — Py)?,",
+        "after": "w _ { P } = 2 \\sqrt { ( \\xi _ { A } - P _ { x } ) ^ { 2 } + ( \\eta _ { A } - P _ { y } ) ^ { 2 } } ,",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 20; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/285",
+        "before": "(6(11 ) 77(11) e (5!71 3 771)1)",
+        "after": "( \\xi _ { a 1 } , \\eta _ { a 1 } ) \\dots ( \\xi _ { b 1 } , \\eta _ { b 1 } )",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 22; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/286",
+        "before": "(€a2:Ma2) - - (Eb2, Mb2)",
+        "after": "( \\xi _ { a 2 } , \\eta _ { a 2 } ) \\dots ( \\xi _ { b 2 } , \\eta _ { b 2 } )",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 22; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/291",
+        "before": "M(z,y) — M(0,0) = M(z,y) — M(0,0)",
+        "after": "\\bar { \\mathcal { M } } ( x , y ) - \\bar { \\mathcal { M } } ( 0 , 0 ) = \\mathcal { M } ( x , y ) - \\mathcal { M } ( 0 , 0 )",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 22; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/293",
+        "before": "D = My (&1 — a1y M1 — Na1) + (Eo2 — a2, Mo2 — Ma2)",
+        "after": "D = \\mathcal { M } _ { v } ( \\xi _ { b 1 } - \\xi _ { a 1 } , \\, \\eta _ { b 1 } - \\eta _ { a 1 } ) \\, + \\, ( \\xi _ { b 2 } - \\xi _ { a 2 } , \\, \\eta _ { b 2 } - \\eta _ { a 2 } )",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 22; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/296",
+        "before": "D ((Xp2, Yyo) — M(Xp1, Yi1)) 1D Ay =",
+        "after": "\\Delta _ { b } = \\frac { D \\cdot \\left ( ( X _ { b 2 } , Y _ { b 2 } ) - \\bar { \\mathcal { M } } ( X _ { b 1 } , Y _ { b 1 } ) \\right ) } { \\| D \\| }",
+        "note": "Stored PDF page 22 prints D dot for Delta_b too. Author-hosted report uses (D_y,-D_x). This source discrepancy is documented in audit.md, not silently corrected.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/306",
+        "before": "B(P) = dap - (§a—&p — Xa + Xp, 77A_7IB_YA'|'YB)' wp",
+        "after": "E ( P ) = \\frac { d _ { A B } \\cdot ( \\bar { \\xi } _ { A } - \\bar { \\xi } _ { B } - X _ { A } + X _ { B } , \\, \\bar { \\eta } _ { A } - \\bar { \\eta } _ { B } - Y _ { A } + Y _ { B } ) } { w _ { P } } ,",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 23; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/311",
+        "before": "500 wi—wy\\' (A0(dy, dy)? ¢1(w1,w2,d11d2) e eXp( ( 0.7 ) ( 9",
+        "after": "\\psi _ { 1 } ( w _ { 1 } , w _ { 2 } , d _ { 1 } , d _ { 2 } ) = \\frac { 5 0 0 } { H ^ { 2 } } \\exp \\left ( - \\left ( \\frac { w _ { 1 } - w _ { 2 } } { 0 . 7 } \\right ) ^ { 2 } - \\left ( \\frac { \\Delta \\theta ( d _ { 1 } , d _ { 2 } ) } { 9 } \\right ) ^ { 2 } \\right ) ,",
+        "note": "Stored PDF page 23 and author-hosted report page 23 both print denominator 9, with radians in the prose. Faithful transcription; no evidence supports silently substituting degrees or a different constant. See audit.md.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/322",
+        "before": "100 x Va(@) = g7 exp (— (m)z) ~",
+        "after": "\\psi _ { 2 } ( x ) = \\frac { 1 0 0 } { H ^ { 2 } } \\exp \\left ( - \\left ( \\frac { x } { 0 . 0 3 H } \\right ) ^ { 2 } \\right ) .",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 24; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/347",
+        "before": "570A, T — T 2 Y3(my, m2) = TMGXP (—30( 7 ]> ) 7",
+        "after": "\\psi _ { 3 } ( \\pi _ { 1 } , \\pi _ { 2 } ) = \\frac { 5 7 0 \\, A _ { t o t } } { H ^ { 3 } } \\exp \\left ( - 3 0 \\left ( \\frac { \\pi _ { i } - \\pi _ { j } } { H } \\right ) ^ { 2 } \\right ) ,",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 26; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/349",
+        "before": ") 0-057Atot w; — fl'j , = 12 — Y3(m, m2) N p—— exp ( (m T",
+        "after": "\\psi _ { 3 } ( \\pi _ { 1 } , \\pi _ { 2 } ) = \\frac { 0 . 0 5 7 A _ { t o t } } { \\frac { 1 } { 4 } ( \\pi _ { i } + \\pi _ { j } ) ^ { 2 } H } \\exp \\left ( - 1 2 \\left ( \\frac { \\pi _ { i } - \\pi _ { j } } { \\pi _ { i } + \\pi _ { j } } \\right ) ^ { 2 } \\right ) .",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 26; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/664",
+        "before": "2012k ki ki kT Ry",
+        "after": "t = \\frac { 0 } { k _ { i } } , \\, \\frac { 1 } { k _ { i } } , \\, \\frac { 2 } { k _ { i } } , \\dots , \\, \\frac { k _ { i } } { k _ { i } } .",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 40; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/666",
+        "before": ".1 (= J+3 =",
+        "after": "t = \\frac { j + \\frac { 1 } { 3 } } { k _ { i } } .",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 40; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/677",
+        "before": "M(A;) =~ B;",
+        "after": "\\mathcal { M } ( A _ { j } ) \\approx B _ { j }",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 41; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/679",
+        "before": "(vj, —uj) - (X5, Ysj) = M(Xaj, Yaj)) b /2 2 uy + v; CY6S]'",
+        "after": "\\sqrt { \\alpha _ { 6 } s _ { j } } \\frac { ( v _ { j } , - u _ { j } ) \\cdot ( ( X _ { b j } , Y _ { b j } ) - \\bar { \\mathcal { M } } ( X _ { a j } , Y _ { a j } ) ) } { \\sqrt { u _ { j } ^ { 2 } + v _ { j } ^ { 2 } } } ,",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 41; see the focused audit for source discrepancies and implementation limits.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/295",
+        "before": "A, = 1D]]",
+        "after": "\\Delta_a=\\frac{D\\cdot\\left((X_{a2},Y_{a2})-\\bar{\\mathcal M}(X_{a1},Y_{a1})\\right)}{\\|D\\|}",
+        "note": "Stored PDF page 22 prints D dot, as transcribed here, although its prose calls this perpendicular displacement. The author-hosted report uses (D_y,-D_x) instead. Preserve the stored source; see audit.md before implementing symmetry.",
+        "kind": "formula"
+      },
+      {
+        "ref": "#/texts/93",
+        "before": "For shape control, we create distortion measures that reflect the amount by which the adjusted outlines are shifted, using constants &; and n; for the original position of the vertex whose adjusted position is given by the variables X; and Y;. When outlines are scan converted, & and 7; will be used to indicate linear expressions involving an adjustable scale parameter. Thus there are the original outlines with vertices given by constants of the form (¢;,1;), scaled outlines with vertices (&;,7;), and adjusted outlines with vertices (X;, Y;). Since the nominal value for the scale factor is assumed to be one, the distinction between (&;,7;) and (&;,7;) is unimportant for now except that Section 5 requires distortion measures to be linear in & and ;. (Most distortion measures turn out to be proportional to the hidden scale factor).",
+        "after": "For shape control, we create distortion measures that reflect the amount by which the adjusted outlines are shifted, using constants $\\xi_i$ and $\\eta_i$ for the original position of the vertex whose adjusted position is given by the variables $X_i$ and $Y_i$. When outlines are scan converted, $\\bar\\xi_i$ and $\\bar\\eta_i$ will be used to indicate linear expressions involving an adjustable scale parameter. Thus there are the original outlines with vertices given by constants of the form $(\\xi_i,\\eta_i)$, scaled outlines with vertices $(\\bar\\xi_i,\\bar\\eta_i)$, and adjusted outlines with vertices $(X_i,Y_i)$. Since the nominal value for the scale factor is assumed to be one, the distinction between $(\\xi_i,\\eta_i)$ and $(\\bar\\xi_i,\\bar\\eta_i)$ is unimportant for now except that Section 5 requires distortion measures to be linear in $\\bar\\xi_i$ and $\\bar\\eta_i$. (Most distortion measures turn out to be proportional to the hidden scale factor).",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 9; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/94",
+        "before": "~ With this notation, consider perpendicular displacements relative to the edge from (é'\" ;) to (&,mj). The dispacement of (X;,Y;) is",
+        "after": "With this notation, consider perpendicular displacements relative to the edge from $(\\bar\\xi_i,\\bar\\eta_i)$ to $(\\bar\\xi_j,\\bar\\eta_j)$. The displacement of $(X_i,Y_i)$ is",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 9; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/96",
+        "before": "and the displacement of (X;,Y;) is",
+        "after": "and the displacement of $(X_j,Y_j)$ is",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 9; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/101",
+        "before": "Thus adding to the distortion function a weighting factor ay ~ 1000/H?3 times the integral with respect to arc length of the squared perpendicular displacement is equivalent adding distortion measures",
+        "after": "Thus adding to the distortion function a weighting factor $\\alpha_1\\approx1000/H^3$ times the integral with respect to arc length of the squared perpendicular displacement is equivalent adding distortion measures",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 10; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/113",
+        "before": "Note that (2) and (3) contain heuristic weighting factors as = 25/H and as &~ 25/H. Their denominators contain only one factor of H because the percentages of stretching and bending distortion should not depend on H.",
+        "after": "Note that (2) and (3) contain heuristic weighting factors $\\alpha_2\\approx25/H$ and $\\alpha_3\\approx25/H$. Their denominators contain only one factor of $H$ because the percentages of stretching and bending distortion should not depend on $H$.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 11; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/155",
+        "before": "where oy & 50/ H is a weighting factor, - refers to the vector dot product and sp is a measure of the arc length on the medial axis near P.",
+        "after": "where $\\alpha_4\\approx50/H$ is a weighting factor, $\\cdot$ refers to the vector dot product and $s_P$ is a measure of the arc length on the medial axis near $P$.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 14; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/179",
+        "before": "where 3, ~ 103/H? is an adjustable weighting parameter, I} is a newly introduced integer-valued variable that will be chosen to minimize the absolute value of (6), and &y and &, are the scaled versions z coordinates for M and (&, 7). Since this effectively imposes an integer restriction on the coordinates of the adjusted version of M, point M is called an integer adjustment point.",
+        "after": "where $\\beta_1\\approx10^8/H^2$ is an adjustable weighting parameter, $I_k$ is a newly introduced integer-valued variable that will be chosen to minimize the absolute value of (6), and $\\bar\\xi_M$ and $\\bar\\xi_m$ are the scaled versions of $x$ coordinates for $M$ and $(\\xi_m,\\eta_m)$. Since this effectively imposes an integer restriction on the coordinates of the adjusted version of $M$, point $M$ is called an integer adjustment point.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 15; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/183",
+        "before": "Naturally, the same type of distortion measures can be generated for important horizontal regions by just using Y and 7 in place of X and £. In fact it is possible to control the positions of 45° lines by using X 4+ Y and & 4 7, although in this case the line is fitted to the pixel grid if it contains a point (Xpr, Yar) with Xy + Y = I, + % for some integer Iy. (The curved portions of the letter \"m\" in Figure 14 have been fitted to pixel grid in this fashion).",
+        "after": "Naturally, the same type of distortion measures can be generated for important horizontal regions by just using $Y$ and $\\eta$ in place of $X$ and $\\xi$. In fact it is possible to control the positions of $45^\\circ$ lines by using $X+Y$ and $\\bar\\xi+\\bar\\eta$, although in this case the line is fitted to the pixel grid if it contains a point $(X_M,Y_M)$ with $X_M+Y_M\\approx I_k+\\frac12$ for some integer $I_k$. (The curved portions of the letter \"m\" in Figure 14 have been fitted to pixel grid in this fashion).",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 15; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/187",
+        "before": "where 33 & 5 x 107/H? is a weighting parameter, m is the index of the vertex where the extreme point occurs and I i1s a newly introduced integer-valued variable. Thus vertex m is also an integer adjustment point in this case.",
+        "after": "where $\\beta_2\\approx5\\times10^7/H^2$ is a weighting parameter, $m$ is the index of the vertex where the extreme point occurs and $I_k$ is a newly introduced integer-valued variable. Thus vertex $m$ is also an integer adjustment point in this case.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 16; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/197",
+        "before": "where 33 & 108/H? is an adjustable weighting factor. The vector (a, ) should be in the direction of the medial axis pointed outward toward vertex m. A reasonable way to select the magnitude of this vector is to make max(|al, [b]) = § so that a = 0.5 and b = 0.35 in the case of Figure 23b.",
+        "after": "where $\\beta_3\\approx10^8/H^2$ is an adjustable weighting factor. The vector $(a,b)$ should be in the direction of the medial axis pointed outward toward vertex $m$. A reasonable way to select the magnitude of this vector is to make $\\max(|a|,|b|)=\\frac12$ so that $a=0.5$ and $b=0.35$ in the case of Figure 23b.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 16; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/255",
+        "before": "where 34 ~ 2 x 108/H3 is an adjustable weighting parameter and sp is a measure of the arc length on the medial axis near P.",
+        "after": "where $\\beta_4\\approx2\\times10^8/H^3$ is an adjustable weighting parameter and $s_P$ is a measure of the arc length on the medial axis near $P$.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 20; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/258",
+        "before": "with a somewhat smaller weight parameter 85 ~ 2 x 10%/ H3 penalizes changes in the direction from (XA, YA) to (XB,YB).",
+        "after": "with a somewhat smaller weight parameter $\\beta_5\\approx2\\times10^6/H^3$ penalizes changes in the direction from $(X_A,Y_A)$ to $(X_B,Y_B)$.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 20; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/263",
+        "before": "the distortion measure for perpendicularity of the integer offset vector at P is given as 1/wp times the slope of the deviation from perpendicular times a weighting factor based on a5 ~ 20/H:",
+        "after": "the distortion measure for perpendicularity of the integer offset vector at $P$ is given as $1/w_P$ times the slope of the deviation from perpendicular times a weighting factor based on $\\alpha_5\\approx20/H$:",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 21; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/292",
+        "before": "independent of F}. The distortion measures given below refer to this function as M, although for M as given by (14), M, simply negates the z coordinate. Using ||-|| for the Euclidean norm and A - B for the scalar product of vectors A and B, the mean direction",
+        "after": "independent of $F_k$. The distortion measures given below refer to this function as $\\mathcal M_v$ although for $\\mathcal M$ as given by (14), $\\mathcal M_v$ simply negates the $x$ coordinate. Using $\\|\\cdot\\|$ for the Euclidean norm and $A\\cdot B$ for the scalar product of vectors $A$ and $B$, the mean direction",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 22; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/294",
+        "before": "1s used to define perpendicular displacements",
+        "after": "is used to define perpendicular displacements",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 22; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/299",
+        "before": "at (Xa2,Ya2) and (Xpa, Ye). Using dqp = %HDH, the argument used to derive (1) shows that the distortion measures",
+        "after": "at $(X_{a2},Y_{a2})$ and $(X_{b2},Y_{b2})$. Using $d_{ab}=\\frac12\\|D\\|$, the argument used to derive (1) shows that the distortion measures",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 23; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/301",
+        "before": "contribute to the total distortion a weighting factor as ~ 5 x 10°/H? times the integral with respect to arc length of the squared perpendicular displacement.",
+        "after": "contribute to the total distortion a weighting factor $\\alpha_6\\approx5\\times10^5/H^3$ times the integral with respect to arc length of the squared perpendicular displacement.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 23; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/305",
+        "before": "Specifically, the distortion measure (5) that controls the relative error in the adjusted stroke width at a point P on the medial axis of a stroke is just \\/aysp times the relative error, where a4 is a weighting factor and sp is a measure of the length of the stroke near P. Thus the relative error in the adjusted stroke width at P is",
+        "after": "Specifically, the distortion measure (5) that controls the relative error in the adjusted stroke width at a point $P$ on the medial axis of a stroke is just $\\sqrt{\\alpha_4s_P}$ times the relative error, where $\\alpha_4$ is a weighting factor and $s_P$ is a measure of the length of the stroke near $P$. Thus the relative error in the adjusted stroke width at $P$ is",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 23; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/307",
+        "before": "where the notation is as used in (5). That is, (£4,74) and (X4,Y4) are the scaled and adjusted coordinates of Apoint(P) and similar expressions with B subscripts refer to Bpoint(P). Additionally, wp is twice the distance between P and Apoint(P) and dap is a unit vector in the direction of Apoint(P) — Bpoint(P).",
+        "after": "where the notation is as used in (5). That is, $(\\bar\\xi_A,\\bar\\eta_A)$ and $(X_A,Y_A)$ are the scaled and adjusted coordinates of $Apoint(P)$ and similar expressions with $B$ subscripts refer to $Bpoint(P)$. Additionally, $w_P$ is twice the distance between $P$ and $Apoint(P)$ and $d_{AB}$ is a unit vector in the direction of $Apoint(P)-Bpoint(P)$.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 23; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/308",
+        "before": "All that remains is to write a distortion measure proportional to E(P;) — E(P;) for each pair of points P; and P; at which the width is to be correlated. This may be done by assuming that the medial axis of each stroke is divided into intervals where the ith interval has arc length s; and midpoint P;. Since each P; has its own value for the stroke width w(P;) and the medial axis direction d(P;), there can be a weighting function ¢; and a distortion measure",
+        "after": "All that remains is to write a distortion measure proportional to $E(P_i)-E(P_j)$ for each pair of points $P_i$ and $P_j$ at which the width is to be correlated. This may be done by assuming that the medial axis of each stroke is divided into intervals where the $i$th interval has arc length $s_i$ and midpoint $P_i$. Since each $P_i$ has its own value for the stroke width $w(P_i)$ and the medial axis direction $d(P_i)$, there can be a weighting function $\\psi_1$ and a distortion measure",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 23; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/310",
+        "before": "for each ¢ and each j. Presumably (w1, w2, d;, d2) depends on the width difference w; — wo and the angle between dy and dy. This function is somewhat arbitrary, but one reasonable alternative is",
+        "after": "for each $i$ and each $j$. Presumably $\\psi_1(w_1,w_2,d_1,d_2)$ depends on the width difference $w_1-w_2$ and the angle between $d_1$ and $d_2$. This function is somewhat arbitrary, but one reasonable alternative is",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 23; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/312",
+        "before": "where Af0(dy,ds) is the angle between dy and ds in radians.",
+        "after": "where $\\Delta\\theta(d_1,d_2)$ is the angle between $d_1$ and $d_2$ in radians.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 23; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/321",
+        "before": "is used when y coordinates are given integer constraints. Note that (£, 9m) and (X, Yin) are the scaled and adjusted versions of (§,,,7m) and 1 is a weighting function something like",
+        "after": "is used when $y$ coordinates are given integer constraints. Note that $(\\bar\\xi_m,\\bar\\eta_m)$ and $(X_m,Y_m)$ are the scaled and adjusted versions of $(\\xi_m,\\eta_m)$ and $\\psi_2$ is a weighting function something like",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 24; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/346",
+        "before": "where the weighting function 3 depends on whether P; and P; are heights or widths. A possible weighting function for heights is",
+        "after": "where the weighting function $\\psi_3$ depends on whether $P_i$ and $P_j$ are heights or widths. A possible weighting function for heights is",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 26; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/348",
+        "before": "where Ao is the total arc length of all medial axes in the entire font.* For widths, it may be better to use",
+        "after": "where $A_{\\rm tot}$ is the total arc length of all medial axes in the entire font.⁴ For widths, it may be better to use",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 26; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/354",
+        "before": "Suppose we scan a set of character outlines and find all the y coordinate integer adjustment points that occur at important horizontal regions. In other words, use the techniques of Section 3.3 to find all the y coordinate integer adjustment points except those of the type shown in Figures 22 and 23. Each integer adjustment point P is then assigned a weight 14(P) according to a heuristic function 4. (A prototype implementation used the range of @ coordinates covered by the integer influence zone for P plus a constant on the order of ten percent of the cap height).",
+        "after": "Suppose we scan a set of character outlines and find all the $y$ coordinate integer adjustment points that occur at important horizontal regions. In other words, use the techniques of Section 3.3 to find all the $y$ coordinate integer adjustment points except those of the type shown in Figures 22 and 23. Each integer adjustment point $P$ is then assigned a weight $\\psi_4(P)$ according to a heuristic function $\\psi_4$. (A prototype implementation used the range of $x$ coordinates covered by the integer influence zone for $P$ plus a constant on the order of ten percent of the cap height).",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 26; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/355",
+        "before": "The goal of the clustering process is to find small ranges of heights that maximize the total weight of all adjustment points in the height interval. This would be quite difficult if the size of height intervals were not known in advance, but the present application is compatible with a fixed value on the order of half a pixel unit. Some of the problems that can arise when the height interval size is not known in advance can be seen from the work of Pavlidis and Van Wyk. [15] The half-pixel limit for our application implies a height interval size of y3 & 0.5/0y;, where op; is an upper limit on the factor ¢ by which the outlines are to be scaled.® With this setting of the interval size, the total weight as a function of height for a Times Roman font is as shown in Figure 31. The reason for showing separately the weight of integer adjustment points with white space above and white space below is to simplify the process of separating clusters.",
+        "after": "The goal of the clustering process is to find small ranges of heights that maximize the total weight of all adjustment points in the height interval. This would be quite difficult if the size of height intervals were not known in advance, but the present application is compatible with a fixed value on the order of half a pixel unit. Some of the problems that can arise when the height interval size is not known in advance can be seen from the work of Pavlidis and Van Wyk. [15] The half-pixel limit for our application implies a height interval size of $\\gamma_3\\approx0.5/\\sigma_{\\rm hi}$, where $\\sigma_{\\rm hi}$ is an upper limit on the factor $\\sigma$ by which the outlines are to be scaled.⁵ With this setting of the interval size, the total weight as a function of height for a Times Roman font is as shown in Figure 31. The reason for showing separately the weight of integer adjustment points with white space above and white space below is to simplify the process of separating clusters.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 26; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/393",
+        "before": "One way to recognize this situation where there are no more clusters worth considering is to remove the main peaks chosen so far, and estimate the number of disjoint height intervals where the weight is within some fixed percentage of the weight of the heaviest height interval. For instance, a successful prototype was designed to stop looking for height clusters when more than fifteen are found or when 74 & 10 height intervals each have total weight at least v5 = 0.65 times the weight of the heaviest interval.",
+        "after": "One way to recognize this situation where there are no more clusters worth considering is to remove the main peaks chosen so far, and estimate the number of disjoint height intervals where the weight is within some fixed percentage of the weight of the heaviest height interval. For instance, a successful prototype was designed to stop looking for height clusters when more than fifteen are found or when $\\gamma_4\\approx10$ height intervals each have total weight at least $\\gamma_5=0.65$ times the weight of the heaviest interval.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 28; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/396",
+        "before": "2. Assign each point P € S a weight equal ¢4(P).",
+        "after": "Assign each point $P\\in S$ a weight equal $\\psi_4(P)$.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 28; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/398",
+        "before": "3. Divide the points of S into two subsets S; and S2 according to whether or not there is white space below them.",
+        "after": "Divide the points of $S$ into two subsets $S_1$ and $S_2$ according to whether or not there is white space below them.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 29; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/399",
+        "before": "4. For each subset S; and each h that is the height of a point in S;, add the weights of the points in S; whose height is in the interval [h, h + v3].",
+        "after": "For each subset $S_i$ and each $h$ that is the height of a point in $S_i$, add the weights of the points in $S_i$ whose height is in the interval $[h,h+\\gamma_3]$.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 29; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/400",
+        "before": "5. Scan the height intervals for S; and S in order of increasing height and count the number of non-overlapping intervals with weight at least v5 times the weight of the heaviest interval.",
+        "after": "Scan the height intervals for $S_1$ and $S_2$ in order of increasing height and count the number of non-overlapping intervals with weight at least $\\gamma_5$ times the weight of the heaviest interval.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 29; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/401",
+        "before": "6. Stop if the count is more than 4. Otherwise output the heaviest height interval by creating a new P-variable and using it for all the integer adjustment points that went into that interval.",
+        "after": "Stop if the count is more than $\\gamma_4$. Otherwise output the heaviest height interval by creating a new $P$-variable and using it for all the integer adjustment points that went into that interval.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 29; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/408",
+        "before": "One way to deal with these problems is to relax the constraints slightly and introduce a mapping (6, w) — (u,v) such that a rectangle in (6, w) space of the maximum size allowed by (10) roughly corresponds to a y; by 72 rectangle in (u,v) space. In other words, u should change by about y; when 6 changes by 11 /;u for fixed w, and a change in w of ¥2/y/w should change v by approximately y5. This suggests 25 = w and g—; =9, leading to a mapping like",
+        "after": "One way to deal with these problems is to relax the constraints slightly and introduce a mapping $(\\theta,w)\\mapsto(u,v)$ such that a rectangle in $(\\theta,w)$ space of the maximum size allowed by (10) roughly corresponds to a $\\gamma_1$ by $\\gamma_2$ rectangle in $(u,v)$ space. In other words, $u$ should change by about $\\gamma_1$ when $\\theta$ changes by $\\gamma_1/w$ for fixed $w$, and a change in $w$ of $\\gamma_2/\\sqrt w$ should change $v$ by approximately $\\gamma_2$. This suggests $\\frac{\\partial u}{\\partial\\theta}=w$ and $\\frac{\\partial v}{\\partial w}=\\sqrt\\theta$, leading to a mapping like",
+        "note": "Stored PDF page 29 really prints sqrt(theta) for the v derivative; equation (22) differentiates to sqrt(w), as printed in the author-hosted report. Preserve source notation; audit.md records the supported alternative."
+      },
+      {
+        "ref": "#/texts/657",
+        "before": "For each ¢ between zero and one, this gives a point on the curve as a linear function of four control points.",
+        "after": "For each $t$ between zero and one, this gives a point on the curve as a linear function of four control points.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 39; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/658",
+        "before": "Equation (31) gives the outlines after they are adjusted to fit the pixel grid. With the naming scheme from Section 3, the original outlines are similar, but with control points of the form (&;, ;)",
+        "after": "Equation (31) gives the outlines after they are adjusted to fit the pixel grid. With the naming scheme from Section 3, the original outlines are similar, but with control points of the form $(\\xi_j,\\eta_j)$",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 39; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/660",
+        "before": "instead of (Xj,Y}). After scaling but before grid adjustment, the control points are (&;,7;), where ET]' and 7; are affine functions of the scale parameter . The new X; and Y; values take the place of the vertex coordinates in the V' vector of Section 5, and the distortion measures are required to be linear functions of V.",
+        "after": "instead of $(X_j,Y_j)$. After scaling but before grid adjustment, the control points are $(\\bar\\xi_j,\\bar\\eta_j)$, where $\\bar\\xi_j$ and $\\bar\\eta_j$ are affine functions of the scale parameter $\\sigma$. The new $X_j$ and $Y_j$ values take the place of the vertex coordinates in the $V$ vector of Section 5, and the distortion measures are required to be linear functions of $V$.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 40; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/663",
+        "before": "To find a polygonal approximation to the Bézier cubic (31), divide the ¢ interval into some number k; of equal pieces and take a polygonal line through the points obtained by evaluating (31) at",
+        "after": "To find a polygonal approximation to the Bézier cubic (31), divide the $t$ interval into some number $k_i$ of equal pieces and take a polygonal line through the points obtained by evaluating (31) at",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 40; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/665",
+        "before": "The number k; may be selected by repeatedly subdividing the ¢ interval until the polygonal line falls within some fractional-pixel error tolerance of the desired curve. The beauty of this scheme 1s that it provides a natural correspondance between points on the polygonal approximation and points on the true curve. For example, the point % of the way from the ¢ = Ig— vertex to the ¢ = jkil vertex corresponds to the value of (31) at",
+        "after": "The number $k_i$ may be selected by repeatedly subdividing the $t$ interval until the polygonal line falls within some fractional-pixel error tolerance of the desired curve. The beauty of this scheme is that it provides a natural correspondence between points on the polygonal approximation and points on the true curve. For example, the point $\\frac13$ of the way from the $t=\\frac{j}{k_i}$ vertex to the $t=\\frac{j+1}{k_i}$ vertex corresponds to the value of (31) at",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 40; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/669",
+        "before": "Let (X;;,Y;;) be the value of (31) at",
+        "after": "Let $(X_{ij},Y_{ij})$ be the value of (31) at",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 40; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/671",
+        "before": "let (&ij,mi;) and (&;7,7i;) be the corresponding points on the original and scaled outlines; and let (usj,vi;) be the derivative of (31) with respect to ¢ evaluated at (32). Then the distortion measure for the jth ¢ interval 1s",
+        "after": "let $(\\xi_{ij},\\eta_{ij})$ and $(\\bar\\xi_{ij},\\bar\\eta_{ij})$ be the corresponding points on the original and scaled outlines; and let $(u_{ij},v_{ij})$ be the derivative of (31) with respect to $t$ evaluated at (32). Then the distortion measure for the $j$th $t$ interval is",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 40; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/674",
+        "before": "where s;; is the arc length associated with the jth ¢ interval.",
+        "after": "where $s_{ij}$ is the arc length associated with the $j$th $t$ interval.",
+        "note": "Mathematical transcription checked symbol by symbol against stored PDF page 41; see the focused audit for source discrepancies and implementation limits."
+      },
+      {
+        "ref": "#/texts/675",
+        "before": "The distortion measures (7) in Section 3.3 are designed to give the arc-length integral of squared horizontal displacement. Doing this for a curved segment of the outline requires subdividing the curve and giving distortion measures like (33), but with (u;j, v;;) replaced by (1,0).",
+        "after": "The distortion measures (7) in Section 3.3 are designed to give the arc-length integral of squared horizontal displacement. Doing this for a curved segment of the outline requires subdividing the curve and giving distortion measures like (33), but with $(u_{ij},v_{ij})$ replaced by $(1,0)$.",
+        "note": "Stored PDF page 41 prints (1,0), which in equation (33) selects negative Y displacement, not horizontal X. Source retained; audit.md flags the inconsistency."
+      }
+    ],
+    "replacements": [
+      {
+        "page": 10,
+        "before": "where\n\n$$(\\Delta_i+\\tilde\\Delta_j)\\sqrt{\\frac{\\alpha_1d_{ij}}4}\\quad\\text{and}\\quad(\\tilde\\Delta_j-\\Delta_i)\\sqrt{\\frac{\\alpha_1d_{ij}}{12}}\\tag{1}$$",
+        "after": "$$(\\Delta_i+\\tilde\\Delta_j)\\sqrt{\\frac{\\alpha_1d_{ij}}4}\\quad\\text{and}\\quad(\\tilde\\Delta_j-\\Delta_i)\\sqrt{\\frac{\\alpha_1d_{ij}}{12}}\\tag{1}$$\n\nwhere\n\n$$d_{ij}=\\sqrt{(\\xi_j-\\xi_i)^2+(\\eta_j-\\eta_i)^2}$$",
+        "note": "Equation (1) and the following unnumbered edge-length definition restored to source reading order, PDF page 10; definition checked against PDF."
+      },
+      {
+        "page": 2,
+        "before": "1. Introduction\n\n",
+        "after": "## 1. Introduction\n\n",
+        "note": "Restored the introduction section heading from PDF page 2."
+      },
+      {
+        "page": 9,
+        "before": "For shape control, we create distortion measures that reflect the amount by which the adjusted outlines are shifted, using constants $\\xi\\_i$ and $\\eta\\_i$ for the original position of the vertex whose adjusted position is given by the variables $X\\_i$ and $Y\\_i$. When outlines are scan converted, $\\bar\\xi\\_i$ and $\\bar\\eta\\_i$ will be used to indicate linear expressions involving an adjustable scale parameter. Thus there are the original outlines with vertices given by constants of the form $(\\xi\\_i,\\eta\\_i)$, scaled outlines with vertices $(\\bar\\xi\\_i,\\bar\\eta\\_i)$, and adjusted outlines with vertices $(X\\_i,Y\\_i)$. Since the nominal value for the scale factor is assumed to be one, the distinction between $(\\xi\\_i,\\eta\\_i)$ and $(\\bar\\xi\\_i,\\bar\\eta\\_i)$ is unimportant for now except that Section 5 requires distortion measures to be linear in $\\bar\\xi\\_i$ and $\\bar\\eta\\_i$. (Most distortion measures turn out to be proportional to the hidden scale factor).",
+        "after": "For shape control, we create distortion measures that reflect the amount by which the adjusted outlines are shifted, using constants $\\xi_i$ and $\\eta_i$ for the original position of the vertex whose adjusted position is given by the variables $X_i$ and $Y_i$. When outlines are scan converted, $\\bar\\xi_i$ and $\\bar\\eta_i$ will be used to indicate linear expressions involving an adjustable scale parameter. Thus there are the original outlines with vertices given by constants of the form $(\\xi_i,\\eta_i)$, scaled outlines with vertices $(\\bar\\xi_i,\\bar\\eta_i)$, and adjusted outlines with vertices $(X_i,Y_i)$. Since the nominal value for the scale factor is assumed to be one, the distinction between $(\\xi_i,\\eta_i)$ and $(\\bar\\xi_i,\\bar\\eta_i)$ is unimportant for now except that Section 5 requires distortion measures to be linear in $\\bar\\xi_i$ and $\\bar\\eta_i$. (Most distortion measures turn out to be proportional to the hidden scale factor).",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 9,
+        "before": "With this notation, consider perpendicular displacements relative to the edge from $(\\bar\\xi\\_i,\\bar\\eta\\_i)$ to $(\\bar\\xi\\_j,\\bar\\eta\\_j)$. The displacement of $(X\\_i,Y\\_i)$ is",
+        "after": "With this notation, consider perpendicular displacements relative to the edge from $(\\bar\\xi_i,\\bar\\eta_i)$ to $(\\bar\\xi_j,\\bar\\eta_j)$. The displacement of $(X_i,Y_i)$ is",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 9,
+        "before": "and the displacement of $(X\\_j,Y\\_j)$ is",
+        "after": "and the displacement of $(X_j,Y_j)$ is",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 10,
+        "before": "Thus adding to the distortion function a weighting factor $\\alpha\\_1\\approx1000/H^3$ times the integral with respect to arc length of the squared perpendicular displacement is equivalent adding distortion measures",
+        "after": "Thus adding to the distortion function a weighting factor $\\alpha_1\\approx1000/H^3$ times the integral with respect to arc length of the squared perpendicular displacement is equivalent adding distortion measures",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 11,
+        "before": "Note that (2) and (3) contain heuristic weighting factors $\\alpha\\_2\\approx25/H$ and $\\alpha\\_3\\approx25/H$. Their denominators contain only one factor of $H$ because the percentages of stretching and bending distortion should not depend on $H$.",
+        "after": "Note that (2) and (3) contain heuristic weighting factors $\\alpha_2\\approx25/H$ and $\\alpha_3\\approx25/H$. Their denominators contain only one factor of $H$ because the percentages of stretching and bending distortion should not depend on $H$.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 14,
+        "before": "where $\\alpha\\_4\\approx50/H$ is a weighting factor, $\\cdot$ refers to the vector dot product and $s\\_P$ is a measure of the arc length on the medial axis near $P$.",
+        "after": "where $\\alpha_4\\approx50/H$ is a weighting factor, $\\cdot$ refers to the vector dot product and $s_P$ is a measure of the arc length on the medial axis near $P$.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 15,
+        "before": "where $\\beta\\_1\\approx10^8/H^2$ is an adjustable weighting parameter, $I\\_k$ is a newly introduced integer-valued variable that will be chosen to minimize the absolute value of (6), and $\\bar\\xi\\_M$ and $\\bar\\xi\\_m$ are the scaled versions of $x$ coordinates for $M$ and $(\\xi\\_m,\\eta\\_m)$. Since this effectively imposes an integer restriction on the coordinates of the adjusted version of $M$, point $M$ is called an integer adjustment point.",
+        "after": "where $\\beta_1\\approx10^8/H^2$ is an adjustable weighting parameter, $I_k$ is a newly introduced integer-valued variable that will be chosen to minimize the absolute value of (6), and $\\bar\\xi_M$ and $\\bar\\xi_m$ are the scaled versions of $x$ coordinates for $M$ and $(\\xi_m,\\eta_m)$. Since this effectively imposes an integer restriction on the coordinates of the adjusted version of $M$, point $M$ is called an integer adjustment point.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 15,
+        "before": "Naturally, the same type of distortion measures can be generated for important horizontal regions by just using $Y$ and $\\eta$ in place of $X$ and $\\xi$. In fact it is possible to control the positions of $45^\\circ$ lines by using $X+Y$ and $\\bar\\xi+\\bar\\eta$, although in this case the line is fitted to the pixel grid if it contains a point $(X\\_M,Y\\_M)$ with $X\\_M+Y\\_M\\approx I\\_k+\\frac12$ for some integer $I\\_k$. (The curved portions of the letter \"m\" in Figure 14 have been fitted to pixel grid in this fashion).",
+        "after": "Naturally, the same type of distortion measures can be generated for important horizontal regions by just using $Y$ and $\\eta$ in place of $X$ and $\\xi$. In fact it is possible to control the positions of $45^\\circ$ lines by using $X+Y$ and $\\bar\\xi+\\bar\\eta$, although in this case the line is fitted to the pixel grid if it contains a point $(X_M,Y_M)$ with $X_M+Y_M\\approx I_k+\\frac12$ for some integer $I_k$. (The curved portions of the letter \"m\" in Figure 14 have been fitted to pixel grid in this fashion).",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 16,
+        "before": "where $\\beta\\_2\\approx5\\times10^7/H^2$ is a weighting parameter, $m$ is the index of the vertex where the extreme point occurs and $I\\_k$ is a newly introduced integer-valued variable. Thus vertex $m$ is also an integer adjustment point in this case.",
+        "after": "where $\\beta_2\\approx5\\times10^7/H^2$ is a weighting parameter, $m$ is the index of the vertex where the extreme point occurs and $I_k$ is a newly introduced integer-valued variable. Thus vertex $m$ is also an integer adjustment point in this case.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 16,
+        "before": "where $\\beta\\_3\\approx10^8/H^2$ is an adjustable weighting factor. The vector $(a,b)$ should be in the direction of the medial axis pointed outward toward vertex $m$. A reasonable way to select the magnitude of this vector is to make $\\max(|a|,|b|)=\\frac12$ so that $a=0.5$ and $b=0.35$ in the case of Figure 23b.",
+        "after": "where $\\beta_3\\approx10^8/H^2$ is an adjustable weighting factor. The vector $(a,b)$ should be in the direction of the medial axis pointed outward toward vertex $m$. A reasonable way to select the magnitude of this vector is to make $\\max(|a|,|b|)=\\frac12$ so that $a=0.5$ and $b=0.35$ in the case of Figure 23b.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 20,
+        "before": "where $\\beta\\_4\\approx2\\times10^8/H^3$ is an adjustable weighting parameter and $s\\_P$ is a measure of the arc length on the medial axis near $P$.",
+        "after": "where $\\beta_4\\approx2\\times10^8/H^3$ is an adjustable weighting parameter and $s_P$ is a measure of the arc length on the medial axis near $P$.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 20,
+        "before": "with a somewhat smaller weight parameter $\\beta\\_5\\approx2\\times10^6/H^3$ penalizes changes in the direction from $(X\\_A,Y\\_A)$ to $(X\\_B,Y\\_B)$.",
+        "after": "with a somewhat smaller weight parameter $\\beta_5\\approx2\\times10^6/H^3$ penalizes changes in the direction from $(X_A,Y_A)$ to $(X_B,Y_B)$.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 21,
+        "before": "the distortion measure for perpendicularity of the integer offset vector at $P$ is given as $1/w\\_P$ times the slope of the deviation from perpendicular times a weighting factor based on $\\alpha\\_5\\approx20/H$:",
+        "after": "the distortion measure for perpendicularity of the integer offset vector at $P$ is given as $1/w_P$ times the slope of the deviation from perpendicular times a weighting factor based on $\\alpha_5\\approx20/H$:",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 22,
+        "before": "independent of $F\\_k$. The distortion measures given below refer to this function as $\\mathcal M\\_v$ although for $\\mathcal M$ as given by (14), $\\mathcal M\\_v$ simply negates the $x$ coordinate. Using $\\|\\cdot\\|$ for the Euclidean norm and $A\\cdot B$ for the scalar product of vectors $A$ and $B$, the mean direction",
+        "after": "independent of $F_k$. The distortion measures given below refer to this function as $\\mathcal M_v$ although for $\\mathcal M$ as given by (14), $\\mathcal M_v$ simply negates the $x$ coordinate. Using $\\|\\cdot\\|$ for the Euclidean norm and $A\\cdot B$ for the scalar product of vectors $A$ and $B$, the mean direction",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 23,
+        "before": "at $(X\\_{a2},Y\\_{a2})$ and $(X\\_{b2},Y\\_{b2})$. Using $d\\_{ab}=\\frac12\\|D\\|$, the argument used to derive (1) shows that the distortion measures",
+        "after": "at $(X_{a2},Y_{a2})$ and $(X_{b2},Y_{b2})$. Using $d_{ab}=\\frac12\\|D\\|$, the argument used to derive (1) shows that the distortion measures",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 23,
+        "before": "contribute to the total distortion a weighting factor $\\alpha\\_6\\approx5\\times10^5/H^3$ times the integral with respect to arc length of the squared perpendicular displacement.",
+        "after": "contribute to the total distortion a weighting factor $\\alpha_6\\approx5\\times10^5/H^3$ times the integral with respect to arc length of the squared perpendicular displacement.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 23,
+        "before": "Specifically, the distortion measure (5) that controls the relative error in the adjusted stroke width at a point $P$ on the medial axis of a stroke is just $\\sqrt{\\alpha\\_4s\\_P}$ times the relative error, where $\\alpha\\_4$ is a weighting factor and $s\\_P$ is a measure of the length of the stroke near $P$. Thus the relative error in the adjusted stroke width at $P$ is",
+        "after": "Specifically, the distortion measure (5) that controls the relative error in the adjusted stroke width at a point $P$ on the medial axis of a stroke is just $\\sqrt{\\alpha_4s_P}$ times the relative error, where $\\alpha_4$ is a weighting factor and $s_P$ is a measure of the length of the stroke near $P$. Thus the relative error in the adjusted stroke width at $P$ is",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 23,
+        "before": "where the notation is as used in (5). That is, $(\\bar\\xi\\_A,\\bar\\eta\\_A)$ and $(X\\_A,Y\\_A)$ are the scaled and adjusted coordinates of $Apoint(P)$ and similar expressions with $B$ subscripts refer to $Bpoint(P)$. Additionally, $w\\_P$ is twice the distance between $P$ and $Apoint(P)$ and $d\\_{AB}$ is a unit vector in the direction of $Apoint(P)-Bpoint(P)$.",
+        "after": "where the notation is as used in (5). That is, $(\\bar\\xi_A,\\bar\\eta_A)$ and $(X_A,Y_A)$ are the scaled and adjusted coordinates of $Apoint(P)$ and similar expressions with $B$ subscripts refer to $Bpoint(P)$. Additionally, $w_P$ is twice the distance between $P$ and $Apoint(P)$ and $d_{AB}$ is a unit vector in the direction of $Apoint(P)-Bpoint(P)$.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 23,
+        "before": "All that remains is to write a distortion measure proportional to $E(P\\_i)-E(P\\_j)$ for each pair of points $P\\_i$ and $P\\_j$ at which the width is to be correlated. This may be done by assuming that the medial axis of each stroke is divided into intervals where the $i$th interval has arc length $s\\_i$ and midpoint $P\\_i$. Since each $P\\_i$ has its own value for the stroke width $w(P\\_i)$ and the medial axis direction $d(P\\_i)$, there can be a weighting function $\\psi\\_1$ and a distortion measure",
+        "after": "All that remains is to write a distortion measure proportional to $E(P_i)-E(P_j)$ for each pair of points $P_i$ and $P_j$ at which the width is to be correlated. This may be done by assuming that the medial axis of each stroke is divided into intervals where the $i$th interval has arc length $s_i$ and midpoint $P_i$. Since each $P_i$ has its own value for the stroke width $w(P_i)$ and the medial axis direction $d(P_i)$, there can be a weighting function $\\psi_1$ and a distortion measure",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 23,
+        "before": "for each $i$ and each $j$. Presumably $\\psi\\_1(w\\_1,w\\_2,d\\_1,d\\_2)$ depends on the width difference $w\\_1-w\\_2$ and the angle between $d\\_1$ and $d\\_2$. This function is somewhat arbitrary, but one reasonable alternative is",
+        "after": "for each $i$ and each $j$. Presumably $\\psi_1(w_1,w_2,d_1,d_2)$ depends on the width difference $w_1-w_2$ and the angle between $d_1$ and $d_2$. This function is somewhat arbitrary, but one reasonable alternative is",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 23,
+        "before": "where $\\Delta\\theta(d\\_1,d\\_2)$ is the angle between $d\\_1$ and $d\\_2$ in radians.",
+        "after": "where $\\Delta\\theta(d_1,d_2)$ is the angle between $d_1$ and $d_2$ in radians.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 24,
+        "before": "is used when $y$ coordinates are given integer constraints. Note that $(\\bar\\xi\\_m,\\bar\\eta\\_m)$ and $(X\\_m,Y\\_m)$ are the scaled and adjusted versions of $(\\xi\\_m,\\eta\\_m)$ and $\\psi\\_2$ is a weighting function something like",
+        "after": "is used when $y$ coordinates are given integer constraints. Note that $(\\bar\\xi_m,\\bar\\eta_m)$ and $(X_m,Y_m)$ are the scaled and adjusted versions of $(\\xi_m,\\eta_m)$ and $\\psi_2$ is a weighting function something like",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 26,
+        "before": "where the weighting function $\\psi\\_3$ depends on whether $P\\_i$ and $P\\_j$ are heights or widths. A possible weighting function for heights is",
+        "after": "where the weighting function $\\psi_3$ depends on whether $P_i$ and $P_j$ are heights or widths. A possible weighting function for heights is",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 26,
+        "before": "where $A\\_{\\rm tot}$ is the total arc length of all medial axes in the entire font.⁴ For widths, it may be better to use",
+        "after": "where $A_{\\rm tot}$ is the total arc length of all medial axes in the entire font.⁴ For widths, it may be better to use",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 26,
+        "before": "Suppose we scan a set of character outlines and find all the $y$ coordinate integer adjustment points that occur at important horizontal regions. In other words, use the techniques of Section 3.3 to find all the $y$ coordinate integer adjustment points except those of the type shown in Figures 22 and 23. Each integer adjustment point $P$ is then assigned a weight $\\psi\\_4(P)$ according to a heuristic function $\\psi\\_4$. (A prototype implementation used the range of $x$ coordinates covered by the integer influence zone for $P$ plus a constant on the order of ten percent of the cap height).",
+        "after": "Suppose we scan a set of character outlines and find all the $y$ coordinate integer adjustment points that occur at important horizontal regions. In other words, use the techniques of Section 3.3 to find all the $y$ coordinate integer adjustment points except those of the type shown in Figures 22 and 23. Each integer adjustment point $P$ is then assigned a weight $\\psi_4(P)$ according to a heuristic function $\\psi_4$. (A prototype implementation used the range of $x$ coordinates covered by the integer influence zone for $P$ plus a constant on the order of ten percent of the cap height).",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 26,
+        "before": "The goal of the clustering process is to find small ranges of heights that maximize the total weight of all adjustment points in the height interval. This would be quite difficult if the size of height intervals were not known in advance, but the present application is compatible with a fixed value on the order of half a pixel unit. Some of the problems that can arise when the height interval size is not known in advance can be seen from the work of Pavlidis and Van Wyk. [15] The half-pixel limit for our application implies a height interval size of $\\gamma\\_3\\approx0.5/\\sigma\\_{\\rm hi}$, where $\\sigma\\_{\\rm hi}$ is an upper limit on the factor $\\sigma$ by which the outlines are to be scaled.⁵ With this setting of the interval size, the total weight as a function of height for a Times Roman font is as shown in Figure 31. The reason for showing separately the weight of integer adjustment points with white space above and white space below is to simplify the process of separating clusters.",
+        "after": "The goal of the clustering process is to find small ranges of heights that maximize the total weight of all adjustment points in the height interval. This would be quite difficult if the size of height intervals were not known in advance, but the present application is compatible with a fixed value on the order of half a pixel unit. Some of the problems that can arise when the height interval size is not known in advance can be seen from the work of Pavlidis and Van Wyk. [15] The half-pixel limit for our application implies a height interval size of $\\gamma_3\\approx0.5/\\sigma_{\\rm hi}$, where $\\sigma_{\\rm hi}$ is an upper limit on the factor $\\sigma$ by which the outlines are to be scaled.⁵ With this setting of the interval size, the total weight as a function of height for a Times Roman font is as shown in Figure 31. The reason for showing separately the weight of integer adjustment points with white space above and white space below is to simplify the process of separating clusters.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 28,
+        "before": "One way to recognize this situation where there are no more clusters worth considering is to remove the main peaks chosen so far, and estimate the number of disjoint height intervals where the weight is within some fixed percentage of the weight of the heaviest height interval. For instance, a successful prototype was designed to stop looking for height clusters when more than fifteen are found or when $\\gamma\\_4\\approx10$ height intervals each have total weight at least $\\gamma\\_5=0.65$ times the weight of the heaviest interval.",
+        "after": "One way to recognize this situation where there are no more clusters worth considering is to remove the main peaks chosen so far, and estimate the number of disjoint height intervals where the weight is within some fixed percentage of the weight of the heaviest height interval. For instance, a successful prototype was designed to stop looking for height clusters when more than fifteen are found or when $\\gamma_4\\approx10$ height intervals each have total weight at least $\\gamma_5=0.65$ times the weight of the heaviest interval.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 28,
+        "before": "Assign each point $P\\in S$ a weight equal $\\psi\\_4(P)$.",
+        "after": "Assign each point $P\\in S$ a weight equal $\\psi_4(P)$.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 29,
+        "before": "Divide the points of $S$ into two subsets $S\\_1$ and $S\\_2$ according to whether or not there is white space below them.",
+        "after": "Divide the points of $S$ into two subsets $S_1$ and $S_2$ according to whether or not there is white space below them.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 29,
+        "before": "For each subset $S\\_i$ and each $h$ that is the height of a point in $S\\_i$, add the weights of the points in $S\\_i$ whose height is in the interval $[h,h+\\gamma\\_3]$.",
+        "after": "For each subset $S_i$ and each $h$ that is the height of a point in $S_i$, add the weights of the points in $S_i$ whose height is in the interval $[h,h+\\gamma_3]$.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 29,
+        "before": "Scan the height intervals for $S\\_1$ and $S\\_2$ in order of increasing height and count the number of non-overlapping intervals with weight at least $\\gamma\\_5$ times the weight of the heaviest interval.",
+        "after": "Scan the height intervals for $S_1$ and $S_2$ in order of increasing height and count the number of non-overlapping intervals with weight at least $\\gamma_5$ times the weight of the heaviest interval.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 29,
+        "before": "Stop if the count is more than $\\gamma\\_4$. Otherwise output the heaviest height interval by creating a new $P$-variable and using it for all the integer adjustment points that went into that interval.",
+        "after": "Stop if the count is more than $\\gamma_4$. Otherwise output the heaviest height interval by creating a new $P$-variable and using it for all the integer adjustment points that went into that interval.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 29,
+        "before": "One way to deal with these problems is to relax the constraints slightly and introduce a mapping $(\\theta,w)\\mapsto(u,v)$ such that a rectangle in $(\\theta,w)$ space of the maximum size allowed by (10) roughly corresponds to a $\\gamma\\_1$ by $\\gamma\\_2$ rectangle in $(u,v)$ space. In other words, $u$ should change by about $\\gamma\\_1$ when $\\theta$ changes by $\\gamma\\_1/w$ for fixed $w$, and a change in $w$ of $\\gamma\\_2/\\sqrt w$ should change $v$ by approximately $\\gamma\\_2$. This suggests $\\frac{\\partial u}{\\partial\\theta}=w$ and $\\frac{\\partial v}{\\partial w}=\\sqrt\\theta$, leading to a mapping like",
+        "after": "One way to deal with these problems is to relax the constraints slightly and introduce a mapping $(\\theta,w)\\mapsto(u,v)$ such that a rectangle in $(\\theta,w)$ space of the maximum size allowed by (10) roughly corresponds to a $\\gamma_1$ by $\\gamma_2$ rectangle in $(u,v)$ space. In other words, $u$ should change by about $\\gamma_1$ when $\\theta$ changes by $\\gamma_1/w$ for fixed $w$, and a change in $w$ of $\\gamma_2/\\sqrt w$ should change $v$ by approximately $\\gamma_2$. This suggests $\\frac{\\partial u}{\\partial\\theta}=w$ and $\\frac{\\partial v}{\\partial w}=\\sqrt\\theta$, leading to a mapping like",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 39,
+        "before": "Equation (31) gives the outlines after they are adjusted to fit the pixel grid. With the naming scheme from Section 3, the original outlines are similar, but with control points of the form $(\\xi\\_j,\\eta\\_j)$",
+        "after": "Equation (31) gives the outlines after they are adjusted to fit the pixel grid. With the naming scheme from Section 3, the original outlines are similar, but with control points of the form $(\\xi_j,\\eta_j)$",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 40,
+        "before": "instead of $(X\\_j,Y\\_j)$. After scaling but before grid adjustment, the control points are $(\\bar\\xi\\_j,\\bar\\eta\\_j)$, where $\\bar\\xi\\_j$ and $\\bar\\eta\\_j$ are affine functions of the scale parameter $\\sigma$. The new $X\\_j$ and $Y\\_j$ values take the place of the vertex coordinates in the $V$ vector of Section 5, and the distortion measures are required to be linear functions of $V$.",
+        "after": "instead of $(X_j,Y_j)$. After scaling but before grid adjustment, the control points are $(\\bar\\xi_j,\\bar\\eta_j)$, where $\\bar\\xi_j$ and $\\bar\\eta_j$ are affine functions of the scale parameter $\\sigma$. The new $X_j$ and $Y_j$ values take the place of the vertex coordinates in the $V$ vector of Section 5, and the distortion measures are required to be linear functions of $V$.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 40,
+        "before": "To find a polygonal approximation to the Bézier cubic (31), divide the $t$ interval into some number $k\\_i$ of equal pieces and take a polygonal line through the points obtained by evaluating (31) at",
+        "after": "To find a polygonal approximation to the Bézier cubic (31), divide the $t$ interval into some number $k_i$ of equal pieces and take a polygonal line through the points obtained by evaluating (31) at",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 40,
+        "before": "The number $k\\_i$ may be selected by repeatedly subdividing the $t$ interval until the polygonal line falls within some fractional-pixel error tolerance of the desired curve. The beauty of this scheme is that it provides a natural correspondence between points on the polygonal approximation and points on the true curve. For example, the point $\\frac13$ of the way from the $t=\\frac{j}{k\\_i}$ vertex to the $t=\\frac{j+1}{k\\_i}$ vertex corresponds to the value of (31) at",
+        "after": "The number $k_i$ may be selected by repeatedly subdividing the $t$ interval until the polygonal line falls within some fractional-pixel error tolerance of the desired curve. The beauty of this scheme is that it provides a natural correspondence between points on the polygonal approximation and points on the true curve. For example, the point $\\frac13$ of the way from the $t=\\frac{j}{k_i}$ vertex to the $t=\\frac{j+1}{k_i}$ vertex corresponds to the value of (31) at",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 40,
+        "before": "Let $(X\\_{ij},Y\\_{ij})$ be the value of (31) at",
+        "after": "Let $(X_{ij},Y_{ij})$ be the value of (31) at",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 40,
+        "before": "let $(\\xi\\_{ij},\\eta\\_{ij})$ and $(\\bar\\xi\\_{ij},\\bar\\eta\\_{ij})$ be the corresponding points on the original and scaled outlines; and let $(u\\_{ij},v\\_{ij})$ be the derivative of (31) with respect to $t$ evaluated at (32). Then the distortion measure for the $j$th $t$ interval is",
+        "after": "let $(\\xi_{ij},\\eta_{ij})$ and $(\\bar\\xi_{ij},\\bar\\eta_{ij})$ be the corresponding points on the original and scaled outlines; and let $(u_{ij},v_{ij})$ be the derivative of (31) with respect to $t$ evaluated at (32). Then the distortion measure for the $j$th $t$ interval is",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 41,
+        "before": "where $s\\_{ij}$ is the arc length associated with the $j$th $t$ interval.",
+        "after": "where $s_{ij}$ is the arc length associated with the $j$th $t$ interval.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      },
+      {
+        "page": 41,
+        "before": "The distortion measures (7) in Section 3.3 are designed to give the arc-length integral of squared horizontal displacement. Doing this for a curved segment of the outline requires subdividing the curve and giving distortion measures like (33), but with $(u\\_{ij},v\\_{ij})$ replaced by $(1,0)$.",
+        "after": "The distortion measures (7) in Section 3.3 are designed to give the arc-length integral of squared horizontal displacement. Doing this for a curved segment of the outline requires subdividing the curve and giving distortion measures like (33), but with $(u_{ij},v_{ij})$ replaced by $(1,0)$.",
+        "note": "Restore the checked inline LaTeX after Docling escapes underscores in prose items as literal Markdown. Formula semantics and source subscripts must survive export."
+      }
+    ]
+  },
+  "kelley-1998-display-reflectance": {
+    "mode": "ocr-native",
+    "items": [
+      {
+        "ref": "#/texts/6",
+        "before": "L=qE=Ep4/x (1",
+        "after": "L=qE=E\\rho_d/\\pi.\\tag{1}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/9",
+        "before": "",
+        "after": "L=\\rho_s L_s.\\tag{2}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/26",
+        "before": "",
+        "after": "\\mathrm dL_r(\\theta_r,\\phi_r)=B(\\theta_i,\\phi_i,\\theta_r,\\phi_r)\\,\\mathrm dE_i(\\theta_i,\\phi_i).\\tag{3}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/60",
+        "before": "dE; = L;(6;, ¢;) cos 6; dQ = L;(6;, ;) cos 6; sin 6; df d¢",
+        "after": "\\mathrm dE_i=L_i(\\theta_i,\\phi_i)\\cos\\theta_i\\,\\mathrm d\\Omega=L_i(\\theta_i,\\phi_i)\\cos\\theta_i\\sin\\theta_i\\,\\mathrm d\\theta\\,\\mathrm d\\phi.\\tag{4}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/65",
+        "before": "B=D+S+H (5)",
+        "after": "B=D+S+H.\\tag{5}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/67",
+        "before": "D=q=p4lx, S=2p5(sin' 6, —sin® 6,)5(¢, — &; * 7),",
+        "after": "D=q=\\rho_d/\\pi,\\quad S=2\\rho_s\\delta(\\sin^2\\theta_r-\\sin^2\\theta_i)\\delta(\\phi_r-\\phi_i\\mathbin{\\pm}\\pi),",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/68",
+        "before": "H =H(0;, ¢:,6,, $,)- (6)",
+        "after": "H=H(\\theta_i,\\phi_i,\\theta_r,\\phi_r).\\tag{6}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/70",
+        "before": "L6, ¢.)=qE+ P,L;(O,, ¢t x)",
+        "after": "",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/71",
+        "before": "2x /2 & Jo [ B0 6.0.00L,0. 9) cost0) a0",
+        "after": "\\begin{aligned}L_r(\\theta_r,\\phi_r)&=qE+\\rho_s L_s(\\theta_r,\\phi_r\\mathbin{\\pm}\\pi)\\\\&\\quad+\\int_0^{2\\pi}\\int_0^{\\pi/2}H(\\theta_i,\\phi_i,\\theta_r,\\phi_r)L_i(\\theta_i,\\phi_i)\\cos(\\theta_i)\\,\\mathrm d\\Omega.\\end{aligned}\\tag{7}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/72",
+        "before": "@)",
+        "after": "",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/276",
+        "before": "2 L=2L [p,, ffi + Hm . H(8) cos 0sin 0 de] : (8)",
+        "after": "L=2L_s\\left[\\rho_d\\frac{r^2}{d^2}+\\iint_{\\mathrm{Exit\\ Port}}H(\\theta)\\cos\\theta\\sin\\theta\\,\\mathrm d\\theta\\right].\\tag{8}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/287",
+        "before": "2 Ll ffi[,od +xH(0,) cos 0], (small sources) ©)",
+        "after": "L=2L_s\\frac{r^2}{d^2}\\left[\\rho_d+\\pi H(\\theta_s)\\cos\\theta_s\\right],\\quad\\text{(small sources)}.\\tag{9}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/291",
+        "before": "5 6,2 = rid L=1, paE+Ps+27 Io H(0) cos 8sin6df|. (10)",
+        "after": "L=L_s\\left[\\rho_d\\frac{r^2}{d^2}+\\rho_s+2\\pi\\int_0^{\\theta_a/2=r/d}H(\\theta)\\cos\\theta\\sin\\theta\\,\\mathrm d\\theta\\right].\\tag{10}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/334",
+        "before": "L=qE+p,L;+hE=(q+h)E+p,L, = L;[(g + h)w+p,]",
+        "after": "",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/335",
+        "before": "=1+ o0 40 an",
+        "after": "\\begin{aligned}L&=qE+\\rho_sL_s+hE=(q+h)E+\\rho_sL_s\\\\&=L_s[(q+h)\\omega+\\rho_s]\\\\&=L_s\\left[(\\rho_d+\\pi h)\\frac{r^2}{d^2}+\\rho_s\\right].\\end{aligned}\\tag{11}",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      },
+      {
+        "ref": "#/texts/401",
+        "before": "h H) = ———————F——, O = T TomT + plor 1-b b HO)=h| ————+ —— |- s Ho [l T 10l T3 167l D",
+        "after": "\\begin{aligned}H(\\theta)&=\\frac{h}{1+|\\theta/w|^n+b|\\theta/u|^m},\\\\\\text{or}\\quad H(\\theta)&=h\\left[\\frac{1-b}{1+|\\theta/w|^n}+\\frac{b}{1+|\\theta/u|^n}\\right].\\end{aligned}\\tag{12}",
+        "note": "Equation (12) visually rechecked at enlarged scale: the second form prints exponent n in both denominators; retained as printed."
+      },
+      {
+        "ref": "#/texts/7",
+        "before": "where L is the luminance, E the illuminance, g = p4/x the luminance coefficient, and p4 the diffuse (Lambertian) reflectance. That is, the luminance is independent of direction. When we refer to specular reflection, we mean mirror-like reflection that produces a distinct virtual image of the source where the reflected luminance L is related to the source luminance L, by",
+        "after": "where $L$ is the luminance, $E$ the illuminance, $q=\\rho_d/\\pi$ the luminance coefficient, and $\\rho_d$ the diffuse (Lambertian) reflectance. That is, the luminance is independent of direction. When we refer to specular reflection, we mean mirror-like reflection that produces a distinct virtual image of the source where the reflected luminance $L$ is related to the source luminance $L_s$ by",
+        "note": "Transcribed and visually checked against original PDF; original equation numbering retained."
+      }
+    ],
+    "replacements": [
+      {
+        "page": 3,
+        "before": "<!-- formula-not-decoded -->",
+        "after": "",
+        "note": "Removed isolated duplicate OCR equation-number fragment after restoring Eq. (4)."
+      },
+      {
+        "page": 7,
+        "before": "## S. Conclusion",
+        "after": "## 5. Conclusion",
+        "note": "Restored section number from original PDF."
+      },
+      {
+        "page": 7,
+        "before": "| Parameter    | FPDI1   | FPD2H   |\n|--------------|---------|---------|\n| h (measured) | 14.2    | 159     |\n|              | 2.45°   | 0.731°  |\n| n            | 1.17    | 1.56    |\n| b            | 0.121   | 5.77    |\n| u            | 1.20°   | 24T     |\n| m            | 290     | 2.42    |\n| q (measured) | 0.00062 | 0.00065 |",
+        "after": "| Parameter | FPD1 | FPD2H |\n| --- | --- | --- |\n| $h$ (measured) | 14.2 | 15.9 |\n| $w$ | 2.45° | 0.731° |\n| $n$ | 1.17 | 1.56 |\n| $b$ | 0.121 | 5.77 |\n| $u$ | 1.20° | 2.47° |\n| $m$ | 2.90 | 2.42 |\n| $q$ (measured) | 0.00062 | 0.00065 |",
+        "note": "Table 1 headers, parameter symbols and decimal values visually restored from PDF page 7."
+      },
+      {
+        "page": 1,
+        "before": "$q=\\rho\\_d/\\pi$",
+        "after": "$q=\\rho_d/\\pi$",
+        "note": "Restored the reviewed inline LaTeX subscript after Markdown export escaping."
+      },
+      {
+        "page": 1,
+        "before": "$\\rho\\_d$",
+        "after": "$\\rho_d$",
+        "note": "Restored the reviewed inline LaTeX subscript after Markdown export escaping."
+      },
+      {
+        "page": 1,
+        "before": "$L\\_s$",
+        "after": "$L_s$",
+        "note": "Restored the reviewed inline LaTeX subscript after Markdown export escaping."
+      }
+    ],
+    "review_notes": [
+      "All 8 PDF pages surveyed; numbered equations (1)-(12) visually checked and restored. Eq. (8) retains the source double integral with only d theta printed, rather than silently adding a differential.",
+      "All 13 numbered figures have source image coverage. Additional detector images are unnumbered. Most inline notation, prose and bibliography remain machine OCR and are not fully proofread.",
+      "Table 1 is restored from the source separately. The source scan clips some right-edge prose and bibliography text; no missing words were invented."
+    ]
+  },
+  "darling-ferwerda-2012-reflective-surfaces": {
+    "mode": "ocr-native",
+    "items": [
+      {
+        "ref": "#/texts/37",
+        "before": "32 L\"(wa °I, )(Nu'h * _I\") A . =E} 1 o (P) )",
+        "after": "E=\\sum_{n=1}^{32}\\frac{L_n(\\mathbf N_{\\mathrm{surf}}\\cdot\\mathbf I_n)(\\mathbf N_{\\mathrm{light}}\\cdot-\\mathbf I_n)}{d_n^2}\\left(\\frac{A}{P}\\right).\\tag{1}",
+        "note": "Numbered equation transcribed and visually checked against the author-hosted manuscript."
+      },
+      {
+        "ref": "#/texts/39",
+        "before": "(02,)(5,) E, forj=1t06 @ T out,j =",
+        "after": "L_{\\mathrm{out},j}=\\frac{(\\rho_{d,j})(S_j)}{\\pi}E,\\quad\\text{for }j=1\\text{ to }6.\\tag{2}",
+        "note": "Numbered equation transcribed and visually checked against the author-hosted manuscript."
+      },
+      {
+        "ref": "#/texts/42",
+        "before": "1 exp(—tanz(e,l)/az) *cos@, cos6, 4ma' 3) Porar (Bi'(pi ,9,,45,) =P,",
+        "after": "\\rho_{\\mathrm{brdf}}(\\theta_i,\\phi_i,\\theta_r,\\phi_r)=\\rho_s\\frac{1}{\\cos\\theta_i\\cos\\theta_r}\\frac{\\exp(-\\tan^2(\\theta_h)/\\alpha^2)}{4\\pi\\alpha^2}.\\tag{3}",
+        "note": "Numbered equation transcribed and visually checked against the author-hosted manuscript."
+      }
+    ],
+    "review_notes": [
+      "All 7 manuscript pages and all 7 numbered source figures surveyed; Eqs. (1)-(3) visually checked. The manuscript has no printed proceedings folios.",
+      "All 7 figure images preserve source content; Table 1 values were visually restored. Prose, references and inline notation remain machine OCR; the cited rendering, display and limitations passages were cross-checked against the source.",
+      "No optical model parameters from this instrumented system are taken as measurements of our target devices."
+    ],
+    "replacements": [
+      {
+        "page": 4,
+        "before": "|                       |            |   Six Channel Simulation CIEDE2000 - mean |   Six Channel Simulation CIEDE2000 - std |   Six Channel Simulation CIEDE2000 - 90th |   Six Channel Simulation CIEDE2000 - max | CIEDE2000 - [mean   |   CIEDE2000 - std |   CIEDE2000 - 90th |   CIEDE2000 - max |\n|-----------------------|------------|-------------------------------------------|------------------------------------------|-------------------------------------------|------------------------------------------|---------------------|-------------------|--------------------|-------------------|\n| D65-Booth Light       | (24)&#124; |                                        04 |                                       03 |                                        08 |                                      1.7 |                     |                04 |                 14 |                16 |\n| D50-Booth Light       | (24)]      |                                        04 |                                       03 |                                        07 |                                       15 |                     |                04 |                 11 |                18 |\n| IlIA-Booth Light      | (24)[      |                                       0.8 |                                       04 |                                        13 |                                      2.1 |                     |                42 |                110 |               140 |\n| In-gamut patches (18) |            |                                       0.8 |                                       04 |                                        14 |                                      2.1 |                     |                16 |                 50 |                59 |",
+        "after": "| Light / patches | Simulation mean | Simulation std | Simulation 90th | Simulation max | Screen mean | Screen std | Screen 90th | Screen max |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| D65-Booth Light (24) | 0.4 | 0.3 | 0.8 | 1.7 | 0.8 | 0.4 | 1.4 | 1.6 |\n| D50-Booth Light (24) | 0.4 | 0.3 | 0.7 | 1.5 | 0.7 | 0.4 | 1.1 | 1.8 |\n| IllA-Booth Light (24) | 0.8 | 0.4 | 1.3 | 2.1 | 3.8 | 4.2 | 11.0 | 14.0 |\n| In-gamut patches (18) | 0.8 | 0.4 | 1.4 | 2.1 | 1.8 | 1.6 | 5.0 | 5.9 |",
+        "note": "Table 1 values and grouped simulation/screen CIEDE2000 headings checked against PDF page 4; grouped headers flattened into column labels."
+      }
+    ]
+  },
+  "herle-2024-reflective-displays": {
+    "mode": "native",
+    "items": [
+      {
+        "ref": "#/texts/34",
+        "before": "EQ-TARG ;temp:in ral k 0 1 7ACR ¼ Lon þ LAmbientRL Loff þLAmbientRL ; (1)",
+        "after": "\\mathrm{ACR}=\\frac{L_{\\mathrm{on}}+L_{\\mathrm{Ambient}}R_L}{L_{\\mathrm{off}}+L_{\\mathrm{Ambient}}R_L}.\\tag{1}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/36",
+        "before": "EQ-TARG ;temp:in ral k 0 2 1 7 593RL ¼ R λ2 λ1 VðλÞSðλÞRðλÞdλ R λ2 λ1 VðλÞSðλÞdλ : (2)",
+        "after": "R_L=\\frac{\\int_{\\lambda_1}^{\\lambda_2}V(\\lambda)S(\\lambda)R(\\lambda)\\,\\mathrm d\\lambda}{\\int_{\\lambda_1}^{\\lambda_2}V(\\lambda)S(\\lambda)\\,\\mathrm d\\lambda}.\\tag{2}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/65",
+        "before": "EQ-TARG ;temp:in ral k 0 3 1 7 28v ¼ qE 6πμd \u0010 1 - e - 6πμd m t \u0011 ; (3)",
+        "after": "v=\\frac{qE}{6\\pi\\mu d}\\left(1-e^{-\\frac{6\\pi\\mu d}{m}t}\\right).\\tag{3}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/104",
+        "before": "EQ-TARG ;temp:in ral k 0 4 1 7 56θc ¼ arcsin \u0012 n2 n1 \u0013 : (4)",
+        "after": "\\theta_c=\\arcsin\\left(\\frac{n_2}{n_1}\\right).\\tag{4}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/106",
+        "before": "EQ-TARG ;temp:in ral k 0 5 1 7 4R ¼ 1 - \u0012 n2 n1 \u0013 2 : (5)",
+        "after": "R=1-\\left(\\frac{n_2}{n_1}\\right)^2.\\tag{5}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/149",
+        "before": "EQ-TARG ;temp:in ral k 0 6 1 4 35λ0 ¼ nap cosðθÞ; (6)",
+        "after": "\\lambda_0=n_a p\\cos(\\theta).\\tag{6}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/152",
+        "before": "EQ-TARG ;temp:in ral k 0 7 1 4 2 3Δλ ¼ Δnp; (7)",
+        "after": "\\Delta\\lambda=\\Delta n p.\\tag{7}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/180",
+        "before": "EQ-TARG ;temp:in ral k 0 8 1 7 6g ¼ m λ cosðθÞ2n ; (8)",
+        "after": "g=m\\frac{\\lambda}{\\cos(\\theta)2n}.\\tag{8}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/182",
+        "before": "EQ-TARG ;temp:in ral k 0 9 1 7 6 4g ¼ m λ 2 : (9)",
+        "after": "g=m\\frac{\\lambda}{2}.\\tag{9}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/218",
+        "before": "EQ-TARG ;temp:in ral k 01 4 cosðθÞ ¼ cosðθ0Þ þ CV 2 2γ ; (10)",
+        "after": "\\cos(\\theta)=\\cos(\\theta_0)+\\frac{CV^2}{2\\gamma}.\\tag{10}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/284",
+        "before": "EQ-TARG ;temp:in ral k 01 4 628λ ¼ 2D \u0012 n 2 eff - cos 2 ðθÞ \u0013 1 2 ; (11)",
+        "after": "\\lambda=2D\\left(n_{\\mathrm{eff}}^2-\\cos^2(\\theta)\\right)^{1/2}.\\tag{11}",
+        "note": "Numbered equation transcribed and visually checked against the published source; source numbering and notation retained, including Eq. (3) using q while the following prose uses q_P."
+      },
+      {
+        "ref": "#/texts/105",
+        "before": "For angles of incidence less than the critical angle, light is transmitted through the interface. Conversely, for angles of incidence greater than the critical angle, the light undergoes TIR and is reflected back into the first medium. As depicted in Fig. 7(b), upon normal incidence light, these hemispheres exhibit a bright reflective ring until the light's angle of incidence surpasses the critical angle, causing the hemisphere's center to reflect less light. For normal incidence, the reflection is given as",
+        "after": "For angles of incidence less than the critical angle, light is transmitted through the interface. Conversely, for angles of incidence greater than the critical angle, the light undergoes TIR and is reflected back into the first medium. As depicted in Fig. 7(b), upon normal incidence light, these hemispheres exhibit a bright reflective ring until the light's angle of incidence surpasses the critical angle, causing the hemisphere's center to reflect less light. For normal incidence, the reflection is given as",
+        "note": "Checked source paragraph and retained its clean text; excluded adjacent Eq. (5) bracket glyphs captured by the native prose bounding box. Equation (5) is restored separately."
+      }
+    ],
+    "review_notes": [
+      "All 34 source pages are included. All 11 numbered equations were visually checked against original source crops. This is a transcription check, not validation of every surveyed formula.",
+      "Sections 2, 4 and 5 were inspected for the model proposal. The other technology discussions, comparison Table 2 and most inline notation remain machine extraction and need checking before quantitative reuse.",
+      "The source labels a display luminance example in lux in section 2.1; this is retained, not corrected to an inferred quantity. The generic ACR formula is not adopted as the state-dependent project model.",
+      "All 24 numbered figure captions have detected source image coverage; two extra detector images have no numbered caption. A complete visual audit of every figure and comparison-table value is not claimed."
+    ]
   }
 }

@@ -20,9 +20,11 @@ pre-commit:
     - name: spelling
       glob:
         - "README.md"
+        - "AGENTS.md"
         - "fonts/**/*.md"
         - "docs/**/*.md"
         - "tools/**/*.md"
+        - "experiments/**/*.md"
       exclude:
         - "docs/references/VisualTrueType/**"
         - "docs/references/specs/**"

@@ -1,0 +1,4 @@
+No explicit open reuse license was found in the author-hosted manuscript.
+Source: https://jamesferwerda.com/wp-content/uploads/2015/06/r19_darling12_cic.pdf
+The published conference paper is associated with the Society for Imaging Science and Technology; public availability does not establish an open license.
+The repository code license does not apply to this paper or its extracted text and figures.
