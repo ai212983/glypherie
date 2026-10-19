@@ -46,79 +46,49 @@ web-setup:
     mise -C tools/web install --locked node
     mise -C tools/web exec -- npm ci --ignore-scripts
 
-# Build the WASM font renderer and stage its web artifacts into out/web/assets/wasm/.
-# Runs tools/wasm/build.sh (owned separately; never installs toolchains) and
-# copies the web-target outputs. Set FONT_WASM_WEB_DIR to override the build
-# output directory. Fails loudly when the toolchain or outputs are missing;
-# the preview page stays disabled until this succeeds.
-wasm-build out_dir="out/web":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ ! -x tools/wasm/build.sh ]; then
-      echo "wasm-build: tools/wasm/build.sh is missing or not executable." >&2
-      exit 1
-    fi
+# Build the WASM font renderer via tools/wasm/build.sh (owned separately; never
+# installs toolchains). The browser app stages the source package into a
+# hashed Vite asset; inputs are documented in the [WASM interface](tools/wasm/README.md).
+wasm-build:
     tools/wasm/build.sh web
-    wasm_dir="${FONT_WASM_WEB_DIR:-tools/wasm/pkg-web}"
-    mkdir -p "{{out_dir}}/assets/wasm"
-    for artifact in font_wasm.js font_wasm_bg.wasm; do
-      source="$wasm_dir/$artifact"
-      if [ ! -f "$source" ]; then
-        echo "wasm-build: expected output $source was not produced." >&2
-        exit 1
-      fi
-      cp "$source" "{{out_dir}}/assets/wasm/$artifact"
-    done
 
-# Build the candidate-enabled preview WASM renderer and stage it into
-# out/web/assets/wasm/. Uses the opt-in `preview` cargo feature, which enables
-# the generator's `candidate` feature; the output directory
+# Build the candidate-enabled preview WASM renderer. Uses the opt-in `preview`
+# cargo feature, which enables the generator's `candidate` feature; the output
 # (tools/wasm/pkg-web-preview/) stays separate from the production artifact
-# (tools/wasm/pkg-web/, built by `wasm-build` with default features). Set
-# FONT_WASM_PREVIEW_DIR to override the build output directory.
-wasm-build-preview out_dir="out/web":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ ! -x tools/wasm/build.sh ]; then
-      echo "wasm-build-preview: tools/wasm/build.sh is missing or not executable." >&2
-      exit 1
-    fi
+# (tools/wasm/pkg-web/, built by `wasm-build` with default features).
+wasm-build-preview:
     tools/wasm/build.sh web preview
-    wasm_dir="${FONT_WASM_PREVIEW_DIR:-tools/wasm/pkg-web-preview}"
-    mkdir -p "{{out_dir}}/assets/wasm"
-    for artifact in font_wasm.js font_wasm_bg.wasm; do
-      source="$wasm_dir/$artifact"
-      if [ ! -f "$source" ]; then
-        echo "wasm-build-preview: expected output $source was not produced." >&2
-        exit 1
-      fi
-      cp "$source" "{{out_dir}}/assets/wasm/$artifact"
-    done
 
-# Build the static website into out/web/.
+# Build the browser app into out/web/.
 web:
     mise -C tools/web exec -- npm run build
 
-# Build, watch, and serve the website with live reload.
-preview $web_port="8903" config_path="tools/generator/specimens.json" comparison_config="tools/generator/comparisons.json": (specimens config_path) (comparisons comparison_config) (wasm-build-preview)
+# Serve the browser app with live reload, without generating specimens.
+dev $web_port="8903":
     mise -C tools/web exec -- npm run dev -- --port="$web_port"
+
+# Serve the current browser app; `preview` keeps the review-workflow name.
+alias preview := dev
 
 # Generate and publish the configured specimen packages.
 specimens $config_path="tools/generator/specimens.json" $output_dir="out/specimens":
     cargo run --locked --manifest-path tools/generator/Cargo.toml --bin font_specimens -- "$config_path" "$output_dir"
 
-# Generate specimens, stage the preview (candidate-enabled) WASM renderer, and
-# build the static website. The interactive preview always uses the preview
-# artifact; `wasm-build` remains the separate production (baseline-only) build.
-preview-build config_path="tools/generator/specimens.json" comparison_config="tools/generator/comparisons.json": (specimens config_path) (comparisons comparison_config) (wasm-build-preview) web
-
-# Rebuild the website when its sources change.
-web-watch:
-    mise -C tools/web exec -- npm run watch
+# Check web browser types without emitting files.
+web-typecheck:
+    mise -C tools/web exec -- npm run typecheck
 
 # Run the web tests with the pinned runtime.
 web-test:
     mise -C tools/web exec -- npm test
+
+# Serve isolated web components with live reload.
+web-storybook:
+    mise -C tools/web exec -- npm run storybook
+
+# Build the component explorer into out/storybook/.
+web-storybook-build:
+    mise -C tools/web exec -- npm run build-storybook
 
 # Export aligned glyph images and pixel differences from published renders.
 comparisons $config_path="tools/generator/comparisons.json" $specimen_dir="out/specimens":

@@ -10,6 +10,10 @@ stored as `Roboto-Italic.ttf`. Its license text is kept alongside as `OFL-Roboto
 Roboto Flex is the authentic upstream variable font, fetched from the same pinned Google Fonts revision and stored as
 `RobotoFlex.ttf`. Its license text is kept alongside as `OFL-RobotoFlex.txt`, scoped to the Roboto Flex family.
 
+Literata and Source Sans 3 license texts are the authentic upstream OFL 1.1 texts, kept alongside as `OFL-Literata.txt`
+and `OFL-SourceSans3.txt`. Both match the OFL 1.1 declarations in the fonts' name tables; Source Sans 3 additionally
+carries the Reserved Font Name `Source`, present in its upstream text.
+
 The current generator resolves these assets directly.
 
 | File                | Embedded version                     | Embedded vendor | Embedded license declaration |
@@ -43,6 +47,12 @@ Provenance: `RobotoFlex.ttf` is byte-identical to
 commit `bd8f81ddb5c74d5c8897b36ad88b440266245103`, which declares the family under the OFL license with `opsz` 8–144,
 `slnt` -10–0, `wdth` 25–151 and `wght` 100–1000, plus custom parametric axes. `OFL-RobotoFlex.txt` is the
 `ofl/robotoflex/OFL.txt` text from that same commit.
+
+Provenance: `OFL-Literata.txt` is the `OFL.txt` text from
+[literata repository](https://github.com/googlefonts/literata/blob/main/OFL.txt), whose header (`Copyright 2017 The
+Literata Project Authors`) matches the `Literata.ttf` name table. `OFL-SourceSans3.txt` is the `LICENSE.md` text from
+[adobe-fonts/source-sans](https://github.com/adobe-fonts/source-sans/blob/release/LICENSE.md) (`Copyright 2010-2024
+Adobe`, Reserved Font Name `Source`), matching the `SourceSans3.ttf` name table.
 
 | File                | Variation axes with minimum, default, maximum |
 | ------------------- | --------------------------------------------- |

@@ -1,0 +1,67 @@
+name: pages
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install pinned wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --locked --version 0.2.129
+      - uses: jdx/mise-action@v4
+        with:
+          install_args: --locked
+      - run: npm ci --ignore-scripts
+        working-directory: tools/web
+      - name: Build preview WASM renderer
+        run: just wasm-build-preview
+      - name: Build browser app
+        run: npm run build
+        working-directory: tools/web
+      - run: npm run typecheck
+        working-directory: tools/web
+      - name: Install browser for web tests
+        working-directory: tools/web
+        run: |
+          npx --no-install playwright-core install --with-deps chromium
+          node --input-type=module <<'JS'
+          import { appendFileSync } from "node:fs";
+          import { chromium } from "playwright-core";
+          appendFileSync(process.env.GITHUB_ENV, `WEB_TEST_BROWSER=${chromium.executablePath()}\n`);
+          JS
+      - run: npm test
+        working-directory: tools/web
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: out/web
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

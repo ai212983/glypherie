@@ -1,0 +1,159 @@
+import * as React from "react";
+import type { StoredFont } from "../../fonts/storage.js";
+import type { RendererRole } from "../../renderer/renderer-types.js";
+import type { VariantSettings } from "../../variants/model.js";
+import { defaultFamilySnapshot, type FamilyMeta, type PreviewSnapshot } from "./state/snapshot-codec.js";
+import { presetForText } from "./presets";
+import { displayName } from "../../fonts/metadata";
+import type { FontLibrary } from "../../fonts/useFontLibrary";
+import { FontEditor } from "./FontEditor";
+import { Button } from "../../../components/ui/button";
+import { Label } from "../../../components/ui/label";
+import { NativeSelect, NativeSelectOption } from "../../../components/ui/native-select";
+import { indexHash } from "../../navigation/router.js";
+import { readHashSearch } from "../../navigation/snapshot";
+import { NavLink } from "../../../components/NavLink";
+import { SiteHeader } from "../../shell/SiteHeader";
+
+interface FontPageProps {
+  font: StoredFont;
+  meta: FamilyMeta;
+  snapshot: PreviewSnapshot;
+  role: RendererRole;
+  ratio: number;
+  previewStatus: string;
+  notice: string;
+  library: FontLibrary;
+  onSnapshot: (next: PreviewSnapshot, immediate?: boolean) => void;
+  onPatch: (patch: Partial<PreviewSnapshot>, immediate?: boolean) => void;
+  onRole: (role: RendererRole) => void;
+  onStatus: (message: string) => void;
+  onOpenFont: (id: string) => void;
+  onIndex: () => void;
+  onDelete: () => void;
+  onSaveAsVariant: () => void;
+  savingVariant: boolean;
+  saveVariantError: string;
+}
+
+// Legacy unsaved URL preview host. All snapshot-format conversion stays
+// here at the URL boundary: the shared editor below speaks only native
+// settings and sample text.
+export function FontPage({
+  font, meta, snapshot, role, ratio, previewStatus, notice, library,
+  onSnapshot, onPatch, onRole, onStatus, onOpenFont, onIndex, onDelete,
+  onSaveAsVariant, savingVariant, saveVariantError,
+}: FontPageProps): React.JSX.Element {
+  const family = snapshot.families[font.id];
+  const ready = library.rendererAvailable === true && library.loadedIds.has(font.id);
+  const fontLoadError = library.loadStatus(font.id).state === "error"
+    ? library.loadStatus(font.id).error
+    : "";
+  const base = readHashSearch() || window.location.search;
+  const indexHref = `${window.location.pathname}${indexHash(base)}`;
+  if (!family) return (
+    <main id="main" className="mx-auto my-12 w-[min(100%-3rem,1440px)] max-w-[45rem] leading-[1.6]">
+      <section className="content-state" role="alert">
+        <h2>This font has no preview settings yet.</h2>
+        <p><NavLink href={indexHref} data-all-fonts onNavigate={onIndex}>All fonts</NavLink></p>
+      </section>
+    </main>
+  );
+  const settings: VariantSettings = {
+    sizePx: family.size,
+    axes: { ...family.axes },
+    letterSpacingPx: family.spacing,
+    profile: snapshot.profile,
+    kerning: snapshot.kerning,
+    stemFitting: snapshot.stemFitting,
+    renderer: role,
+  };
+  const onSettings = (next: VariantSettings): void => {
+    if (next.renderer !== role) {
+      onRole(next.renderer);
+    }
+    onPatch({
+      profile: next.profile,
+      kerning: next.kerning,
+      stemFitting: next.stemFitting,
+      families: {
+        ...snapshot.families,
+        [font.id]: { ...family, size: next.sizePx, axes: next.axes, spacing: next.letterSpacingPx },
+      },
+    }, true);
+  };
+  return (
+    <>
+      <SiteHeader
+        eyebrow={
+          <NavLink
+            href={indexHref}
+            data-all-fonts
+            onNavigate={onIndex}
+          >
+            ← All fonts
+          </NavLink>
+        }
+        title={displayName(font)}
+      />
+      <main id="main" className="mx-auto w-[min(100%-3rem,1440px)]">
+      <section className="content-state my-6 max-w-[45rem] leading-[1.6]" aria-label="Unsaved preview" data-unsaved-preview>
+        <h2 className="text-[1rem]">Unsaved preview.</h2>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button data-save-variant size="sm" onClick={onSaveAsVariant} disabled={savingVariant}>
+            {savingVariant ? "Saving…" : "Save as variant"}
+          </Button>
+          {saveVariantError && (
+            <span className="text-[.8rem]" role="alert" data-save-variant-error>{saveVariantError}</span>
+          )}
+        </div>
+      </section>
+      {notice && (
+        <p className="mt-5 max-w-[45rem] text-[.875rem] leading-[1.55]" role="status" data-import-status>
+          {notice}
+        </p>
+      )}
+      <div className="font-picker m-0 mt-5 flex flex-wrap items-center gap-[.6rem] text-[.875rem] font-semibold">
+        <Label htmlFor="font-select">Font</Label>
+        <NativeSelect
+          id="font-select"
+          value={font.id}
+          onChange={(event) => onOpenFont(event.target.value)}
+          disabled={!library.fonts?.length}
+        >
+          {(library.fonts ?? []).map((entry) => (
+            <NativeSelectOption key={entry.id} value={entry.id}>{displayName(entry)}</NativeSelectOption>
+          ))}
+        </NativeSelect>
+        <Button data-delete-font variant="destructive" size="sm" onClick={onDelete}>
+          Delete
+        </Button>
+      </div>
+      <FontEditor
+        key={font.id}
+        font={font}
+        settings={settings}
+        sampleText={family.text}
+        onSettings={onSettings}
+        onSampleText={(text) => onPatch({
+          families: { ...snapshot.families, [font.id]: { ...family, text, preset: presetForText(text) } },
+        })}
+        onReset={() => onSnapshot({
+          ...snapshot,
+          kerning: true,
+          families: { ...snapshot.families, [font.id]: defaultFamilySnapshot(meta) },
+        }, true)}
+        zoom={snapshot.zoom}
+        pixelAccurate={snapshot.pixelAccurate}
+        onZoom={(zoom) => onPatch({ zoom }, true)}
+        onPixelAccurate={(pixelAccurate) => onPatch({ pixelAccurate }, true)}
+        fontReady={ready}
+        fontLoadError={fontLoadError}
+        ratio={ratio}
+        previewStatus={previewStatus}
+        onStatus={onStatus}
+      />
+      </main>
+    </>
+  );
+}

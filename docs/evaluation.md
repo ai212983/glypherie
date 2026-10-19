@@ -90,10 +90,10 @@ fixture names such as `known_join_failures` identify captured observations, not 
 permission to accept them. Do not silently weaken a guard; an accepted deviation needs an explicit, recorded basis and
 test expectations appropriate to that basis, without a glyph-specific production exception.
 
-Use the current Rust evaluator and tests alongside the project's web preview. Present glyphs and visual findings through
-web specimen and comparison pages; do not present standalone images or local image links in chat. Only link rebuilt web
-content reflecting the current changes. Explain model behavior and tradeoffs before interpreting pixel changes, and
-state uncertainty and limitations. Select comparison inputs and preserve publication scope according to the
+Use the current Rust evaluator and tests alongside the project's browser preview. Present glyphs and visual findings
+through the browser app; do not present standalone images or local image links in chat. Only link rebuilt app content
+reflecting the current changes. Explain model behavior and tradeoffs before interpreting pixel changes, and state
+uncertainty and limitations. Select comparison inputs and preserve publication scope according to the
 [generator contract](../tools/generator/CONTRACT.md#generation-selection). Passing mechanical checks alone does not
 establish optical acceptance; closure follows the [iteration lifecycle](revisions/README.md#iteration-lifecycle).
 

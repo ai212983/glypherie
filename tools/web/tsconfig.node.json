@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // DOM lib covers browser-driven tests: their page.evaluate closures run
+    // real DOM code, and the Dexie harness types assume DOM globals.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "allowImportingTsExtensions": true
+  },
+  "include": ["scripts/**/*.ts", "tests/**/*.ts"]
+}

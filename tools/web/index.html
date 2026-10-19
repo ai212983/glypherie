@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Local-first variable font preview: import fonts, tune axes and spacing, render in the browser.">
+  <meta name="theme-color" content="#f6f7f5">
+  <title>Font preview</title>
+  <script>
+    try {
+      var stored = localStorage.getItem("font-preview.theme");
+      var dark = stored === "dark" || (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", dark);
+    } catch (e) { /* default light theme */ }
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <noscript>
+    <main style="max-width: 45rem; margin: 3rem auto; font-family: system-ui, sans-serif; line-height: 1.6;">
+      <h1>Font preview</h1>
+      <p>This local-first preview needs JavaScript: fonts are imported into a
+      browser-local library and all rasterization runs on your device.</p>
+      <p>Bundled starter fonts: Roboto, Roboto Italic, Roboto Flex, Literata, and Source Sans 3 (SIL Open Font
+      License 1.1).</p>
+    </main>
+  </noscript>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
