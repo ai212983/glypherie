@@ -11,7 +11,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 test("installed hooks reject bad formatting, spelling and messages without staging changes", (t) => {
   const repo = mkdtempSync(path.join(tmpdir(), "font-generator-hooks-"));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
-  const run = (command, args, ok = true) => {
+  const run = (command: string, args: string[], ok = true) => {
     const result = spawnSync(command, args, {
       cwd: repo,
       encoding: "utf8",
@@ -24,14 +24,14 @@ test("installed hooks reject bad formatting, spelling and messages without stagi
   run("git", ["init", "--quiet"]);
   run("git", ["config", "user.name", "Hook Test"]);
   run("git", ["config", "user.email", "hooks@example.invalid"]);
-  for (const file of ["lefthook.yml", "mise.toml", "mise.lock", "dprint.json", "cspell.json", "commitlint.config.cjs", "commit-scopes.json"]) {
+  for (const file of ["lefthook.yml", "mise.toml", "mise.lock", "dprint.json", "cspell.json", "commitlint.config.ts", "commit-scopes.json"]) {
     copyFileSync(path.join(root, file), path.join(repo, file));
   }
   symlinkSync(path.join(root, "node_modules"), path.join(repo, "node_modules"), "dir");
   symlinkSync(path.join(root, ".mise"), path.join(repo, ".mise"), "dir");
   run("lefthook", ["install"]);
-  const commit = (message) => run("git", ["commit", "--quiet", "-m", message], false);
-  const unchangedAfterFailure = (message, diagnostic) => {
+  const commit = (message: string) => run("git", ["commit", "--quiet", "-m", message], false);
+  const unchangedAfterFailure = (message: string, diagnostic: string) => {
     const index = run("git", ["ls-files", "--stage", "-z"]).stdout;
     const result = commit(message);
     assert.notEqual(result.status, 0, "Invalid commit was accepted");

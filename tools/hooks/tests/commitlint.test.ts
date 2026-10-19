@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-const scopes = JSON.parse(readFileSync(new URL("../../../commit-scopes.json", import.meta.url), "utf8"));
+const scopes: string[] = JSON.parse(readFileSync(new URL("../../../commit-scopes.json", import.meta.url), "utf8"));
 
-function lint(message) {
+function lint(message: string) {
   const result = spawnSync(process.execPath, ["node_modules/@commitlint/cli/cli.js"], {
     cwd: root,
     input: `${message}\n`,
@@ -39,13 +39,14 @@ test("breaking changes and generated Git messages pass", () => {
 });
 
 test("unknown scopes, invalid types, malformed messages and long headers fail", () => {
-  for (const [message, rule] of [
+  const cases: Array<[string, string]> = [
     ["feat(unknown): add a feature", "scope-enum"],
     ["unknown(generator): add a feature", "type-enum"],
     ["add a feature", "type-empty"],
     ["fix(generator):", "subject-empty"],
     [`feat(generator): ${"a".repeat(100)}`, "header-max-length"],
-  ]) {
+  ];
+  for (const [message, rule] of cases) {
     const result = lint(message);
     assert.notEqual(result.status, 0);
     assert.ok(result.stdout.includes(rule), result.stdout + result.stderr);

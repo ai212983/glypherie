@@ -28,6 +28,8 @@ jobs:
         with:
           install_args: --locked
       - run: npm ci --ignore-scripts
+      - name: Root TypeScript typecheck
+        run: npm run typecheck
       - name: Formatting and documentation spelling
         run: |
           just fmt-check
@@ -48,7 +50,7 @@ jobs:
           install_args: --locked node
       - run: npm ci --ignore-scripts
       - name: Validate new commit messages
-        run: node tools/hooks/check-commits.mjs
+        run: node tools/hooks/check-commits.ts
 
   web:
     runs-on: ubuntu-latest

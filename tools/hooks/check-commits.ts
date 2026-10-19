@@ -1,10 +1,13 @@
 import { readFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 
+const eventPath = process.env.GITHUB_EVENT_PATH;
+if (!eventPath) throw new Error("GITHUB_EVENT_PATH is not set");
+
 // Read event data as JSON instead of interpolating it into shell commands.
-const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
-let range = [];
-let message;
+const event = JSON.parse(readFileSync(eventPath, "utf8"));
+let range: string[] = [];
+let message: string | undefined;
 if (process.env.GITHUB_EVENT_NAME === "pull_request") {
   const base = execFileSync("git", ["merge-base", event.pull_request.base.sha, event.pull_request.head.sha], {
     encoding: "utf8",

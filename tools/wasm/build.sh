@@ -87,4 +87,10 @@ fi
 
 mkdir -p "$OUT"
 "$WASM_BINDGEN_BIN" --target "$TARGET" --out-dir "$OUT" "$WASM"
+if [ "$TARGET" = "nodejs" ]; then
+  # wasm-bindgen --target nodejs emits CommonJS, but the repo root is
+  # type=module: the isolated output dir carries its own marker so Node
+  # loads the generated .js as CJS without touching root settings.
+  printf '{"type":"commonjs"}\n' > "$OUT/package.json"
+fi
 echo "wrote $OUT (target $TARGET)"

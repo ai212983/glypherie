@@ -1,15 +1,20 @@
 {
   "name": "font-generator-tooling",
   "private": true,
+  "type": "module",
   "scripts": {
     "commitlint": "commitlint",
-    "test": "node --test tools/hooks/tests/*.test.mjs"
+    "test": "node --test tools/hooks/tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.3",
-    "@commitlint/config-conventional": "21.2.3"
+    "@commitlint/config-conventional": "21.2.3",
+    "@commitlint/types": "21.2.3",
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   }
 }

@@ -11,7 +11,7 @@ const root = fileURLToPath(new URL("../../../", import.meta.url));
 test("CI checks new commit ranges and branch tips while allowing old history", (t) => {
   const repo = mkdtempSync(path.join(tmpdir(), "font-generator-commit-range-"));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
-  const git = (...args) => {
+  const git = (...args: string[]) => {
     const result = spawnSync("git", args, { cwd: repo, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     return result.stdout.trim();
@@ -20,21 +20,21 @@ test("CI checks new commit ranges and branch tips while allowing old history", (
   git("config", "user.name", "Hook Test");
   git("config", "user.email", "hooks@example.invalid");
   git("config", "core.hooksPath", "/dev/null");
-  for (const file of ["commitlint.config.cjs", "commit-scopes.json"]) {
+  for (const file of ["commitlint.config.ts", "commit-scopes.json"]) {
     copyFileSync(path.join(root, file), path.join(repo, file));
   }
   symlinkSync(path.join(root, "node_modules"), path.join(repo, "node_modules"), "dir");
-  const commit = (message) => {
+  const commit = (message: string) => {
     git("commit", "--quiet", "--allow-empty", "-m", message);
     return git("rev-parse", "HEAD");
   };
   const historical = commit("historical message without a conventional prefix");
   const valid = commit("ci(hooks): validate new commit ranges");
   const invalid = commit("feat(unknown): add a feature");
-  const check = (name, event, expected) => {
+  const check = (name: string, event: unknown, expected: number) => {
     const eventPath = path.join(repo, "event.json");
     writeFileSync(eventPath, JSON.stringify(event));
-    const result = spawnSync(process.execPath, [path.join(root, "tools/hooks/check-commits.mjs")], {
+    const result = spawnSync(process.execPath, [path.join(root, "tools/hooks/check-commits.ts")], {
       cwd: repo,
       encoding: "utf8",
       env: { ...process.env, GITHUB_EVENT_NAME: name, GITHUB_EVENT_PATH: eventPath },
