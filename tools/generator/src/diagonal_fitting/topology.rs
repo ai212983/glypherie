@@ -453,29 +453,52 @@ fn split_inputs(inputs: &[Seg]) -> Vec<Vec<Pt>> {
             if inputs[i].bounds.disjoint(inputs[j].bounds) {
                 continue;
             }
-            let (a, b) = (&inputs[i].a, &inputs[i].b);
-            let (c, d) = (&inputs[j].a, &inputs[j].b);
-            let o1 = orient(a, b, c);
-            let o2 = orient(a, b, d);
-            let o3 = orient(c, d, a);
-            let o4 = orient(c, d, b);
-            if ((o1 == 1 && o2 == -1) || (o1 == -1 && o2 == 1))
-                && ((o3 == 1 && o4 == -1) || (o3 == -1 && o4 == 1))
-            {
-                let x = crossing(a, &sub(b, a), c, &sub(d, c));
-                splits[i].push(x.clone());
-                splits[j].push(x);
-                continue;
-            }
-            for (q, slot) in [(c, i), (d, i), (a, j), (b, j)] {
-                let (p, r) = if slot == i { (a, b) } else { (c, d) };
-                if orient(p, r, q) == 0 && in_box(q, p, r) {
-                    splits[slot].push(q.clone());
-                }
-            }
+            let (head, tail) = splits.split_at_mut(j);
+            split_pair(&inputs[i], &inputs[j], &mut head[i], &mut tail[0]);
         }
     }
     splits
+}
+
+fn is_proper_crossing(o1: i8, o2: i8, o3: i8, o4: i8) -> bool {
+    ((o1 == 1 && o2 == -1) || (o1 == -1 && o2 == 1))
+        && ((o3 == 1 && o4 == -1) || (o3 == -1 && o4 == 1))
+}
+
+fn push_contacts(
+    a: &Pt,
+    b: &Pt,
+    c: &Pt,
+    d: &Pt,
+    first_splits: &mut Vec<Pt>,
+    second_splits: &mut Vec<Pt>,
+) {
+    for (q, first_side) in [(c, true), (d, true), (a, false), (b, false)] {
+        let (p, r) = if first_side { (a, b) } else { (c, d) };
+        if orient(p, r, q) == 0 && in_box(q, p, r) {
+            if first_side {
+                first_splits.push(q.clone());
+            } else {
+                second_splits.push(q.clone());
+            }
+        }
+    }
+}
+
+fn split_pair(first: &Seg, second: &Seg, first_splits: &mut Vec<Pt>, second_splits: &mut Vec<Pt>) {
+    let (a, b) = (&first.a, &first.b);
+    let (c, d) = (&second.a, &second.b);
+    let o1 = orient(a, b, c);
+    let o2 = orient(a, b, d);
+    let o3 = orient(c, d, a);
+    let o4 = orient(c, d, b);
+    if is_proper_crossing(o1, o2, o3, o4) {
+        let x = crossing(a, &sub(b, a), c, &sub(d, c));
+        first_splits.push(x.clone());
+        second_splits.push(x);
+        return;
+    }
+    push_contacts(a, b, c, d, first_splits, second_splits);
 }
 
 /// Retain neutral edges when opposing contour contributions cancel.
@@ -2045,5 +2068,145 @@ mod tests {
         assert!(strictly_inside(&pt(1.0, 1.0), &notch));
         assert!(strictly_inside(&pt(3.0, 3.0), &notch));
         assert!(!strictly_inside(&pt(1.0, 3.0), &notch));
+    }
+
+    #[test]
+    fn splits_proper_crossing_shares_identical_rational() {
+        let pt = |x: f64, y: f64| Pt(Exact::from_f64(x).unwrap(), Exact::from_f64(y).unwrap());
+        let inputs = vec![
+            Seg {
+                bounds: Bounds::new([0.0, 0.0], [1.0, 2.0]),
+                a: pt(0.0, 0.0),
+                b: pt(1.0, 2.0),
+                contour: 0,
+            },
+            Seg {
+                bounds: Bounds::new([0.0, 1.0], [1.0, 0.0]),
+                a: pt(0.0, 1.0),
+                b: pt(1.0, 0.0),
+                contour: 1,
+            },
+        ];
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits.len(), 2);
+        assert_eq!(splits[0][0], pt(0.0, 0.0));
+        assert_eq!(splits[0][1], pt(1.0, 2.0));
+        assert_eq!(splits[1][0], pt(0.0, 1.0));
+        assert_eq!(splits[1][1], pt(1.0, 0.0));
+        assert_eq!(splits[0].len(), 3);
+        assert_eq!(splits[1].len(), 3);
+        assert_eq!(splits[0][2], splits[1][2]);
+        assert_eq!(
+            splits[0][2],
+            crossing(
+                &pt(0.0, 0.0),
+                &sub(&pt(1.0, 2.0), &pt(0.0, 0.0)),
+                &pt(0.0, 1.0),
+                &sub(&pt(1.0, 0.0), &pt(0.0, 1.0)),
+            )
+        );
+        assert_eq!(
+            splits[0][2].0.to_rational(),
+            num_rational::BigRational::new(1.into(), 3.into())
+        );
+        assert_eq!(
+            splits[0][2].1.to_rational(),
+            num_rational::BigRational::new(2.into(), 3.into())
+        );
+    }
+
+    #[test]
+    fn splits_endpoint_t_contact_pins_interior_point() {
+        let pt = |x: f64, y: f64| Pt(Exact::from_f64(x).unwrap(), Exact::from_f64(y).unwrap());
+        let inputs = vec![
+            Seg {
+                bounds: Bounds::new([0.0, 0.0], [2.0, 0.0]),
+                a: pt(0.0, 0.0),
+                b: pt(2.0, 0.0),
+                contour: 0,
+            },
+            Seg {
+                bounds: Bounds::new([1.0, 0.0], [1.0, 2.0]),
+                a: pt(1.0, 0.0),
+                b: pt(1.0, 2.0),
+                contour: 1,
+            },
+        ];
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 0.0), pt(1.0, 0.0)]);
+        assert_eq!(splits[1], vec![pt(1.0, 0.0), pt(1.0, 2.0)]);
+        let corner = vec![
+            Seg {
+                bounds: Bounds::new([0.0, 0.0], [1.0, 1.0]),
+                a: pt(0.0, 0.0),
+                b: pt(1.0, 1.0),
+                contour: 0,
+            },
+            Seg {
+                bounds: Bounds::new([1.0, 1.0], [2.0, 0.0]),
+                a: pt(1.0, 1.0),
+                b: pt(2.0, 0.0),
+                contour: 1,
+            },
+        ];
+        let splits = split_inputs(&corner);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(1.0, 1.0), pt(1.0, 1.0)]);
+        assert_eq!(splits[1], vec![pt(1.0, 1.0), pt(2.0, 0.0), pt(1.0, 1.0)]);
+    }
+
+    #[test]
+    fn splits_collinear_overlap_and_disjoint_guard() {
+        let pt = |x: f64, y: f64| Pt(Exact::from_f64(x).unwrap(), Exact::from_f64(y).unwrap());
+        let seg = |ax: f64, ay: f64, bx: f64, by: f64, contour: usize| Seg {
+            bounds: Bounds::new([ax, ay], [bx, by]),
+            a: pt(ax, ay),
+            b: pt(bx, by),
+            contour,
+        };
+        let inputs = vec![seg(0.0, 0.0, 2.0, 0.0, 0), seg(1.0, 0.0, 3.0, 0.0, 1)];
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 0.0), pt(1.0, 0.0)]);
+        assert_eq!(splits[1], vec![pt(1.0, 0.0), pt(3.0, 0.0), pt(2.0, 0.0)]);
+        let inputs = vec![seg(0.0, 0.0, 2.0, 0.0, 0), seg(3.0, 0.0, 1.0, 0.0, 1)];
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 0.0), pt(1.0, 0.0)]);
+        assert_eq!(splits[1], vec![pt(3.0, 0.0), pt(1.0, 0.0), pt(2.0, 0.0)]);
+        let inputs = vec![seg(0.0, 0.0, 2.0, 0.0, 0), seg(2.0, 0.0, 4.0, 0.0, 1)];
+        assert!(!inputs[0].bounds.disjoint(inputs[1].bounds));
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 0.0), pt(2.0, 0.0)]);
+        assert_eq!(splits[1], vec![pt(2.0, 0.0), pt(4.0, 0.0), pt(2.0, 0.0)]);
+        assert_eq!(splits[1][0], splits[1][2]);
+        let inputs = vec![seg(0.0, 0.0, 1.0, 0.0, 0), seg(5.0, 0.0, 6.0, 1.0, 1)];
+        assert!(inputs[0].bounds.disjoint(inputs[1].bounds));
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(1.0, 0.0)]);
+        assert_eq!(splits[1], vec![pt(5.0, 0.0), pt(6.0, 1.0)]);
+        let inputs = vec![seg(0.0, 0.0, 2.0, 2.0, 0), seg(0.0, 1.0, 0.5, 1.0, 1)];
+        assert!(!inputs[0].bounds.disjoint(inputs[1].bounds));
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 2.0)]);
+        assert_eq!(splits[1], vec![pt(0.0, 1.0), pt(0.5, 1.0)]);
+    }
+
+    #[test]
+    fn splits_straddle_line_without_segment_hit_keeps_endpoints() {
+        let pt = |x: f64, y: f64| Pt(Exact::from_f64(x).unwrap(), Exact::from_f64(y).unwrap());
+        let seg = |ax: f64, ay: f64, bx: f64, by: f64, contour: usize| Seg {
+            bounds: Bounds::new([ax, ay], [bx, by]),
+            a: pt(ax, ay),
+            b: pt(bx, by),
+            contour,
+        };
+        let inputs = vec![seg(0.0, 0.0, 2.0, 2.0, 0), seg(-1.0, 0.5, 0.5, -1.0, 1)];
+        assert!(!inputs[0].bounds.disjoint(inputs[1].bounds));
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 2.0)]);
+        assert_eq!(splits[1], vec![pt(-1.0, 0.5), pt(0.5, -1.0)]);
+        let inputs = vec![seg(0.0, 0.0, 2.0, 2.0, 0), seg(0.5, -1.0, -1.0, 0.5, 1)];
+        assert!(!inputs[0].bounds.disjoint(inputs[1].bounds));
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 2.0)]);
+        assert_eq!(splits[1], vec![pt(0.5, -1.0), pt(-1.0, 0.5)]);
     }
 }
