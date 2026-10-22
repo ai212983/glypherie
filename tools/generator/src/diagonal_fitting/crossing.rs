@@ -1595,6 +1595,79 @@ impl ControlOwnership {
     }
 }
 
+enum JointAbort {
+    DegenerateJoint,
+    DegenerateLeg,
+}
+
+enum HardRowAbort {
+    FixedIncompatible,
+}
+
+fn collect_joint_constraints(
+    joint_iter: impl IntoIterator<Item = (usize, Vec<JointOcc>)>,
+    up_all: &[[f64; 2]],
+    involved: &HashSet<usize>,
+    size_px: f64,
+) -> Result<(Vec<(Vec<f64>, f64)>, Vec<JointGate>), JointAbort> {
+    // Hard G1 rows: source-smooth joints only.
+    let mut hard_full: Vec<(Vec<f64>, f64)> = Vec::new();
+    let mut gates: Vec<JointGate> = Vec::new();
+    for (j, occs) in joint_iter {
+        for occ in occs {
+            if ![j, occ.prev_iv, occ.seg_ov]
+                .iter()
+                .any(|v| involved.contains(v))
+            {
+                continue;
+            }
+            if occ.degenerate {
+                return Err(JointAbort::DegenerateJoint);
+            }
+            if occ.smooth {
+                match g1_row(
+                    up_all,
+                    j,
+                    occ.prev_kind,
+                    occ.prev_iv,
+                    occ.seg_kind,
+                    occ.seg_ov,
+                    size_px,
+                    true,
+                ) {
+                    Some((row, constant)) => hard_full.push((row, -constant)),
+                    None => return Err(JointAbort::DegenerateLeg),
+                }
+            }
+            gates.push(JointGate {
+                j,
+                iv: occ.prev_iv,
+                ov: occ.seg_ov,
+                prev_line: occ.prev_kind == "line",
+                seg_line: occ.seg_kind == "line",
+                smooth: occ.smooth,
+            });
+        }
+    }
+    Ok((hard_full, gates))
+}
+
+fn reduce_joint_rows(
+    hard_full: &[(Vec<f64>, f64)],
+    reduce: &impl Fn(&[f64]) -> Vec<f64>,
+) -> Result<Vec<(Vec<f64>, f64)>, HardRowAbort> {
+    let mut kept_hard: Vec<(Vec<f64>, f64)> = Vec::new();
+    for (row, target_h) in hard_full {
+        let red = reduce(row);
+        if red.iter().any(|x| *x != 0.0) {
+            kept_hard.push((red, *target_h));
+        } else if target_h.abs() > 1e-9 {
+            return Err(HardRowAbort::FixedIncompatible);
+        }
+    }
+    Ok(kept_hard)
+}
+
 struct JointGate {
     j: usize,
     iv: usize,
@@ -1725,18 +1798,10 @@ fn finish(
                 .map(|(row, constant)| -dotv(row, &gaps_flat) - constant),
         )
         .collect();
-    // Hard G1 rows: source-smooth joints only.
-    let mut hard_full: Vec<(Vec<f64>, f64)> = Vec::new();
-    let mut gates: Vec<JointGate> = Vec::new();
-    for (j, occs) in joints(raw, &base_all) {
-        for occ in occs {
-            if ![j, occ.prev_iv, occ.seg_ov]
-                .iter()
-                .any(|v| involved.contains(v))
-            {
-                continue;
-            }
-            if occ.degenerate {
+    let (hard_full, gates) =
+        match collect_joint_constraints(joints(raw, &base_all), &up_all, &involved, size_px) {
+            Ok(collected) => collected,
+            Err(JointAbort::DegenerateJoint) => {
                 return Ok(abstain(
                     upstream,
                     "degenerate-joint",
@@ -1747,47 +1812,21 @@ fn finish(
                     }),
                 ));
             }
-            if occ.smooth {
-                match g1_row(
-                    &up_all,
-                    j,
-                    occ.prev_kind,
-                    occ.prev_iv,
-                    occ.seg_kind,
-                    occ.seg_ov,
-                    size_px,
-                    true,
-                ) {
-                    Some((row, constant)) => hard_full.push((row, -constant)),
-                    None => {
-                        return Ok(abstain(
-                            upstream,
-                            "degenerate-leg",
-                            serde_json::json!({
-                                "size_px": size_px,
-                                "skipped": skipped_json(),
-                                "waist": waist_json(),
-                            }),
-                        ));
-                    }
-                }
+            Err(JointAbort::DegenerateLeg) => {
+                return Ok(abstain(
+                    upstream,
+                    "degenerate-leg",
+                    serde_json::json!({
+                        "size_px": size_px,
+                        "skipped": skipped_json(),
+                        "waist": waist_json(),
+                    }),
+                ));
             }
-            gates.push(JointGate {
-                j,
-                iv: occ.prev_iv,
-                ov: occ.seg_ov,
-                prev_line: occ.prev_kind == "line",
-                seg_line: occ.seg_kind == "line",
-                smooth: occ.smooth,
-            });
-        }
-    }
-    let mut kept_hard: Vec<(Vec<f64>, f64)> = Vec::new();
-    for (row, target_h) in &hard_full {
-        let red = reduce(row);
-        if red.iter().any(|x| *x != 0.0) {
-            kept_hard.push((red, *target_h));
-        } else if target_h.abs() > 1e-9 {
+        };
+    let kept_hard = match reduce_joint_rows(&hard_full, &reduce) {
+        Ok(kept) => kept,
+        Err(HardRowAbort::FixedIncompatible) => {
             return Ok(abstain(
                 upstream,
                 "fixed-constraints-incompatible",
@@ -1798,7 +1837,7 @@ fn finish(
                 }),
             ));
         }
-    }
+    };
     let ge: Vec<Vec<f64>> = kept_hard.iter().map(|(r, _)| r.clone()).collect();
     let he: Vec<f64> = kept_hard.iter().map(|(_, t)| *t).collect();
     // Linear curvature/leg inequalities with frozen upstream coefficients.
@@ -2761,3 +2800,6 @@ mod ownership_tests {
 
 #[cfg(test)]
 mod objective_tests;
+
+#[cfg(test)]
+mod joint_tests;
