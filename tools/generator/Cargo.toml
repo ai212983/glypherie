@@ -43,6 +43,10 @@ required-features = ["native-io"]
 name = "font_evaluate"
 required-features = ["native-io"]
 
+[[bin]]
+name = "font_playdate"
+required-features = ["candidate", "native-io"]
+
 [[test]]
 name = "comparison"
 required-features = ["native-io"]

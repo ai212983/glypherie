@@ -23,6 +23,7 @@ pub mod mono;
 pub mod mono_spacing;
 #[cfg(feature = "candidate")]
 pub mod overlap;
+pub mod playdate;
 #[cfg(feature = "candidate")]
 mod selective_fitting;
 /// Compatibility name for earlier diagnostic callers; renderer selection uses roles.

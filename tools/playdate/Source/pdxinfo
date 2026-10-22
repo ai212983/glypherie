@@ -1,0 +1,6 @@
+name=Font Lab
+author=Inkplate
+description=On-device specimen viewer for staged export fonts.
+bundleID=com.inkplate.fontlab
+version=0.1
+buildNumber=1
