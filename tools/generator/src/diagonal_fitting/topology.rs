@@ -633,111 +633,150 @@ fn trace_cycles(atomics: &[Atomic], nverts: usize) -> Option<(Vec<Vec<usize>>, V
     Some((cycles, he_cycle))
 }
 
-fn group_faces(
-    atomics: &mut [Atomic],
-    cycles: &[Vec<usize>],
-    he_cycle: &[usize],
-) -> Vec<Vec<usize>> {
+fn cycle_area(atomics: &[Atomic], cyc: &[usize]) -> Exact {
     // Doubled signed areas classify outers (+) / holes (-) / bridges (0).
-    let mut cycle_area: Vec<Exact> = Vec::with_capacity(cycles.len());
-    for cyc in cycles.iter() {
-        let mut s = Exact::zero();
-        for &he in cyc {
-            let e = &atomics[he / 2];
-            let (p, q) = if he % 2 == 0 {
-                (&e.a, &e.b)
-            } else {
-                (&e.b, &e.a)
-            };
-            s += &p.0 * &q.1 - &q.0 * &p.1;
-        }
-        cycle_area.push(s);
-    }
-    // Each positive cycle is the outer boundary of a new face;
-    // negative/zero cycles attach to the innermost strictly containing
-    // positive cycle (or the unbounded face). Probes sit left of a cycle
-    // edge at half the nearest positive ray distance, so no epsilon.
-    let cycle_verts = |cyc: &[usize]| -> Vec<Pt> {
-        cyc.iter()
-            .map(|&he| {
-                let e = &atomics[he / 2];
-                if he % 2 == 0 {
-                    e.a.clone()
-                } else {
-                    e.b.clone()
-                }
-            })
-            .collect()
-    };
-    let left_probe = |cyc: &[usize]| -> Pt {
-        let he = cyc[0];
+    let mut s = Exact::zero();
+    for &he in cyc {
         let e = &atomics[he / 2];
-        let (s, t) = if he % 2 == 0 {
+        let (p, q) = if he % 2 == 0 {
             (&e.a, &e.b)
         } else {
             (&e.b, &e.a)
         };
-        let m = s.mid(t);
-        let d = sub(t, s);
-        let n = (-d.1.clone(), d.0.clone());
-        let nn = &n.0 * &n.0 + &n.1 * &n.1;
-        let mut best: Option<Exact> = None;
-        for f in atomics.iter() {
-            let q = sub(&f.b, &f.a);
-            let den = cross(&n, &q);
-            if den.is_zero() {
-                // Collinear with the ray: nearest endpoint ahead counts.
-                let w = sub(&f.a, &m);
-                if cross(&w, &q).is_zero() && cross(&w, &n).is_zero() {
-                    for end in [&f.a, &f.b] {
-                        let w = sub(end, &m);
-                        let tt = (&w.0 * &n.0 + &w.1 * &n.1) / &nn;
-                        if tt.is_positive() && best.as_ref().is_none_or(|b| tt < *b) {
-                            best = Some(tt);
-                        }
-                    }
-                }
-                continue;
+        s += &p.0 * &q.1 - &q.0 * &p.1;
+    }
+    s
+}
+
+fn cycle_vertices(atomics: &[Atomic], cyc: &[usize]) -> Vec<Pt> {
+    cyc.iter()
+        .map(|&he| {
+            let e = &atomics[he / 2];
+            if he % 2 == 0 {
+                e.a.clone()
+            } else {
+                e.b.clone()
             }
-            let w = sub(&f.a, &m);
-            let tt = cross(&w, &q) / &den;
-            let u = cross(&w, &n) / &den;
-            if tt.is_positive() && !u.is_negative() && u <= Exact::integer(1) {
-                if best.as_ref().is_none_or(|b| tt < *b) {
-                    best = Some(tt);
-                }
+        })
+        .collect()
+}
+
+fn probe_hit(edge: &Atomic, m: &Pt, n: &(Exact, Exact), nn: &Exact) -> Option<Exact> {
+    let q = sub(&edge.b, &edge.a);
+    let den = cross(n, &q);
+    if den.is_zero() {
+        collinear_endpoint_hit(edge, m, n, nn, &q)
+    } else {
+        let w = sub(&edge.a, m);
+        let tt = cross(&w, &q) / &den;
+        let u = cross(&w, n) / &den;
+        if tt.is_positive() && !u.is_negative() && u <= Exact::integer(1) {
+            Some(tt)
+        } else {
+            None
+        }
+    }
+}
+
+fn collinear_endpoint_hit(
+    edge: &Atomic,
+    m: &Pt,
+    n: &(Exact, Exact),
+    nn: &Exact,
+    q: &(Exact, Exact),
+) -> Option<Exact> {
+    let w = sub(&edge.a, m);
+    if !cross(&w, q).is_zero() || !cross(&w, n).is_zero() {
+        return None;
+    }
+    let mut hit: Option<Exact> = None;
+    for end in [&edge.a, &edge.b] {
+        let w = sub(end, m);
+        let tt = (&w.0 * &n.0 + &w.1 * &n.1) / nn;
+        if tt.is_positive() && hit.as_ref().is_none_or(|b| tt < *b) {
+            hit = Some(tt);
+        }
+    }
+    hit
+}
+
+fn probe_ray_distance(atomics: &[Atomic], m: &Pt, n: &(Exact, Exact), nn: &Exact) -> Option<Exact> {
+    let mut best: Option<Exact> = None;
+    for edge in atomics.iter() {
+        if let Some(tt) = probe_hit(edge, m, n, nn) {
+            if best.as_ref().is_none_or(|b| tt < *b) {
+                best = Some(tt);
             }
         }
-        let half = best
-            .map(|t| t / Exact::integer(2))
-            .unwrap_or_else(|| Exact::integer(1));
-        Pt(&m.0 + &half * &n.0, &m.1 + &half * &n.1)
+    }
+    best
+}
+
+// Half the nearest positive ray distance keeps the probe off every edge.
+fn left_probe(atomics: &[Atomic], cyc: &[usize]) -> Pt {
+    let he = cyc[0];
+    let e = &atomics[he / 2];
+    let (s, t) = if he % 2 == 0 {
+        (&e.a, &e.b)
+    } else {
+        (&e.b, &e.a)
     };
-    let positives: Vec<usize> = (0..cycles.len())
-        .filter(|&c| cycle_area[c].is_positive())
-        .collect();
-    let pos_verts: Vec<Vec<Pt>> = positives.iter().map(|&c| cycle_verts(&cycles[c])).collect();
+    let m = s.mid(t);
+    let d = sub(t, s);
+    let n = (-d.1.clone(), d.0.clone());
+    let nn = &n.0 * &n.0 + &n.1 * &n.1;
+    let half = probe_ray_distance(atomics, &m, &n, &nn)
+        .map(|t| t / Exact::integer(2))
+        .unwrap_or_else(|| Exact::integer(1));
+    Pt(&m.0 + &half * &n.0, &m.1 + &half * &n.1)
+}
+
+fn assign_cycle_faces(
+    atomics: &[Atomic],
+    cycles: &[Vec<usize>],
+    areas: &[Exact],
+    positives: &[usize],
+    pos_verts: &[Vec<Pt>],
+) -> Vec<usize> {
+    // Other cycles belong to the smallest containing positive cycle, or face 0.
     let mut face_of_cycle = vec![0usize; cycles.len()];
     for (fi, &c) in positives.iter().enumerate() {
         face_of_cycle[c] = fi + 1;
     }
     for c in 0..cycles.len() {
-        if cycle_area[c].is_positive() {
+        if areas[c].is_positive() {
             continue;
         }
-        let p = left_probe(&cycles[c]);
+        let p = left_probe(atomics, &cycles[c]);
         let mut owner = 0usize;
         let mut owner_area: Option<Exact> = None;
         for (k, &pc) in positives.iter().enumerate() {
             if strictly_inside(&p, &pos_verts[k])
-                && owner_area.as_ref().is_none_or(|b| cycle_area[pc] < *b)
+                && owner_area.as_ref().is_none_or(|b| areas[pc] < *b)
             {
                 owner = k + 1;
-                owner_area = Some(cycle_area[pc].clone());
+                owner_area = Some(areas[pc].clone());
             }
         }
         face_of_cycle[c] = owner;
     }
+    face_of_cycle
+}
+
+fn group_faces(
+    atomics: &mut [Atomic],
+    cycles: &[Vec<usize>],
+    he_cycle: &[usize],
+) -> Vec<Vec<usize>> {
+    let areas: Vec<Exact> = cycles.iter().map(|cyc| cycle_area(atomics, cyc)).collect();
+    let positives: Vec<usize> = (0..cycles.len())
+        .filter(|&c| areas[c].is_positive())
+        .collect();
+    let pos_verts: Vec<Vec<Pt>> = positives
+        .iter()
+        .map(|&c| cycle_vertices(atomics, &cycles[c]))
+        .collect();
+    let face_of_cycle = assign_cycle_faces(atomics, cycles, &areas, &positives, &pos_verts);
     let nfaces = positives.len() + 1;
     let nhe = 2 * atomics.len();
     let mut members: Vec<Vec<usize>> = vec![Vec::new(); nfaces];
@@ -1791,5 +1830,220 @@ mod tests {
         assert_eq!(regions.white()[0], regions.exterior());
         assert_eq!(regions.nwhite(), 1);
         assert_eq!(regions.nfilled(), 1);
+    }
+
+    #[test]
+    fn faces_rect_halfedges_partition_unbounded_first() {
+        let arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 4.0, 4.0)]).expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 2);
+        assert_eq!(arrangement.nhe(), 8);
+        assert!(!arrangement.members()[0].is_empty());
+        let mut seen = vec![false; 8];
+        for (f, cyc) in arrangement.members().iter().enumerate() {
+            for &he in cyc.iter() {
+                assert!(!seen[he]);
+                seen[he] = true;
+                let (left, _) = arrangement.half_edge_faces(he);
+                assert_eq!(left, f);
+            }
+        }
+        assert!(seen.iter().all(|&s| s));
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.windings()[0], vec![0]);
+        assert_eq!(analysis.totals(), vec![0, 1]);
+    }
+
+    #[test]
+    fn faces_hole_owner_windings() {
+        let arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 10.0, 10.0), rect_cw(2.0, 2.0, 8.0, 8.0)])
+                .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 3);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals()[0], 0);
+        let mut rows: Vec<Vec<i64>> = analysis.windings()[1..].to_vec();
+        rows.sort();
+        assert_eq!(rows, vec![vec![1, -1], vec![1, 0]]);
+    }
+
+    #[test]
+    fn faces_nested_island_innermost_owner() {
+        let arrangement = Arrangement::build(&[
+            rect(0.0, 0.0, 10.0, 10.0),
+            rect_cw(1.0, 1.0, 9.0, 9.0),
+            rect(2.0, 2.0, 8.0, 8.0),
+            rect_cw(3.0, 3.0, 7.0, 7.0),
+        ])
+        .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 5);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.windings()[0], vec![0, 0, 0, 0]);
+        let mut rows: Vec<Vec<i64>> = analysis.windings()[1..].to_vec();
+        rows.sort();
+        assert_eq!(
+            rows,
+            vec![
+                vec![1, -1, 0, 0],
+                vec![1, -1, 1, -1],
+                vec![1, -1, 1, 0],
+                vec![1, 0, 0, 0],
+            ]
+        );
+    }
+
+    #[test]
+    fn faces_point_touch_has_no_seam() {
+        let arrangement = Arrangement::build(&[rect(0.0, 0.0, 2.0, 2.0), rect(2.0, 2.0, 4.0, 4.0)])
+            .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 3);
+        assert!(arrangement.atomics().iter().all(|a| a.cover.len() == 1));
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals()[0], 0);
+        let mut totals: Vec<i64> = analysis.totals()[1..].to_vec();
+        totals.sort();
+        assert_eq!(totals, vec![1, 1]);
+    }
+
+    #[test]
+    fn faces_shared_edge_seam_stays_filled() {
+        let arrangement = Arrangement::build(&[rect(0.0, 0.0, 2.0, 2.0), rect(2.0, 0.0, 4.0, 2.0)])
+            .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 3);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals()[0], 0);
+        let mut seams = 0;
+        for a in arrangement.atomics().iter() {
+            if a.cover.len() == 2 {
+                seams += 1;
+                assert_ne!(analysis.totals()[a.f1], 0);
+                assert_ne!(analysis.totals()[a.f2], 0);
+            }
+        }
+        assert_eq!(seams, 1);
+        let mut totals: Vec<i64> = analysis.totals()[1..].to_vec();
+        totals.sort();
+        assert_eq!(totals, vec![1, 1]);
+    }
+
+    #[test]
+    fn faces_outward_spur_absorbed_without_fill_change() {
+        let spike = vec![
+            [0.0, 0.0],
+            [4.0, 0.0],
+            [4.0, 4.0],
+            [2.0, 4.0],
+            [2.0, 6.0],
+            [2.0, 4.0],
+            [0.0, 4.0],
+        ];
+        let loops = vec![spike];
+        assert_eq!(sig(&loops), sig(&[rect(0.0, 0.0, 4.0, 4.0)]));
+        let arrangement = Arrangement::build(&loops).expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 2);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals(), vec![0, 1]);
+        let empties: Vec<&Atomic> = arrangement
+            .atomics()
+            .iter()
+            .filter(|a| a.cover.is_empty())
+            .collect();
+        assert_eq!(empties.len(), 1);
+        assert_eq!(empties[0].f1, empties[0].f2);
+        assert_eq!(analysis.totals()[empties[0].f1], 0);
+    }
+
+    #[test]
+    fn faces_coincident_opposite_zero_winding() {
+        let arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0), rect_cw(0.0, 0.0, 100.0, 50.0)])
+                .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 2);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals(), vec![0, 0]);
+        assert_eq!(analysis.windings(), &[vec![0, 0], vec![1, -1]]);
+    }
+
+    #[test]
+    fn faces_collinear_exterior_probe_absorbed() {
+        let loops = vec![rect(0.0, 0.0, 4.0, 4.0), vec![[2.0, -4.0], [2.0, -2.0]]];
+        assert_eq!(sig(&loops), sig(&[rect(0.0, 0.0, 4.0, 4.0)]));
+        assert_eq!(
+            sig(&loops),
+            json!({
+                "filled_components": 1, "holes": 0,
+                "pinch_roster": [], "point_contacts": [],
+                "hole_boundaries": [], "pairs": [],
+                "components": [{"contours": [0], "holes": 0}],
+            })
+        );
+        let arrangement = Arrangement::build(&loops).expect("supported topology");
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals()[0], 0);
+        assert!(analysis.windings().iter().all(|w| w[1] == 0));
+        let bottom = arrangement
+            .atomics()
+            .iter()
+            .position(|a| {
+                a.a == Pt(Exact::integer(0), Exact::integer(0))
+                    && a.b == Pt(Exact::integer(4), Exact::integer(0))
+            })
+            .expect("rectangle bottom atomic");
+        assert_eq!(
+            left_probe(arrangement.atomics(), &[2 * bottom + 1]),
+            Pt(Exact::integer(2), Exact::integer(-1))
+        );
+    }
+
+    #[test]
+    fn faces_endpoint_contact_probe_stops_at_segment_end() {
+        let loops = vec![rect(0.0, 0.0, 4.0, 4.0), vec![[-1.0, -2.0], [2.0, -2.0]]];
+        assert_eq!(sig(&loops), sig(&[rect(0.0, 0.0, 4.0, 4.0)]));
+        let arrangement = Arrangement::build(&loops).expect("supported topology");
+        let bottom = arrangement
+            .atomics()
+            .iter()
+            .position(|a| {
+                a.a == Pt(Exact::integer(0), Exact::integer(0))
+                    && a.b == Pt(Exact::integer(4), Exact::integer(0))
+            })
+            .expect("rectangle bottom atomic");
+        assert_eq!(
+            left_probe(arrangement.atomics(), &[2 * bottom + 1]),
+            Pt(Exact::integer(2), Exact::integer(-1))
+        );
+    }
+
+    #[test]
+    fn faces_bowtie_lobes_opposite_winding() {
+        let arrangement =
+            Arrangement::build(&[vec![[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0]]])
+                .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 3);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.windings()[0], vec![0]);
+        let mut rows: Vec<Vec<i64>> = analysis.windings()[1..].to_vec();
+        rows.sort();
+        assert_eq!(rows, vec![vec![-1], vec![1]]);
+    }
+
+    #[test]
+    fn strictly_inside_convex_and_notch() {
+        let pt = |x: f64, y: f64| Pt(Exact::from_f64(x).unwrap(), Exact::from_f64(y).unwrap());
+        let square = vec![pt(0.0, 0.0), pt(4.0, 0.0), pt(4.0, 4.0), pt(0.0, 4.0)];
+        assert!(strictly_inside(&pt(1.0, 1.0), &square));
+        assert!(!strictly_inside(&pt(5.0, 5.0), &square));
+        assert!(!strictly_inside(&pt(5.0, 2.0), &square));
+        let notch = vec![
+            pt(0.0, 0.0),
+            pt(4.0, 0.0),
+            pt(4.0, 4.0),
+            pt(2.0, 4.0),
+            pt(2.0, 2.0),
+            pt(0.0, 2.0),
+        ];
+        assert!(strictly_inside(&pt(1.0, 1.0), &notch));
+        assert!(strictly_inside(&pt(3.0, 3.0), &notch));
+        assert!(!strictly_inside(&pt(1.0, 3.0), &notch));
     }
 }
