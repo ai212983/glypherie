@@ -26,6 +26,8 @@
 //!     //   a default build rejects it visibly instead of substituting)
 //!     // stem_fitting: "upstream_mono", // optional candidate strategy:
 //!     //   "font_hints_first" (default) or "upstream_mono" (preview builds only)
+//!     // mono_raster: { dropout: "smart", include_stubs: false }, // optional
+//!     //   candidate Mono scan controls (preview builds only); absent keeps defaults
 //!   });
 //!   try {
 //!     // `result.pixels()` returns a *fresh Uint8Array copy* on every call.
@@ -65,8 +67,11 @@
 //! Mono and Gray with the single bitmap policy (whole-pixel advances and
 //! pair adjustments), retaining source line metrics. Baseline and
 //! reference Gray keep the production target and source layout.
-//! `letter_spacing_px` adds a signed pixel offset to each available glyph's
-//! advance after pair positioning. Negative offsets tighten letters while
+//! With an explicit pipeline, `letter_spacing_px` adds the same whole-pixel
+//! offset to every finalized advance, including spaces and the final glyph.
+//! Bitmaps, offsets and pair adjustments stay unchanged; no clearance floor
+//! or word-gap refund applies. See the generator API tracking contract.
+//! Historical role requests retain protected tracking. Negative offsets tighten letters while
 //! preserving neutral ASCII word gaps, including the preceding letter's
 //! trailing step; positive offsets also widen spaces. Mono rounds to whole
 //! pixels (half ties away from zero) and keeps normally separated source pairs
@@ -93,7 +98,9 @@
 
 use font_generator::stem_fitting::StemFittingStrategy;
 use font_generator::surface::{self, HAlign, RenderedText, TextRenderRequest, WrapMode};
-use font_generator::{renderer::RendererRole, Config, Hinting, MetricRounding, MissingGlyphs};
+use font_generator::{
+    renderer::RendererRole, Config, Hinting, MetricRounding, MissingGlyphs, MonoRasterSettings,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
@@ -146,7 +153,7 @@ fn to_plain_object<T: Serialize>(value: &T) -> Result<JsValue, JsValue> {
 /// render.
 #[wasm_bindgen]
 pub struct Font {
-    data: Vec<u8>,
+    data: surface::PreparedFont,
 }
 
 #[wasm_bindgen]
@@ -154,14 +161,16 @@ impl Font {
     /// Copy `bytes` (a `Uint8Array` view on the JS side) and validate.
     #[wasm_bindgen(constructor)]
     pub fn new(bytes: &[u8]) -> Result<Font, JsValue> {
-        load_font(bytes).map_err(js_error).map(|data| Font { data })
+        load_font(bytes).map_err(js_error).map(|data| Font {
+            data: surface::PreparedFont::new(data),
+        })
     }
 
     /// Descriptive source-font metadata as a plain JS object (same shape as
     /// the native `FontMetadata` struct: `names`, `axes`, `kerning`, `style`,
     /// `classification`, `coverage`, `declared_unicode_ranges`).
     pub fn metadata(&self) -> Result<JsValue, JsValue> {
-        let meta = metadata_value(&self.data).map_err(js_error)?;
+        let meta = metadata_value(self.data.as_bytes()).map_err(js_error)?;
         to_plain_object(&meta)
     }
 
@@ -183,8 +192,19 @@ impl Font {
             serde_wasm_bindgen::from_value(axes)
                 .map_err(|e| js_error(format!("invalid axes: {e}")))?
         };
-        let pairs = kerning_pairs_core(&self.data, size_px, parsed).map_err(js_error)?;
+        let pairs = kerning_pairs_core(self.data.as_bytes(), size_px, parsed).map_err(js_error)?;
         to_plain_object(&pairs)
+    }
+
+    /// Generate a standalone Playdate .fnt with embedded PNG and finalized kerning.
+    /// Runs only in preview builds; returns an independent JS-owned byte array.
+    pub fn export_playdate(&self, request: JsValue) -> Result<Vec<u8>, JsValue> {
+        validate_export_keys(&request)?;
+        let parsed: font_generator::playdate::ExportRequest =
+            serde_wasm_bindgen::from_value(request)
+                .map_err(|e| js_error(format!("invalid Playdate export request: {e}")))?;
+        font_generator::playdate::export(self.data.as_bytes(), &parsed)
+            .map_err(|e| js_error(e.to_string()))
     }
 
     /// Render bounded multi-line text; see the module docs for the spec shape.
@@ -192,9 +212,53 @@ impl Font {
         validate_spec_keys(&spec)?;
         let parsed: RenderSpec = serde_wasm_bindgen::from_value(spec)
             .map_err(|e| js_error(format!("invalid render spec: {e}")))?;
-        let rendered = render_parsed(&self.data, &parsed).map_err(js_error)?;
+        let rendered = render_prepared(&self.data, &parsed).map_err(js_error)?;
         Ok(RenderResult { inner: rendered })
     }
+}
+
+fn validate_export_keys(request: &JsValue) -> Result<(), JsValue> {
+    fn check(value: &JsValue, fields: &[&str]) -> Result<(), JsValue> {
+        if !value.is_object() || value.is_null() || js_sys::Array::is_array(value) {
+            return Err(js_error(
+                "invalid Playdate export request: expected an object",
+            ));
+        }
+        for key in js_sys::Reflect::own_keys(value)? {
+            let name = key
+                .as_string()
+                .ok_or_else(|| js_error("export field names must be strings"))?;
+            if !fields.contains(&name.as_str()) {
+                return Err(js_error(format!("unknown Playdate export field: {name}")));
+            }
+        }
+        Ok(())
+    }
+    check(request, &["config", "pipeline", "letter_spacing_px"])?;
+    let config = js_sys::Reflect::get(request, &JsValue::from_str("config"))?;
+    check(
+        &config,
+        &[
+            "size_px",
+            "axes",
+            "hinting",
+            "output_bits",
+            "mono_threshold",
+            "gray_gamma",
+            "characters",
+            "missing_glyphs",
+            "kerning",
+            "metric_rounding",
+            "mono_raster",
+        ],
+    )?;
+    let pipeline = js_sys::Reflect::get(request, &JsValue::from_str("pipeline"))?;
+    check(&pipeline, &["fitting", "rasterization", "diagonal_fitting"])?;
+    let mono = js_sys::Reflect::get(&config, &JsValue::from_str("mono_raster"))?;
+    if !mono.is_undefined() {
+        check(&mono, &["dropout", "include_stubs", "font_instructions"])?;
+    }
+    Ok(())
 }
 
 fn validate_spec_keys(spec: &JsValue) -> Result<(), JsValue> {
@@ -229,10 +293,26 @@ fn validate_spec_keys(spec: &JsValue) -> Result<(), JsValue> {
                 | "renderer"
                 | "letter_spacing_px"
                 | "stem_fitting"
+                | "mono_raster"
+                | "pipeline"
         ) {
             return Err(js_error(format!(
                 "invalid render spec: unknown field {key:?}"
             )));
+        }
+    }
+    let pipeline = js_sys::Reflect::get(spec, &JsValue::from_str("pipeline"))?;
+    if !pipeline.is_undefined() && !pipeline.is_null() {
+        if !pipeline.is_object() || js_sys::Array::is_array(&pipeline) {
+            return Err(js_error("invalid render spec: pipeline must be an object"));
+        }
+        for key in js_sys::Reflect::own_keys(&pipeline)? {
+            if !matches!(
+                key.as_string().as_deref(),
+                Some("fitting" | "rasterization" | "diagonal_fitting")
+            ) {
+                return Err(js_error("invalid render spec: unknown pipeline field"));
+            }
         }
     }
     Ok(())
@@ -269,7 +349,7 @@ fn default_background() -> [u8; 4] {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RenderSpec {
-    /// Tracking offset; negative preserves word gaps, positive widens spaces.
+    /// Tracking offset; uniform on explicit pipelines, protected on historical roles.
     #[serde(default)]
     letter_spacing_px: f32,
     text: String,
@@ -305,12 +385,20 @@ struct RenderSpec {
     palette: Option<Vec<[u8; 4]>>,
     /// Stable preview role; the default keeps the legacy baseline path.
     #[serde(default)]
-    renderer: RendererArg,
+    renderer: Option<RendererArg>,
     /// Selectable stem-fitting strategy for the candidate role; the default
     /// `None` keeps the font-hints-first Mono fit. Unknown values (there is
     /// no StrokeStyles strategy) fail deserialization.
     #[serde(default)]
     stem_fitting: Option<StemFittingStrategy>,
+    /// Manual monochrome scan-converter settings; absent keeps the pinned
+    /// smart-dropout, stub-excluded scan. Unknown dropout modes or fields
+    /// fail deserialization. Only candidate Mono applies non-defaults.
+    #[serde(default)]
+    mono_raster: MonoRasterSettings,
+    /// Explicit current stages; historical role requests omit this field.
+    #[serde(default)]
+    pipeline: Option<font_generator::renderer::RenderPipeline>,
 }
 
 // `surface::WrapMode`/`HAlign` implement `Default` (Word/Left) but not
@@ -354,7 +442,20 @@ impl RendererArg {
 }
 
 /// Pure-Rust render path shared by the wasm export and native tests.
+#[cfg(test)]
 fn render_parsed(font_data: &[u8], spec: &RenderSpec) -> Result<RenderedText, String> {
+    render_prepared(&surface::PreparedFont::new(font_data.to_vec()), spec)
+}
+
+fn render_prepared(
+    font: &surface::PreparedFont,
+    spec: &RenderSpec,
+) -> Result<RenderedText, String> {
+    if spec.pipeline.is_some() && (spec.renderer.is_some() || spec.stem_fitting.is_some()) {
+        return Err(
+            "pipeline cannot be combined with a historical renderer or stem_fitting".into(),
+        );
+    }
     let request = TextRenderRequest {
         config: Config {
             size_px: spec.size_px,
@@ -367,6 +468,7 @@ fn render_parsed(font_data: &[u8], spec: &RenderSpec) -> Result<RenderedText, St
             missing_glyphs: spec.missing_glyphs,
             kerning: spec.kerning,
             metric_rounding: spec.metric_rounding,
+            mono_raster: spec.mono_raster,
         },
         text: spec.text.clone(),
         width: spec.width,
@@ -385,13 +487,17 @@ fn render_parsed(font_data: &[u8], spec: &RenderSpec) -> Result<RenderedText, St
         background: spec.background,
         palette: spec.palette.clone(),
     };
+    if let Some(pipeline) = spec.pipeline {
+        return font
+            .render_text_with_pipeline_and_spacing(&request, pipeline, spec.letter_spacing_px)
+            .map_err(|e| e.to_string());
+    }
     // Baseline is the approved production path; other roles reuse its
     // validation, with candidate layout supplied by its bitmap policy. The
     // optional strategy forwards thinly; `None` keeps current behavior.
-    surface::render_text_with_fitting_strategy(
-        font_data,
+    font.render_text_with_fitting_strategy(
         &request,
-        spec.renderer.role(),
+        spec.renderer.unwrap_or_default().role(),
         spec.letter_spacing_px,
         spec.stem_fitting,
     )
@@ -641,7 +747,7 @@ mod tests {
         }))
         .is_err());
         let mut explicit = minimal_spec("A", 64, 32);
-        explicit.renderer = RendererArg::Candidate;
+        explicit.renderer = Some(RendererArg::Candidate);
         explicit.stem_fitting = Some(StemFittingStrategy::UpstreamMono);
         #[cfg(not(feature = "preview"))]
         assert!(render_parsed(FIXTURE, &explicit)
@@ -657,7 +763,7 @@ mod tests {
                 .unwrap_err()
                 .contains("monochrome output_bits 1"));
             explicit.output_bits = 1;
-            explicit.renderer = RendererArg::Baseline;
+            explicit.renderer = Some(RendererArg::Baseline);
             assert!(render_parsed(FIXTURE, &explicit)
                 .unwrap_err()
                 .contains("candidate preview role"));
@@ -667,7 +773,7 @@ mod tests {
     #[test]
     fn renderer_defaults_to_baseline_and_rejects_unknown_roles() {
         let spec = minimal_spec("A", 96, 48);
-        assert_eq!(spec.renderer, RendererArg::Baseline);
+        assert_eq!(spec.renderer, None);
         let unknown = spec_from(json!({
             "text": "A", "width": 96, "height": 48, "renderer": "iteration-02",
         }));
@@ -675,6 +781,84 @@ mod tests {
             unknown.is_err(),
             "iteration-specific roles must be rejected"
         );
+    }
+
+    #[test]
+    fn diagonal_preference_is_a_nested_boolean_with_legacy_default() {
+        let mut value = json!({"text":"A", "width":96, "height":48,
+            "pipeline":{"fitting":"upstream_mono", "rasterization":"free_type_mono"}});
+        assert!(
+            !spec_from(value.clone())
+                .unwrap()
+                .pipeline
+                .unwrap()
+                .diagonal_fitting
+        );
+        value["pipeline"]["diagonal_fitting"] = json!(true);
+        assert!(
+            spec_from(value.clone())
+                .unwrap()
+                .pipeline
+                .unwrap()
+                .diagonal_fitting
+        );
+        for invalid in [json!("yes"), json!(1), Value::Null] {
+            value["pipeline"]["diagonal_fitting"] = invalid;
+            assert!(spec_from(value.clone()).is_err());
+        }
+        assert!(spec_from(json!({"text":"A", "width":96, "height":48,
+            "diagonal_fitting":true}))
+        .is_err());
+    }
+
+    #[cfg(feature = "preview")]
+    #[test]
+    fn explicit_stages_hold_layout_and_reject_mixed_pipeline_requests() {
+        let data = include_bytes!("../../../fonts/Roboto.ttf");
+        let mut value = serde_json::json!({
+            "text": "AV zxcekw 909192939495969798", "width": 110, "height": 120,
+            "size_px": 16, "pipeline": {"fitting":"font_hints_first", "rasterization":"free_type_mono"}
+        });
+        let a: RenderSpec = serde_json::from_value(value.clone()).unwrap();
+        let mono = render_parsed(data, &a).unwrap();
+        value["pipeline"]["rasterization"] = "coverage".into();
+        let b: RenderSpec = serde_json::from_value(value.clone()).unwrap();
+        let coverage = render_parsed(data, &b).unwrap();
+        assert_eq!(mono.lines, coverage.lines);
+        assert_ne!(mono.pixels, coverage.pixels);
+        for text in ["", "AV"] {
+            value["text"] = text.into();
+            for (key, conflict) in [
+                ("renderer", serde_json::json!("candidate")),
+                ("stem_fitting", serde_json::json!("upstream_mono")),
+            ] {
+                let mut invalid = value.clone();
+                invalid[key] = conflict;
+                let spec = serde_json::from_value(invalid).unwrap();
+                assert!(render_parsed(data, &spec).is_err(), "{key}");
+            }
+        }
+        // Uniform tracking is forwarded on the separated pipeline: every
+        // glyph, including spaces and the final advance, keeps the step.
+        // Clip so both renders hold one line and the delta is exact.
+        value["text"] = serde_json::json!("AV zxcekw 909192939495969798");
+        value["letter_spacing_px"] = serde_json::json!(1);
+        value["wrap"] = serde_json::json!("clip");
+        let tracked: RenderSpec = serde_json::from_value(value.clone()).unwrap();
+        let wide = render_parsed(data, &tracked).unwrap();
+        let mut single = a.clone();
+        single.wrap = WrapModeDefault::Clip;
+        let narrow = render_parsed(data, &single).unwrap();
+        assert_eq!(
+            wide.lines[0].width_26_6 - narrow.lines[0].width_26_6,
+            "AV zxcekw 909192939495969798".chars().count() as i32 * 64
+        );
+        // NaN never survives a JSON round trip, so exercise the native
+        // gate directly: invalid tracking fails even for blank text.
+        let mut blank = tracked.clone();
+        blank.letter_spacing_px = f32::NAN;
+        blank.text.clear();
+        assert!(render_parsed(data, &blank).is_err());
     }
 
     #[test]
@@ -745,7 +929,7 @@ mod tests {
     #[test]
     fn candidate_role_reaches_candidate_capture() {
         // Routing proof without pixel snapshots: the candidate role must go
-        // through `candidate::render` (CoverageOverlap4xDropout policy), not silently
+        // through `candidate::render` (FreeTypeMono policy), not silently
         // reuse the upstream coverage path.
         use font_generator::reference::{RasterPolicy, ReferenceRequest};
         let mut config = Config::default();
@@ -773,7 +957,7 @@ mod tests {
         assert!(candidate
             .records
             .iter()
-            .all(|record| record.raster_policy == RasterPolicy::CoverageOverlap4xDropout));
+            .all(|record| record.raster_policy == RasterPolicy::FreeTypeMono));
         let upstream = font_generator::renderer::render(
             FIXTURE,
             &ReferenceRequest {
@@ -876,6 +1060,94 @@ mod tests {
     }
 
     #[test]
+    fn mono_raster_defaults_absent_and_rejects_unknown_modes_and_fields() {
+        use font_generator::{MonoDropoutMode, MonoRasterSettings};
+        let spec = minimal_spec("A", 96, 48);
+        assert_eq!(spec.mono_raster, MonoRasterSettings::default());
+        assert_eq!(spec.mono_raster.dropout, MonoDropoutMode::Smart);
+        assert!(!spec.mono_raster.include_stubs);
+        for mode in ["off", "simple", "smart"] {
+            let parsed = spec_from(json!({
+                "text": "A", "width": 64, "height": 32,
+                "mono_raster": { "dropout": mode, "include_stubs": true },
+            }))
+            .unwrap();
+            assert_eq!(parsed.mono_raster.include_stubs, true);
+        }
+        assert!(spec_from(json!({
+            "text": "A", "width": 64, "height": 32,
+            "mono_raster": { "dropout": "cleartype" },
+        }))
+        .is_err());
+        assert!(spec_from(json!({
+            "text": "A", "width": 64, "height": 32,
+            "mono_raster": { "dropout": "smart", "high_precision": true },
+        }))
+        .is_err());
+        assert!(spec_from(json!({
+            "text": "A", "width": 64, "height": 32, "mono_raster": "smart",
+        }))
+        .is_err());
+    }
+
+    #[cfg(feature = "preview")]
+    #[test]
+    fn mono_raster_parity_between_spec_and_surface_paths() {
+        use font_generator::{MonoDropoutMode, MonoRasterSettings};
+        // The strict spec must reach the same pixels as the equivalent
+        // native surface request: manual modes are uniform overrides.
+        for mono_raster in [
+            MonoRasterSettings::default(),
+            MonoRasterSettings {
+                dropout: MonoDropoutMode::Simple,
+                include_stubs: false,
+                font_instructions: false,
+            },
+            MonoRasterSettings {
+                dropout: MonoDropoutMode::Off,
+                include_stubs: false,
+                font_instructions: false,
+            },
+            MonoRasterSettings {
+                dropout: MonoDropoutMode::Smart,
+                include_stubs: true,
+                font_instructions: false,
+            },
+        ] {
+            let mut value = serde_json::to_value(minimal_spec("Avo", 128, 48)).unwrap();
+            value["renderer"] = serde_json::Value::String("candidate".into());
+            value["mono_raster"] = serde_json::to_value(mono_raster).unwrap();
+            let spec: RenderSpec = serde_json::from_value(value).unwrap();
+            let routed = render_parsed(ROBOTO, &spec).unwrap();
+            let request = TextRenderRequest {
+                config: Config {
+                    characters: "Aov".into(),
+                    mono_raster: spec.mono_raster,
+                    ..Default::default()
+                },
+                text: "Avo".into(),
+                width: 128,
+                height: 48,
+                wrap: WrapMode::Word,
+                align: HAlign::Left,
+                foreground: [0, 0, 0, 255],
+                background: [255, 255, 255, 255],
+                palette: None,
+            };
+            let direct = surface::render_text_with_fitting_strategy(
+                ROBOTO,
+                &request,
+                font_generator::renderer::RendererRole::Candidate,
+                0.0,
+                None,
+            )
+            .unwrap();
+            assert_eq!(routed.pixels, direct.pixels, "mode={mono_raster:?}");
+            assert_eq!(routed.lines, direct.lines, "mode={mono_raster:?}");
+        }
+    }
+
+    #[test]
     fn kerning_pairs_core_rejects_invalid_settings_explicitly() {
         assert!(kerning_pairs_core(ROBOTO, 0.0, BTreeMap::new()).is_err());
         assert!(kerning_pairs_core(ROBOTO, f32::NAN, BTreeMap::new()).is_err());
@@ -883,5 +1155,4 @@ mod tests {
         assert!(kerning_pairs_core(ROBOTO, 16.0, bad).is_err());
         assert!(kerning_pairs_core(b"not a font", 16.0, BTreeMap::new()).is_err());
     }
-
 }

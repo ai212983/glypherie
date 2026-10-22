@@ -1,7 +1,8 @@
 //! Native oracle for smoke/parity.mjs. Recomputes the approved renderer's
 //! output on each run; no historical pixel snapshots constrain model changes.
 use font_generator::surface::{
-    render_text, render_text_with_fitting_strategy, HAlign, TextRenderRequest, WrapMode,
+    render_text, render_text_with_fitting_strategy, render_text_with_pipeline, HAlign,
+    TextRenderRequest, WrapMode,
 };
 use font_generator::{metadata, Config};
 use font_generator::{renderer::RendererRole, stem_fitting::StemFittingStrategy};
@@ -32,6 +33,7 @@ fn reference(case: &Value) -> Value {
         "palette",
         "renderer",
         "stem_fitting",
+        "pipeline",
         "letter_spacing_px",
     ] {
         config.remove(key);
@@ -68,7 +70,13 @@ fn reference(case: &Value) -> Value {
             .get("palette")
             .map(|p| serde_json::from_value(p.clone()).unwrap()),
     };
-    let rendered = if let Some(role) = spec.get("renderer") {
+    let rendered = if let Some(pipeline) = spec.get("pipeline") {
+        render_text_with_pipeline(
+            &data,
+            &request,
+            serde_json::from_value(pipeline.clone()).unwrap(),
+        )
+    } else if let Some(role) = spec.get("renderer") {
         let role: RendererRole = serde_json::from_value(role.clone()).unwrap();
         let strategy: Option<StemFittingStrategy> = spec
             .get("stem_fitting")

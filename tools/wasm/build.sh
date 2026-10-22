@@ -20,6 +20,10 @@
 # font_wasm_bg.wasm (+ .d.ts). The preview session copies or points at the
 # web artifact; this script never touches tools/web or the justfile.
 #
+# WASM_SIMD128=1 enables standard WASM SIMD for the whole target and writes
+# an additional -simd128 package suffix. These artifacts require SIMD support.
+# Default scalar packages keep their existing names.
+#
 # This script never installs toolchains. Target detection checks for an
 # INSTALLED wasm std (rustc --print target-list only lists known targets):
 # a preinstalled wasm32-unknown-unknown std is preferred; when it is absent
@@ -38,6 +42,22 @@ if [[ "$FEATURES" == *[!a-zA-Z0-9+,_-]* ]]; then
   echo "usage: features must match [a-zA-Z0-9+,_-]+" >&2; exit 2
 fi
 
+# SIMD is an explicit artifact choice; keep scalar output names and defaults.
+# Target-scoped flags must reach generator/dependency loops, not only the
+# final crate (https://v8.dev/features/simd).
+SIMD128="${WASM_SIMD128:-0}"
+case "$SIMD128" in
+  0|1) ;;
+  *) echo "WASM_SIMD128 must be 0 or 1" >&2; exit 2 ;;
+esac
+if [ "$SIMD128" = "1" ]; then
+  if [ "${RUSTFLAGS+x}" = "x" ] || [ "${CARGO_ENCODED_RUSTFLAGS+x}" = "x" ]; then
+    echo "WASM_SIMD128 requires unset RUSTFLAGS/CARGO_ENCODED_RUSTFLAGS; use CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS for other target flags" >&2
+    exit 2
+  fi
+  export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="${CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS:+$CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS }-Ctarget-feature=+simd128"
+fi
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -n "$FEATURES" ]; then
   SLUG="$(echo "$FEATURES" | tr ',' '-' | tr -cd 'a-zA-Z0-9_-')"
@@ -46,6 +66,9 @@ if [ -n "$FEATURES" ]; then
 else
   OUT="$HERE/pkg-$TARGET"
   FEATURE_ARGS=()
+fi
+if [ "$SIMD128" = "1" ]; then
+  OUT="$OUT-simd128"
 fi
 # Both the preinstalled-std and the build-std fallback emit here.
 WASM="$HERE/target/wasm32-unknown-unknown/release/font_wasm.wasm"
@@ -87,6 +110,11 @@ fi
 
 mkdir -p "$OUT"
 "$WASM_BINDGEN_BIN" --target "$TARGET" --out-dir "$OUT" "$WASM"
+if [[ ",$FEATURES," == *,preview,* ]]; then
+  { printf 'This software uses FreeType 2.15.0, copyright 1996-2026 The FreeType Project (www.freetype.org). All rights reserved.\n\n';
+    cat "$HERE/../generator/vendor/freetype-mono/FTL.TXT"; } > "$OUT/LICENSE-FreeType.txt"
+  cp "$HERE/../generator/vendor/skrifa-scan/LICENSE-MIT" "$OUT/LICENSE-Skrifa-scan.txt"
+fi
 if [ "$TARGET" = "nodejs" ]; then
   # wasm-bindgen --target nodejs emits CommonJS, but the repo root is
   # type=module: the isolated output dir carries its own marker so Node

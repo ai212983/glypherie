@@ -1,6 +1,6 @@
 # font_wasm
 
-<!-- cspell:words rustup bindgen BINDGEN rgba COLR CBDT sbix texel texels -->
+<!-- cspell:words rustup bindgen BINDGEN RUSTFLAGS rgba COLR CBDT sbix texel texels fpgm Playdate -->
 
 Browser/Node port of the Rust font renderer. It reuses `generate()` through `font_generator::surface::render_text` with
 the legacy skrifa-baseline snapshot: no fitting or model code lives here, so rendering parity with the native path is
@@ -26,6 +26,20 @@ the crate's `wasm-bindgen` dependency, currently 0.2.129); the script uses `carg
 preinstalled `wasm32-unknown-unknown` std, falling back to the documented system-source `RUSTC_BOOTSTRAP=1 ... -Z
 build-std=std,panic_abort` build when only the library sources are present. Generated `pkg-*/` and `target/` directories
 are git-ignored.
+
+The browser app's `just wasm-build-preview` recipe builds standard WASM SIMD. Direct SIMD build commands:
+
+```sh
+WASM_SIMD128=1 tools/wasm/build.sh web preview    # tools/wasm/pkg-web-preview-simd128/
+WASM_SIMD128=1 tools/wasm/build.sh nodejs preview # tools/wasm/pkg-nodejs-preview-simd128/
+```
+
+`WASM_SIMD128` accepts `0` (the direct script default) or `1`. SIMD packages require a runtime supporting WebAssembly
+SIMD. Direct scalar builds keep their existing package names; the browser app defaults to `pkg-web-preview-simd128` (see
+[web configuration](../web/README.md#configuration) for a scalar override). The option enables `simd128` across Rust
+target dependencies without enabling relaxed SIMD or fast-math. Leave `RUSTFLAGS` and `CARGO_ENCODED_RUSTFLAGS` unset
+when using it; additional target flags may use `CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS`. Build commands never
+select a renderer package for the app or publish it.
 
 Verify the Node package:
 
@@ -65,11 +79,11 @@ try {
 
 ## Stem-fitting strategies
 
-Candidate 1-bit rendering defaults to **Font hints first**: upstream `Target::Mono` with `Engine::AutoFallback`, using
-embedded instructions when upstream prefers them and otherwise its automatic hinter. Optional `stem_fitting:
+Candidate 1-bit rendering defaults to **Font hints first**: upstream `Target::Mono` with the shared engine selection
+rules, using embedded instructions when selected and otherwise automatic fitting. Optional `stem_fitting:
 "font_hints_first" | "upstream_mono"` selects that default explicitly or forces automatic Mono fitting. Both consume the
 supplied font bytes directly; no font-specific preparation, names or glyph rules are required. `vertical_only` is
-removed and rejected.
+removed and rejected. See the [generator API](../generator/API.md#working-candidate-fitting) for the selection rules.
 
 ```js
 const result = font.render({
@@ -83,9 +97,19 @@ Strategy selection controls the effective automatic engine policy; the shared ge
 and actual selected engine. The WASM layer forwards the shared enum and adds no fitting logic. Explicit selection
 requires a preview build, candidate role and 1-bit output, including for blank text. Automatic policy inputs `auto` and
 `auto_fallback` are accepted; `none`, `interpreter`, unknown names and incompatible role/profile combinations fail. Gray
-keeps upstream Normal automatic fitting. Both Mono choices share the project raster and the candidate bitmap layout;
-upstream fitted-outline identity does not imply FreeType raster identity or optical acceptance. See the
-[generator API](../generator/API.md#working-candidate-fitting).
+keeps upstream Normal automatic fitting. Both Mono choices share the pinned FreeType monochrome scanner and candidate
+bitmap layout. The shared generator owns scan-converter settings; candidate Mono ignores `mono_threshold`. Scanner
+parity does not establish optical acceptance. See the [generator API](../generator/API.md#working-candidate-fitting).
+
+## Monochrome scan controls
+
+Candidate 1-bit rendering accepts optional `mono_raster: { dropout, include_stubs, font_instructions }`. Defaults are
+`"smart"`, `false`, and `false`. `dropout` also accepts `"simple"` or `"off"`; `include_stubs` preserves short strokes
+and has no effect with dropout off. Opt-in `font_instructions` uses executed TrueType scan settings with embedded
+fitting, falling back to the manual settings when unavailable. The
+[generator API](../generator/API.md#monochrome-scan-converter-settings) owns scan semantics. Absent fields default;
+unknown fields, invalid types or modes fail. Non-default settings require a preview build, candidate role and 1-bit
+output, including blank text.
 
 ## Kerning pairs
 
@@ -97,6 +121,22 @@ Missing characters are skipped; `skipped_pairs` counts pairs changing those glyp
 positioning beyond a single left-advance change. Invalid settings and single-character shaping failures throw an error.
 This descriptive API draws no outlines and changes no rendering or layout policy; native generation retains its strict
 shaping errors. Size and axes use the same validation as rendering, with omitted axes at their font defaults.
+
+## Playdate export
+
+Preview builds expose `font.export_playdate({ config, pipeline, letter_spacing_px })`, returning a JS-owned `Uint8Array`
+containing a standalone `.fnt`. `config.characters` explicitly selects the repertoire. The
+[generator API](../generator/API.md#playdate-font-export) owns settings, format guarantees and representability limits.
+Unknown request, config, pipeline and scan-setting fields fail. Default production builds reject this export.
+
+Verify native/WASM export parity with the Node preview package; optionally set `PLAYDATE_SDK_PATH` to validate every
+export with the official compiler:
+
+```sh
+tools/wasm/build.sh nodejs preview
+node tools/wasm/smoke/playdate.mjs
+PLAYDATE_SDK_PATH=/path/to/PlaydateSDK node tools/wasm/smoke/playdate.mjs
+```
 
 ## Ownership
 
@@ -114,6 +154,14 @@ combining marks and unsupported shaping remain errors.
   `characters`) are rejected.
 
 ## Render-spec controls
+
+Current preview requests select stages with `pipeline: { fitting: "font_hints_auto", rasterization:
+"free_type_mono_terminals" }`. The [generator API](../generator/API.md#working-candidate-fitting) owns stage
+combinations and the shared bitmap layout. Explicit pipelines require a preview build; `letter_spacing_px` supplies
+uniform whole-pixel tracking to the shared layout. They cannot be combined with `renderer` or `stem_fitting`. Fitting
+owns engine selection, including the effective `hinting`. `mono_raster` overrides apply only to the FreeType stages.
+Omitting `pipeline` retains the historical role API and its defaults, including the production baseline when `renderer`
+is absent. Unknown stages or fields fail deserialization.
 
 Only `text`, `width` and `height` are required. Top-level glyph controls `size_px`, `axes`, `hinting`, `output_bits`,
 `mono_threshold`, `gray_gamma`, `kerning`, `metric_rounding` and `missing_glyphs` inherit the
@@ -157,3 +205,9 @@ settings, axes and palette exactly as a non-empty request would. Text whose glyp
 
 A plain JS object (maps serialize as objects with string keys, never `Map`s) containing native `FontMetadata`. Fields
 and source-extraction semantics are defined by the [font metadata contract](../generator/CONTRACT.md#package-manifest).
+
+Preview builds require a C compiler; for `wasm32-unknown-unknown`, put Clang with WebAssembly support and `llvm-ar` on
+PATH (for Homebrew LLVM on macOS, `PATH="$(brew --prefix llvm)/bin:$PATH" tools/wasm/build.sh web preview`), or set
+Cargo's `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown` overrides. Production builds without `preview` do
+not compile the C scanner. Preview packages also contain `LICENSE-FreeType.txt`, which must accompany redistribution of
+the renderer.
