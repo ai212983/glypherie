@@ -503,60 +503,85 @@ fn split_pair(first: &Seg, second: &Seg, first_splits: &mut Vec<Pt>, second_spli
 
 /// Retain neutral edges when opposing contour contributions cancel.
 fn assemble_atomics(inputs: &[Seg], splits: &mut [Vec<Pt>]) -> Option<Vec<Atomic>> {
-    let mut atomics: Vec<Atomic> = Vec::new();
-    let mut edge_index: BTreeMap<(Pt, Pt), usize> = BTreeMap::new();
+    let mut builder = AtomicBuilder::new();
     for (i, seg) in inputs.iter().enumerate() {
-        let dx = &seg.b.0 - &seg.a.0;
-        let dy = &seg.b.1 - &seg.a.1;
-        let use_x = dx.abs() >= dy.abs();
-        splits[i].sort_by(|p, q| {
-            let o = if use_x { p.0.cmp(&q.0) } else { p.1.cmp(&q.1) };
-            o.then_with(|| p.1.cmp(&q.1).then_with(|| p.0.cmp(&q.0)))
-        });
-        splits[i].dedup();
+        sort_split_points(seg, &mut splits[i]);
         for w in splits[i].windows(2) {
-            let (lo, hi) = if w[0] <= w[1] {
-                (&w[0], &w[1])
-            } else {
-                (&w[1], &w[0])
-            };
-            let key = (lo.clone(), hi.clone());
-            // Each split edge is collinear with a nonzero input segment,
-            // so this dot product cannot be zero.
-            let dot =
-                (&seg.b.0 - &seg.a.0) * (&hi.0 - &lo.0) + (&seg.b.1 - &seg.a.1) * (&hi.1 - &lo.1);
-            let aligned = dot.is_positive();
-            let id = match edge_index.get(&key) {
-                Some(&id) => id,
-                None => {
-                    if atomics.len() >= MAX_ATOMIC_EDGES {
-                        return None;
-                    }
-                    let id = atomics.len();
-                    atomics.push(Atomic {
-                        a: key.0.clone(),
-                        b: key.1.clone(),
-                        va: 0,
-                        vb: 0,
-                        cover: BTreeMap::new(),
-                        f1: 0,
-                        f2: 0,
-                    });
-                    edge_index.insert(key, id);
-                    id
-                }
-            };
-            let net = atomics[id].cover.entry(seg.contour).or_insert(0);
-            *net += if aligned { 1 } else { -1 };
-            if *net == 0 {
-                atomics[id].cover.remove(&seg.contour);
-            }
+            builder.add(seg, &w[0], &w[1])?;
         }
     }
-    if atomics.is_empty() {
-        return None;
+    builder.finish()
+}
+
+struct AtomicBuilder {
+    atomics: Vec<Atomic>,
+    edge_index: BTreeMap<(Pt, Pt), usize>,
+}
+
+impl AtomicBuilder {
+    fn new() -> Self {
+        Self {
+            atomics: Vec::new(),
+            edge_index: BTreeMap::new(),
+        }
     }
-    Some(atomics)
+
+    fn add(&mut self, seg: &Seg, p: &Pt, q: &Pt) -> Option<()> {
+        let key = if p <= q {
+            (p.clone(), q.clone())
+        } else {
+            (q.clone(), p.clone())
+        };
+        // Each split edge is collinear with a nonzero input segment,
+        // so this dot product cannot be zero.
+        let dot = (&seg.b.0 - &seg.a.0) * (&key.1 .0 - &key.0 .0)
+            + (&seg.b.1 - &seg.a.1) * (&key.1 .1 - &key.0 .1);
+        let aligned = dot.is_positive();
+        let id = match self.edge_index.get(&key) {
+            Some(&id) => id,
+            None => {
+                if self.atomics.len() >= MAX_ATOMIC_EDGES {
+                    return None;
+                }
+                let id = self.atomics.len();
+                self.atomics.push(Atomic {
+                    a: key.0.clone(),
+                    b: key.1.clone(),
+                    va: 0,
+                    vb: 0,
+                    cover: BTreeMap::new(),
+                    f1: 0,
+                    f2: 0,
+                });
+                self.edge_index.insert(key, id);
+                id
+            }
+        };
+        let net = self.atomics[id].cover.entry(seg.contour).or_insert(0);
+        *net += if aligned { 1 } else { -1 };
+        if *net == 0 {
+            self.atomics[id].cover.remove(&seg.contour);
+        }
+        Some(())
+    }
+
+    fn finish(self) -> Option<Vec<Atomic>> {
+        if self.atomics.is_empty() {
+            return None;
+        }
+        Some(self.atomics)
+    }
+}
+
+fn sort_split_points(seg: &Seg, points: &mut Vec<Pt>) {
+    let dx = &seg.b.0 - &seg.a.0;
+    let dy = &seg.b.1 - &seg.a.1;
+    let use_x = dx.abs() >= dy.abs();
+    points.sort_by(|p, q| {
+        let o = if use_x { p.0.cmp(&q.0) } else { p.1.cmp(&q.1) };
+        o.then_with(|| p.1.cmp(&q.1).then_with(|| p.0.cmp(&q.0)))
+    });
+    points.dedup();
 }
 
 /// Merge endpoints by exact coordinate equality.
@@ -2314,5 +2339,218 @@ mod tests {
             cycle_signs(&atomics, &cycles),
             vec![true, false, true, true, false]
         );
+    }
+
+    #[test]
+    fn orient_exact_matches_explicit_determinants() {
+        let pt = |x: i128, y: i128| Pt(Exact::integer(x), Exact::integer(y));
+        let one = num_rational::BigRational::new(1.into(), 1.into());
+        let zero = num_rational::BigRational::new(0.into(), 1.into());
+        let minus_one = zero.clone() - one.clone();
+        let (a, b, c) = (pt(0, 0), pt(1, 0), pt(0, 1));
+        assert_eq!(cross(&sub(&b, &a), &sub(&c, &a)).to_rational(), one);
+        assert_eq!(orient_exact(&a, &b, &c), 1);
+        let (a, b, c) = (pt(0, 0), pt(0, 1), pt(1, 0));
+        assert_eq!(cross(&sub(&b, &a), &sub(&c, &a)).to_rational(), minus_one);
+        assert_eq!(orient_exact(&a, &b, &c), -1);
+        let (a, b, c) = (pt(0, 0), pt(1, 1), pt(2, 2));
+        assert_eq!(cross(&sub(&b, &a), &sub(&c, &a)).to_rational(), zero);
+        assert_eq!(orient_exact(&a, &b, &c), 0);
+    }
+
+    #[test]
+    fn orient_filter_deferral_falls_back_across_signs() {
+        let origin = Pt(Exact::integer(0), Exact::integer(0));
+        let third = &Exact::integer(1) / &Exact::integer(3);
+        let two_thirds = &Exact::integer(2) / &Exact::integer(3);
+        let eps = &Exact::integer(1) / &Exact::integer(1i128 << 70);
+        let corner = Pt(third.clone(), third.clone());
+        let det_unit = num_rational::BigRational::new(1.into(), (3i128 * (1i128 << 70)).into());
+        let zero = num_rational::BigRational::new(0.into(), 1.into());
+        assert_eq!(
+            corner.0.to_rational(),
+            num_rational::BigRational::new(1.into(), 3.into())
+        );
+        assert_eq!(
+            corner.1.to_rational(),
+            num_rational::BigRational::new(1.into(), 3.into())
+        );
+        let cases = [
+            (Pt(two_thirds.clone(), two_thirds.clone()), zero, 0),
+            (
+                Pt(two_thirds.clone(), &two_thirds + &eps),
+                det_unit.clone(),
+                1,
+            ),
+            (
+                Pt(two_thirds.clone(), &two_thirds - &eps),
+                -det_unit.clone(),
+                -1,
+            ),
+        ];
+        for (c, det, sign) in &cases {
+            assert_eq!(
+                cross(&sub(&corner, &origin), &sub(c, &origin)).to_rational(),
+                det.clone()
+            );
+            assert_eq!(
+                filtered::orient_sign((&origin.0, &origin.1), (&corner.0, &corner.1), (&c.0, &c.1)),
+                None
+            );
+            assert_eq!(orient(&origin, &corner, c), *sign);
+        }
+    }
+
+    #[test]
+    fn assemble_shuffled_splits_order_atomics_and_covers() {
+        let pt = |x: i128, y: i128| Pt(Exact::integer(x), Exact::integer(y));
+        let seg = |ax: i128, ay: i128, bx: i128, by: i128, contour: usize| Seg {
+            bounds: Bounds::new([ax as f64, ay as f64], [bx as f64, by as f64]),
+            a: pt(ax, ay),
+            b: pt(bx, by),
+            contour,
+        };
+        let inputs = vec![
+            seg(0, 0, 4, 0, 0),
+            seg(0, 4, 0, 0, 1),
+            seg(4, 0, 0, 4, 2),
+            seg(10, 20, 14, 18, 3),
+            seg(10, 20, 12, 16, 4),
+        ];
+        let mut splits = vec![
+            vec![pt(4, 0), pt(1, 0), pt(2, 0), pt(1, 0), pt(0, 0), pt(3, 0)],
+            vec![pt(0, 0), pt(0, 2), pt(0, 4), pt(0, 2)],
+            vec![pt(0, 4), pt(4, 0), pt(2, 2), pt(2, 2)],
+            vec![pt(14, 18), pt(10, 20), pt(12, 19), pt(12, 19)],
+            vec![pt(10, 20), pt(12, 16), pt(11, 18), pt(10, 20)],
+        ];
+        let atomics = assemble_atomics(&inputs, &mut splits).expect("supported splits");
+        assert_eq!(
+            splits[0],
+            vec![pt(0, 0), pt(1, 0), pt(2, 0), pt(3, 0), pt(4, 0)]
+        );
+        assert_eq!(splits[1], vec![pt(0, 0), pt(0, 2), pt(0, 4)]);
+        assert_eq!(splits[2], vec![pt(0, 4), pt(2, 2), pt(4, 0)]);
+        assert_eq!(splits[3], vec![pt(10, 20), pt(12, 19), pt(14, 18)]);
+        assert_eq!(splits[4], vec![pt(12, 16), pt(11, 18), pt(10, 20)]);
+        let want = [
+            (pt(0, 0), pt(1, 0), 0usize, 1i64),
+            (pt(1, 0), pt(2, 0), 0, 1),
+            (pt(2, 0), pt(3, 0), 0, 1),
+            (pt(3, 0), pt(4, 0), 0, 1),
+            (pt(0, 0), pt(0, 2), 1, -1),
+            (pt(0, 2), pt(0, 4), 1, -1),
+            (pt(0, 4), pt(2, 2), 2, -1),
+            (pt(2, 2), pt(4, 0), 2, -1),
+            (pt(10, 20), pt(12, 19), 3, 1),
+            (pt(12, 19), pt(14, 18), 3, 1),
+            (pt(11, 18), pt(12, 16), 4, 1),
+            (pt(10, 20), pt(11, 18), 4, 1),
+        ];
+        assert_eq!(atomics.len(), want.len());
+        for (i, (a, b, contour, net)) in want.iter().enumerate() {
+            assert_eq!(atomics[i].a, a.clone());
+            assert_eq!(atomics[i].b, b.clone());
+            assert_eq!(atomics[i].cover, BTreeMap::from([(*contour, *net)]));
+        }
+    }
+
+    #[test]
+    fn assemble_coincident_contours_cancel_but_retain_neutral() {
+        let pt = |x: i128, y: i128| Pt(Exact::integer(x), Exact::integer(y));
+        let seg = |ax: i128, ay: i128, bx: i128, by: i128, contour: usize| Seg {
+            bounds: Bounds::new([ax as f64, ay as f64], [bx as f64, by as f64]),
+            a: pt(ax, ay),
+            b: pt(bx, by),
+            contour,
+        };
+        let inputs = vec![
+            seg(0, 0, 2, 0, 0),
+            seg(0, 0, 2, 0, 1),
+            seg(0, 0, 2, 0, 1),
+            seg(2, 0, 0, 0, 0),
+            seg(3, 0, 4, 0, 2),
+            seg(4, 0, 3, 0, 2),
+        ];
+        let mut splits: Vec<Vec<Pt>> = inputs
+            .iter()
+            .map(|s| vec![s.b.clone(), s.a.clone()])
+            .collect();
+        let atomics = assemble_atomics(&inputs, &mut splits).expect("supported splits");
+        assert_eq!(splits[3], vec![pt(0, 0), pt(2, 0)]);
+        assert_eq!(atomics.len(), 2);
+        assert_eq!(atomics[0].a, pt(0, 0));
+        assert_eq!(atomics[0].b, pt(2, 0));
+        assert_eq!(atomics[0].cover, BTreeMap::from([(1usize, 2i64)]));
+        assert_eq!(atomics[1].a, pt(3, 0));
+        assert_eq!(atomics[1].b, pt(4, 0));
+        assert!(atomics[1].cover.is_empty());
+    }
+
+    #[test]
+    fn assemble_degenerate_splits_fail_closed() {
+        let pt = |x: i128, y: i128| Pt(Exact::integer(x), Exact::integer(y));
+        let seg = |ax: i128, ay: i128, bx: i128, by: i128, contour: usize| Seg {
+            bounds: Bounds::new([ax as f64, ay as f64], [bx as f64, by as f64]),
+            a: pt(ax, ay),
+            b: pt(bx, by),
+            contour,
+        };
+        let inputs = vec![seg(0, 0, 2, 0, 0)];
+        let mut splits: Vec<Vec<Pt>> = vec![Vec::new()];
+        assert!(assemble_atomics(&inputs, &mut splits).is_none());
+        let mut splits = vec![vec![pt(0, 0)]];
+        assert!(assemble_atomics(&inputs, &mut splits).is_none());
+        let inputs = vec![seg(0, 0, 2, 0, 0), seg(5, 5, 7, 5, 3)];
+        let mut splits = vec![vec![pt(0, 0)], vec![pt(5, 5), pt(7, 5)]];
+        let atomics = assemble_atomics(&inputs, &mut splits).expect("partial splits");
+        assert_eq!(atomics.len(), 1);
+        assert_eq!(atomics[0].a, pt(5, 5));
+        assert_eq!(atomics[0].b, pt(7, 5));
+        assert_eq!(atomics[0].cover, BTreeMap::from([(3usize, 1i64)]));
+    }
+
+    #[test]
+    fn assemble_atomic_capacity_boundary() {
+        let pt = |x: i128, y: i128| Pt(Exact::integer(x), Exact::integer(y));
+        let long = Seg {
+            bounds: Bounds::new([0.0, 0.0], [8192.0, 0.0]),
+            a: pt(0, 0),
+            b: pt(8192, 0),
+            contour: 0,
+        };
+        let mut inputs = vec![long];
+        let mut splits: Vec<Vec<Pt>> = vec![(0..=8192).rev().map(|i| pt(i, 0)).collect()];
+        let atomics = assemble_atomics(&inputs, &mut splits).expect("at capacity");
+        assert_eq!(splits[0].len(), 8193);
+        assert_eq!(splits[0][0], pt(0, 0));
+        assert_eq!(splits[0][8192], pt(8192, 0));
+        assert_eq!(atomics.len(), 8192);
+        assert_eq!(atomics[0].a, pt(0, 0));
+        assert_eq!(atomics[0].b, pt(1, 0));
+        assert_eq!(atomics[0].cover, BTreeMap::from([(0usize, 1i64)]));
+        assert_eq!(atomics[8191].a, pt(8191, 0));
+        assert_eq!(atomics[8191].b, pt(8192, 0));
+        inputs.push(Seg {
+            bounds: Bounds::new([0.0, 0.0], [1.0, 0.0]),
+            a: pt(0, 0),
+            b: pt(1, 0),
+            contour: 1,
+        });
+        splits.push(vec![pt(1, 0), pt(0, 0)]);
+        let atomics = assemble_atomics(&inputs, &mut splits).expect("existing key at capacity");
+        assert_eq!(atomics.len(), 8192);
+        assert_eq!(
+            atomics[0].cover,
+            BTreeMap::from([(0usize, 1i64), (1usize, 1i64)])
+        );
+        inputs.push(Seg {
+            bounds: Bounds::new([100000.0, 0.0], [100001.0, 0.0]),
+            a: pt(100000, 0),
+            b: pt(100001, 0),
+            contour: 2,
+        });
+        splits.push(vec![pt(100000, 0), pt(100001, 0)]);
+        assert!(assemble_atomics(&inputs, &mut splits).is_none());
     }
 }
