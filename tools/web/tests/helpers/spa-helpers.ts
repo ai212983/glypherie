@@ -60,8 +60,12 @@ export async function servePrefix(t: TestContext, root: string): Promise<string>
   return `http://127.0.0.1:${address.port}/preview/`;
 }
 
-export const browserPath: string = process.env.WEB_TEST_BROWSER ?? "/opt/google/chrome/chrome";
-export const browserAvailable: boolean = await fs.access(browserPath).then(() => true, () => false);
+export const browserPath: string | undefined = process.env.WEB_TEST_BROWSER
+  ?? (process.platform === "darwin" ? undefined : "/opt/google/chrome/chrome");
+// A standard `playwright-core install chromium` installs both Chromium and its
+// headless shell. Let Playwright select the shell on macOS to avoid Dock flashes.
+export const browserAvailable: boolean = await fs.access(browserPath ?? chromium.executablePath())
+  .then(() => true, () => false);
 
 export async function launch(t: TestContext): Promise<Browser> {
   const browser = await chromium.launch({ executablePath: browserPath, headless: true });

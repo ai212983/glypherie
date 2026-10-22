@@ -48,7 +48,10 @@ Storybook uses the dependencies installed by `just web-setup` plus the staged pr
 wasm-build-preview`); the FontCanvas stories render real glyphs through it. Use its theme toolbar to switch between
 light and dark previews.
 
-Browser tests use `/opt/google/chrome/chrome` or `WEB_TEST_BROWSER`; they skip when the browser is unavailable.
+On macOS, install the test browsers from `tools/web` with `npx --no-install playwright-core install chromium`. Browser
+tests then use Playwright's headless shell, avoiding Chrome's temporary Dock icons. Leave `WEB_TEST_BROWSER` unset for
+this default; pointing it at regular Chrome can bring back the Dock flashes. Other platforms default to
+`/opt/google/chrome/chrome`. Tests skip when the browser installation is unavailable.
 
 ## Configuration
 
