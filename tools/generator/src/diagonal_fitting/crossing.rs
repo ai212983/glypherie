@@ -1668,6 +1668,61 @@ fn reduce_joint_rows(
     Ok(kept_hard)
 }
 
+enum QuadraticAbort {
+    DegenerateCurvature,
+}
+
+fn quadratic_constraints(
+    quads: &[[usize; 3]],
+    involved: &HashSet<usize>,
+    base_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+    flat_up: &[f64],
+    reduce: &impl Fn(&[f64]) -> Vec<f64>,
+) -> Result<(Vec<Vec<f64>>, Vec<f64>), QuadraticAbort> {
+    let nvars = base_all.len();
+    let mut cmat: Vec<Vec<f64>> = Vec::new();
+    let mut clower: Vec<f64> = Vec::new();
+    for idx in quads {
+        if !idx.iter().any(|v| involved.contains(v)) {
+            continue;
+        }
+        let (p0, ctrl, p1) = (idx[0], idx[1], idx[2]);
+        let su = sub(base_all[ctrl], base_all[p0]);
+        let sv = sub(base_all[p1], base_all[ctrl]);
+        let source_cross = cross2(su, sv);
+        if source_cross == 0.0 {
+            return Err(QuadraticAbort::DegenerateCurvature);
+        }
+        let sign = if source_cross > 0.0 { 1.0 } else { -1.0 };
+        let mut row = vec![0.0; 2 * nvars];
+        row[2 * p0] = up_all[ctrl][1] - up_all[p1][1];
+        row[2 * ctrl] = up_all[p1][1] - up_all[p0][1];
+        row[2 * p1] = up_all[p0][1] - up_all[ctrl][1];
+        for x in row.iter_mut() {
+            *x *= sign;
+        }
+        let red = reduce(&row);
+        let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
+        clower.push(reserve - dotv(&row, flat_up));
+        cmat.push(red);
+        for (i, j) in [(p0, ctrl), (ctrl, p1)] {
+            for leg in [su, sv] {
+                let mut leg_row = vec![0.0; 2 * nvars];
+                leg_row[2 * j] = leg[0];
+                leg_row[2 * i] = -leg[0];
+                let value = dot(sub(up_all[j], up_all[i]), leg);
+                let leg_red = reduce(&leg_row);
+                let leg_reserve =
+                    leg_red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
+                clower.push(leg_reserve - value);
+                cmat.push(leg_red);
+            }
+        }
+    }
+    Ok((cmat, clower))
+}
+
 struct JointGate {
     j: usize,
     iv: usize,
@@ -1842,52 +1897,20 @@ fn finish(
     let he: Vec<f64> = kept_hard.iter().map(|(_, t)| *t).collect();
     // Linear curvature/leg inequalities with frozen upstream coefficients.
     let nvars = base_all.len();
-    let mut cmat: Vec<Vec<f64>> = Vec::new();
-    let mut clower: Vec<f64> = Vec::new();
-    for idx in &quads {
-        if !idx.iter().any(|v| involved.contains(v)) {
-            continue;
-        }
-        let (p0, ctrl, p1) = (idx[0], idx[1], idx[2]);
-        let su = sub(base_all[ctrl], base_all[p0]);
-        let sv = sub(base_all[p1], base_all[ctrl]);
-        let source_cross = cross2(su, sv);
-        if source_cross == 0.0 {
-            return Ok(abstain(
-                upstream,
-                "source-degenerate-curvature",
-                serde_json::json!({
-                    "size_px": size_px,
-                    "raw_crosses": raw_crosses,
-                }),
-            ));
-        }
-        let sign = if source_cross > 0.0 { 1.0 } else { -1.0 };
-        let mut row = vec![0.0; 2 * nvars];
-        row[2 * p0] = up_all[ctrl][1] - up_all[p1][1];
-        row[2 * ctrl] = up_all[p1][1] - up_all[p0][1];
-        row[2 * p1] = up_all[p0][1] - up_all[ctrl][1];
-        for x in row.iter_mut() {
-            *x *= sign;
-        }
-        let red = reduce(&row);
-        let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
-        clower.push(reserve - dotv(&row, &flat_up));
-        cmat.push(red);
-        for (i, j) in [(p0, ctrl), (ctrl, p1)] {
-            for leg in [su, sv] {
-                let mut leg_row = vec![0.0; 2 * nvars];
-                leg_row[2 * j] = leg[0];
-                leg_row[2 * i] = -leg[0];
-                let value = dot(sub(up_all[j], up_all[i]), leg);
-                let leg_red = reduce(&leg_row);
-                let leg_reserve =
-                    leg_red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
-                clower.push(leg_reserve - value);
-                cmat.push(leg_red);
+    let (mut cmat, mut clower) =
+        match quadratic_constraints(&quads, &involved, &base_all, &up_all, &flat_up, &reduce) {
+            Ok(constraints) => constraints,
+            Err(QuadraticAbort::DegenerateCurvature) => {
+                return Ok(abstain(
+                    upstream,
+                    "source-degenerate-curvature",
+                    serde_json::json!({
+                        "size_px": size_px,
+                        "raw_crosses": raw_crosses,
+                    }),
+                ));
             }
-        }
-    }
+        };
     for gate in &gates {
         if gate.smooth {
             continue;
@@ -2803,3 +2826,6 @@ mod objective_tests;
 
 #[cfg(test)]
 mod joint_tests;
+
+#[cfg(test)]
+mod quadratic_tests;
