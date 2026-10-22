@@ -942,6 +942,86 @@ fn symmetry_rows(
     rows
 }
 
+fn shape_objective_rows(
+    raw: &SourceOutline,
+    no: usize,
+    involved: &HashSet<usize>,
+    base_all: &[[f64; 2]],
+    size_px: f64,
+) -> (RowSys, Vec<(Vec<f64>, f64)>) {
+    let mut system = RowSys::new(base_all.to_vec(), size_px);
+    for contour in &raw.contours {
+        for seg in contour {
+            match *seg {
+                GeomSegment::Quad { c, a, b } => {
+                    let idx = [a, no + c, b];
+                    if idx.iter().any(|v| involved.contains(v)) {
+                        system.quad_shape(idx);
+                    }
+                }
+                GeomSegment::Line { a, b } => {
+                    if involved.contains(&a) || involved.contains(&b) {
+                        let _ = system.edge(a, b);
+                    }
+                }
+                GeomSegment::Cubic { .. } => {}
+            }
+        }
+    }
+    let mut plain: Vec<(Vec<f64>, f64)> = Vec::new();
+    for (_, row, _) in &system.rows {
+        plain.push((row.clone(), 0.0));
+    }
+    (system, plain)
+}
+
+fn width_objective_rows(
+    system: &RowSys,
+    prepared: &[geometry::PreppedPair],
+    anchors: &[AnchorV],
+    size_px: f64,
+) -> Vec<(Vec<f64>, f64)> {
+    let mut soft: Vec<(Vec<f64>, f64)> = Vec::new();
+    for info in prepared {
+        let mut station_pairs: Vec<(Vec<f64>, f64, [f64; 2])> = Vec::new();
+        let mut usable = true;
+        for st in &info.stations {
+            let ta = info.a.t0 + (info.a.t1 - info.a.t0) * st.hit.sa;
+            let tb = info.b.t0 + (info.b.t1 - info.b.t0) * st.hit.sb;
+            match system.pair(
+                &Sample::affine(info.a.i0, 1.0 - ta, info.a.i1, ta),
+                &Sample::affine(info.b.i0, 1.0 - tb, info.b.i1, tb),
+                info.arc,
+                st.hit.center,
+            ) {
+                Ok(triple) => station_pairs.push(triple),
+                Err(()) => {
+                    usable = false;
+                    break;
+                }
+            }
+        }
+        if !usable {
+            continue;
+        }
+        for (error, width, tangent) in &station_pairs {
+            for anchor in anchors {
+                let mut directed = *tangent;
+                if dot(directed, anchor.tangent) < 0.0 {
+                    directed = [-directed[0], -directed[1]];
+                }
+                let psi = width_weight(*width, anchor.width, directed, anchor.tangent, size_px);
+                let scale = (info.arc * anchor.length * psi).sqrt();
+                soft.push((
+                    error.iter().map(|x| x * scale).collect(),
+                    anchor.rel * scale,
+                ));
+            }
+        }
+    }
+    soft
+}
+
 fn dotv(a: &[f64], b: &[f64]) -> f64 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
 }
@@ -1600,72 +1680,12 @@ fn finish(
             ));
         }
     };
-    // Shape rows from raw geometry with the upstream gap substituted.
-    let mut system = RowSys::new(base_all.clone(), size_px);
-    for contour in &raw.contours {
-        for seg in contour {
-            match *seg {
-                GeomSegment::Quad { c, a, b } => {
-                    let idx = [a, no + c, b];
-                    if idx.iter().any(|v| involved.contains(v)) {
-                        system.quad_shape(idx);
-                    }
-                }
-                GeomSegment::Line { a, b } => {
-                    if involved.contains(&a) || involved.contains(&b) {
-                        let _ = system.edge(a, b);
-                    }
-                }
-                GeomSegment::Cubic { .. } => {}
-            }
-        }
-    }
+    let (system, plain) = shape_objective_rows(raw, no, &involved, &base_all, size_px);
     // Shape rows keep the upstream gap unsubstituted: like the prototype
     // `soft_plain` block, their target is `-c`, so they regularize the
     // displacement itself. Only width and symmetry rows (the `soft_gap`
     // block) substitute the upstream gap into their constants.
-    let mut plain: Vec<(Vec<f64>, f64)> = Vec::new();
-    for (_, row, _) in &system.rows {
-        plain.push((row.clone(), 0.0));
-    }
-    let mut soft: Vec<(Vec<f64>, f64)> = Vec::new();
-    for info in prepared {
-        let mut station_pairs: Vec<(Vec<f64>, f64, [f64; 2])> = Vec::new();
-        let mut usable = true;
-        for st in &info.stations {
-            let ta = info.a.t0 + (info.a.t1 - info.a.t0) * st.hit.sa;
-            let tb = info.b.t0 + (info.b.t1 - info.b.t0) * st.hit.sb;
-            match system.pair(
-                &Sample::affine(info.a.i0, 1.0 - ta, info.a.i1, ta),
-                &Sample::affine(info.b.i0, 1.0 - tb, info.b.i1, tb),
-                info.arc,
-                st.hit.center,
-            ) {
-                Ok(triple) => station_pairs.push(triple),
-                Err(()) => {
-                    usable = false;
-                    break;
-                }
-            }
-        }
-        if !usable {
-            continue;
-        }
-        for (error, width, tangent) in &station_pairs {
-            for anchor in anchors {
-                let mut directed = *tangent;
-                if dot(directed, anchor.tangent) < 0.0 {
-                    directed = [-directed[0], -directed[1]];
-                }
-                let psi = width_weight(*width, anchor.width, directed, anchor.tangent, size_px);
-                let scale = (info.arc * anchor.length * psi).sqrt();
-                soft.push((
-                    error.iter().map(|x| x * scale).collect(),
-                    anchor.rel * scale,
-                ));
-            }
-        }
-    }
+    let mut soft = width_objective_rows(&system, prepared, anchors, size_px);
     let sym = symmetry_rows(&system, &base_flat, matches, waist.mid, 2.0 * target);
     if sym.is_empty() {
         return Ok(abstain(
@@ -2738,3 +2758,6 @@ mod ownership_tests {
         assert_eq!(ownership.cols, vec![2, 3]);
     }
 }
+
+#[cfg(test)]
+mod objective_tests;
