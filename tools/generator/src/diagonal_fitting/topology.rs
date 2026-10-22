@@ -581,15 +581,14 @@ fn index_vertices(atomics: &mut [Atomic]) -> Vec<Vec<usize>> {
     incident
 }
 
-fn trace_cycles(atomics: &[Atomic], nverts: usize) -> Option<(Vec<Vec<usize>>, Vec<usize>)> {
+fn ordered_outgoing(atomics: &[Atomic], nverts: usize) -> Vec<Vec<usize>> {
     // Directed half-edges: 2e is a->b, 2e+1 is b->a.
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); nverts];
     for e in 0..atomics.len() {
         outgoing[atomics[e].va].push(2 * e);
         outgoing[atomics[e].vb].push(2 * e + 1);
     }
-    // Outgoing half-edges in exact CCW order (half-plane + cross
-    // product, never atan2).
+    // Exact CCW order from +x; half-planes separate opposite directions.
     let mut he_dir: Vec<(Exact, Exact)> = Vec::with_capacity(2 * atomics.len());
     for e in 0..atomics.len() {
         he_dir.push(sub(&atomics[e].b, &atomics[e].a));
@@ -600,7 +599,7 @@ fn trace_cycles(atomics: &[Atomic], nverts: usize) -> Option<(Vec<Vec<usize>>, V
             let (dh, dk) = (&he_dir[h], &he_dir[k]);
             let (uh, uk) = (is_upper(dh), is_upper(dk));
             if uh != uk {
-                return uk.cmp(&uh); // Upper half-plane first (CCW from +x).
+                return uk.cmp(&uh);
             }
             let c = cross(dh, dk);
             if !c.is_zero() {
@@ -613,15 +612,36 @@ fn trace_cycles(atomics: &[Atomic], nverts: usize) -> Option<(Vec<Vec<usize>>, V
             h.cmp(&k)
         });
     }
-    let mut rank: Vec<Vec<usize>> = vec![Vec::new(); nverts];
-    for v in 0..nverts {
-        rank[v].resize(2 * atomics.len(), usize::MAX);
+    outgoing
+}
+
+fn rank_lookup(outgoing: &[Vec<usize>], nhe: usize) -> Vec<Vec<usize>> {
+    let mut rank: Vec<Vec<usize>> = vec![Vec::new(); outgoing.len()];
+    for v in 0..outgoing.len() {
+        rank[v].resize(nhe, usize::MAX);
         for (pos, &he) in outgoing[v].iter().enumerate() {
             rank[v][he] = pos;
         }
     }
-    // Trace left-face boundary cycles: next(h) is the clockwise
-    // predecessor of twin(h) around its target.
+    rank
+}
+
+fn successor(outgoing: &[Vec<usize>], rank: &[Vec<usize>], atomics: &[Atomic], he: usize) -> usize {
+    // The clockwise predecessor of the twin keeps the face on the left.
+    let twin = he ^ 1;
+    let e = he / 2;
+    let v = if he % 2 == 0 {
+        atomics[e].vb
+    } else {
+        atomics[e].va
+    };
+    let deg = outgoing[v].len();
+    outgoing[v][(rank[v][twin] + deg - 1) % deg]
+}
+
+fn trace_cycles(atomics: &[Atomic], nverts: usize) -> Option<(Vec<Vec<usize>>, Vec<usize>)> {
+    let outgoing = ordered_outgoing(atomics, nverts);
+    let rank = rank_lookup(&outgoing, 2 * atomics.len());
     let nhe = 2 * atomics.len();
     let mut he_cycle = vec![usize::MAX; nhe];
     let mut cycles: Vec<Vec<usize>> = Vec::new();
@@ -635,20 +655,9 @@ fn trace_cycles(atomics: &[Atomic], nverts: usize) -> Option<(Vec<Vec<usize>>, V
         loop {
             he_cycle[he] = id;
             cyc.push(he);
-            let twin = he ^ 1;
-            let e = he / 2;
-            let v = if he % 2 == 0 {
-                atomics[e].vb
-            } else {
-                atomics[e].va
-            };
-            let deg = outgoing[v].len();
-            he = outgoing[v][(rank[v][twin] + deg - 1) % deg];
+            he = successor(&outgoing, &rank, atomics, he);
             if he == start {
                 break;
-            }
-            if cyc.len() > nhe + 1 {
-                return None; // Inconsistent topology fails closed.
             }
         }
         cycles.push(cyc);
@@ -2208,5 +2217,102 @@ mod tests {
         let splits = split_inputs(&inputs);
         assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 2.0)]);
         assert_eq!(splits[1], vec![pt(0.5, -1.0), pt(-1.0, 0.5)]);
+    }
+
+    fn traced(loops: &[Vec<[f64; 2]>]) -> (Vec<Atomic>, usize, Vec<Vec<usize>>, Vec<usize>) {
+        let inputs = lift_inputs(loops).expect("supported");
+        let mut splits = split_inputs(&inputs);
+        let mut atomics = assemble_atomics(&inputs, &mut splits).expect("supported");
+        let incident = index_vertices(&mut atomics);
+        let nverts = incident.len();
+        let (cycles, he_cycle) = trace_cycles(&atomics, nverts).expect("supported");
+        (atomics, nverts, cycles, he_cycle)
+    }
+
+    fn assert_partition(atomics: &[Atomic], cycles: &[Vec<usize>], he_cycle: &[usize]) {
+        let nhe = 2 * atomics.len();
+        assert_eq!(he_cycle.len(), nhe);
+        let mut seen = vec![false; nhe];
+        for (id, cyc) in cycles.iter().enumerate() {
+            assert!(!cyc.is_empty());
+            for &he in cyc.iter() {
+                assert!(he < nhe);
+                assert!(!seen[he]);
+                seen[he] = true;
+                assert_eq!(he_cycle[he], id);
+            }
+        }
+        assert!(seen.iter().all(|&s| s));
+    }
+
+    fn cycle_signs(atomics: &[Atomic], cycles: &[Vec<usize>]) -> Vec<bool> {
+        cycles
+            .iter()
+            .map(|cyc| cycle_area(atomics, cyc).is_positive())
+            .collect()
+    }
+
+    #[test]
+    fn cycle_trace_square_both_directions() {
+        let pinned_cycles = vec![vec![0, 2, 5, 7], vec![1, 6, 4, 3]];
+        let pinned_he = vec![0, 1, 0, 1, 1, 0, 1, 0];
+        let directed = [
+            (vec![rect(0.0, 0.0, 4.0, 4.0)], vec![true, false]),
+            (vec![rect_cw(0.0, 0.0, 4.0, 4.0)], vec![false, true]),
+        ];
+        for (loops, signs) in directed {
+            let (atomics, nverts, cycles, he_cycle) = traced(&loops);
+            assert_eq!(nverts, 4);
+            assert_eq!(cycles, pinned_cycles);
+            assert_eq!(he_cycle, pinned_he);
+            assert_partition(&atomics, &cycles, &he_cycle);
+            assert_eq!(cycle_signs(&atomics, &cycles), signs);
+        }
+    }
+
+    #[test]
+    fn cycle_trace_crossing_star_opposite_pairs() {
+        let loops = vec![vec![[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0]]];
+        let (atomics, nverts, cycles, he_cycle) = traced(&loops);
+        assert_eq!(atomics.len(), 6);
+        assert_eq!(nverts, 5);
+        assert_eq!(
+            cycles,
+            vec![vec![0, 7, 11], vec![1, 10, 6, 2, 5, 9], vec![3, 8, 4]]
+        );
+        assert_eq!(he_cycle, vec![0, 1, 1, 2, 2, 1, 1, 0, 2, 1, 1, 0]);
+        assert_partition(&atomics, &cycles, &he_cycle);
+        assert_eq!(cycle_signs(&atomics, &cycles), vec![true, false, true]);
+    }
+
+    #[test]
+    fn cycle_trace_pinched_pair_with_disjoint_loop() {
+        let loops = vec![
+            rect(0.0, 0.0, 2.0, 2.0),
+            rect(2.0, 2.0, 4.0, 4.0),
+            rect(10.0, 10.0, 12.0, 12.0),
+        ];
+        let (atomics, nverts, cycles, he_cycle) = traced(&loops);
+        assert_eq!(atomics.len(), 12);
+        assert_eq!(nverts, 11);
+        assert_eq!(
+            cycles,
+            vec![
+                vec![0, 2, 5, 7],
+                vec![1, 6, 4, 14, 12, 11, 9, 3],
+                vec![8, 10, 13, 15],
+                vec![16, 18, 21, 23],
+                vec![17, 22, 20, 19],
+            ]
+        );
+        assert_eq!(
+            he_cycle,
+            vec![0, 1, 0, 1, 1, 0, 1, 0, 2, 1, 2, 1, 1, 2, 1, 2, 3, 4, 3, 4, 4, 3, 4, 3]
+        );
+        assert_partition(&atomics, &cycles, &he_cycle);
+        assert_eq!(
+            cycle_signs(&atomics, &cycles),
+            vec![true, false, true, true, false]
+        );
     }
 }
