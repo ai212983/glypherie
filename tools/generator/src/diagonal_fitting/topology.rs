@@ -918,17 +918,263 @@ impl HoleAttribution {
     }
 }
 
+type PairRecord = (Vec<usize>, u64, u64, u64, u64, Vec<u64>);
+
+struct PairAttachments {
+    records: Vec<PairRecord>,
+}
+
+impl PairAttachments {
+    fn build(arrangement: &Arrangement, analysis: &WindingAnalysis) -> Self {
+        let atomics = arrangement.atomics();
+        let incident = arrangement.incident();
+        let contours = arrangement.contours();
+        let wind = analysis.windings();
+        let nfaces = arrangement.nfaces();
+        let nverts = arrangement.nverts();
+        let mut face_edges: Vec<Vec<usize>> = vec![Vec::new(); nfaces];
+        for (e, a) in atomics.iter().enumerate() {
+            face_edges[a.f1].push(e);
+            if a.f2 != a.f1 {
+                face_edges[a.f2].push(e);
+            }
+        }
+        let mut records: Vec<PairRecord> = Vec::new();
+        for ai in 0..contours.len() {
+            for bi in (ai + 1)..contours.len() {
+                let pair = PairContext {
+                    atomics,
+                    incident,
+                    contours,
+                    wind,
+                    face_edges: &face_edges,
+                    nfaces,
+                    nverts,
+                    ai,
+                    bi,
+                };
+                if let Some(record) = pair.record() {
+                    records.push(record);
+                }
+            }
+        }
+        records.sort();
+        Self { records }
+    }
+}
+
+struct PairContext<'a> {
+    atomics: &'a [Atomic],
+    incident: &'a [Vec<usize>],
+    contours: &'a [usize],
+    wind: &'a [Vec<i64>],
+    face_edges: &'a [Vec<usize>],
+    nfaces: usize,
+    nverts: usize,
+    ai: usize,
+    bi: usize,
+}
+
+impl<'a> PairContext<'a> {
+    // Pair overlap survives cancellation in the total winding.
+    fn in_mask(&self, f: usize) -> bool {
+        self.wind[f][self.ai] != 0 && self.wind[f][self.bi] != 0
+    }
+
+    fn neighbor(&self, f: usize, e: usize) -> usize {
+        if self.atomics[e].f1 == f {
+            self.atomics[e].f2
+        } else {
+            self.atomics[e].f1
+        }
+    }
+
+    fn area_components(&self) -> u64 {
+        let mut seen = vec![false; self.nfaces];
+        let mut area_components = 0u64;
+        for f in 0..self.nfaces {
+            if !self.in_mask(f) || seen[f] {
+                continue;
+            }
+            area_components += 1;
+            let mut q = VecDeque::new();
+            q.push_back(f);
+            seen[f] = true;
+            while let Some(cur) = q.pop_front() {
+                for &e in self.face_edges[cur].iter() {
+                    let ni = self.neighbor(cur, e);
+                    if self.in_mask(ni) && !seen[ni] {
+                        seen[ni] = true;
+                        q.push_back(ni);
+                    }
+                }
+            }
+        }
+        area_components
+    }
+
+    fn complement_holes(&self) -> u64 {
+        let mut wmask = vec![-1i32; self.nfaces];
+        let mut area_holes = 0u64;
+        let mut nw = 0i32;
+        for f in 0..self.nfaces {
+            if self.in_mask(f) || wmask[f] >= 0 {
+                continue;
+            }
+            let mut q = VecDeque::new();
+            q.push_back(f);
+            wmask[f] = nw;
+            let touches = f == 0;
+            while let Some(cur) = q.pop_front() {
+                for &e in self.face_edges[cur].iter() {
+                    let ni = self.neighbor(cur, e);
+                    if !self.in_mask(ni) && wmask[ni] < 0 {
+                        wmask[ni] = nw;
+                        q.push_back(ni);
+                    }
+                }
+            }
+            if !touches {
+                area_holes += 1;
+            }
+            nw += 1;
+        }
+        area_holes
+    }
+
+    // Pure edge contacts have no incident face in the pair mask.
+    fn edge_flags(&self) -> Vec<bool> {
+        let mut edge_contact = vec![false; self.atomics.len()];
+        for (e, a) in self.atomics.iter().enumerate() {
+            let (mut ca, mut cb) = (false, false);
+            for label in a.cover.keys() {
+                if *label == self.contours[self.ai] {
+                    ca = true;
+                }
+                if *label == self.contours[self.bi] {
+                    cb = true;
+                }
+            }
+            if ca && cb && !self.in_mask(a.f1) && !self.in_mask(a.f2) {
+                edge_contact[e] = true;
+            }
+        }
+        edge_contact
+    }
+
+    fn edge_components(&self, edge_contact: &[bool]) -> u64 {
+        let mut parent: Vec<usize> = (0..self.nverts).collect();
+        for (e, a) in self.atomics.iter().enumerate() {
+            if edge_contact[e] {
+                let (u, v) = (find_root(&mut parent, a.va), find_root(&mut parent, a.vb));
+                if u != v {
+                    parent[u] = v;
+                }
+            }
+        }
+        let mut roots = BTreeSet::new();
+        for (e, a) in self.atomics.iter().enumerate() {
+            if edge_contact[e] {
+                roots.insert(find_root(&mut parent, a.va));
+            }
+        }
+        roots.len() as u64
+    }
+
+    fn vertex_evidence(&self, v: usize, edge_contact: &[bool]) -> (bool, bool, bool, bool) {
+        let (mut ca, mut cb, mut mask_near, mut edge_near) = (false, false, false, false);
+        for &e in self.incident[v].iter() {
+            for label in self.atomics[e].cover.keys() {
+                if *label == self.contours[self.ai] {
+                    ca = true;
+                }
+                if *label == self.contours[self.bi] {
+                    cb = true;
+                }
+            }
+            if edge_contact[e] {
+                edge_near = true;
+            }
+            if self.in_mask(self.atomics[e].f1) || self.in_mask(self.atomics[e].f2) {
+                mask_near = true;
+            }
+        }
+        (ca, cb, mask_near, edge_near)
+    }
+
+    fn point_contacts(&self, edge_contact: &[bool]) -> u64 {
+        let mut point_contacts = 0u64;
+        for v in 0..self.nverts {
+            let (ca, cb, mask_near, edge_near) = self.vertex_evidence(v, edge_contact);
+            if ca && cb && !mask_near && !edge_near {
+                point_contacts += 1;
+            }
+        }
+        point_contacts
+    }
+
+    // Manifold mask-boundary vertices have degree 2.
+    fn boundary_degrees(&self) -> Vec<u64> {
+        let mut boundary_degrees: Vec<u64> = Vec::new();
+        for v in 0..self.nverts {
+            let mut deg = 0u64;
+            for &e in self.incident[v].iter() {
+                if self.in_mask(self.atomics[e].f1) != self.in_mask(self.atomics[e].f2) {
+                    deg += 1;
+                }
+            }
+            if deg > 0 && deg != 2 {
+                boundary_degrees.push(deg);
+            }
+        }
+        boundary_degrees.sort();
+        boundary_degrees
+    }
+
+    fn record(&self) -> Option<PairRecord> {
+        let area_components = self.area_components();
+        let area_holes = self.complement_holes();
+        let edge_contact = self.edge_flags();
+        let edge_components = self.edge_components(&edge_contact);
+        let point_contacts = self.point_contacts(&edge_contact);
+        let boundary_degrees = self.boundary_degrees();
+        if area_components > 0
+            || area_holes > 0
+            || edge_components > 0
+            || point_contacts > 0
+            || !boundary_degrees.is_empty()
+        {
+            Some((
+                vec![self.contours[self.ai], self.contours[self.bi]],
+                area_components,
+                area_holes,
+                edge_components,
+                point_contacts,
+                boundary_degrees,
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+fn find_root(p: &mut [usize], mut x: usize) -> usize {
+    let mut root = x;
+    while p[root] != root {
+        root = p[root];
+    }
+    while p[x] != root {
+        let nxt = p[x];
+        p[x] = root;
+        x = nxt;
+    }
+    root
+}
+
 /// Public entry: canonical topology signature, or `None` fail-closed.
 pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
     let arrangement = Arrangement::build(loops)?;
-    let atomics = arrangement.atomics();
-    let incident = arrangement.incident();
-    let contours = arrangement.contours();
-    let nverts = arrangement.nverts();
-    let nfaces = arrangement.nfaces();
-    let ncont = contours.len();
     let analysis = WindingAnalysis::build(&arrangement)?;
-    let wind = analysis.windings();
 
     let regions = FaceRegions::build(&arrangement, &analysis);
     let ncomp = regions.nfilled();
@@ -942,179 +1188,7 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
         comp_holes,
         hole_adj,
     } = HoleAttribution::build(&arrangement, &analysis, &regions);
-    // Per-pair attachment classes; masks use individual contour
-    // windings so coincident cancellations still expose sharing.
-    let mut pairs: Vec<(Vec<usize>, u64, u64, u64, u64, Vec<u64>)> = Vec::new();
-    // Face adjacency once for the flood fills below.
-    let mut face_edges: Vec<Vec<usize>> = vec![Vec::new(); nfaces];
-    for (e, a) in atomics.iter().enumerate() {
-        face_edges[a.f1].push(e);
-        if a.f2 != a.f1 {
-            face_edges[a.f2].push(e);
-        }
-    }
-    let neighbor = |f: usize, e: usize| -> usize {
-        if atomics[e].f1 == f {
-            atomics[e].f2
-        } else {
-            atomics[e].f1
-        }
-    };
-    for ai in 0..ncont {
-        for bi in (ai + 1)..ncont {
-            let in_mask = |f: usize| wind[f][ai] != 0 && wind[f][bi] != 0;
-            let mut seen = vec![false; nfaces];
-            let mut area_components = 0u64;
-            for f in 0..nfaces {
-                if !in_mask(f) || seen[f] {
-                    continue;
-                }
-                area_components += 1;
-                let mut q = VecDeque::new();
-                q.push_back(f);
-                seen[f] = true;
-                while let Some(cur) = q.pop_front() {
-                    for &e in face_edges[cur].iter() {
-                        let ni = neighbor(cur, e);
-                        if in_mask(ni) && !seen[ni] {
-                            seen[ni] = true;
-                            q.push_back(ni);
-                        }
-                    }
-                }
-            }
-            let mut wmask = vec![-1i32; nfaces];
-            let mut area_holes = 0u64;
-            let mut nw = 0i32;
-            for f in 0..nfaces {
-                if in_mask(f) || wmask[f] >= 0 {
-                    continue;
-                }
-                let mut q = VecDeque::new();
-                q.push_back(f);
-                wmask[f] = nw;
-                let mut touches = f == 0;
-                while let Some(cur) = q.pop_front() {
-                    for &e in face_edges[cur].iter() {
-                        let ni = neighbor(cur, e);
-                        if !in_mask(ni) && wmask[ni] < 0 {
-                            wmask[ni] = nw;
-                            if ni == 0 {
-                                touches = true;
-                            }
-                            q.push_back(ni);
-                        }
-                    }
-                }
-                if !touches {
-                    area_holes += 1;
-                }
-                nw += 1;
-            }
-            // Pure edge contacts: both contours cover the edge but no
-            // incident face carries the intersection mask.
-            let mut edge_contact = vec![false; atomics.len()];
-            for (e, a) in atomics.iter().enumerate() {
-                let (mut ca, mut cb) = (false, false);
-                for label in a.cover.keys() {
-                    if *label == contours[ai] {
-                        ca = true;
-                    }
-                    if *label == contours[bi] {
-                        cb = true;
-                    }
-                }
-                if ca && cb && !in_mask(a.f1) && !in_mask(a.f2) {
-                    edge_contact[e] = true;
-                }
-            }
-            let edge_components = {
-                let mut parent: Vec<usize> = (0..nverts).collect();
-                fn find(p: &mut [usize], mut x: usize) -> usize {
-                    let mut root = x;
-                    while p[root] != root {
-                        root = p[root];
-                    }
-                    while p[x] != root {
-                        let nxt = p[x];
-                        p[x] = root;
-                        x = nxt;
-                    }
-                    root
-                }
-                for (e, a) in atomics.iter().enumerate() {
-                    if edge_contact[e] {
-                        let (u, v) = (find(&mut parent, a.va), find(&mut parent, a.vb));
-                        if u != v {
-                            parent[u] = v;
-                        }
-                    }
-                }
-                let mut roots = BTreeSet::new();
-                for (e, a) in atomics.iter().enumerate() {
-                    if edge_contact[e] {
-                        roots.insert(find(&mut parent, a.va));
-                    }
-                }
-                roots.len() as u64
-            };
-            let mut point_contacts = 0u64;
-            for v in 0..nverts {
-                let (mut ca, mut cb, mut mask_near, mut edge_near) = (false, false, false, false);
-                for &e in incident[v].iter() {
-                    for label in atomics[e].cover.keys() {
-                        if *label == contours[ai] {
-                            ca = true;
-                        }
-                        if *label == contours[bi] {
-                            cb = true;
-                        }
-                    }
-                    if edge_contact[e] {
-                        edge_near = true;
-                    }
-                    if in_mask(atomics[e].f1) || in_mask(atomics[e].f2) {
-                        mask_near = true;
-                    }
-                }
-                if ca && cb && !mask_near && !edge_near {
-                    point_contacts += 1;
-                }
-            }
-            // Intersection-mask boundary singularities: incident edges
-            // separating mask interior from exterior; manifold boundary
-            // vertices have degree 2, anything else is a pinch/branch.
-            let mut boundary_degrees: Vec<u64> = Vec::new();
-            for v in 0..nverts {
-                let mut deg = 0u64;
-                for &e in incident[v].iter() {
-                    if in_mask(atomics[e].f1) != in_mask(atomics[e].f2) {
-                        deg += 1;
-                    }
-                }
-                if deg > 0 && deg != 2 {
-                    boundary_degrees.push(deg);
-                }
-            }
-            boundary_degrees.sort();
-            if area_components > 0
-                || area_holes > 0
-                || edge_components > 0
-                || point_contacts > 0
-                || !boundary_degrees.is_empty()
-            {
-                pairs.push((
-                    vec![contours[ai], contours[bi]],
-                    area_components,
-                    area_holes,
-                    edge_components,
-                    point_contacts,
-                    boundary_degrees,
-                ));
-            }
-        }
-    }
-    pairs.sort();
+    let PairAttachments { records: pairs } = PairAttachments::build(&arrangement, &analysis);
     let mut comp_rows: Vec<(Vec<usize>, u64)> = Vec::with_capacity(ncomp);
     for c in 0..ncomp {
         comp_rows.push((comp_labels[c].iter().cloned().collect(), comp_holes[c]));
@@ -1439,6 +1513,75 @@ mod tests {
             v["pairs"],
             json!([{"pair": [0, 1], "area_components": 0, "area_holes": 0,
                    "edge_components": 1, "point_contacts": 0, "boundary_degrees": []}])
+        );
+        let split_a = vec![[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [2.0, 2.0], [0.0, 2.0]];
+        assert_eq!(v, sig(&[split_a, rect(2.0, 0.0, 4.0, 2.0)]));
+    }
+
+    #[test]
+    fn bridged_duplicate_annulus_pair_masks_hole() {
+        let lobe = vec![
+            [0.0, 0.0],
+            [12.0, 0.0],
+            [12.0, 12.0],
+            [0.0, 12.0],
+            [0.0, 4.0],
+            [4.0, 4.0],
+            [4.0, 8.0],
+            [8.0, 8.0],
+            [8.0, 4.0],
+            [4.0, 4.0],
+            [0.0, 4.0],
+        ];
+        let v = sig(&[lobe.clone(), lobe]);
+        assert_eq!(v["filled_components"], json!(1));
+        assert_eq!(v["holes"], json!(1));
+        assert_eq!(
+            v["pairs"],
+            json!([{"pair": [0, 1], "area_components": 1, "area_holes": 1,
+                   "edge_components": 0, "point_contacts": 0, "boundary_degrees": []}])
+        );
+    }
+
+    #[test]
+    fn c_polygon_two_edge_contacts() {
+        let c = vec![
+            [4.0, 0.0],
+            [6.0, 0.0],
+            [6.0, 4.0],
+            [4.0, 4.0],
+            [4.0, 3.0],
+            [5.0, 3.0],
+            [5.0, 1.0],
+            [4.0, 1.0],
+        ];
+        let v = sig(&[rect(0.0, 0.0, 4.0, 4.0), c]);
+        assert_eq!(v["filled_components"], json!(1));
+        assert_eq!(v["holes"], json!(1));
+        assert_eq!(
+            v["pairs"],
+            json!([{"pair": [0, 1], "area_components": 0, "area_holes": 0,
+                   "edge_components": 2, "point_contacts": 0, "boundary_degrees": []}])
+        );
+    }
+
+    #[test]
+    fn contour_labels_preserved_across_empty_gaps() {
+        let v = sig(&[
+            vec![],
+            rect(0.0, 0.0, 100.0, 50.0),
+            vec![],
+            rect(100.0, 50.0, 200.0, 100.0),
+        ]);
+        assert_eq!(v["filled_components"], json!(2));
+        assert_eq!(
+            v["pairs"],
+            json!([{"pair": [1, 3], "area_components": 0, "area_holes": 0,
+                   "edge_components": 0, "point_contacts": 1, "boundary_degrees": []}])
+        );
+        assert_eq!(
+            v["components"],
+            json!([{"contours": [1], "holes": 0}, {"contours": [3], "holes": 0}])
         );
     }
 
