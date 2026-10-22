@@ -1,5 +1,6 @@
 // cspell:words dctx nctx
 import * as React from "react";
+import { LoaderCircle } from "lucide-react";
 import { useRenderer, type RendererService } from "./renderer-context.js";
 import {
   RenderScheduler,
@@ -14,7 +15,7 @@ import {
   nativeWidthFor,
   snapTranslation,
 } from "./display-scaling.js";
-import type { OutputProfile, RendererRole, RGBA, StemFitting } from "./renderer-types.js";
+import type { MonoRaster, OutputProfile, Rasterization, RendererRole, RGBA, StemFitting } from "./renderer-types.js";
 import { logicalBounds, toRenderSpec } from "./render-spec";
 import { layoutHeight } from "./render-layout.js";
 import type { RenderPixels } from "./client";
@@ -36,6 +37,10 @@ export interface FontCanvasProps {
   spacing: number;
   kerning: boolean;
   stemFitting: StemFitting;
+  // Optional so stories without the control keep compiling; opt-in only.
+  diagonalFitting?: boolean;
+  monoRaster: MonoRaster;
+  rasterization?: Rasterization;
   zoom: number;
   mode: FontCanvasMode;
   // Complete coverage palette (exactly 2 Mono / 8 Gray entries, entry 0 is
@@ -228,6 +233,9 @@ interface RenderHookOptions {
   spacing: number;
   kerning: boolean;
   stemFitting: StemFitting;
+  diagonalFitting?: boolean;
+  monoRaster: MonoRaster;
+  rasterization?: Rasterization;
   zoom: number;
   mode: FontCanvasMode;
   palette?: readonly RGBA[];
@@ -248,21 +256,34 @@ interface RenderHookOptions {
 function useFontRender(options: RenderHookOptions): {
   viewportRef: React.RefObject<HTMLDivElement | null>;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  pending: boolean;
+  showSpinner: boolean;
 } {
+  const [pending, setPending] = React.useState(false);
+  const [showSpinner, setShowSpinner] = React.useState(false);
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const nativeRef = React.useRef<HTMLCanvasElement | null>(null);
   const schedulerRef = React.useRef<RenderScheduler | null>(null);
-  if (!schedulerRef.current) schedulerRef.current = new RenderScheduler();
+  if (!schedulerRef.current) schedulerRef.current = new RenderScheduler(setPending);
   const [measureTick, setMeasureTick] = React.useState(0);
   const textRef = React.useRef(options.text);
   const outcomeRef = React.useRef(options);
 
   const {
     service, session, available, enabled, fontId, text, sizePx, axes, profile, role,
-    spacing, kerning, stemFitting, zoom, mode, palette, debounceMs,
+    spacing, kerning, stemFitting, diagonalFitting, monoRaster, rasterization, zoom, mode, palette, debounceMs,
   } = options;
   const active = enabled && service !== null && available === true;
+
+  React.useLayoutEffect(() => {
+    if (!pending) {
+      setShowSpinner(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowSpinner(true), 200);
+    return () => clearTimeout(timer);
+  }, [pending]);
 
   const measure = (): Measured | null => {
     const viewport = viewportRef.current;
@@ -307,7 +328,7 @@ function useFontRender(options: RenderHookOptions): {
     const current = service;
     const base = {
       text, sizePx, axes, profile, width: measured.width,
-      role, letterSpacingPx: spacing, kerning, stemFitting,
+      role, letterSpacingPx: spacing, kerning, stemFitting, diagonalFitting, monoRaster, rasterization,
       palette,
     };
     const specForHeight = (height: number): RenderSpec =>
@@ -381,7 +402,7 @@ function useFontRender(options: RenderHookOptions): {
     });
   }, [
     service, session, available, active, measureTick,
-    fontId, text, sizePx, axes, profile, role, spacing, kerning, stemFitting,
+    fontId, text, sizePx, axes, profile, role, spacing, kerning, stemFitting, diagonalFitting, monoRaster, rasterization,
     zoom, mode, palette, debounceMs,
   ]);
 
@@ -416,7 +437,7 @@ function useFontRender(options: RenderHookOptions): {
     return () => scheduler?.cancel();
   }, []);
 
-  return { viewportRef, canvasRef };
+  return { viewportRef, canvasRef, pending, showSpinner };
 }
 
 // Shared font rendering canvas: viewport measurement, resize/DPR tracking
@@ -425,7 +446,7 @@ function useFontRender(options: RenderHookOptions): {
 // display scaling, never consumer identity: card layout stays in the wrapper.
 export function FontCanvas(props: FontCanvasProps): React.JSX.Element {
   const { service, session, available } = useRenderer();
-  const { viewportRef, canvasRef } = useFontRender({
+  const { viewportRef, canvasRef, pending, showSpinner } = useFontRender({
     service,
     session,
     available,
@@ -439,6 +460,9 @@ export function FontCanvas(props: FontCanvasProps): React.JSX.Element {
     spacing: props.spacing,
     kerning: props.kerning,
     stemFitting: props.stemFitting,
+    diagonalFitting: props.diagonalFitting,
+    monoRaster: props.monoRaster,
+    rasterization: props.rasterization,
     zoom: props.zoom,
     mode: props.mode,
     palette: props.palette,
@@ -451,10 +475,20 @@ export function FontCanvas(props: FontCanvasProps): React.JSX.Element {
   });
 
   return (
-    <div ref={viewportRef} {...props.viewportProps}>
-      <canvas ref={canvasRef} {...props.canvasProps}>
-        {props.canvasFallback}
-      </canvas>
+    <div data-font-canvas className="min-w-0">
+      <div className="flex h-4 items-center justify-end" data-render-indicator-slot>
+        {showSpinner && (
+          <span role="status" data-render-spinner className="inline-flex text-muted-foreground">
+            <LoaderCircle aria-hidden="true" className="size-3 motion-safe:animate-spin" />
+            <span className="sr-only">Rendering preview</span>
+          </span>
+        )}
+      </div>
+      <div ref={viewportRef} {...props.viewportProps} aria-busy={pending}>
+        <canvas ref={canvasRef} {...props.canvasProps}>
+          {props.canvasFallback}
+        </canvas>
+      </div>
     </div>
   );
 }

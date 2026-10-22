@@ -1,0 +1,52 @@
+.specimen-block[data-variant="studio"] .interactive-controls {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.specimen-block .interactive-field {
+  min-width: 0;
+}
+
+.specimen-block[data-variant="studio"] .interactive-field label,
+.specimen-block[data-variant="studio"] legend {
+  font-family: var(--font-studio);
+  font-size: 10px;
+  line-height: 1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+}
+
+.specimen-block[data-variant="studio"] [data-slot="select-trigger"] {
+  width: 100%;
+}
+
+.specimen-block[data-variant="studio"] [data-slot="select-trigger"],
+.specimen-block[data-variant="studio"] .interactive-text textarea {
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background-color: var(--background);
+  box-shadow: var(--studio-inset-shadow);
+  font-family: var(--font-studio);
+  font-size: 12px;
+  color: var(--foreground);
+}
+
+.specimen-block[data-variant="studio"] .interactive-text textarea {
+  height: auto;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.specimen-block[data-variant="studio"] [data-slot="select-trigger"]:focus-visible,
+.specimen-block[data-variant="studio"] .interactive-text:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.specimen-block[data-variant="studio"] .interactive-text textarea:focus {
+  outline: none;
+}

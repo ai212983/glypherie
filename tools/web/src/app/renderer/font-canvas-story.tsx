@@ -3,6 +3,7 @@ import * as React from "react";
 import { Popover } from "radix-ui";
 import { HexAlphaColorPicker, HexColorInput } from "react-colorful";
 import { useArgs } from "storybook/preview-api";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { RendererProvider, useRenderer, type RendererService } from "./renderer-context.js";
 import { FontCanvas, type FontCanvasProps } from "./FontCanvas.js";
 import { createFixtureRenderer } from "./fixture-renderer.js";
@@ -271,6 +272,7 @@ function PreviewPanels({ args, updateArgs, viewPalette }: {
   updateArgs: (patch: Partial<CanvasStoryArgs>) => void;
   viewPalette: readonly RGBA[] | undefined;
 }): React.JSX.Element {
+  const fontSelectId = React.useId();
   const target = args.profile === "mono_1bit" ? 2 : 8;
   const rawPalette: unknown = args.palette;
   const shapeOk =
@@ -317,15 +319,17 @@ function PreviewPanels({ args, updateArgs, viewPalette }: {
       <details data-setup-panel className="fc-disclosure" open>
         <summary>Preview setup</summary>
         <div className="fc-fields fc-setup">
-          <label>
+          <label htmlFor={fontSelectId}>
             Font
-            <select
-              data-setup-font
+            <Select
               value={args.fontName}
-              onChange={(event) => updateArgs({ fontName: event.target.value })}
+              onValueChange={(fontName) => updateArgs({ fontName })}
             >
-              {STORY_FONT_NAMES.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
+              <SelectTrigger id={fontSelectId} data-setup-font><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STORY_FONT_NAMES.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </label>
           <label>
             Viewport width
@@ -431,17 +435,20 @@ function DiagnosticStateBar({ current, onApplyPreset }: {
   current: DiagnosticState;
   onApplyPreset: (state: DiagnosticState) => void;
 }): React.JSX.Element {
+  const stateSelectId = React.useId();
   return (
     <div data-diagnostic-tools className="fc-fields">
-      <label>
+      <label htmlFor={stateSelectId}>
         Failure state
-        <select
-          data-diagnostic-state
+        <Select
           value={current}
-          onChange={(event) => onApplyPreset(event.target.value as DiagnosticState)}
+          onValueChange={(value) => onApplyPreset(value as DiagnosticState)}
         >
-          {DIAGNOSTIC_STATES.map((state) => <option key={state.value} value={state.value}>{state.label}</option>)}
-        </select>
+          <SelectTrigger id={stateSelectId} data-diagnostic-state><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {DIAGNOSTIC_STATES.map((state) => <SelectItem key={state.value} value={state.value}>{state.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </label>
       <div>
         <button type="button" data-diagnostic-apply onClick={() => onApplyPreset(current)}>
@@ -782,6 +789,7 @@ function StagedCanvas({ args, updateArgs, diagnosticTools, compactPanels, contro
           spacing={0}
           kerning
           stemFitting="font_hints_first"
+          monoRaster={{ dropout: "smart", includeStubs: false, fontInstructions: false }}
           zoom={zoom}
           mode={mode}
           palette={palette}
@@ -904,7 +912,7 @@ export function fontCanvasSnippet(overrides: Partial<CanvasStoryArgs> = {}): str
   return [
     "// Example FontCanvas usage (this story's values with the default Roboto fontId):",
     ...(args.palette === undefined ? ["// (palette omitted: default ink on paper)"] : []),
-    "// Fixed preview props (axes, role, spacing, kerning, stem fitting, debounce) shown literally;",
+    "// Fixed preview props (axes, role, spacing, kerning, stem fitting, scan, debounce) shown literally;",
     "// viewport styling and paint callbacks omitted.",
     "<FontCanvas",
     '  fontId="storybook/Roboto.ttf"',
@@ -916,6 +924,7 @@ export function fontCanvasSnippet(overrides: Partial<CanvasStoryArgs> = {}): str
     "  spacing={0}",
     "  kerning",
     '  stemFitting="font_hints_first"',
+    '  monoRaster={{ dropout: "smart", includeStubs: false, fontInstructions: false }}',
     `  zoom={${args.zoom}}`,
     `  mode="${args.mode}"`,
     ...(args.palette === undefined ? [] : [`  palette={[${args.palette.map(tuple).join(", ")}]}`]),

@@ -119,13 +119,13 @@ test("sticky header, dark chrome, and theme-independent render bytes", { skip: !
     };
     return {
       header: css("[data-site-header]", "backgroundColor"),
-      card: css(".interactive-preview", "backgroundColor"),
-      pill: css(".profile-options input:checked + span", "backgroundColor"),
-      soft: css(".font-metadata", "color"),
+      card: css('.variant-studio [data-slot="card"]', "backgroundColor"),
+      palette: css("[data-output-palette]", "backgroundColor"),
+      soft: css("[data-save-status]", "color"),
     };
   });
   assert.notEqual(chrome.header, "rgba(0, 0, 0, 0)");
-  assert.notEqual(chrome.pill, "rgb(33, 107, 89)", "selected profile leaves its light fill in dark mode");
+  assert.notEqual(chrome.palette, "rgba(0, 0, 0, 0)", "palette selector keeps its fill in dark mode");
   assert.notEqual(chrome.card, "rgb(255, 255, 255)", "cards leave the light surface in dark mode");
   assert.notEqual(chrome.soft, "rgb(98, 107, 112)", "soft text leaves its light value in dark mode");
 
@@ -136,11 +136,17 @@ test("sticky header, dark chrome, and theme-independent render bytes", { skip: !
   const after = await canvasDigest(page);
   assert.deepEqual(after, before, "UI theme never changes preview bitmap bytes");
 
-  const tall = await page.evaluate(() => document.documentElement.scrollHeight > window.innerHeight + 100);
-  assert.ok(tall, "detail page scrolls at desktop height");
-  await page.evaluate(() => window.scrollTo(0, 999999));
+  await page.setViewportSize({ width: 1280, height: 600 });
+  const paneScroll = await page.evaluate(() => {
+    const pane = document.querySelector('section.family')!;
+    return pane.scrollHeight - pane.clientHeight;
+  });
+  assert.ok(paneScroll > 100, "variant controls scroll within their desktop pane");
+  await page.evaluate(() => {
+    document.querySelector('section.family')!.scrollTop = 999999;
+  });
   const stuck = await page.evaluate(() => document.querySelector("[data-site-header]")?.getBoundingClientRect().top ?? -1);
-  assert.equal(stuck, 0, "title header sticks to the viewport top after scrolling");
+  assert.equal(stuck, 0, "title header sticks to the viewport top while panes scroll");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => window.scrollTo(0, 999999));

@@ -39,6 +39,8 @@ export interface UnicodeCoverage {
 export interface FontMetadata {
   names: Record<string, string | null>;
   axes: AxisMetadata[];
+  glyph_count?: number | null;
+  font_hints?: boolean | null;
   kerning?: KerningMetadata;
   style?: StyleMetadata;
   classification?: ClassificationMetadata;
@@ -138,6 +140,9 @@ function validateFontMetadata(metadata: FontMetadata): void {
     fail("metadata.names must be an object");
   }
   if (!Array.isArray(metadata.axes)) fail("metadata.axes must be an array");
+  if (metadata.font_hints !== undefined && metadata.font_hints !== null && typeof metadata.font_hints !== "boolean") {
+    fail("font_hints must be a boolean or null");
+  }
   for (const axis of metadata.axes) {
     if (!axis || typeof axis !== "object") fail("every axis must be an object");
     if (typeof axis.tag !== "string" || axis.tag.length !== 4) fail("every axis tag must be a 4-character string");
@@ -176,6 +181,13 @@ export async function listFonts(): Promise<StoredFont[]> {
     const rows = await fontDatabase.fonts.orderBy("addedAt").toArray();
     return rows.map(toStoredFont);
   });
+}
+
+// Refresh descriptive metadata without replacing bytes, identity, variants,
+// user names or timestamps, and without resurrecting a concurrently deleted font.
+export async function updateFontMetadata(id: string, metadata: FontMetadata): Promise<void> {
+  validateFontMetadata(metadata);
+  await runWithFonts(() => fontDatabase.fonts.update(id, { metadata }));
 }
 
 export async function getFont(id: string): Promise<StoredFont | undefined> {

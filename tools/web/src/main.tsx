@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
-import { PwaStatus } from "./app/shell/PwaStatus";
+import { SiteFooter } from "./app/shell/SiteFooter";
 import { ThemeProvider } from "./components/theme/ThemeProvider";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { RendererProvider } from "./app/renderer/renderer-context";
 import { createWorkerRendererService } from "./app/renderer/worker-service";
 import { App } from "./app/App";
@@ -10,9 +11,15 @@ const root = document.getElementById("root");
 if (!root) throw new Error("App root element is missing.");
 createRoot(root).render(
   <ThemeProvider>
-    {import.meta.env.PROD && <PwaStatus />}
-    <RendererProvider createService={createWorkerRendererService}>
-      <App />
-    </RendererProvider>
+    <TooltipProvider>
+      <div className="app-shell">
+        <div className="app-shell__page">
+          <RendererProvider createService={createWorkerRendererService}>
+            <App />
+          </RendererProvider>
+        </div>
+        <SiteFooter />
+      </div>
+    </TooltipProvider>
   </ThemeProvider>,
 );

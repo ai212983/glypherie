@@ -77,3 +77,21 @@ export function displayName(font: StoredFont): string {
   if (family && family.trim()) return family;
   return font.name || font.fileName;
 }
+
+export function licenseBadge(metadata: FontMetadata): { label: string; description: string } {
+  const text = metadata.names.license?.trim() ?? "";
+  const url = metadata.names.license_url?.trim() ?? "";
+  let label = text || url ? "Provided" : "Unknown";
+  // Identify only explicitly named licenses; an unfamiliar notice does not
+  // establish a commercial, open-source, or other permission category.
+  if (/\bSIL Open Font License\b/i.test(text)
+    || /^https?:\/\/(?:www\.)?(?:openfontlicense\.org(?:\/|$)|scripts\.sil\.org\/OFL(?:[/?#]|$))/i.test(url)) {
+    label = "SIL OFL";
+  } else if (/\bApache License,?\s*(?:Version\s*)?2\.0\b/i.test(text)
+    || /^https?:\/\/(?:www\.)?apache\.org\/licenses\/LICENSE-2\.0(?:[/?#]|$)/i.test(url)) {
+    label = "Apache 2.0";
+  } else if (/\bMIT License\b/i.test(text)) {
+    label = "MIT";
+  }
+  return { label, description: [text, url].filter(Boolean).join("\n") || "No license information is embedded in this font." };
+}

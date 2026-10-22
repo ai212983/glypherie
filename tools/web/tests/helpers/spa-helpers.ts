@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { chromium, type Browser, type Page } from "playwright-core";
+import { chromium, type Browser, type Locator, type Page } from "playwright-core";
 
 export const webRoot: string = fileURLToPath(new URL("../..", import.meta.url));
 export const repoRoot: string = path.resolve(webRoot, "..", "..");
@@ -98,10 +98,24 @@ export async function bootLibrary(page: Page, url: string): Promise<void> {
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
 }
 
+/** Read a hint through the same hover interaction as the app's tooltip triggers. */
+export async function tooltipText(page: Page, trigger: Locator): Promise<string> {
+  await page.keyboard.press("Escape");
+  await trigger.hover();
+  const describedBy = await page.waitForFunction((element) => element?.getAttribute("aria-describedby"), await trigger.elementHandle());
+  const tooltip = page.locator(`[role="tooltip"][id="${await describedBy.jsonValue()}"]`);
+  await tooltip.waitFor({ state: "visible" });
+  const content = await tooltip.textContent() ?? "";
+  await page.keyboard.press("Escape");
+  await page.mouse.move(0, 0, { steps: 5 });
+  await tooltip.waitFor({ state: "hidden" });
+  return content;
+}
+
 /** Wait for an unsaved font preview (font switcher plus rendered specimen). */
 export async function bootDetail(page: Page, url: string): Promise<void> {
   await page.goto(url, { waitUntil: "networkidle" });
-  await page.waitForFunction(() => document.querySelectorAll("#font-select option").length > 0);
+  await page.waitForFunction(() => document.querySelector('#font-select[data-state]:not(:disabled), #font-select[data-slot="select-display"]') !== null);
   await page.waitForFunction(canvasRendered);
 }
 
@@ -154,39 +168,24 @@ export async function setRange(page: Page, selector: string, value: string): Pro
   }, value);
 }
 
-/** Ink pixel count of one card preview canvas (0 when not yet painted). */
-export async function cardInk(page: Page, fontId: string): Promise<number> {
+/** Actual source-font readiness, excluding browser fallback while loading. */
+export async function sourceReady(page: Page, fontId: string): Promise<boolean> {
   return page.evaluate((id) => {
-    const canvas = document.querySelector(`[data-card-canvas="${id}"]`) as HTMLCanvasElement | null;
-    if (!canvas || canvas.width === 0) return 0;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Canvas 2D context unavailable.");
-    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    let ink = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) ink += 1;
-    }
-    return ink;
+    const source = document.querySelector(`[data-source-preview="${id}"]`) as HTMLElement | null;
+    if (!source || source.dataset.rendered !== "true") return false;
+    return [...document.fonts].some((face) => face.family === `source-${id}` && face.status === "loaded")
+      && source.getBoundingClientRect().height > 0;
   }, fontId);
 }
 
-/** FNV-1a digest plus ink of one card preview canvas for change detection. */
-export async function cardDigest(page: Page, fontId: string): Promise<{ hash: number; ink: number }> {
-  return page.evaluate((id) => {
-    const canvas = document.querySelector(`[data-card-canvas="${id}"]`) as HTMLCanvasElement | null;
-    if (!canvas || canvas.width === 0) return { hash: 0, ink: 0 };
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Canvas 2D context unavailable.");
-    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    let hash = 0x811c9dc5;
-    let ink = 0;
-    for (let i = 0; i < data.length; i += 1) {
-      hash ^= data[i]!;
-      hash = Math.imul(hash, 0x01000193);
-      if (i % 4 !== 3 && data[i] !== 255) ink += 1;
-    }
-    return { hash: hash >>> 0, ink };
-  }, fontId);
+/** Browser layout and paint inputs for source-preview change detection. */
+export async function sourceSnapshot(page: Page, fontId: string) {
+  return page.locator(`[data-source-preview="${fontId}"]`).evaluate((source) => {
+    const style = getComputedStyle(source);
+    const box = source.getBoundingClientRect();
+    return { text: source.textContent, family: style.fontFamily, axes: style.fontVariationSettings,
+      size: style.fontSize, color: style.color, width: box.width, height: box.height };
+  });
 }
 
 /** Card content ids in library order. */
@@ -256,4 +255,78 @@ export async function mutatedUploadBytes(sourceFile: string): Promise<Buffer> {
   }
   if (patched === 0) throw new Error("No family string to patch for mutated upload.");
   return bytes;
+}
+
+/** Choose an explicit display magnification through the shared toolbar. */
+export async function setZoom(page: Page, value: string): Promise<void> {
+  await page.locator("#zoom").getByRole("radio", { name: `${value}×`, exact: true }).check();
+}
+
+export interface PalettePresetSpec {
+  name: string;
+  bits: 1 | 2 | 3 | 4;
+}
+
+/** Create a palette preset through the palette lab UI; returns its row id. */
+export async function createPalettePreset(
+  page: Page,
+  url: string,
+  spec: PalettePresetSpec,
+): Promise<{ rowId: number }> {
+  const levels = 2 ** spec.bits;
+  const depthLabel = `${spec.bits}-bit · ${levels} levels`;
+  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.waitForFunction(
+    () => document.querySelector('main section[aria-label="Grayscale preview"]') !== null,
+    null,
+    { timeout: 20000 },
+  );
+  const before = await page.locator("[data-preset-row]").count();
+  await page.getByRole("button", { name: "Add preset" }).click();
+  await page.waitForFunction(
+    (count) => document.querySelectorAll("[data-preset-row]").length === count + 1,
+    before,
+    { timeout: 20000 },
+  );
+  const rowId: number = await page.evaluate(() => {
+    const ids = [...document.querySelectorAll("[data-preset-row]")]
+      .map((row) => Number(row.getAttribute("data-preset-row")))
+      .filter((id) => id !== 0);
+    return Math.max(...ids);
+  });
+  await page.locator(`[data-preset-row="${rowId}"]`).click();
+  await page.waitForFunction(
+    (id) => document.querySelector(`[data-preset-row="${id}"]`)?.getAttribute("aria-pressed") === "true",
+    rowId,
+    { timeout: 20000 },
+  );
+  const depth = page.getByRole("radio", { name: depthLabel, exact: true });
+  if ((await depth.getAttribute("data-state")) !== "on") await depth.click();
+  await page.waitForFunction(
+    ([id, label]) => document.querySelector(`[data-preset-caption="${id}"]`)?.textContent?.includes(label) === true,
+    [rowId, depthLabel] as [number, string],
+    { timeout: 20000 },
+  );
+  const nameBox = page
+    .getByRole("region", { name: "Grayscale preview" })
+    .getByRole("textbox", { name: "Name", exact: true });
+  await nameBox.fill(spec.name);
+  await nameBox.blur();
+  await page.waitForFunction(
+    ([id, name]) => document.querySelector(`[data-preset-row="${id}"]`)?.getAttribute("aria-label")?.startsWith(`${name},`) === true,
+    [rowId, spec.name] as [number, string],
+    { timeout: 20000 },
+  );
+  return { rowId };
+}
+
+/** Select a palette preset through the editor Palette chooser. */
+export async function selectPalettePreset(page: Page, name: string): Promise<void> {
+  await page.getByRole("combobox", { name: "Palette", exact: true }).click();
+  await page.getByRole("option").filter({ has: page.getByText(name, { exact: true }) }).click();
+  await page.waitForFunction(
+    (expected) => document.querySelector('[data-output-palette] [data-palette-name]')?.textContent === expected,
+    name,
+    { timeout: 20000 },
+  );
 }

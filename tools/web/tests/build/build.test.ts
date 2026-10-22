@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { buildApp, fontDir, sha256 } from "../helpers/spa-helpers.ts";
+import { buildApp, fontDir, repoRoot, sha256 } from "../helpers/spa-helpers.ts";
 
 async function filesByExtension(root: string, extension: string): Promise<string[]> {
   const found: string[] = [];
@@ -26,6 +26,13 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
   assert.equal(cssNames.length, 1, "one hashed stylesheet");
   const wasm = await filesByExtension(output, ".wasm");
   assert.equal(wasm.length, 1, "one hashed renderer binary");
+  const rendererPackage = process.env.FONT_WASM_PREVIEW_DIR
+    ?? path.join(repoRoot, "tools", "wasm", "pkg-web-preview-simd128");
+  assert.equal(
+    sha256(await fs.readFile(path.join(output, "assets", wasm[0]!))),
+    sha256(await fs.readFile(path.join(rendererPackage, "font_wasm_bg.wasm"))),
+    "configured renderer bytes reach the build unchanged (standard SIMD by default)",
+  );
 
   const fontPackages: Array<[string, string]> = [
     ["Roboto.ttf", "OFL-Roboto.txt"],
@@ -53,6 +60,10 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
       `${license} text unchanged`,
     );
   }
+
+  const rendererLicense = await fs.readFile(path.join(output, "renderer-license.txt"), "utf8");
+  assert.ok(rendererLicense.includes("FreeType 2.15.0"));
+  assert.ok(rendererLicense.includes("The FreeType Project LICENSE"));
 
   const cssName = cssNames[0];
   assert.ok(cssName, "hashed stylesheet name");

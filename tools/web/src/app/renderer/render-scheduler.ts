@@ -68,6 +68,20 @@ export class RenderScheduler {
   private lastKey = "";
   private activeKey: string | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private pending = false;
+  private failed = false;
+
+  private readonly onPendingChange: ((pending: boolean) => void) | undefined;
+
+  constructor(onPendingChange?: (pending: boolean) => void) {
+    this.onPendingChange = onPendingChange;
+  }
+
+  private setPending(pending: boolean): void {
+    if (this.pending === pending) return;
+    this.pending = pending;
+    this.onPendingChange?.(pending);
+  }
 
   request(job: RenderJob): void {
     if (job.key === this.current && this.timer !== undefined) {
@@ -81,7 +95,11 @@ export class RenderScheduler {
     }
     const changed = job.key !== this.current;
     this.current = job.key;
+    // A parent's error-status rerender is not a retry. Input changes or
+    // cancel/re-enable permit recovery without restarting a failed loop.
+    if (!changed && this.failed) return;
     if (job.key === this.lastKey && (this.activeKey === null || this.activeKey === job.key)) {
+      this.setPending(false);
       return;
     }
     if (!changed && this.activeKey === job.key) {
@@ -90,8 +108,11 @@ export class RenderScheduler {
     this.epoch += 1;
     this.activeKey = null;
     if (job.key === this.lastKey) {
+      this.setPending(false);
       return;
     }
+    this.setPending(true);
+    this.failed = false;
     if (job.immediate || job.debounceMs <= 0) {
       this.activeKey = job.key;
       void this.run(job, this.epoch);
@@ -117,12 +138,14 @@ export class RenderScheduler {
     this.current = null;
     this.activeKey = null;
     this.lastKey = "";
+    this.failed = false;
+    this.setPending(false);
   }
 
   private async run(job: RenderJob, epoch: number): Promise<void> {
     const alive = (): boolean => epoch === this.epoch && this.current === job.key;
-    const token = job.nextToken();
     try {
+      const token = job.nextToken();
       const first = await job.render(job.fontId, token, job.specForHeight(job.estimate));
       if (!alive() || first.dropped || first.token !== token) return;
       let data = first.pixels;
@@ -135,7 +158,8 @@ export class RenderScheduler {
       }
       if (!alive()) return;
       // Paint commits before the identity does: a throwing paint lands in the
-      // error path below with the key unmarked, so a later request can retry.
+      // error path below with the key unmarked, so changed inputs or an
+      // explicit restart can retry.
       job.onPaint({ data, fullHeight: full, shown: need, truncated: full > job.cap });
       this.activeKey = null;
       this.lastKey = job.key;
@@ -146,7 +170,15 @@ export class RenderScheduler {
       // the canvas), so forget any previously painted identity: recovery with
       // identical inputs must render again instead of hitting the painted dedupe.
       this.lastKey = "";
+      this.failed = true;
       job.onError(error);
+    } finally {
+      // Superseded work never clears a newer request's pending state. Stay
+      // pending through both layout passes and the final paint callback.
+      if (alive()) {
+        this.activeKey = null;
+        this.setPending(false);
+      }
     }
   }
 }

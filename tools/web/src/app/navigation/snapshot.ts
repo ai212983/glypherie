@@ -1,7 +1,8 @@
 // Preview-URL snapshots for the SPA. Reuses the versioned query format and
-// pure codec from the legacy preview (v, font, profile, zoom, exact, stem,
-// kerning, families; History.replaceState, 250 ms debounce), built from the
-// live library instead of generator exports: no family is hardcoded.
+// pure codec from the legacy preview (v, font, profile, exact, stem,
+// kerning, families; History.replaceState, 250 ms
+// debounce), built from the live library instead of generator exports: no
+// family is hardcoded.
 // cspell:words metas
 import type { RendererRole } from "../renderer/renderer-types.js";
 import {
@@ -17,6 +18,7 @@ import {
   detailHash,
   indexHash,
   isRouteHash,
+  palettesHash,
   parseHashRoute,
   splitHash,
   type Route,
@@ -24,11 +26,9 @@ import {
 
 export type { PreviewSnapshot, FamilySnapshot } from "../features/preview/state/snapshot-codec.js";
 
-const ZOOM_KEY = "font-preview.zoom.specimen";
 const EXACT_KEY = "font-preview.pixel-accurate";
 const SPACING_KEY = "font-preview.spacing";
 const WRITE_DEBOUNCE_MS = 250;
-const ZOOM_STOPS = [1, 2, 3, 4];
 
 // Renderer role lives outside the versioned snapshot codec: it is a
 // validated app-level query param, preserved across snapshot writes because
@@ -57,17 +57,8 @@ export function writeRoleParam(role: RendererRole): void {
   );
 }
 
-function readStoredGlobals(): { zoom?: number; pixelAccurate?: boolean; kerning?: boolean } {
-  const result: { zoom?: number; pixelAccurate?: boolean; kerning?: boolean } = {};
-  try {
-    const zoom = Number(localStorage.getItem(ZOOM_KEY));
-    if (ZOOM_STOPS.includes(zoom)) result.zoom = zoom;
-  } catch { /* storage unavailable */ }
-  try {
-    const exact = localStorage.getItem(EXACT_KEY);
-    if (exact === "true") result.pixelAccurate = true;
-    else if (exact === "false") result.pixelAccurate = false;
-  } catch { /* storage unavailable */ }
+function readStoredGlobals(): { kerning?: boolean } {
+  const result: { kerning?: boolean } = {};
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(SPACING_KEY) ?? "");
     if (parsed && typeof parsed === "object" && typeof (parsed as Record<string, unknown>).kerning === "boolean") {
@@ -79,8 +70,7 @@ function readStoredGlobals(): { zoom?: number; pixelAccurate?: boolean; kerning?
 
 function withStoredGlobals(snapshot: PreviewSnapshot): PreviewSnapshot {
   const stored = readStoredGlobals();
-  if (stored.zoom !== undefined) snapshot.zoom = stored.zoom;
-  if (stored.pixelAccurate !== undefined) snapshot.pixelAccurate = stored.pixelAccurate;
+  snapshot.pixelAccurate = true;
   if (stored.kerning !== undefined) snapshot.kerning = stored.kerning;
   return snapshot;
 }
@@ -90,7 +80,6 @@ export function readInitialSnapshot(metas: FamilyMeta[]): PreviewSnapshot {
   const defaults: GlobalDefaults = {
     font: metas[0]?.id ?? "",
     profile: "mono_1bit",
-    zoom: 1,
   };
   const hash = window.location.hash;
   const outer = window.location.search;
@@ -114,7 +103,6 @@ export function readInitialSnapshot(metas: FamilyMeta[]): PreviewSnapshot {
     const snapshot = withStoredGlobals(defaultSnapshot(metas, { ...defaults, font: legacy }));
     const state = parseLegacyState(outer, hash, metas);
     if (state.profile) snapshot.profile = state.profile;
-    if (state.zoom !== undefined) snapshot.zoom = state.zoom;
     snapshot.font = legacy;
     return snapshot;
   }
@@ -162,8 +150,7 @@ export function writeSnapshotNow(snapshot: PreviewSnapshot, familyOrder: string[
   const url = `${window.location.pathname}${window.location.search}${detailHash(snapshot.font)}${text ? `?${text}` : ""}`;
   window.history.replaceState(historyStateFor(snapshot), "", url);
   try {
-    localStorage.setItem(ZOOM_KEY, String(snapshot.zoom));
-    localStorage.setItem(EXACT_KEY, String(snapshot.pixelAccurate));
+    localStorage.setItem(EXACT_KEY, "true");
     localStorage.setItem(SPACING_KEY, JSON.stringify({ kerning: snapshot.kerning }));
   } catch { /* storage unavailable */ }
 }
@@ -179,6 +166,7 @@ export function canonicalHashFor(
   if (route.page === "font") {
     return `${detailHash(route.font)}?${encodeHashSearch(snapshot, baseSearch, familyOrder).toString()}`;
   }
+  if (route.page === "palettes") return palettesHash(baseSearch);
   return indexHash(baseSearch);
 }
 

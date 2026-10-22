@@ -1,4 +1,4 @@
-// Pure display-scaling math for the optional pixel-accurate preview mode.
+// Pure display-scaling math for pixel-accurate previews.
 //
 // Source foundation: CSS `devicePixelRatio` (device pixels per CSS pixel,
 // including browser zoom and OS display scaling) combined with integer
@@ -7,6 +7,9 @@
 // size adjustment, not a font-fitting hypothesis: the font request (size,
 // axes, hinting) is unchanged; only the request bounds and the canvas
 // backing/CSS sizes adapt. No DOM access here; units are explicit in names.
+export const DEFAULT_PREVIEW_ZOOM = 2;
+export const PREVIEW_ZOOM_STOPS = [1, 2, 3, 4];
+
 export const NATIVE_WIDTH_MIN = 1;
 export const NATIVE_WIDTH_MAX = 4096;
 // Browser canvas backing limit shared with the normal paint path.

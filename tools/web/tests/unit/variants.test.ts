@@ -2,6 +2,8 @@ import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test, { beforeEach } from "node:test";
+import { createPalette, updatePalette } from "../../src/app/palettes/repository.ts";
+import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
 import Dexie, { type Table } from "dexie";
 import {
   fontDatabase,
@@ -85,11 +87,16 @@ test("imported fonts start with no variants; Add creates a default saved variant
     axes: { wght: 400 },
     letterSpacingPx: 0,
     profile: "mono_1bit",
+    paletteId: 0,
     kerning: true,
     stemFitting: "font_hints_first",
+    diagonalFitting: false,
+    monoRaster: { dropout: "smart", includeStubs: true, fontInstructions: true },
     renderer: "candidate",
+    rasterization: "free_type_mono",
   });
   assert.equal(variant.sampleText, TEXT_DEFAULT);
+  assert.equal(variant.inheritSampleText, true);
   assert.ok(variant.createdAt > 0);
   assert.equal(variant.updatedAt, variant.createdAt);
   assert.match(variant.id, /^[0-9a-f-]{36}$/);
@@ -97,6 +104,27 @@ test("imported fonts start with no variants; Add creates a default saved variant
   assert.deepEqual(await getVariant(variant.id), variant);
   assert.equal(await getVariant("00000000-0000-0000-0000-000000000000"), undefined);
   assert.deepEqual((await listVariants(font.id)).map((entry) => entry.id), [variant.id]);
+});
+
+test("sample text inheritance persists while explicit and historical text remain independent", async () => {
+  const font = await saveFixture();
+  const inherited = await createVariant(font.id);
+  const override = await updateVariant(inherited.id, { sampleText: "" }, inherited.revision);
+  assert.equal(override.inheritSampleText, false, "empty text is an explicit override");
+  const reset = await updateVariant(override.id, { inheritSampleText: true }, override.revision);
+  assert.equal((await getVariant(reset.id))?.inheritSampleText, true);
+  assert.deepEqual(reset.settings, override.settings, "resetting inheritance preserves settings");
+
+  const explicit = await createVariant(font.id, { sampleText: TEXT_DEFAULT });
+  assert.equal(explicit.inheritSampleText, false, "text matching a default is still an override");
+  await fontDatabase.variants.update(explicit.id, { inheritSampleText: undefined });
+  assert.equal((await getVariant(explicit.id))?.inheritSampleText, false, "historical rows preserve saved text");
+  const renamed = await updateVariant(explicit.id, { name: "Historical" }, explicit.revision);
+  assert.equal(renamed.inheritSampleText, false);
+  assert.equal(renamed.sampleText, TEXT_DEFAULT);
+
+  await assertRejectsCode(createVariant(font.id, { inheritSampleText: "yes" as never }), "invalid-input");
+  await assertRejectsCode(updateVariant(reset.id, { inheritSampleText: "yes" as never }, reset.revision), "invalid-input");
 });
 
 test("default settings carry hidden axes and static fonts yield axes={}", () => {
@@ -124,6 +152,35 @@ test("default settings carry hidden axes and static fonts yield axes={}", () => 
     addedAt: 0,
   });
   assert.deepEqual(staticFont.axes, {});
+});
+
+test("retired Mono renderer and coverage choices migrate to the current preview pipeline", async () => {
+  const font = await saveFixture();
+  const base = defaultVariantSettings(font);
+  for (const renderer of ["candidate", "baseline", "reference"] as const) {
+    const settings = { ...base, rasterization: undefined, renderer, letterSpacingPx: 2 };
+    const variant = await createVariant(font.id, { settings });
+    const loaded = await getVariant(variant.id);
+    assert.equal(loaded?.settings.rasterization, "free_type_mono");
+    assert.equal(loaded?.settings.renderer, "candidate");
+    assert.equal(loaded?.settings.letterSpacingPx, 2, "saved extra tracking survives the pipeline migration");
+  }
+  const variant = await createVariant(font.id, { settings: { ...base, rasterization: "coverage", stemFitting: "upstream_mono" } });
+  assert.equal((await getVariant(variant.id))?.settings.rasterization, "free_type_mono");
+  assert.equal((await getVariant(variant.id))?.settings.stemFitting, "upstream_mono");
+});
+
+test("undefined grayscale output falls back to Monochrome without changing font inputs", async () => {
+  const font = await saveFixture();
+  const settings = { ...defaultVariantSettings(font), profile: "gray_3bit" as const,
+    rasterization: undefined, renderer: "reference" as const, letterSpacingPx: 2 };
+  const variant = await createVariant(font.id, { settings });
+  const loaded = await getVariant(variant.id);
+  assert.equal(loaded?.settings.renderer, "candidate");
+  assert.equal(loaded?.settings.rasterization, "free_type_mono");
+  assert.equal(loaded?.settings.paletteId, 0);
+  assert.equal(loaded?.settings.letterSpacingPx, 2);
+  assert.deepEqual(loaded?.settings.axes, settings.axes);
 });
 
 test("default names sequence per font and renames allow duplicates", async () => {
@@ -246,7 +303,13 @@ test("saved settings validate numeric bounds and enum values", async () => {
     { ...base, profile: "hdr" },
     { ...base, kerning: 1 },
     { ...base, stemFitting: "auto" },
+    { ...base, monoRaster: { dropout: "cleartype", includeStubs: false, fontInstructions: false } },
+    { ...base, monoRaster: { dropout: "smart", includeStubs: "yes", fontInstructions: false } },
+    { ...base, monoRaster: { dropout: "smart", includeStubs: false, fontInstructions: "yes" } },
+    { ...base, monoRaster: "smart" },
     { ...base, renderer: "preview" },
+    { ...base, rasterization: "unknown" },
+    { ...base, renderer: "baseline" },
   ];
   for (const settings of bad) {
     await assertRejectsCode(
@@ -254,8 +317,69 @@ test("saved settings validate numeric bounds and enum values", async () => {
       "invalid-settings",
     );
   }
-  validateVariantSettings({ ...base, sizePx: 1, letterSpacingPx: -2 }, metadata());
-  validateVariantSettings({ ...base, sizePx: 512, letterSpacingPx: 4 }, metadata());
+  validateVariantSettings({ ...base, rasterization: undefined, sizePx: 1, letterSpacingPx: -2 }, metadata());
+  validateVariantSettings({ ...base, rasterization: undefined, sizePx: 512, letterSpacingPx: 4 }, metadata());
+  validateVariantSettings({ ...base, letterSpacingPx: -2 }, metadata());
+  validateVariantSettings({ ...base, letterSpacingPx: 4 }, metadata());
+  validateVariantSettings({ ...base, profile: "gray_3bit", letterSpacingPx: 3 }, metadata());
+});
+
+test("nonzero extra tracking round-trips for 1-bit and 3-bit, zero stays the default", async () => {
+  const font = await saveFixture();
+  const base = defaultVariantSettings(font);
+  assert.equal(base.letterSpacingPx, 0);
+  const mono = await createVariant(font.id, { settings: { ...base, letterSpacingPx: 2 } });
+  assert.equal((await getVariant(mono.id))?.settings.letterSpacingPx, 2);
+  const gray = await createVariant(font.id, {
+    settings: { ...base, profile: "gray_3bit", letterSpacingPx: -2 },
+  });
+  assert.equal((await getVariant(gray.id))?.settings.letterSpacingPx, -2);
+  const stored = await createVariant(font.id);
+  assert.equal((await getVariant(stored.id))?.settings.letterSpacingPx, 0);
+});
+
+test("tracking edits survive palette and fitting changes", async () => {
+  const paletteId = await createPalette();
+  await updatePalette(paletteId, { curve: () => linearCurve(8) });
+  const font = await saveFixture();
+  const base = defaultVariantSettings(font);
+  const created = await createVariant(font.id, { settings: { ...base, letterSpacingPx: 3 } });
+  const gray = await updateVariant(
+    created.id,
+    { settings: { ...created.settings, paletteId, profile: "gray_3bit", stemFitting: "upstream_mono" } },
+    created.revision,
+  );
+  assert.equal(gray.settings.letterSpacingPx, 3);
+  assert.equal(gray.settings.profile, "gray_3bit");
+  const back = await updateVariant(
+    gray.id,
+    { settings: { ...gray.settings, paletteId: 0, profile: "mono_1bit", stemFitting: "font_hints_first" } },
+    gray.revision,
+  );
+  assert.equal(back.settings.letterSpacingPx, 3);
+  assert.deepEqual((await getVariant(back.id))?.settings, back.settings);
+});
+
+test("legacy storage validation fills absent scan fields", async () => {
+  const font = await saveFixture();
+  const legacy = { ...defaultVariantSettings(font) } as Record<string, unknown>;
+  delete legacy.monoRaster;
+  validateVariantSettings(legacy as never, metadata());
+  assert.deepEqual(legacy.monoRaster, { dropout: "smart", includeStubs: false, fontInstructions: false });
+});
+
+test("legacy scan settings validate but Mono previews use the fixed policy", async () => {
+  const font = await saveFixture();
+  const settings = defaultVariantSettings(font);
+  // Phase-1 rows carry manual choices but no font-instructions flag.
+  const legacy = { ...settings, monoRaster: { dropout: "off", includeStubs: true } as never };
+  validateVariantSettings(legacy as never, metadata());
+  assert.deepEqual(legacy.monoRaster, { dropout: "off", includeStubs: true, fontInstructions: false });
+  const stored = await createVariant(font.id, { settings: legacy as never });
+  assert.deepEqual(stored.settings.monoRaster, { dropout: "smart", includeStubs: true, fontInstructions: true });
+  assert.deepEqual((await getVariant(stored.id))?.settings.monoRaster, {
+    dropout: "smart", includeStubs: true, fontInstructions: true,
+  });
 });
 
 test("names and sample text have explicit limits", async () => {
@@ -495,7 +619,7 @@ test("v1 databases upgrade with fonts and seed marker retained, variants empty",
   await legacy.close();
 
   await fontDatabase.open();
-  assert.equal(fontDatabase.verno, 2);
+  assert.equal(fontDatabase.verno, 3);
   const fonts = await listFonts();
   assert.deepEqual(fonts.map((font) => font.id), [id]);
   assert.deepEqual(Buffer.from(fonts[0]?.bytes ?? new ArrayBuffer(0)), Buffer.from(bytes));

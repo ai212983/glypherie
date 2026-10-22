@@ -4,6 +4,22 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: "Glypherie Mono";
+  src: url("./components/ui/assets/glypherie/JetBrainsMono.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("./components/ui/assets/glypherie/SpaceGrotesk.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -25,6 +41,18 @@
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
   --radius: 0.625rem;
+  --studio-surface: #ffffff;
+  --font-card-surface: var(--studio-surface);
+  --studio-foreground: #232933;
+  --studio-muted: #647078;
+  --studio-border: #cdd3db;
+  --studio-inset: #f1f3f5;
+  --studio-accent: #ff6238;
+  --studio-heading: #bc3b18;
+  --studio-info: #00758f;
+  --studio-backdrop: #e9edf1;
+  --studio-card-shadow: inset 0 1px 0 rgb(255 255 255 / 90%), 0 2px 3px rgb(16 20 26 / 14%);
+  --studio-inset-shadow: inset 0 2px 4px rgb(16 20 26 / 10%), 0 1px 0 rgb(255 255 255 / 80%);
 }
 
 .dark {
@@ -47,9 +75,48 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+  --studio-surface: #1c2026;
+  --font-card-surface: #181c22;
+  --studio-foreground: #dfe2eb;
+  --studio-muted: #859399;
+  --studio-border: #282e38;
+  --studio-inset: #10141a;
+  --studio-heading: var(--studio-accent);
+  --studio-info: #47d6ff;
+  --studio-backdrop: #181d23;
+  --studio-card-shadow: inset 0 1px 0 rgb(255 255 255 / 7%), 0 2px 3px rgb(0 0 0 / 55%);
+  --studio-inset-shadow: inset 0 2px 4px rgb(0 0 0 / 60%), 0 1px 0 rgb(255 255 255 / 3%);
+}
+
+.studio-card {
+  --card: var(--studio-surface);
+  --card-foreground: var(--studio-foreground);
+  --muted-foreground: var(--studio-muted);
+  --border: var(--studio-border);
+  --input: var(--studio-border);
+  --background: var(--studio-inset);
+  --foreground: var(--studio-foreground);
+  --primary: var(--studio-accent);
+  --primary-foreground: #10141a;
+  --ring: var(--studio-heading);
+  --color-brand: var(--studio-heading);
+  --accent: var(--studio-accent);
+  --accent-foreground: var(--primary-foreground);
 }
 
 @theme inline {
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-studio: "Glypherie Mono", ui-monospace, monospace;
+  --color-font-card: var(--font-card-surface);
+  --color-studio-foreground: var(--studio-foreground);
+  --color-studio-muted: var(--studio-muted);
+  --color-studio-border: var(--studio-border);
+  --color-studio-heading: var(--studio-heading);
+  --color-studio-info: var(--studio-info);
+  --color-studio-backdrop: var(--studio-backdrop);
+  --color-studio-inset: var(--studio-inset);
+  --shadow-studio-card: var(--studio-card-shadow);
+  --shadow-studio-inset: var(--studio-inset-shadow);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

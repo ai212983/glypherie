@@ -294,6 +294,107 @@ test("real glyphs paint non-uniform coverage", { skip: !browserAvailable }, asyn
   await page.close();
 });
 
+test("shared form and studio dropdowns select by keyboard and retain disabled and invalid states", { skip: !browserAvailable }, async (t) => {
+  const base = await devBase(t);
+  const browser = await launch(t);
+  for (const state of ["default", "disabled", "invalid"]) {
+    const page = await openManager(browser, base, `ui-form-controls--${state}`);
+    const frame = await storyFrame(page);
+    const profile = frame.getByRole("combobox", { name: "Output profile", exact: true });
+    await profile.waitFor();
+    assert.equal(await profile.isDisabled(), state === "disabled");
+    assert.equal(await profile.getAttribute("aria-invalid"), String(state === "invalid"));
+    if (state !== "disabled") {
+      await profile.focus();
+      await profile.press("Space");
+      await frame.waitForFunction(() => document.activeElement?.getAttribute("role") === "option");
+      await page.keyboard.press("End");
+      await frame.waitForFunction(() => document.activeElement?.textContent === "Grayscale");
+      await page.keyboard.press("Enter");
+      assert.equal(await profile.textContent(), "Grayscale");
+      assert.equal(await profile.evaluate((element) => element === document.activeElement), true);
+    }
+    assert.equal(await frame.locator("select:visible").count(), 0);
+    assert.deepEqual(storyErrors(page), []);
+    await page.close();
+  }
+  const page = await openManager(browser, base, "ui-studio-card--default");
+  const frame = await storyFrame(page);
+  const preset = frame.getByRole("combobox", { name: "Quick presets", exact: true });
+  await preset.click();
+  await frame.getByRole("option", { name: "Digits + Symbols", exact: true }).click();
+  assert.equal(await frame.getByRole("textbox", { name: "Test buffer text", exact: true }).inputValue(), "0123456789 !@#$%^&*()");
+  assert.equal(await frame.locator("select:visible").count(), 0);
+  assert.deepEqual(storyErrors(page), []);
+  await page.close();
+});
+
+test("default card slots own their styling and nested variants stay isolated", { skip: !browserAvailable }, async (t) => {
+  const base = await devBase(t);
+  const browser = await launch(t);
+  const page = await openManager(browser, base, "ui-card--nested-variants");
+  const frame = await storyFrame(page);
+  await frame.locator('[data-card-fixture="nested-default"]').waitFor();
+  const snapshot = (id: string) => frame.locator(`[data-card-fixture="${id}"]`).evaluate((card) => {
+    const style = (slot: string, fields: string[]): string[] => {
+      const element = card.querySelector(`:scope > [data-slot="${slot}"]`)!;
+      const computed = getComputedStyle(element);
+      return fields.map((field) => computed.getPropertyValue(field));
+    };
+    const header = card.querySelector(':scope > [data-slot="card-header"]')!;
+    const title = header.querySelector('[data-slot="card-title"]')!;
+    const heading = getComputedStyle(title);
+    return {
+      heading: [heading.fontFamily, heading.fontSize, heading.fontWeight, heading.lineHeight, heading.letterSpacing, heading.color, heading.textTransform],
+      titleTag: title.tagName,
+      header: style("card-header", ["padding-left", "padding-bottom", "border-bottom-width", "row-gap"]),
+      content: style("card-content", ["padding-left", "padding-right"]),
+      footer: style("card-footer", ["padding-top", "padding-left", "border-top-width"]),
+      action: getComputedStyle(header.querySelector('[data-slot="card-action"]')!).gridRowEnd,
+    };
+  });
+  for (const theme of ["light", "dark"]) {
+    await frame.locator("html").evaluate((html, dark) => html.classList.toggle("dark", dark), theme === "dark");
+    const outer = await snapshot("outer-default");
+    assert.equal(outer.titleTag, "H2", "shared title styles apply directly to semantic headings");
+    assert.deepEqual(outer.heading.slice(1, 5), ["10px", "700", "16px", "0.5px"]);
+    assert.equal(outer.heading[6], "uppercase");
+    assert.deepEqual(outer.header, ["0px", "6px", "1px", "0px"]);
+    assert.deepEqual(outer.content, ["0px", "0px"]);
+    assert.deepEqual(outer.footer, ["8px", "0px", "1px"]);
+    assert.deepEqual(await snapshot("nested-default"), outer, `${theme}: defaults survive a plain parent`);
+    const nestedPlain = await snapshot("nested-plain");
+    const standalonePlain = await snapshot("standalone-plain");
+    // Fonts and palette inherit from the surrounding theme; slot variants do not.
+    const ownStyles = (value: typeof nestedPlain) => ({
+      ...value, heading: [...value.heading.slice(1, 5), value.heading[6]],
+    });
+    assert.deepEqual(ownStyles(nestedPlain), ownStyles(standalonePlain), `${theme}: outer slot styles do not leak into plain cards`);
+  }
+  assert.deepEqual(storyErrors(page), []);
+  await page.close();
+});
+
+test("shared tooltips work through the Storybook provider", { skip: !browserAvailable }, async (t) => {
+  const base = await devBase(t);
+  const browser = await launch(t);
+  const page = await openManager(browser, base, "ui-tooltip--default");
+  const frame = await storyFrame(page);
+  const trigger = frame.getByRole("button", { name: "Hover or focus", exact: true });
+  await trigger.hover();
+  await frame.getByRole("tooltip", { name: "Helpful information.", exact: true }).waitFor();
+  await page.mouse.move(0, 0, { steps: 5 });
+  await frame.getByRole("tooltip").waitFor({ state: "hidden" });
+  await trigger.focus();
+  await frame.getByRole("tooltip").waitFor();
+  await page.keyboard.press("Escape");
+  await frame.getByRole("tooltip").waitFor({ state: "hidden" });
+  assert.equal(await trigger.evaluate((element) => element === document.activeElement), true);
+  assert.equal(await trigger.getAttribute("title"), null);
+  assert.deepEqual(storyErrors(page), []);
+  await page.close();
+});
+
 test("editing text repaints actual glyphs", { skip: !browserAvailable }, async (t) => {
   const base = await devBase(t);
   const browser = await launch(t);
@@ -326,7 +427,8 @@ test("font selection repaints from bundled bytes", { skip: !browserAvailable }, 
   const before = await canvasStats(frame);
 
   const paints = await storyPaints(frame);
-  await frame.locator("[data-setup-font]").selectOption("Literata");
+  await frame.getByRole("combobox", { name: "Font", exact: true }).click();
+  await frame.getByRole("option", { name: "Literata", exact: true }).click();
   await waitMorePaints(frame, paints);
   const after = await canvasStats(frame);
   assert.notEqual(after.digest, before.digest, "the new font paints different glyphs");
@@ -575,7 +677,9 @@ test("manager controls list only real props, setup lives inline", { skip: !brows
       );
     }
     assert.equal(await frame.locator("[data-setup-panel]").count(), 1, `${story}: one Playground setup panel`);
-    assert.ok(await frame.locator("[data-setup-font] option").count() > 1, `${story}: the font select lists bundled fonts`);
+    await frame.getByRole("combobox", { name: "Font", exact: true }).click();
+    assert.ok(await frame.getByRole("option").count() > 1, `${story}: the font select lists bundled fonts`);
+    await frame.locator("[data-setup-font]").press("Escape");
     assert.deepEqual(storyErrors(page), []);
     await page.close();
   }
@@ -584,10 +688,12 @@ test("manager controls list only real props, setup lives inline", { skip: !brows
   await requirePreview(frame, page);
   await waitPainted(frame);
   assert.equal(await frame.locator("[data-diagnostic-tools]").count(), 1, "diagnostics story shows Diagnostic tools");
+  await frame.getByRole("combobox", { name: "Failure state", exact: true }).click();
   assert.ok(
-    await frame.locator('[data-diagnostic-state] option[value="invalid-palette"]').count() > 0,
+    await frame.getByRole("option", { name: "Invalid palette", exact: true }).count() > 0,
     "the inline state select offers the invalid-palette state",
   );
+  await frame.locator("[data-diagnostic-state]").press("Escape");
   assert.deepEqual(storyErrors(page), []);
   await page.close();
 
@@ -898,7 +1004,13 @@ async function selectGrayProfile(page: Page, frame: Frame): Promise<void> {
 // there is no Controls row for it. Re-applying the selected state goes
 // through the Apply state button instead (same-value selects fire nothing).
 async function selectDiagnostic(frame: Frame, state: string): Promise<void> {
-  await frame.locator("[data-diagnostic-state]").selectOption(state);
+  await frame.getByRole("combobox", { name: "Failure state", exact: true }).click();
+  const labels: Record<string, string> = {
+    ready: "Ready", error: "Render error", unavailable: "Service unavailable",
+    "missing-glyphs": "Missing glyphs", "invalid-palette": "Invalid palette",
+    "not-ready": "Not ready", "empty-text": "Empty text",
+  };
+  await frame.getByRole("option", { name: labels[state], exact: true }).click();
 }
 
 // Recovery through the state selector only: each selection writes its full

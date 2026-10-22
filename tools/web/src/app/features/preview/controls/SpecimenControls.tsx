@@ -1,127 +1,69 @@
 import * as React from "react";
-import type { StoredFont } from "../../../fonts/storage.js";
 import { MAX_TEXT_LENGTH } from "../../../renderer/render-spec";
 import { TEXT_PRESETS, presetForText } from "../presets";
-import { Button } from "../../../../components/ui/button";
 import { Label } from "../../../../components/ui/label";
-import { Input } from "../../../../components/ui/input";
 import { Textarea } from "../../../../components/ui/textarea";
-import { NativeSelect, NativeSelectOption } from "../../../../components/ui/native-select";
-import { displayName } from "../../../fonts/metadata";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../components/ui/select";
+
+import { SampleTextAreaControl } from "../../library/SampleTextControl";
 
 interface SpecimenControlsProps {
-  font: StoredFont;
-  sizePx: number;
-  spacingPx: number;
-  kerning: boolean;
+  controlId: string;
+  legend: string;
   text: string;
-  onSize: (sizePx: number) => void;
-  onSpacing: (spacingPx: number) => void;
-  onKerning: (kerning: boolean) => void;
   onText: (text: string) => void;
-  onReset: () => void;
+  inheritance?: { active: boolean; onInherit: () => void };
+  maxLength?: number;
+  insetSampleText?: boolean;
+  hideTextLabel?: boolean;
+  inlinePreset?: boolean;
 }
 
 export function SpecimenControls({
-  font, sizePx, spacingPx, kerning, text, onSize, onSpacing, onKerning, onText, onReset,
+  controlId, legend, text, onText, inheritance, maxLength = MAX_TEXT_LENGTH, insetSampleText = false, hideTextLabel = false, inlinePreset = false,
 }: SpecimenControlsProps): React.JSX.Element {
+  const presetId = inheritance?.active ? "inherit" : presetForText(text);
   return (
     <fieldset className="interactive-controls m-0 flex flex-wrap items-end gap-x-5 gap-y-[.85rem] border-0 p-0">
-      <legend className="visually-hidden sr-only">{displayName(font)} interactive controls</legend>
-      <div className="interactive-field flex flex-col gap-[.35rem] text-[.8rem]">
-        <Label htmlFor={`size-${font.id}`}>Font size (px)</Label>
-        <Input
-          id={`size-${font.id}`}
-          type="number"
-          data-size-px
-          min={1}
-          max={512}
-          step={0.5}
-          value={sizePx}
-          onChange={(event) => {
-            const value = Number(event.target.value);
-            if (Number.isFinite(value)) onSize(Math.min(512, Math.max(1, value)));
-          }}
-        />
-      </div>
-      <fieldset className="interactive-spacing m-0 flex min-w-0 flex-wrap items-end gap-x-5 gap-y-[.85rem] border-0 p-0">
-        <legend className="p-0 text-[.8rem] font-semibold">Spacing and kerning</legend>
-        <div className="interactive-field flex flex-col gap-[.35rem] text-[.8rem]">
-          <Label htmlFor={`spacing-${font.id}`}>Spacing (px)</Label>
-          <div className="interactive-axis flex items-center gap-[.55rem]">
-            <input
-              id={`spacing-${font.id}`}
-              type="range"
-              data-spacing
-              className="w-40 max-w-[40vw] accent-brand"
-              min={-2}
-              max={4}
-              step={1}
-              value={spacingPx}
-              onChange={(event) => onSpacing(Number(event.target.value))}
-            />
-            <Input
-              type="number"
-              data-spacing-number
-              aria-label="Spacing (px)"
-              className="w-[4.5rem]"
-              min={-2}
-              max={4}
-              step={1}
-              value={spacingPx}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value)) onSpacing(Math.min(4, Math.max(-2, value)));
-              }}
-            />
-          </div>
-        </div>
-        <div className="interactive-field flex flex-col gap-[.35rem] text-[.8rem]">
-          <Label htmlFor={`kerning-${font.id}`}>Kerning</Label>
-          <input
-            id={`kerning-${font.id}`}
-            type="checkbox"
-            data-kerning
-            className="m-0 h-4 w-4 cursor-pointer accent-brand"
-            checked={kerning}
-            onChange={(event) => onKerning(event.target.checked)}
-          />
-        </div>
-      </fieldset>
-      <div className="interactive-field flex flex-col gap-[.35rem] text-[.8rem]">
-        <Label htmlFor={`preset-${font.id}`}>Preset</Label>
-        <NativeSelect
-          id={`preset-${font.id}`}
-          data-preset
-          value={presetForText(text)}
-          onChange={(event) => {
-            const id = event.target.value;
+      <legend className="visually-hidden sr-only">{legend}</legend>
+      <div className={inlinePreset ? "interactive-field flex w-full items-center gap-3 text-[.8rem]" : "interactive-field flex flex-col gap-[.35rem] text-[.8rem]"}>
+        <Label htmlFor={`preset-${controlId}`} className="shrink-0">Preset</Label>
+        <Select
+          value={presetId}
+          onValueChange={(id) => {
+            if (id === "inherit") { inheritance?.onInherit(); return; }
             if (id === "custom") return;
             const content = TEXT_PRESETS.find((preset) => preset.id === id)?.content;
-            if (content !== undefined) onText(content.slice(0, MAX_TEXT_LENGTH));
+            if (content !== undefined) onText(content.slice(0, maxLength));
           }}
         >
-          {TEXT_PRESETS.map((preset) => (
-            <NativeSelectOption key={preset.id} value={preset.id}>{preset.title}</NativeSelectOption>
-          ))}
-        </NativeSelect>
+          <SelectTrigger id={`preset-${controlId}`} data-preset className={inlinePreset ? "w-fit! min-w-0 flex-none" : undefined}>
+            <SelectValue>{presetId === "custom" ? "Custom" : undefined}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {inheritance && <SelectItem value="inherit">Default</SelectItem>}
+            {TEXT_PRESETS.filter((preset) => preset.id !== "custom").map((preset) => (
+              <SelectItem key={preset.id} value={preset.id}>{preset.title}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
-      <div className="interactive-field interactive-text flex flex-[1_1_100%] flex-col gap-[.35rem] text-[.8rem]">
-        <Label htmlFor={`text-${font.id}`}>Sample text</Label>
+      {insetSampleText ? (
+        <SampleTextAreaControl hideLabel={hideTextLabel} id={`text-${controlId}`} data-text rows={3} maxLength={maxLength} value={text} onValueChange={onText} />
+      ) : <div className="interactive-field interactive-text flex flex-[1_1_100%] flex-col gap-[.35rem] text-[.8rem]">
+        <Label htmlFor={`text-${controlId}`}>Sample text</Label>
         <Textarea
-          id={`text-${font.id}`}
+          id={`text-${controlId}`}
           data-text
-          rows={4}
-          maxLength={MAX_TEXT_LENGTH}
+          rows={3}
+          className="min-h-[calc(3lh+1rem+2px)]"
+          maxLength={maxLength}
           autoComplete="off"
           spellCheck={false}
           value={text}
-          onChange={(event) => onText(event.target.value.slice(0, MAX_TEXT_LENGTH))}
+          onChange={(event) => onText(event.target.value.slice(0, maxLength))}
         />
-      </div>
-      <Button data-reset onClick={onReset}>
-        Reset
-      </Button>
+      </div>}
     </fieldset>
   );
 }

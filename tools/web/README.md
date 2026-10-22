@@ -16,18 +16,28 @@ just wasm-build-preview
 ## Commands
 
 ```sh
+just dev                 # Dev server with hot reload on port 8903
+just dev 8910            # Explicitly use a different dev server port
 just web                 # Build the app into out/web/
+just web-serve           # Serve out/web/ on port 8904
 just web-test            # Run tests
 just web-typecheck       # Typecheck the app, scripts, and tests
 just web-storybook       # Storybook dev server on port 6006
 just web-storybook-build # Build Storybook into out/storybook/
 ```
 
+`just dev` (also `just preview`), `just web` and `just web-serve` use Node.js (22.18 or newer) and npm from your PATH;
+they do not require mise. Build with `just web` before running `just web-serve`.
+
+Reserve `http://localhost:8903` for development and `http://localhost:8904` for the built app so their service workers
+and browser-local libraries stay separate. Both servers fail if their port is occupied instead of selecting another.
+
 Direct npm equivalents inside `tools/web`:
 
 ```sh
 npm run dev             # Vite dev server (default port 8903; --port overrides)
 npm run build           # Vite production build into out/web/
+npm run preview         # Serve out/web/ on port 8904
 npm run typecheck       # Strict tsc over the app, scripts, and tests
 npm test                # Node --test over tests/unit, tests/browser, tests/build
 npm run storybook       # Component explorer (default port 6006; --port overrides)
@@ -43,7 +53,10 @@ Browser tests use `/opt/google/chrome/chrome` or `WEB_TEST_BROWSER`; they skip w
 ## Configuration
 
 - `FONT_PREVIEW_BASE`: hosting URL prefix for the app build (default `./`).
-- `FONT_WASM_PREVIEW_DIR`: preview renderer package (default `tools/wasm/pkg-web-preview`).
+- `FONT_WASM_PREVIEW_DIR`: preview renderer package (default `tools/wasm/pkg-web-preview-simd128`, built by `just
+  wasm-build-preview`). The default requires browser WebAssembly SIMD support. For a scalar build, run `WASM_SIMD128=0
+  tools/wasm/build.sh web preview`, then set this variable to that package's absolute path
+  (`tools/wasm/pkg-web-preview`) when building or serving the app.
 - `WEB_TEST_BROWSER`: browser binary for integration tests.
 - `STORYBOOK_TEST_HARNESSES=1`: include the opt-in lifecycle test fixtures under `tests/fixtures/` in Storybook (used by
   `renderer-harness.test.ts`); normal Storybook never loads them.

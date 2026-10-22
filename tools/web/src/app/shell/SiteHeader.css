@@ -1,0 +1,72 @@
+.site-header__inner {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto auto auto;
+  grid-template-areas: "identity nav . search actions display theme";
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 24px;
+}
+.site-header__identity { grid-area: identity; min-width: 0; }
+.site-header__eyebrow { margin-bottom: 2px; font-size: 12px; line-height: 16px; color: var(--color-soft); }
+.site-header__nav { grid-area: nav; min-width: 0; }
+.site-header__navlinks { display: flex; align-items: center; gap: 4px 16px; white-space: nowrap; }
+.site-header__navlinks a { font-size: 12px; font-weight: 600; color: var(--muted-foreground); text-decoration: none; }
+.site-header__navlinks a:hover { color: var(--foreground); text-decoration: underline; }
+.site-header__navlinks a[aria-current="page"] { color: var(--foreground); text-decoration: underline; text-underline-offset: 4px; }
+.site-header__search { grid-area: search; min-width: 0; }
+.site-header__actions { grid-area: actions; white-space: nowrap; }
+.site-header__theme { grid-area: theme; }
+.site-header--no-display .site-header__inner {
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "identity nav . theme";
+}
+.site-header__display { grid-area: display; display: flex; align-items: center; gap: 12px; }
+.site-header__divider { width: 1px; flex-shrink: 0; height: 20px; background: var(--border); }
+.site-header [data-global-canvas] { flex-shrink: 0; }
+.site-header [data-canvas-preset] { width: 126px; height: 34px; padding: 0 8px; font-size: 12px; box-shadow: none; }
+.site-header [data-canvas-preset] [data-canvas-value] { gap: 7px; }
+.site-header [data-canvas-preset] [data-canvas-swatch] { width: 22px; height: 20px; font-size: 11px; }
+.site-header [data-canvas-inverse][aria-checked="true"] { background: var(--accent); color: var(--accent-foreground); }
+.site-header__search [data-library-filter] { height: 34px; border-radius: 8px; box-shadow: none; }
+@media (max-width: 1023px) {
+  .site-header__inner {
+    grid-template-columns: auto auto minmax(0, 1fr) 32px;
+    grid-template-areas: "identity nav . ." "display display display theme";
+    gap: 10px 12px;
+    padding: 12px 20px;
+  }
+  .site-header__inner:has(.site-header__search):not(:has(.site-header__actions)) {
+    grid-template-areas: "identity nav . ." "search search search search" "display display display theme";
+  }
+  .site-header__inner:has(.site-header__actions):not(:has(.site-header__search)) {
+    grid-template-areas: "identity nav . ." "actions actions actions actions" "display display display theme";
+  }
+  .site-header__inner:has(.site-header__search):has(.site-header__actions) {
+    grid-template-areas: "identity nav . ." "search search search search" "actions actions actions actions" "display display display theme";
+  }
+  .site-header--no-display .site-header__inner {
+    grid-template-columns: auto auto minmax(0, 1fr) 32px;
+    grid-template-areas: "identity nav . theme";
+  }
+  .site-header__display { justify-content: flex-end; }
+}
+@media (max-width: 639px) {
+  .site-header__inner { padding: 12px 16px; }
+  .site-header__inner:has(.site-header__search):not(:has(.site-header__actions)) {
+    grid-template-areas: "identity nav . ." "search search search search" "display display display theme";
+  }
+  .site-header__inner:has(.site-header__actions):not(:has(.site-header__search)) {
+    grid-template-areas: "identity nav . ." "actions actions actions actions" "display display display theme";
+  }
+  .site-header__inner:has(.site-header__search):has(.site-header__actions) {
+    grid-template-areas: "identity nav . ." "search search search search" "actions actions actions actions" "display display display theme";
+  }
+  .site-header__search > div, .site-header__search > div > div { width: 100%; }
+  .site-header__display { justify-content: space-between; gap: 8px; }
+  .site-header [data-canvas-preset] { width: 108px; }
+}
+@media (max-width: 359px) {
+  .site-header [data-canvas-preset] { width: 62px; }
+  .site-header [data-canvas-preset] [data-canvas-name] { display: none; }
+}

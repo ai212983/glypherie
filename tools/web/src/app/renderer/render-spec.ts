@@ -1,14 +1,22 @@
 // Exact WASM render-request shape (tools/wasm RenderSpec, deny_unknown_fields).
 // Same mapping the legacy preview used: whole-pixel tracking for the
-// candidate renderer, fractional Gray tracking otherwise, and the automatic
-// Mono engine policy for candidate 1-bit unless upstream Mono is forced.
+// candidate renderer and the separated pipeline, fractional Gray tracking
+// otherwise, and the automatic Mono engine policy for candidate 1-bit unless
+// upstream Mono is forced.
 import type {
+  MonoDropout,
+  MonoRaster,
   OutputProfile,
   RendererRole,
+  Rasterization,
   RenderSpec,
   RGBA,
   StemFitting,
 } from "./renderer-types.js";
+
+export function profileBits(profile: OutputProfile): number {
+  return profile === "mono_1bit" ? 1 : profile === "gray_2bit" ? 2 : profile === "gray_4bit" ? 4 : 3;
+}
 
 export const TEXT_DEFAULT = "Pack my box with five dozen liquor jugs.";
 export const MAX_TEXT_LENGTH = 8192;
@@ -23,9 +31,12 @@ export interface RenderRequestOptions {
   width: number;
   height: number;
   role?: RendererRole;
+  rasterization?: Rasterization;
   letterSpacingPx?: number | string;
   kerning?: boolean;
   stemFitting?: StemFitting;
+  diagonalFitting?: boolean;
+  monoRaster?: MonoRaster;
   monoThreshold?: number;
   grayGamma?: number;
   palette?: readonly RGBA[];
@@ -44,7 +55,7 @@ export function normalizedSpacing(
 ): number {
   const number = Number(value);
   const clamped = Number.isFinite(number) ? Math.min(4, Math.max(-2, number)) : 0;
-  const integer = role === "candidate" || profile !== "gray_3bit";
+  const integer = role === "candidate" || profile === "mono_1bit";
   return integer ? Math.sign(clamped) * Math.floor(Math.abs(clamped) + 0.5) : clamped;
 }
 
@@ -81,7 +92,7 @@ export function resolveRenderColors(
 ): ResolvedRenderColors {
   if (palette === undefined) return { foreground: [...INK], background: [...PAPER] };
   if (!Array.isArray(palette)) throw new Error("Invalid palette: expected an array of RGBA colors.");
-  const levels = 1 << (profile === "gray_3bit" ? 3 : 1);
+  const levels = 1 << profileBits(profile);
   if (palette.length !== levels) {
     throw new Error(`Invalid palette: expected exactly ${levels} entries for profile ${profile}, got ${palette.length}.`);
   }
@@ -96,22 +107,57 @@ export function resolveRenderColors(
   return { foreground: [...INK], background: [...(entries[0] ?? PAPER)], palette: entries };
 }
 
+const MONO_DROPOUTS: readonly MonoDropout[] = ["off", "simple", "smart"];
+
+export const DEFAULT_MONO_RASTER: MonoRaster = { dropout: "smart", includeStubs: false, fontInstructions: false };
+// Font instructions take precedence; automatic fitting uses this fallback.
+export const PREVIEW_MONO_RASTER: MonoRaster = { dropout: "smart", includeStubs: true, fontInstructions: true };
+
+// Manual scan-converter settings, restricted to candidate Mono like stem
+// fitting: other roles/profiles omit them so the native path keeps coverage.
+export function resolveMonoRaster(
+  value: MonoRaster | undefined,
+): { dropout: MonoDropout; include_stubs: boolean; font_instructions: boolean } | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Invalid mono raster settings: expected { dropout, includeStubs, fontInstructions }.");
+  }
+  const dropout = value.dropout === undefined ? "smart" : value.dropout;
+  if (!MONO_DROPOUTS.includes(dropout as MonoDropout)) {
+    throw new Error(`Invalid mono raster dropout: expected one of ${MONO_DROPOUTS.join(", ")}.`);
+  }
+  const includeStubs = value.includeStubs === undefined ? false : value.includeStubs;
+  if (typeof includeStubs !== "boolean") {
+    throw new Error("Invalid mono raster stubs flag: expected a boolean.");
+  }
+  const fontInstructions = value.fontInstructions === undefined ? false : value.fontInstructions;
+  if (typeof fontInstructions !== "boolean") {
+    throw new Error("Invalid mono raster font-instructions flag: expected a boolean.");
+  }
+  return { dropout: dropout as MonoDropout, include_stubs: includeStubs, font_instructions: fontInstructions };
+}
+
 export function toRenderSpec({
-  text, sizePx, axes, profile, width, height, role,
-  letterSpacingPx, kerning, stemFitting, monoThreshold, grayGamma,
+  text, sizePx, axes, profile, width, height, role, rasterization,
+  letterSpacingPx, kerning, stemFitting, diagonalFitting, monoRaster, monoThreshold, grayGamma,
   palette,
 }: RenderRequestOptions): RenderSpec {
   const colors = resolveRenderColors(palette, profile);
+  const separated = rasterization !== undefined;
+  const effectiveRole = separated ? "candidate" : role;
+  const scan = effectiveRole === "candidate" && profile === "mono_1bit"
+    ? resolveMonoRaster(separated ? PREVIEW_MONO_RASTER : monoRaster)
+    : undefined;
   return {
     text,
     width: Math.min(4096, Math.max(1, Math.ceil(width))),
     height: Math.min(4096, Math.max(1, Math.ceil(height))),
     size_px: sizePx,
     axes: { ...axes },
-    letter_spacing_px: normalizedSpacing(letterSpacingPx, profile, role),
-    hinting: role === "candidate" && profile === "mono_1bit" && stemFitting !== "upstream_mono"
+    letter_spacing_px: normalizedSpacing(letterSpacingPx, profile, effectiveRole),
+    hinting: effectiveRole === "candidate" && profile === "mono_1bit" && stemFitting !== "upstream_mono"
       ? "auto_fallback" : "auto",
-    output_bits: profile === "gray_3bit" ? 3 : 1,
+    output_bits: profileBits(profile),
     mono_threshold: monoThreshold ?? 128,
     gray_gamma: grayGamma ?? 1.0,
     missing_glyphs: "error",
@@ -122,7 +168,14 @@ export function toRenderSpec({
     foreground: colors.foreground,
     background: colors.background,
     ...(colors.palette !== undefined ? { palette: colors.palette } : {}),
-    renderer: role ?? "baseline",
-    ...(role === "candidate" && profile === "mono_1bit" && stemFitting ? { stem_fitting: stemFitting } : {}),
+    ...(!separated ? { renderer: role ?? "baseline" } : {}),
+    ...(separated ? { pipeline: {
+      fitting: profile === "mono_1bit" && stemFitting !== "upstream_mono" ? "font_hints_auto" : "upstream_mono",
+      rasterization: profile === "mono_1bit" ? "free_type_mono_terminals" : "coverage",
+      // Mono-only opt-in; false stays omitted so the request shape is unchanged.
+      ...(diagonalFitting === true && profile === "mono_1bit" ? { diagonal_fitting: true as const } : {}),
+    } } : {}),
+    ...(!separated && role === "candidate" && profile === "mono_1bit" && stemFitting ? { stem_fitting: stemFitting } : {}),
+    ...(scan !== undefined ? { mono_raster: scan } : {}),
   };
 }

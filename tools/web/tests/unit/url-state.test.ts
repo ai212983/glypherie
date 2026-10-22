@@ -11,7 +11,7 @@ import {
   type GlobalDefaults,
   type PreviewSnapshot,
 } from "../../src/app/features/preview/state/snapshot-codec.ts";
-import { detailHash, indexHash } from "../../src/app/navigation/router.ts";
+import { detailHash, indexHash, palettesHash } from "../../src/app/navigation/router.ts";
 
 const METAS: FamilyMeta[] = [
   {
@@ -43,7 +43,7 @@ const METAS: FamilyMeta[] = [
     defaultPreset: "custom",
   },
 ];
-const DEFAULTS: GlobalDefaults = { font: "alpha", profile: "mono_1bit", zoom: 1 };
+const DEFAULTS: GlobalDefaults = { font: "alpha", profile: "mono_1bit" };
 
 function familyOf(snapshot: PreviewSnapshot, id: string): FamilySnapshot {
   const family = snapshot.families[id];
@@ -55,9 +55,11 @@ function snapshot(): PreviewSnapshot {
   const value = defaultSnapshot(METAS, DEFAULTS);
   value.font = "beta";
   value.profile = "gray_3bit";
-  value.zoom = 3;
+  value.rasterization = "coverage";
   value.pixelAccurate = true;
   value.stemFitting = "upstream_mono";
+  value.diagonalFitting = false;
+  value.monoRaster = { dropout: "smart", includeStubs: true, fontInstructions: true };
   value.kerning = false;
   value.families.alpha = {
     size: 24, axes: { wght: 700, wdth: 80, XOPQ: 130 }, spacing: 2,
@@ -79,9 +81,12 @@ test("encode writes explicit v1 values for every family and preserves unknown pa
   assert.equal(params.get("v"), "1");
   assert.equal(params.get("font"), "beta");
   assert.equal(params.get("profile"), "gray_3bit");
-  assert.equal(params.get("zoom"), "3");
+  assert.equal(params.get("zoom"), null);
   assert.equal(params.get("exact"), "1");
   assert.equal(params.get("stem"), "upstream_mono");
+  assert.equal(params.get("dropout"), null);
+  assert.equal(params.get("stubs"), null);
+  assert.equal(params.get("scanfont"), null);
   assert.equal(params.get("model"), null, "obsolete model is dropped on write");
   assert.equal(params.get("kerning"), "0");
   const familiesParam = params.get("families");
@@ -98,7 +103,7 @@ test("encode writes explicit v1 values for every family and preserves unknown pa
 });
 
 test("parse round-trips every control including inactive families and Unicode text", () => {
-  const original = snapshot();
+  const original = { ...snapshot(), paletteId: 0 };
   const search = `?${encodeUrlSnapshot(original, "", ["alpha", "beta"]).toString()}`;
   const parsed = parseUrlSnapshot(search, "#family-beta", METAS, DEFAULTS);
   assert.deepEqual(parsed, original);
@@ -107,13 +112,13 @@ test("parse round-trips every control including inactive families and Unicode te
 test("defaults are explicit so another browser's preferences cannot leak in", () => {
   const value = defaultSnapshot(METAS, DEFAULTS);
   const search = `?${encodeUrlSnapshot(value, "", ["alpha", "beta"]).toString()}`;
-  const parsed = parseUrlSnapshot(search, "", METAS, { font: "beta", profile: "gray_3bit", zoom: 4 });
+  const parsed = parseUrlSnapshot(search, "", METAS, { font: "beta", profile: "gray_3bit" });
   assert.ok(parsed);
   assert.equal(parsed.font, "alpha");
   assert.equal(parsed.profile, "mono_1bit");
-  assert.equal(parsed.zoom, 1);
-  assert.equal(parsed.pixelAccurate, false);
+  assert.equal(parsed.pixelAccurate, true);
   assert.equal(parsed.stemFitting, "font_hints_first");
+  assert.deepEqual(parsed.monoRaster, { dropout: "smart", includeStubs: true, fontInstructions: true });
   assert.equal(familyOf(parsed, "alpha").preset, "reading");
   assert.equal(familyOf(parsed, "alpha").text, "Alpha sample\nSecond line");
   assert.equal(familyOf(parsed, "beta").size, 16);
@@ -138,14 +143,14 @@ test("validation clamps numbers, drops unknown fonts/axes and rejects bad enums"
     },
     ghost: { size: 20, text: "Ghost" },
   });
-  const search = `?v=1&font=ghost&profile=nope&zoom=9&exact=maybe&stem=nope&model=nope&kerning=maybe&families=${encodeURIComponent(families)}`;
+  const search = `?v=1&font=ghost&profile=nope&zoom=9&exact=maybe&stem=nope&dropout=nope&stubs=maybe&scanfont=maybe&model=nope&kerning=maybe&families=${encodeURIComponent(families)}`;
   const parsed = parseUrlSnapshot(search, "", METAS, DEFAULTS);
   assert.ok(parsed);
   assert.equal(parsed.font, "alpha");
   assert.equal(parsed.profile, "mono_1bit");
-  assert.equal(parsed.zoom, 1);
-  assert.equal(parsed.pixelAccurate, false);
+  assert.equal(parsed.pixelAccurate, true);
   assert.equal(parsed.stemFitting, "font_hints_first");
+  assert.deepEqual(parsed.monoRaster, { dropout: "smart", includeStubs: true, fontInstructions: true });
   assert.equal("spacingModel" in parsed, false);
   assert.equal(parsed.kerning, true);
   const alpha = familyOf(parsed, "alpha");
@@ -174,10 +179,10 @@ test("obsolete spacing-model parameters in old links are ignored and dropped", (
   assert.equal(encoded.get("kerning"), "0");
 });
 
-test("legacy profile, zoom and hash selection stay readable", () => {
+test("legacy profile and hash selection stay readable while zoom is ignored", () => {
   assert.deepEqual(
     parseLegacyState("?profile=gray_3bit&zoom=3", "#family-beta", METAS),
-    { font: "beta", profile: "gray_3bit", zoom: 3 },
+    { font: "beta", profile: "gray_3bit" },
   );
   assert.deepEqual(parseLegacyState("?profile=nope&zoom=9", "#family-ghost", METAS), {});
   assert.deepEqual(parseLegacyState("", "#other", METAS), {});
@@ -187,10 +192,16 @@ test("minimal font links select known fonts and ignore unknown ones", () => {
   assert.deepEqual(parseLegacyState("?font=beta", "", METAS), { font: "beta" });
   assert.deepEqual(
     parseLegacyState("?font=beta&profile=gray_3bit&zoom=3", "", METAS),
-    { font: "beta", profile: "gray_3bit", zoom: 3 },
+    { font: "beta", profile: "gray_3bit" },
   );
   assert.deepEqual(parseLegacyState("?font=ghost", "#family-beta", METAS), { font: "beta" });
   assert.deepEqual(parseLegacyState("?font=ghost", "", METAS), {});
+});
+
+test("palettes links keep foreign params while dropping snapshot state", () => {
+  assert.equal(palettesHash(""), "#/palettes/");
+  assert.equal(palettesHash("v=1&font=beta"), "#/palettes/");
+  assert.equal(palettesHash("role=baseline&utm=keep"), "#/palettes/?role=baseline&utm=keep");
 });
 
 test("detail links name the font and index links drop snapshot state", () => {
@@ -207,4 +218,29 @@ test("hash search carries versioned state without the font identity", () => {
   assert.equal(params.get("profile"), "gray_3bit");
   const families = JSON.parse(params.get("families") ?? "{}") as Record<string, FamilySnapshot>;
   assert.deepEqual(Object.keys(families), ["alpha", "beta"]);
+});
+
+test("historical URLs resolve to current controls", () => {
+  const value = snapshot();
+  value.rasterization = "coverage";
+  const parsed = parseUrlSnapshot(encodeUrlSnapshot(value, ""), "", METAS, DEFAULTS);
+  assert.equal(parsed?.rasterization, "coverage");
+  assert.equal(parsed?.stemFitting, value.stemFitting);
+  assert.deepEqual(parsed?.monoRaster, value.monoRaster, "the fixed scan policy survives a scanner round-trip");
+  value.rasterization = undefined;
+  const historical = parseUrlSnapshot(encodeUrlSnapshot(value, ""), "", METAS, DEFAULTS);
+  assert.equal(historical?.rasterization, "coverage");
+  assert.equal(parseUrlSnapshot("?v=1&font=alpha&role=baseline", "", METAS, DEFAULTS)?.rasterization, "free_type_mono");
+  assert.equal(defaultSnapshot(METAS, DEFAULTS).rasterization, "free_type_mono");
+  assert.equal(indexHash("?v=1&raster=coverage&utm=keep"), "#/?utm=keep");
+});
+
+ test("old zoom and scan overrides are ignored and removed from shared links", () => {
+  const input = "?v=1&font=alpha&zoom=4&dropout=off&stubs=0&scanfont=0&utm=keep";
+  const parsed = parseUrlSnapshot(input, "", METAS, DEFAULTS)!;
+  assert.equal("zoom" in parsed, false);
+  assert.deepEqual(parsed.monoRaster, { dropout: "smart", includeStubs: true, fontInstructions: true });
+  const encoded = encodeUrlSnapshot(parsed, input);
+  for (const key of ["zoom", "dropout", "stubs", "scanfont"]) assert.equal(encoded.get(key), null);
+  assert.equal(encoded.get("utm"), "keep");
 });

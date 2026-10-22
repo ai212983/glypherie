@@ -1,3 +1,4 @@
+import { userError } from "../user-error";
 // Reactive IndexedDB queries for saved font variants.
 //
 // All reads go through the repository so the schema keeps its single owner
@@ -22,7 +23,7 @@ function useQueryAttempt(): { attempt: number; retry: () => void } {
 }
 
 function queryMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error ?? "");
+  return userError(error, "Couldn’t load saved variants.");
 }
 
 export interface LiveVariantList {
@@ -32,23 +33,31 @@ export interface LiveVariantList {
   retry: () => void;
 }
 
-/** Every saved variant, with an explicit error state plus retry. */
-export function useAllVariants(): LiveVariantList {
+function useVariantList(fontId?: string): LiveVariantList {
   const { attempt, retry } = useQueryAttempt();
   const row = useLiveQuery(
     async (): Promise<{ ok: true; variants: FontVariant[] } | { ok: false; message: string }> => {
       try {
-        return { ok: true, variants: await listVariants() };
+        return { ok: true, variants: await listVariants(fontId) };
       } catch (error) {
         return { ok: false, message: queryMessage(error) };
       }
     },
-    [attempt],
+    [fontId, attempt],
     undefined,
   );
   if (row === undefined) return { status: "loading", variants: [], message: "", retry };
   if (!row.ok) return { status: "error", variants: [], message: row.message, retry };
   return { status: "ready", variants: row.variants, message: "", retry };
+}
+
+/** Every saved variant, with an explicit error state plus retry. */
+export function useAllVariants(): LiveVariantList {
+  return useVariantList();
+}
+
+export function useFontVariants(fontId: string): LiveVariantList {
+  return useVariantList(fontId);
 }
 
 export type LiveVariant =

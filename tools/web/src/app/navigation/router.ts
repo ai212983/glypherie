@@ -1,7 +1,8 @@
 export type Route =
   | { page: "index"; notice?: string }
   | { page: "font"; font: string }
-  | { page: "variant"; font: string; variant: string };
+  | { page: "variant"; font: string; variant: string }
+  | { page: "palettes" };
 
 export interface HashParts {
   path: string;
@@ -19,11 +20,13 @@ export type HashRoute =
   | { name: "index" }
   | { name: "font"; font: string }
   | { name: "variant"; font: string; variant: string }
+  | { name: "palettes" }
   | null;
 
 export function parseHashRoute(hash: string): HashRoute {
   const { path } = splitHash(hash ?? "");
   if (path === "" || path === "/") return { name: "index" };
+  if (/^\/palettes\/?$/.test(path)) return { name: "palettes" };
   const variant = path.match(/^\/font\/([^/]+)\/variant\/([^/]+)\/?$/);
   if (variant) {
     try {
@@ -59,8 +62,8 @@ function outerParams(search: string | URLSearchParams): URLSearchParams {
   return new URLSearchParams(text);
 }
 
-function unknownFontNotice(font: string): string {
-  return `Font “${font}” is not in this library. Showing the font library instead.`;
+function unknownFontNotice(): string {
+  return "Font not found in this library.";
 }
 
 export function resolveRoute(
@@ -77,18 +80,21 @@ export function resolveRoute(
       return { page: "variant", font: parsed.font, variant: parsed.variant };
     }
     if (parsed.font && !known.has(parsed.font)) {
-      return { page: "index", notice: unknownFontNotice(parsed.font) };
+      return { page: "index", notice: unknownFontNotice() };
     }
-    return { page: "index", notice: `Unknown route “${hash}”. Showing the font library instead.` };
+    return { page: "index", notice: "Page not found. Showing all fonts." };
   }
   if (parsed?.name === "font") {
     if (parsed.font && known.has(parsed.font)) return { page: "font", font: parsed.font };
-    if (parsed.font) return { page: "index", notice: unknownFontNotice(parsed.font) };
-    return { page: "index", notice: `Unknown route “${hash}”. Showing the font library instead.` };
+    if (parsed.font) return { page: "index", notice: unknownFontNotice() };
+    return { page: "index", notice: "Page not found. Showing all fonts." };
   }
+  // The palettes lab is font-independent: it resolves without fonts and wins
+  // over stale legacy outer font queries or snapshot params on the way in.
+  if (parsed?.name === "palettes") return { page: "palettes" };
   if (parsed === null) {
     if (isRouteHash(hash ?? "")) {
-      return { page: "index", notice: `Unknown route “${hash}”. Showing the font library instead.` };
+      return { page: "index", notice: "Page not found. Showing all fonts." };
     }
   } else if (hash === "#/" || splitHash(hash ?? "").search) {
     return { page: "index" };
@@ -98,12 +104,12 @@ export function resolveRoute(
   const hashId = hashFamilyId(hash ?? "");
   if (params.get("v") === "1") {
     if (font && known.has(font)) return { page: "font", font };
-    if (font) return { page: "index", notice: unknownFontNotice(font) };
+    if (font) return { page: "index", notice: unknownFontNotice() };
     return { page: "index" };
   }
   const selected = font ?? hashId;
   if (selected && known.has(selected)) return { page: "font", font: selected };
-  if (selected) return { page: "index", notice: unknownFontNotice(selected) };
+  if (selected) return { page: "index", notice: unknownFontNotice() };
   return { page: "index" };
 }
 
@@ -111,7 +117,7 @@ export function resolveRoute(
 // builders drop them when leaving a font route so stale settings do not
 // leak into the library hash; every other param (e.g. role, utm) is kept.
 export const OWNED_PARAMS: readonly string[] = [
-  "v", "font", "profile", "zoom", "exact", "stem", "model", "kerning", "families",
+  "v", "font", "profile", "palette", "zoom", "exact", "stem", "diagonals", "raster", "dropout", "stubs", "scanfont", "model", "kerning", "families",
 ];
 
 /** Canonical detail hash for one font; settings ride the inner snapshot once edited. */
@@ -141,6 +147,18 @@ export function variantHashKeeping(
   }
   const text = result.toString();
   return text ? `${variantHash(font, variant)}?${text}` : variantHash(font, variant);
+}
+
+/** Canonical palettes hash, keeping foreign params (e.g. role, utm) while dropping snapshot state. */
+export function palettesHash(baseSearch: string | URLSearchParams): string {
+  const base = outerParams(baseSearch ?? "");
+  const owned = new Set(OWNED_PARAMS);
+  const result = new URLSearchParams();
+  for (const [key, value] of base.entries()) {
+    if (!owned.has(key)) result.append(key, value);
+  }
+  const text = result.toString();
+  return text ? `#/palettes/?${text}` : `#/palettes/`;
 }
 
 /** Canonical library hash, keeping foreign params (e.g. role, utm) while dropping snapshot state. */

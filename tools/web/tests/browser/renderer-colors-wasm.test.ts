@@ -5,6 +5,8 @@ import {
   browserAvailable,
   buildApp,
   cardIds,
+  openNewVariant,
+  canvasRendered,
   launch,
   servePrefix,
 } from "../helpers/spa-helpers.ts";
@@ -19,7 +21,11 @@ window.Worker = function (url, options) {
   const post = worker.postMessage.bind(worker);
   worker.postMessage = (message, transfer) => {
     if (message && typeof message === "object" && message.kind === "render" && message.spec) {
-      window.__colorSpecs[message.fontId] = message.spec;
+      // Color-contract requests use the general native API, independent of
+      // the editor's fitting, scanner and display palette selections.
+      const base = { ...message.spec, renderer: "baseline", hinting: "none" };
+      for (const key of ["pipeline", "stem_fitting", "mono_raster", "palette"]) delete base[key];
+      window.__colorSpecs[message.fontId] = base;
     }
     return post(message, transfer);
   };
@@ -36,12 +42,9 @@ test("real worker applies singleton ink over transparency exactly", { skip: !bro
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript({ content: WORKER_CAPTURE_SCRIPT });
   await bootLibrary(page, url);
-  await page.waitForFunction(
-    () => document.querySelectorAll('[data-card-canvas][data-rendered="true"]').length >= 5,
-    null,
-    { timeout: 30000 },
-  );
   const ids = await cardIds(page);
+  await openNewVariant(page, ids[0]!);
+  await page.waitForFunction(canvasRendered);
   const spec = await page.evaluate((fontId) => {
     const specs = (window as unknown as { __colorSpecs: Record<string, Record<string, unknown>> }).__colorSpecs;
     return specs[fontId] as Record<string, unknown>;
@@ -103,12 +106,9 @@ test("real worker applies explicit gray levels verbatim over transparency", { sk
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript({ content: WORKER_CAPTURE_SCRIPT });
   await bootLibrary(page, url);
-  await page.waitForFunction(
-    () => document.querySelectorAll('[data-card-canvas][data-rendered="true"]').length >= 5,
-    null,
-    { timeout: 30000 },
-  );
   const ids = await cardIds(page);
+  await openNewVariant(page, ids[0]!);
+  await page.waitForFunction(canvasRendered);
   const palette = Array.from({ length: 8 }, (_, i) => [20 * i, 200, 30, 32 * i]);
   const summary = await page.evaluate(async ({ fontId, entries }) => {
     const worker = (window as unknown as { __colorWorker: Worker }).__colorWorker;
@@ -171,12 +171,9 @@ test("real worker applies uneven opaque levels verbatim over paper", { skip: !br
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript({ content: WORKER_CAPTURE_SCRIPT });
   await bootLibrary(page, url);
-  await page.waitForFunction(
-    () => document.querySelectorAll('[data-card-canvas][data-rendered="true"]').length >= 5,
-    null,
-    { timeout: 30000 },
-  );
   const ids = await cardIds(page);
+  await openNewVariant(page, ids[0]!);
+  await page.waitForFunction(canvasRendered);
   // Fully opaque yet pairwise distinct entries: no coverage alpha may
   // reshape them, so every pixel must equal one entry byte-for-byte.
   const palette = [
@@ -245,12 +242,9 @@ test("real worker blends partial levels opaque over paper", { skip: !browserAvai
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript({ content: WORKER_CAPTURE_SCRIPT });
   await bootLibrary(page, url);
-  await page.waitForFunction(
-    () => document.querySelectorAll('[data-card-canvas][data-rendered="true"]').length >= 5,
-    null,
-    { timeout: 30000 },
-  );
   const ids = await cardIds(page);
+  await openNewVariant(page, ids[0]!);
+  await page.waitForFunction(canvasRendered);
   const palette = Array.from({ length: 8 }, (_, i) => [20 * i, 200, 30, 32 * i]);
   const summary = await page.evaluate(async ({ fontId, entries }) => {
     const worker = (window as unknown as { __colorWorker: Worker }).__colorWorker;

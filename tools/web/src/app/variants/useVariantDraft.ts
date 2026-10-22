@@ -24,6 +24,7 @@ function draftOf(variant: FontVariant): VariantDraft {
     name: variant.name,
     settings: { ...variant.settings, axes: { ...variant.settings.axes } },
     sampleText: variant.sampleText,
+    inheritSampleText: variant.inheritSampleText ?? false,
   };
 }
 
@@ -51,20 +52,32 @@ export function useVariantDraft(variant: FontVariant): VariantDraftState {
         name: payload.name,
         settings: { ...payload.settings, axes: { ...payload.settings.axes } },
         sampleText: payload.sampleText,
+        inheritSampleText: payload.inheritSampleText,
       },
       expected,
     ).then(
       (saved) => {
+        const normalized = draftOf(saved);
         // Never regress the base: a newer prop may already have adopted a
         // later revision while this flight was in the air.
         if (saved.revision > baseRef.current.revision) {
-          baseRef.current = { revision: saved.revision, json: draftJson(draftOf(saved)) };
+          baseRef.current = { revision: saved.revision, json: draftJson(normalized) };
         }
         inflightRef.current = false;
-        // The draft itself is the single pending slot: edits during the
-        // flight drain here, so snapshots are never queued.
+        // A draft identical to the submitted payload holds no true edits: the
+        // row only carries repository normalization (such as a live palette
+        // depth change), so adopt it instead of re-flighting. Adopt only when
+        // the base reflects this save.
         const current = draftRef.current;
         if (current && draftJson(current) !== baseRef.current.json) {
+          if (draftJson(current) === draftJson(payload) && saved.revision >= baseRef.current.revision) {
+            draftRef.current = normalized;
+            if (!mountedRef.current) return;
+            setDraft(normalized);
+            setStatus("saved");
+            setError(null);
+            return;
+          }
           startFlight(current);
           return;
         }
@@ -109,6 +122,7 @@ export function useVariantDraft(variant: FontVariant): VariantDraftState {
       name: patch.name ?? prev.name,
       settings: patch.settings ?? prev.settings,
       sampleText: patch.sampleText ?? prev.sampleText,
+      inheritSampleText: patch.inheritSampleText ?? prev.inheritSampleText,
     };
     if (draftJson(next) === draftJson(prev)) return;
     draftRef.current = next;
@@ -154,18 +168,19 @@ export function useVariantDraft(variant: FontVariant): VariantDraftState {
     setError(null);
   }, []);
 
-  // A newer prop replaces a clean draft; dirty local edits are never
-  // overwritten and surface a CAS conflict as an ordinary error on save.
+  // A newer prop replaces a clean draft, as does same-revision repository
+  // normalization (a live palette depth change bumps no revision); dirty
+  // local edits are never overwritten and surface a CAS conflict on save.
   // Never adopt while a write is in flight: a draft equal to the old base
   // can still have an uncommitted different payload in flight (changed then
   // reverted), and adopting the remote prop then would replace that intent.
   React.useEffect(() => {
     if (inflightRef.current) return;
-    if (variant.revision === baseRef.current.revision) return;
     if (variant.revision < baseRef.current.revision) return;
     const current = draftRef.current;
     if (!current || draftJson(current) !== baseRef.current.json) return;
     const json = draftJson(draftOf(variant));
+    if (variant.revision === baseRef.current.revision && json === baseRef.current.json) return;
     baseRef.current = { revision: variant.revision, json };
     const next = draftOf(variant);
     draftRef.current = next;

@@ -1,82 +1,75 @@
 import * as React from "react";
 import { MAX_TEXT_LENGTH, TEXT_DEFAULT } from "../../renderer/render-spec";
 import { Input } from "../../../components/ui/input";
-import { Label } from "../../../components/ui/label";
-
-export const INDEX_ZOOM_MIN = 1;
-export const INDEX_ZOOM_MAX = 4;
+import { FontSizeControl } from "../../../components/FontSizeControl";
+import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
+import specimenIcon from "../../../components/ui/assets/glypherie/specimen.svg";
+import importFontIcon from "../../../components/ui/assets/glypherie/import-font.svg";
+import type { LibraryBaseSize } from "./preferences";
+import { SampleTextControl } from "./SampleTextControl";
+import "./LibrarySidebar.css";
 
 interface LibrarySidebarProps {
   sampleText: string;
-  sampleZoom: number;
+  sampleBaseSize: LibraryBaseSize;
   importStatus: string;
   onSampleText: (text: string) => void;
-  onSampleZoom: (zoom: number) => void;
+  onSampleBaseSize: (size: LibraryBaseSize) => void;
   onImport: (files: FileList | null) => void;
 }
 
-// Library control panel: sample text, zoom, and font import moved out of the
-// sticky header into a named aside beside the cards. All selectors, labels,
-// and callbacks are unchanged so existing tests keep working.
 export function LibrarySidebar({
-  sampleText, sampleZoom, importStatus, onSampleText, onSampleZoom, onImport,
+  sampleText, sampleBaseSize, importStatus,
+  onSampleText, onSampleBaseSize, onImport,
 }: LibrarySidebarProps): React.JSX.Element {
   return (
     <aside
       aria-labelledby="library-controls-heading"
-      className="w-full shrink-0 lg:w-64"
+      className="library-sidebar studio-card flex w-full shrink-0 flex-col gap-5 border-b border-studio-border bg-font-card p-4 lg:h-full lg:min-h-0 lg:w-96 lg:overflow-y-auto lg:border-r lg:border-b-0"
     >
-      <h2 id="library-controls-heading" className="m-0 text-[1rem] font-[650] tracking-[-.02em]">
-        Library controls
-      </h2>
-      <div className="mt-4 flex flex-col gap-5">
-        <div className="flex w-full flex-col gap-[.35rem] text-[.8rem]">
-          <Label htmlFor="index-sample">Sample text</Label>
-          <Input
+      <Card>
+        <CardHeader>
+          <CardTitle asChild>
+            <h2 id="library-controls-heading">
+              <span aria-hidden="true" className="library-title-icon h-[10px] w-[11.25px]" style={{ maskImage: `url(${specimenIcon})` }} />
+              Preview
+            </h2>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <SampleTextControl
             id="index-sample"
             data-index-text
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
             maxLength={MAX_TEXT_LENGTH}
             placeholder={TEXT_DEFAULT}
             value={sampleText}
-            onChange={(event) => onSampleText(event.target.value.slice(0, MAX_TEXT_LENGTH))}
+            onValueChange={onSampleText}
           />
-        </div>
-        <div className="flex w-full flex-col gap-[.35rem] text-[.8rem]">
-          <div className="flex items-baseline justify-between gap-2">
-            <Label htmlFor="index-zoom">Zoom</Label>
-            <output id="index-zoom-value" htmlFor="index-zoom">{`${sampleZoom}×`}</output>
-          </div>
-          <input
-            id="index-zoom"
-            data-index-zoom
-            type="range"
-            min={INDEX_ZOOM_MIN}
-            max={INDEX_ZOOM_MAX}
-            step={1}
-            value={sampleZoom}
-            aria-valuetext={`${sampleZoom}×`}
-            onChange={(event) => {
-              const zoom = Number(event.target.value);
-              if (Number.isFinite(zoom)) onSampleZoom(Math.min(INDEX_ZOOM_MAX, Math.max(INDEX_ZOOM_MIN, zoom)));
-            }}
-            className="mx-0 my-[.35rem] block w-full cursor-pointer accent-brand"
-          />
-        </div>
-        <div className="font-import m-0 flex flex-col items-start gap-[.6rem] text-[.875rem]">
+          <FontSizeControl id="library-font-size" sizePx={sampleBaseSize} onSize={onSampleBaseSize} />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle asChild>
+            <h2>
+              <span aria-hidden="true" className="library-title-icon h-[13.3333px] w-[10.6667px]" style={{ maskImage: `url(${importFontIcon})` }} />
+              Import fonts
+            </h2>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="font-import m-0 flex flex-col items-start gap-2">
           <Input
             type="file"
             accept=".ttf,.otf"
+            multiple
             data-import-font
-            aria-label="Import a font file"
-            className="w-full text-[.8rem] font-normal"
+            aria-label="Import font files"
+            className="h-auto w-full rounded-lg border-border bg-background p-2 text-[10px] leading-4 font-normal shadow-studio-inset file:mr-2 file:rounded file:bg-accent file:px-2 file:text-[10px] file:font-bold file:text-accent-foreground md:text-[10px] dark:bg-background"
             onChange={(event) => { onImport(event.target.files); event.target.value = ""; }}
           />
-          {importStatus && <span className="font-normal text-soft" role="status" data-import-status>{importStatus}</span>}
-        </div>
-      </div>
+          {importStatus && <span className="text-[10px] leading-4 font-normal text-muted-foreground [overflow-wrap:anywhere]" role="status" data-import-status>{importStatus}</span>}
+        </CardContent>
+      </Card>
     </aside>
   );
 }

@@ -111,7 +111,10 @@ test("direct hash edits switch variants without a reload", { skip: !browserAvail
   let reloaded = false;
   page.once("load", () => { reloaded = true; });
   const first = await openNewVariant(page, ids[0]!);
-  await page.locator("[data-all-fonts]").click();
+  const home = page.getByRole("link", { name: "Glypherie", exact: true });
+  assert.equal(await home.getAttribute("href"), "#/");
+  await home.focus();
+  await home.press("Enter");
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   const second = await openNewVariant(page, ids[0]!);
   assert.notEqual(first, second);
@@ -134,9 +137,9 @@ test("a debounced preview write cannot undo navigation to the catalog", { skip: 
   await bootLibrary(page, url);
   const ids = await cardIds(page);
   await page.goto(`${url}?font=${ids[0]}`, { waitUntil: "networkidle" });
-  await page.waitForFunction(() => document.querySelectorAll("#font-select option").length > 0);
+  await page.waitForFunction(() => document.querySelector('#font-select[data-state]:not(:disabled)') !== null);
   await page.locator("[data-text]").fill("Navigation race probe");
-  await page.locator("[data-all-fonts]").click();
+  await page.locator('[data-primary-nav="fonts"]').click();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   await page.waitForTimeout(600);
   assert.equal(await page.locator("[data-font-cards]").count(), 1);
@@ -152,7 +155,7 @@ test("unknown and removed font urls recover visibly on the catalog", { skip: !br
   await page.goto(`${url}#/font/${"0".repeat(64)}/`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   const notice = await page.locator("[data-route-notice]").textContent();
-  assert.ok(notice?.includes("is not in this library"), `visible recovery, got: ${notice}`);
+  assert.ok(notice?.includes("not found in this library"), `visible recovery, got: ${notice}`);
   assert.equal(await page.locator("[data-font-card]").count(), 5);
 
   await page.goto(`${url}?font=${"0".repeat(64)}`, { waitUntil: "networkidle" });
@@ -166,7 +169,7 @@ test("unknown and removed font urls recover visibly on the catalog", { skip: !br
   await page.goto(`${url}#/nope`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   const malformed = await page.locator("[data-route-notice]").textContent();
-  assert.ok(malformed?.includes("Unknown route"), `malformed route recovery, got: ${malformed}`);
+  assert.ok(malformed?.includes("Page not found"), `malformed route recovery, got: ${malformed}`);
 });
 
 test("unknown variant urls recover visibly without creating data", { skip: !browserAvailable }, async (t) => {
@@ -180,18 +183,18 @@ test("unknown variant urls recover visibly without creating data", { skip: !brow
   await page.waitForFunction(() => document.querySelector("[data-variant-deleted]") !== null, null, {
     timeout: 20000,
   });
-  await page.getByRole("link", { name: "← All fonts", exact: true }).click();
+  await page.getByRole("link", { name: "Fonts", exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.equal(await page.locator("[data-variant-link]").count(), 0, "loading a route never creates variants");
 
   await page.goto(`${url}#/font/${"0".repeat(64)}/variant/whatever/`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   const notice = await page.locator("[data-route-notice]").textContent();
-  assert.ok(notice?.includes("is not in this library"), `recovery shown, got: ${notice}`);
+  assert.ok(notice?.includes("not found in this library"), `recovery shown, got: ${notice}`);
   await page.waitForTimeout(1000);
   const settled = await page.locator("[data-route-notice]").textContent();
   assert.ok(
-    (settled ?? "").includes("is not in this library"),
+    (settled ?? "").includes("not found in this library"),
     `recovery notice survives paired route events, got: ${settled}`,
   );
   assert.equal(await hashPath(page), "/", "unknown id canonicalizes to the library with its notice");
@@ -217,7 +220,7 @@ test("variant reload keeps the variant and its saved settings", { skip: !browser
     timeout: 20000,
   });
   await page.waitForFunction(canvasRendered);
-  assert.equal(await page.locator(".family h2").innerText(), names[source]);
+  assert.equal(await page.locator(`#heading-${ids[source]!}`).innerText(), names[source]);
   assert.equal(await hashPath(page), `/font/${ids[source]}/variant/${variantId}/`);
   assert.equal(await hashParam(page, "font"), null, "no redundant font query");
 });

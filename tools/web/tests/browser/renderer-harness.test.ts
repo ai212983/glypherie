@@ -5,9 +5,11 @@ import test, { after, type TestContext } from "node:test";
 import {
   browserAvailable,
   launch,
+  repoRoot,
   webRoot,
 } from "../helpers/spa-helpers.ts";
 import type { Browser, Page } from "playwright-core";
+import { mkdir } from "node:fs/promises";
 
 // Mounted renderer lifecycle tests. They drive the LifecycleHarness stories
 // in a Storybook dev server (development React, so StrictMode replays its
@@ -177,6 +179,87 @@ async function session(page: Page): Promise<number> {
 function harnessErrors(page: Page): string[] {
   return (page as Page & { harnessErrors?: string[] }).harnessErrors ?? [];
 }
+
+test("render spinner is delayed, preserves pixels and stays through the second pass", { skip: !browserAvailable }, async (t) => {
+  const browser = await launch(t);
+  const page = await openStory(browser, await devBase(t), "renderer-lifecycleharness--default",
+    "&args=latencyMs:350;debounceMs:0;sizePx:8");
+  await painted(page);
+  const before = await fullBuffer(page);
+  const rect = await page.locator("canvas").boundingBox();
+  await page.locator("[data-harness-text]").fill("Slow replacement");
+  await page.waitForSelector('[data-font-canvas] [aria-busy="true"]');
+  await page.waitForTimeout(60);
+  assert.equal(await page.locator("[data-render-spinner]").count(), 0, "fast pending work has no spinner yet");
+  await page.locator("[data-render-spinner]").waitFor({ state: "visible" });
+  assert.deepEqual(await fullBuffer(page), before, "existing pixels remain visible");
+  assert.deepEqual(await page.locator("canvas").boundingBox(), rect, "indicator does not move the canvas");
+  await page.waitForFunction(() => {
+    const node = document.querySelector("[data-harness-calls]");
+    const calls = JSON.parse(node?.textContent || "{}").renders || [];
+    return calls.filter((call: { text: string }) => call.text === "Slow replacement").length === 2;
+  });
+  assert.equal(await page.locator("[data-render-spinner]").count(), 1, "second pass still has the spinner");
+  assert.deepEqual(await fullBuffer(page), before);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.equal(await page.locator("[data-render-spinner] svg").evaluate((svg) => getComputedStyle(svg).animationName), "none");
+  await mkdir(path.join(repoRoot, "out/diagnostics/render-spinner"), { recursive: true });
+  await page.screenshot({ path: path.join(repoRoot, "out/diagnostics/render-spinner/pending.png") });
+  await painted(page);
+  await page.locator("[data-render-spinner]").waitFor({ state: "detached" });
+  assert.equal(await page.locator('[data-font-canvas] [aria-busy="false"]').count(), 1);
+  assert.deepEqual(harnessErrors(page), []);
+});
+
+test("fast renders never mount a spinner, including the typing debounce", { skip: !browserAvailable }, async (t) => {
+  const browser = await launch(t);
+  const page = await openStory(browser, await devBase(t), "renderer-lifecycleharness--default");
+  await painted(page);
+  await page.evaluate(() => {
+    document.documentElement.dataset.spinnerSeen = "false";
+    new MutationObserver((records) => {
+      if (records.some((record) => [...record.addedNodes].some((node) => node instanceof Element
+        && (node.matches("[data-render-spinner]") || node.querySelector("[data-render-spinner]"))))) {
+        document.documentElement.dataset.spinnerSeen = "true";
+      }
+    }).observe(document.querySelector("[data-font-canvas]")!, { childList: true, subtree: true });
+  });
+  await page.locator("[data-harness-text]").fill("Fast cached update");
+  await painted(page);
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.spinnerSeen), "false");
+  assert.equal(await page.locator("[data-render-spinner]").count(), 0);
+  assert.deepEqual(harnessErrors(page), []);
+});
+
+test("spinner follows superseding requests and clears on disable or failure", { skip: !browserAvailable }, async (t) => {
+  const browser = await launch(t);
+  const base = await devBase(t);
+  const page = await openStory(browser, base, "renderer-lifecycleharness--default",
+    "&args=latencyMs:500;debounceMs:0");
+  await painted(page);
+  const count = await paints(page);
+  await page.locator("[data-harness-text]").fill("Older input");
+  await page.locator("[data-render-spinner]").waitFor({ state: "visible" });
+  await page.locator("[data-harness-text]").fill("Latest input");
+  await page.waitForTimeout(350);
+  assert.equal(await paints(page), count, "superseded completion does not paint");
+  assert.equal(await page.locator("[data-render-spinner]").count(), 1, "old completion cannot hide the new spinner");
+  await page.locator("[data-harness-ready]").uncheck();
+  await page.locator("[data-render-spinner]").waitFor({ state: "detached" });
+  await page.waitForTimeout(550);
+  assert.equal(await page.locator("[data-render-spinner]").count(), 0);
+  assert.deepEqual(harnessErrors(page), []);
+  await page.close();
+
+  const failure = await openStory(browser, base, "renderer-lifecycleharness--default",
+    "&args=latencyMs:500;renderScenario:error");
+  await failure.locator("[data-render-spinner]").waitFor({ state: "visible" });
+  await failure.waitForFunction(() => document.querySelector("[data-harness-status]")?.textContent?.startsWith("error:"));
+  assert.equal(await failure.locator("[data-render-spinner]").count(), 0);
+  assert.equal(await failure.locator('[data-font-canvas] [aria-busy="false"]').count(), 1);
+  assert.deepEqual(harnessErrors(failure), []);
+});
 
 async function strictCalls(page: Page, name: "canvas" | "lib"): Promise<HarnessCalls & { loads: Array<{ fontId: string }> }> {
   const text = await probeText(page, `[data-strict-${name}-calls]`);

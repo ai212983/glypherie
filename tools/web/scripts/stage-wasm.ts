@@ -1,6 +1,6 @@
 // Stage the candidate-enabled preview renderer for the Vite app.
 //
-// Copies tools/wasm/pkg-web-preview/font_wasm.js (+ .d.ts) and
+// Copies tools/wasm/pkg-web-preview-simd128/font_wasm.js (+ .d.ts) and
 // font_wasm_bg.wasm into src/app/renderer/wasm/ (git-ignored build input) so Vite bundles
 // the glue and emits the binary as a content-hashed asset. Strict by default:
 // a missing preview build fails with the fix. `--allow-missing` (dev only)
@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 const webRoot: string = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const allowMissing: boolean = process.argv.includes("--allow-missing");
 const previewDir: string = process.env.FONT_WASM_PREVIEW_DIR
-  ?? path.resolve(webRoot, "..", "wasm", "pkg-web-preview");
+  ?? path.resolve(webRoot, "..", "wasm", "pkg-web-preview-simd128");
 const outDir: string = path.join(webRoot, "src", "app", "renderer", "wasm");
 
 const STUB_JS: string = `// Generated degraded stub (preview WASM not staged). Every use throws.
@@ -29,6 +29,7 @@ const STUB_DTS: string = `export class Font {
   constructor(bytes: Uint8Array);
   free(): void;
   render(spec: unknown): unknown;
+  export_playdate(request: unknown): Uint8Array;
   kerning_pairs(sizePx: number, axes?: Record<string, number>): unknown;
   metadata(): unknown;
 }

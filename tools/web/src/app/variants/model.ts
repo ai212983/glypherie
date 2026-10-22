@@ -1,19 +1,47 @@
 import type { FontMetadata, StoredFont } from "../fonts/storage.ts";
 import type {
+  MonoDropout,
+  MonoRaster,
   OutputProfile,
   RendererRole,
+  Rasterization,
   StemFitting,
 } from "../renderer/renderer-types.ts";
-import { MAX_TEXT_LENGTH } from "../renderer/render-spec.ts";
+import { DEFAULT_MONO_RASTER, PREVIEW_MONO_RASTER, MAX_TEXT_LENGTH } from "../renderer/render-spec.ts";
+
+export type { MonoRaster };
 
 export interface VariantSettings {
   sizePx: number;
   axes: Record<string, number>;
   letterSpacingPx: number;
   profile: OutputProfile;
+  /** Defined palette identity; absent historical settings use Monochrome. */
+  paletteId?: number;
   kerning: boolean;
   stemFitting: StemFitting;
+  // Independent opt-in for native diagonal-width fitting; default false.
+  diagonalFitting: boolean;
+  monoRaster: MonoRaster;
   renderer: RendererRole;
+  /** Absent on historical settings; previews resolve to the current pipeline. */
+  rasterization?: Rasterization;
+}
+
+// Retired pipeline choices migrate at the app boundary; native diagnostic
+// APIs remain independent of the preview's fixed scan-converter policy.
+// Saved extra tracking survives the migration: it is layout state, not a
+// renderer choice.
+export function currentPreviewSettings(settings: VariantSettings): VariantSettings {
+  return {
+    ...settings,
+    paletteId: settings.paletteId ?? 0,
+    renderer: "candidate",
+    rasterization: settings.profile === "mono_1bit" ? "free_type_mono" : "coverage",
+    // Historical rows carry no flag; the opt-in stays off unless set.
+    diagonalFitting: settings.diagonalFitting ?? false,
+    monoRaster: { ...PREVIEW_MONO_RASTER },
+  };
 }
 
 export interface FontVariant {
@@ -23,13 +51,15 @@ export interface FontVariant {
   settingsVersion: 1;
   settings: VariantSettings;
   sampleText: string;
+  /** Absent historical rows keep their saved text. */
+  inheritSampleText?: boolean;
   revision: number;
   createdAt: number;
   updatedAt: number;
 }
 
 /** Editable persisted fields of one variant; the editor draft shape. */
-export type VariantDraft = Pick<FontVariant, "name" | "settings" | "sampleText">;
+export type VariantDraft = Pick<FontVariant, "name" | "settings" | "sampleText" | "inheritSampleText">;
 
 // Bounds mirror the preview controls and render contracts: size clamps to
 // 1..512 (SpecimenControls), spacing to -2..4 (snapshot-codec), sample text
@@ -41,8 +71,9 @@ export const VARIANT_SPACING_MAX = 4;
 export const VARIANT_NAME_MAX_LENGTH = 120;
 export const VARIANT_SAMPLE_TEXT_MAX_LENGTH = MAX_TEXT_LENGTH;
 
-const PROFILES: readonly OutputProfile[] = ["mono_1bit", "gray_3bit"];
+const PROFILES: readonly OutputProfile[] = ["mono_1bit", "gray_2bit", "gray_3bit", "gray_4bit"];
 const STEM_FITTINGS: readonly StemFitting[] = ["font_hints_first", "upstream_mono"];
+const MONO_DROPOUTS: readonly MonoDropout[] = ["off", "simple", "smart"];
 const RENDERERS: readonly RendererRole[] = ["baseline", "reference", "candidate"];
 
 export type VariantStorageErrorCode =
@@ -78,9 +109,13 @@ export function defaultVariantSettings(font: StoredFont): VariantSettings {
     axes,
     letterSpacingPx: 0,
     profile: "mono_1bit",
+    paletteId: 0,
     kerning: true,
     stemFitting: "font_hints_first",
+    diagonalFitting: false,
+    monoRaster: { ...PREVIEW_MONO_RASTER },
     renderer: "candidate",
+    rasterization: "free_type_mono",
   };
 }
 
@@ -108,9 +143,41 @@ export function validateVariantSettings(settings: VariantSettings, metadata: Fon
     fail(`letterSpacingPx must sit within ${VARIANT_SPACING_MIN}..${VARIANT_SPACING_MAX}`);
   }
   if (!(PROFILES as readonly string[]).includes(typed.profile)) fail("profile must be a known output profile");
+  if (typed.paletteId !== undefined && (!Number.isInteger(typed.paletteId) || typed.paletteId < 0)) fail("paletteId must identify a palette");
   if (typeof typed.kerning !== "boolean") fail("kerning must be a boolean");
   if (!(STEM_FITTINGS as readonly string[]).includes(typed.stemFitting)) {
     fail("stemFitting must be a known stem-fitting strategy");
+  }
+  // Saved rows predate the opt-in: default it so old variants keep pixels.
+  if (typed.diagonalFitting === undefined) {
+    typed.diagonalFitting = false;
+  }
+  if (typeof typed.diagonalFitting !== "boolean") fail("diagonalFitting must be a boolean");
+  // Saved rows predate scan controls: absent settings default so old
+  // variants keep their delivered pixels.
+  if (typed.monoRaster === undefined) {
+    typed.monoRaster = { ...DEFAULT_MONO_RASTER };
+  }
+  if (!isRecord(typed.monoRaster)) fail("monoRaster must be an object");
+  const scan = typed.monoRaster as Record<string, unknown>;
+  if (!(MONO_DROPOUTS as readonly string[]).includes(scan.dropout as string)) {
+    fail("monoRaster.dropout must be a known dropout correction");
+  }
+  if (typeof scan.includeStubs !== "boolean") fail("monoRaster.includeStubs must be a boolean");
+  // Rows saved before the font-instructions toggle carry no flag: default it
+  // so stored manual choices keep their delivered pixels.
+  if (scan.fontInstructions === undefined) {
+    (typed.monoRaster as MonoRaster).fontInstructions = false;
+  } else if (typeof scan.fontInstructions !== "boolean") {
+    fail("monoRaster.fontInstructions must be a boolean");
+  }
+  if (typed.rasterization !== undefined) {
+    if (typed.rasterization !== "free_type_mono" && typed.rasterization !== "coverage") {
+      fail("rasterization must be a known scan converter");
+    }
+    if (typed.renderer !== "candidate") {
+      fail("separated stages require the current pipeline");
+    }
   }
   if (!(RENDERERS as readonly string[]).includes(typed.renderer)) fail("renderer must be a known renderer role");
   if (!metadata || !Array.isArray(metadata.axes)) fail("font metadata must carry an axes array");
@@ -143,7 +210,10 @@ export function validateVariantName(name: string): void {
   }
 }
 
-export function validateVariantSampleText(sampleText: string): void {
+export function validateVariantSampleText(sampleText: string, inheritSampleText?: boolean): void {
+  if (inheritSampleText !== undefined && typeof inheritSampleText !== "boolean") {
+    throw new VariantStorageError("invalid-input", "Sample text inheritance must be a boolean.");
+  }
   if (typeof sampleText !== "string") {
     throw new VariantStorageError("invalid-input", "Variant sample text must be a string.");
   }

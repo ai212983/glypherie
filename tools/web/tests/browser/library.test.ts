@@ -58,7 +58,7 @@ test("Add variant creates a default saved variant and navigates after commit", {
   page.once("load", () => { reloaded = true; });
   const variantId = await openNewVariant(page, ids[target]!);
   await page.waitForFunction(
-    (name) => document.querySelector(".family h2")?.textContent === name,
+    (name) => document.querySelector('.family h2[id^="heading-"]')?.textContent === name,
     names[target],
   );
   await page.waitForFunction(canvasRendered);
@@ -70,7 +70,7 @@ test("Add variant creates a default saved variant and navigates after commit", {
   );
   await page.waitForTimeout(500);
   assert.equal(reloaded, false, "in-app navigation performs no document reload");
-  await page.locator("[data-all-fonts]").click();
+  await page.locator('[data-primary-nav="fonts"]').click();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.deepEqual(await cardVariantIds(page, ids[target]!), [variantId]);
 });
@@ -90,11 +90,11 @@ for (const expected of EXPECTED) {
     assert.ok(id, "card carries its content id");
     const variantId = await openNewVariant(page, id!);
     await page.waitForFunction(
-      (name) => document.querySelector(".family h2")?.textContent === name,
+      (name) => document.querySelector('.family h2[id^="heading-"]')?.textContent === name,
       names[index],
     );
     await page.waitForFunction(canvasRendered);
-    const heading = await page.locator(".family h2").innerText();
+    const heading = await page.locator('.family h2[id^="heading-"]').innerText();
     assert.equal(heading, names[index]);
     for (const axis of expected.axes) {
       assert.equal(
@@ -103,8 +103,11 @@ for (const expected of EXPECTED) {
         `${heading} exposes the ${axis} axis`,
       );
     }
-    const license = await page.locator("section.family a[href$='.txt']").allTextContents();
-    assert.ok(license.includes(expected.license), `${heading} links ${expected.license}, got ${license}`);
+    const license = await page.locator("section.family a[href$='.txt']").getAttribute("href");
+    assert.ok(license, `${heading} exposes a license link`);
+    const response = await page.request.get(license);
+    assert.equal(response.status(), 200);
+    assert.match(await response.text(), /SIL OPEN FONT LICENSE/i, `${heading} links a readable OFL notice`);
     const first = await canvasPixels(page);
     assert.ok(first.width > 0 && first.height > 0);
     assert.ok(first.ink > 100, `expected rendered ink for ${heading}, got ${first.ink}`);
@@ -127,7 +130,7 @@ test("direct first load into each legacy font route shows its unsaved preview", 
   for (const [index, id] of ids.entries()) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await bootDetail(page, `${url}#/font/${id}/`);
-    assert.equal(await page.locator(".family h2").innerText(), names[index]);
+    assert.equal(await page.locator('.family h2[id^="heading-"]').innerText(), names[index]);
     assert.equal(await page.locator("[data-unsaved-preview]").count(), 1, "legacy routes stay unsaved previews");
     const first = await canvasPixels(page);
     assert.ok(first.ink > 100, `expected rendered ink for ${names[index]}`);
@@ -145,14 +148,14 @@ test("legacy query and fragment links migrate to the canonical hash route", { sk
   const ids = await cardIds(page);
   const literata = names.findIndex((name) => /^Literata/.test(name));
   await bootDetail(page, `${url}?font=${ids[literata]}&profile=gray_3bit`);
-  assert.equal(await page.locator(".family h2").innerText(), names[literata]);
+  assert.equal(await page.locator('.family h2[id^="heading-"]').innerText(), names[literata]);
   assert.equal(await hashPath(page), `/font/${ids[literata]}/`);
   assert.equal(await hashParam(page, "profile"), "gray_3bit", "legacy profile survives migration");
   assert.equal(new URL(page.url()).searchParams.get("font"), null, "outer font query is cleared");
 
   await page.goto(`${url}#family-${ids[literata]}`, { waitUntil: "networkidle" });
   await page.waitForFunction(
-    (name) => document.querySelector(".family h2")?.textContent === name,
+    (name) => document.querySelector('.family h2[id^="heading-"]')?.textContent === name,
     names[literata],
   );
   assert.equal(await hashPath(page), `/font/${ids[literata]}/`);

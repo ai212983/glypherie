@@ -54,21 +54,25 @@ wasm-build:
 
 # Build the candidate-enabled preview WASM renderer. Uses the opt-in `preview`
 # cargo feature, which enables the generator's `candidate` feature; the output
-# (tools/wasm/pkg-web-preview/) stays separate from the production artifact
-# (tools/wasm/pkg-web/, built by `wasm-build` with default features).
+# (tools/wasm/pkg-web-preview-simd128/) uses standard SIMD and stays separate
+# from the production artifact (tools/wasm/pkg-web/, built by `wasm-build`).
 wasm-build-preview:
-    tools/wasm/build.sh web preview
+    WASM_SIMD128=1 tools/wasm/build.sh web preview
 
 # Build the browser app into out/web/.
 web:
-    mise -C tools/web exec -- npm run build
+    npm --prefix tools/web run build
 
 # Serve the browser app with live reload, without generating specimens.
 dev $web_port="8903":
-    mise -C tools/web exec -- npm run dev -- --port="$web_port"
+    npm --prefix tools/web run dev -- --port="$web_port"
 
 # Serve the current browser app; `preview` keeps the review-workflow name.
 alias preview := dev
+
+# Serve the built app separately from the dev server.
+web-serve:
+    npm --prefix tools/web run preview
 
 # Generate and publish the configured specimen packages.
 specimens $config_path="tools/generator/specimens.json" $output_dir="out/specimens":
@@ -93,3 +97,11 @@ web-storybook-build:
 # Export aligned glyph images and pixel differences from published renders.
 comparisons $config_path="tools/generator/comparisons.json" $specimen_dir="out/specimens":
     cargo run --locked --manifest-path tools/generator/Cargo.toml --bin font_comparison -- "$config_path" "$specimen_dir"
+
+# Stage Playdate Font Lab and compile out/playdate-font-lab/FontLab.pdx.
+playdate-build *args:
+    node tools/playdate/build.mjs {{args}}
+
+# Build FontLab.pdx and open it in the SDK Simulator.
+playdate-run *args:
+    node tools/playdate/build.mjs --run {{args}}

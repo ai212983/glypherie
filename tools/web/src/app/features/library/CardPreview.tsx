@@ -1,85 +1,74 @@
 import * as React from "react";
 import type { StoredFont } from "../../fonts/storage.js";
-import { controlAxes, defaultAxesValue } from "../../fonts/metadata";
-import { FontCanvas } from "../../renderer/FontCanvas.js";
-
-const CARD_SIZE_PX = 16;
+import { displayName } from "../../fonts/metadata";
+import type { FontVariant } from "../../variants/model.js";
+import { SourcePreview } from "./SourcePreview";
+import { libraryFrame, type CanvasPaletteId } from "./canvas-palettes.js";
+import { SpecimenFrame, SpecimenFooter } from "./SpecimenFrame";
+import { VariantPreview } from "./VariantPreview";
+import type { LibraryBaseSize } from "./preferences.js";
 
 interface CardPreviewProps {
   font: StoredFont;
   text: string;
+  baseSize: LibraryBaseSize;
   zoom: number;
+  palette: CanvasPaletteId;
+  inverse: boolean;
   loaded: boolean;
   loadError: string;
+  variants: FontVariant[] | undefined;
+  onOpenVariant: (variant: FontVariant) => void;
+  footer?: React.ReactNode;
 }
 
-// Library card preview: candidate Mono at the constant card size and the
-// font's default axes over the shared FontCanvas. Markup, diagnostics and
-// canvas data hooks stay exactly as the card browser coverage expects.
-export function CardPreview({ font, text, zoom, loaded, loadError }: CardPreviewProps): React.JSX.Element {
-  const [error, setError] = React.useState("");
-  const [missing, setMissing] = React.useState(0);
-  const [truncated, setTruncated] = React.useState(false);
-  const axes = React.useMemo(() => defaultAxesValue(controlAxes(font.metadata)), [font.metadata]);
+// Source font and generated variant rows share the display frame.
+export function CardPreview({ font, text, baseSize, zoom, palette, inverse, loaded, loadError, variants, onOpenVariant, footer }: CardPreviewProps): React.JSX.Element {
   const empty = text.length === 0;
-
-  React.useEffect(() => {
-    if (empty) {
-      setError("");
-      setMissing(0);
-      setTruncated(false);
-    }
-  }, [empty]);
-
-  // Empty-sample visibility is this card's policy: it unmounts the canvas
-  // (cancelling pending work) instead of asking FontCanvas to hide itself.
+  const frame = libraryFrame(palette, inverse);
+  const rows = variants ?? [];
+  const rowsPresent = rows.length > 0;
   return (
     <>
-      {!empty && (
-        <FontCanvas
-          fontId={font.id}
-          text={text}
-          sizePx={CARD_SIZE_PX}
-          axes={axes}
-          profile="mono_1bit"
-          role="candidate"
-          spacing={0}
-          kerning
-          stemFitting="font_hints_first"
-          zoom={zoom}
-          mode="normal"
-          ready={loaded && !loadError}
-          debounceMs={0}
-          clearOnError
-          viewportProps={{ "data-card-preview": font.id, "aria-hidden": true, className: "block min-w-0" }}
-          canvasProps={{ "data-card-canvas": font.id, className: "block h-auto w-full [image-rendering:pixelated]" }}
-          debugIdentity={(width) => ({ font: font.id, width, zoom, text, axes })}
-          exposeFullHeight
-          onPaint={(diagnostics) => {
-            setMissing(diagnostics.missing);
-            setTruncated(diagnostics.truncated);
-            setError("");
-          }}
-          onError={(message) => {
-            setMissing(0);
-            setTruncated(false);
-            setError(message);
-          }}
-        />
-      )}
-      {(loadError || error) && (
-        <p data-card-error={font.id} className="px-4 pb-2 text-[.75rem] text-soft">{loadError || error}</p>
-      )}
-      {!loadError && !error && !empty && truncated && (
-        <p data-card-limit={font.id} className="px-4 pb-2 text-[.75rem] text-soft">
-          Text too long to preview fully. Shorten the sample or reduce zoom.
-        </p>
-      )}
-      {!loadError && !error && !empty && missing > 0 && (
-        <p data-card-glyphs={font.id} className="px-4 pb-2 text-[.75rem] text-soft">
-          {`${missing} character${missing === 1 ? "" : "s"} not in this font.`}
-        </p>
-      )}
+      <SpecimenFrame frame={frame} data-card-frame={font.id} className="mx-4">
+        <div className="flex min-h-5 w-full min-w-0 items-center gap-2 font-studio text-[9px] leading-4">
+          <span className="min-w-0 flex-1 text-left [overflow-wrap:anywhere]" style={{ color: frame.inkCss }}>
+            Source
+          </span>
+          <span className="shrink-0" style={{ color: frame.mutedCss }}>
+            {`${baseSize} px`}
+          </span>
+        </div>
+        {!empty && <SourcePreview font={font} text={text} sizePx={baseSize} zoom={zoom} ink={frame.inkCss} />}
+        {rowsPresent && (
+          <ul data-variant-list={font.id} aria-label={`${displayName(font)} variants`} className="mt-3 mb-0 list-none p-0">
+            {rows.map((variant) => (
+              <li
+                key={variant.id}
+                data-library-variant-row={variant.id}
+                className="border-t py-1"
+                style={{ borderColor: frame.dividerCss }}
+              >
+                <VariantPreview
+                  fontId={font.id}
+                  variant={variant}
+                  zoom={zoom}
+                  palette={palette}
+                  inverse={inverse}
+                  loaded={loaded}
+                  loadError={loadError}
+                  onOpen={onOpenVariant}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+        {footer && (
+          <SpecimenFooter frame={frame} bordered={rowsPresent || !empty} className={!rowsPresent ? "mt-3" : undefined}>
+            {footer}
+          </SpecimenFooter>
+        )}
+      </SpecimenFrame>
     </>
   );
 }

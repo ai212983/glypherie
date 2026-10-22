@@ -112,7 +112,6 @@ details.fc-disclosure > summary::marker {
   align-items: end;
 }
 
-[data-fc-surface] select,
 [data-fc-surface] button,
 [data-fc-surface] input[type="number"],
 [data-fc-surface] textarea {

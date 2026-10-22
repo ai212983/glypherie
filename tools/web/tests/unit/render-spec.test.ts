@@ -11,6 +11,33 @@ function baseOptions() {
   return { text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit" as const, width: 360, height: 120 };
 }
 
+test("separated stages forward extra tracking and do not send a historical role", () => {
+  const options = {
+    ...baseOptions(), role: "candidate" as const, letterSpacingPx: -2,
+    stemFitting: "font_hints_first" as const,
+    monoRaster: { dropout: "off" as const, includeStubs: false, fontInstructions: false },
+  };
+  const mono = toRenderSpec({ ...options, rasterization: "free_type_mono" });
+  const coverage = toRenderSpec({ ...options, rasterization: "coverage" });
+  assert.deepEqual(mono.pipeline, { fitting: "font_hints_auto", rasterization: "free_type_mono_terminals" });
+  assert.deepEqual(coverage.pipeline, mono.pipeline, "retired coverage choice uses FreeType Mono");
+  for (const spec of [mono, coverage]) {
+    assert.equal(spec.letter_spacing_px, -2);
+    assert.equal("renderer" in spec, false);
+    assert.equal("stem_fitting" in spec, false);
+    assert.equal(spec.kerning, true);
+  }
+  assert.deepEqual(coverage.mono_raster, mono.mono_raster);
+  assert.deepEqual(mono.mono_raster, { dropout: "smart", include_stubs: true, font_instructions: true });
+  const automatic = toRenderSpec({ ...options, rasterization: "free_type_mono", stemFitting: "upstream_mono" });
+  assert.deepEqual({ ...automatic.pipeline, fitting: "font_hints_auto" }, mono.pipeline);
+  assert.equal(automatic.letter_spacing_px, mono.letter_spacing_px);
+  assert.deepEqual(automatic.mono_raster, mono.mono_raster);
+  const gray = toRenderSpec({ ...options, rasterization: "free_type_mono", profile: "gray_3bit" });
+  assert.deepEqual(gray.pipeline, { fitting: "upstream_mono", rasterization: "coverage" });
+  assert.equal("mono_raster" in gray, false);
+});
+
 test("stem fitting is explicit and restricted to candidate monochrome requests", () => {
   const options = { text: "mut", sizePx: 14, axes: {}, width: 100, height: 40, stemFitting: "upstream_mono" as const };
   assert.equal(toRenderSpec({ ...options, role: "candidate", profile: "mono_1bit" }).stem_fitting, "upstream_mono");
@@ -22,6 +49,54 @@ test("stem fitting is explicit and restricted to candidate monochrome requests",
   }
   assert.equal(Object.hasOwn(toRenderSpec({ ...options, role: "candidate", profile: "gray_3bit" }), "stem_fitting"), false);
   assert.equal(Object.hasOwn(toRenderSpec({ ...options, stemFitting: undefined, role: "candidate", profile: "mono_1bit" }), "stem_fitting"), false);
+});
+
+test("scan controls are explicit and restricted to candidate monochrome requests", () => {
+  const mono = { ...baseOptions(), role: "candidate" as const, profile: "mono_1bit" as const };
+  assert.equal("mono_raster" in toRenderSpec(mono), false, "absent settings stay absent");
+  assert.deepEqual(
+    toRenderSpec({ ...mono, monoRaster: { dropout: "off", includeStubs: true, fontInstructions: false } }).mono_raster,
+    { dropout: "off", include_stubs: true, font_instructions: false },
+  );
+  assert.deepEqual(
+    toRenderSpec({ ...mono, monoRaster: { dropout: "smart", includeStubs: false, fontInstructions: false } }).mono_raster,
+    { dropout: "smart", include_stubs: false, font_instructions: false },
+  );
+  assert.deepEqual(
+    toRenderSpec({ ...mono, monoRaster: { dropout: "off", includeStubs: true, fontInstructions: true } }).mono_raster,
+    { dropout: "off", include_stubs: true, font_instructions: true },
+    "manual choices ride along untouched when following font instructions",
+  );
+  for (const role of ["baseline", "reference"] as const) {
+    assert.equal("mono_raster" in toRenderSpec({ ...mono, role, monoRaster: { dropout: "off", includeStubs: true, fontInstructions: false } }), false);
+  }
+  assert.equal(
+    "mono_raster" in toRenderSpec({ ...mono, role: "candidate", profile: "gray_3bit", monoRaster: { dropout: "off", includeStubs: true, fontInstructions: false } }),
+    false,
+  );
+  assert.throws(
+    () => toRenderSpec({ ...mono, monoRaster: { dropout: "cleartype", includeStubs: false, fontInstructions: false } as never }),
+    /Invalid mono raster dropout/,
+  );
+  assert.throws(
+    () => toRenderSpec({ ...mono, monoRaster: { dropout: "smart", includeStubs: "yes", fontInstructions: false } as never }),
+    /Invalid mono raster stubs flag/,
+  );
+  assert.throws(
+    () => toRenderSpec({ ...mono, monoRaster: { dropout: "smart", includeStubs: false, fontInstructions: "yes" } as never }),
+    /Invalid mono raster font-instructions flag/,
+  );
+  assert.throws(
+    () => toRenderSpec({ ...mono, monoRaster: "smart" as never }),
+    /Invalid mono raster settings/,
+  );
+  for (const field of ["dropout", "includeStubs", "fontInstructions"]) {
+    assert.throws(
+      () => toRenderSpec({ ...mono, monoRaster: { dropout: "smart", includeStubs: false, fontInstructions: false, [field]: null } as never }),
+      /Invalid mono raster/,
+      "only absent fields receive defaults",
+    );
+  }
 });
 
 test("maps control state to the exact tools/wasm render request", () => {
@@ -78,8 +153,28 @@ test("maps control state to the exact tools/wasm render request", () => {
   assert.equal(mono.text, "");
 });
 
+test("extra tracking forwards on the separated pipeline for 1-bit and 3-bit", () => {
+  const mono = { ...baseOptions(), rasterization: "free_type_mono" as const };
+  const gray = { ...baseOptions(), profile: "gray_3bit" as const, rasterization: "free_type_mono" as const };
+  assert.equal(toRenderSpec({ ...mono, letterSpacingPx: 3 }).letter_spacing_px, 3);
+  assert.equal(toRenderSpec({ ...gray, letterSpacingPx: 3 }).letter_spacing_px, 3);
+  assert.equal(toRenderSpec({ ...mono, letterSpacingPx: 0 }).letter_spacing_px, 0);
+  assert.equal(toRenderSpec({ ...gray, letterSpacingPx: 0 }).letter_spacing_px, 0);
+  assert.equal(toRenderSpec({ ...mono, letterSpacingPx: 1.5 }).letter_spacing_px, 2);
+  assert.equal(toRenderSpec({ ...gray, letterSpacingPx: -0.5 }).letter_spacing_px, -1);
+  assert.equal(toRenderSpec({ ...mono, letterSpacingPx: 99 }).letter_spacing_px, 4);
+  assert.equal(toRenderSpec({ ...gray, letterSpacingPx: -99 }).letter_spacing_px, -2);
+  assert.equal(toRenderSpec({ ...mono, letterSpacingPx: "bad" }).letter_spacing_px, 0);
+  assert.equal(toRenderSpec({ ...mono, letterSpacingPx: undefined }).letter_spacing_px, 0);
+  const noKern = toRenderSpec({ ...mono, letterSpacingPx: 2, kerning: false });
+  assert.equal(noKern.letter_spacing_px, 2, "pair corrections stay independent of tracking");
+  assert.equal(noKern.kerning, false);
+});
+
 test("tracking stays whole-pixel for candidate and Mono, fractional for baseline Gray", () => {
   assert.equal(normalizedSpacing(1.5, "mono_1bit", "baseline"), 2);
+  assert.equal(normalizedSpacing(2.5, "mono_1bit"), 3, "ties round away from zero");
+  assert.equal(normalizedSpacing(-1.5, "mono_1bit"), -2, "ties round away from zero");
   assert.equal(normalizedSpacing(-0.5, "gray_3bit", "baseline"), -0.5);
   assert.equal(normalizedSpacing(-0.5, "gray_3bit", "candidate"), -1);
   assert.equal(normalizedSpacing("bad", "mono_1bit"), 0);

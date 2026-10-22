@@ -102,6 +102,10 @@ export function createFixtureRenderer(options: FixtureRendererOptions = {}): Ren
       checkLive();
       return { pairs: [], skipped_pairs: 0 };
     },
+    async exportPlaydate(): Promise<ArrayBuffer> {
+      checkLive();
+      throw new Error("Playdate export requires the real font renderer.");
+    },
     nextToken(): number {
       token += 1;
       return token;

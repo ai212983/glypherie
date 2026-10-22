@@ -1,0 +1,8 @@
+.library-title-icon {
+  display: block;
+  flex-shrink: 0;
+  background-color: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+}
+

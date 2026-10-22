@@ -1,0 +1,71 @@
+.app-shell { display: flex; min-height: 100dvh; flex-direction: column; }
+.app-shell__page { min-width: 0; flex: 1; }
+.site-footer {
+  position: relative;
+  z-index: 45;
+  display: flex;
+  min-height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 20px;
+  border-top: 1px solid var(--studio-border);
+  padding: 6px 20px;
+  background: var(--font-card-surface);
+  color: var(--studio-muted);
+  box-shadow: var(--studio-card-shadow);
+  font-family: "Glypherie Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+}
+.site-footer__identity, .site-footer__updates, .site-footer__details summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.site-footer__connection { display: inline-block; width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; }
+.site-footer__development { display: inline-flex; align-items: center; gap: 8px; }
+.site-footer__details { position: relative; }
+.site-footer__details summary { cursor: pointer; list-style: none; flex-wrap: wrap; gap: 4px 10px; }
+.site-footer__details summary::-webkit-details-marker { display: none; }
+.site-footer__details summary:hover { color: var(--studio-foreground); }
+.site-footer__details summary:focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; border-radius: 2px; }
+.site-footer__info {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 0;
+  width: min(360px, calc(100vw - 32px));
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  padding: 14px;
+  background: var(--studio-surface);
+  color: var(--studio-foreground);
+  box-shadow: var(--studio-card-shadow);
+}
+.site-footer__info dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 0 0 12px; }
+.site-footer__info dt { color: var(--studio-muted); }
+.site-footer__info dd { margin: 0; overflow-wrap: anywhere; }
+.site-footer__info [role="status"] { margin-left: 8px; }
+.site-footer__updates { flex-wrap: wrap; gap: 4px 12px; }
+.site-footer .site-footer__version-button, .site-footer .site-footer__update-button {
+  height: 22px;
+  border: 1px solid var(--studio-border);
+  border-radius: 9999px;
+  background: var(--studio-inset);
+  box-shadow: var(--studio-inset-shadow);
+  font: inherit;
+  font-weight: 700;
+  color: var(--studio-heading);
+}
+@media (min-width: 1024px) {
+  .app-shell { height: 100dvh; overflow: hidden; }
+  .app-shell__page { min-height: 0; overflow-y: auto; }
+  .app-shell__page > .flex { height: 100%; }
+}
+@media (max-width: 639px) {
+  .site-footer { flex-wrap: wrap; padding: 8px 16px; }
+  .site-footer__identity { flex-wrap: wrap; gap: 6px 12px; }
+  .site-footer__updates { justify-content: flex-start; }
+  .site-footer__details { position: static; }
+  .site-footer__info { left: 16px; bottom: calc(100% + 8px); }
+}

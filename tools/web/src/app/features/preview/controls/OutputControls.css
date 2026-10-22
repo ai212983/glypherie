@@ -1,0 +1,71 @@
+.palette-picker [data-output-palette] {
+  width: min(100%, 17rem);
+}
+
+.palette-picker [data-output-palette][data-slot="select-trigger"] {
+  height: auto;
+  min-height: 60px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.palette-picker [data-slot="select-value"],
+.palette-picker-menu [data-slot="select-item"] > span:last-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.palette-picker-menu {
+  width: var(--radix-select-trigger-width);
+  max-width: calc(100vw - 1rem);
+}
+
+.palette-picker-menu [data-slot="select-item"] {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.palette-choice {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 7px;
+  font-family: var(--font-studio);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.palette-choice-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.palette-choice-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-choice-depth {
+  flex-shrink: 0;
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+
+.palette-choice-swatches {
+  display: flex;
+  gap: 3px;
+  height: 12px;
+  overflow: hidden;
+}
+
+.palette-choice-swatches > span {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}

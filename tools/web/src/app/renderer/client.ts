@@ -2,7 +2,7 @@
 // sequence id; responses resolve exactly one pending promise. Callers compare
 // render tokens and drop stale results (the worker tags them too).
 import type { FontMetadata } from "../fonts/storage.js";
-import type { RenderSpec } from "./renderer-types.js";
+import type { PlaydateExportRequest, RenderSpec } from "./renderer-types.js";
 
 export interface RenderPixels {
   width: number;
@@ -91,6 +91,11 @@ export class FontWorkerClient {
   async kerning(fontId: string, sizePx: number, axes: Record<string, number>): Promise<unknown> {
     const response = await this.send("kerning", { fontId, sizePx, axes });
     return response.value;
+  }
+
+  async exportPlaydate(fontId: string, request: PlaydateExportRequest): Promise<ArrayBuffer> {
+    const response = await this.send("export-playdate", { fontId, request });
+    return response.value as ArrayBuffer;
   }
 
   nextToken(): number {

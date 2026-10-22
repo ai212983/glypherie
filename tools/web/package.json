@@ -1,13 +1,14 @@
 {
   "name": "font-generator-web",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "predev": "node scripts/stage-wasm.ts --allow-missing",
-    "dev": "vite --port=8903",
+    "dev": "vite",
     "prebuild": "node scripts/stage-wasm.ts",
     "build": "vite build",
+    "preview": "vite preview",
     "prestorybook": "node scripts/stage-wasm.ts",
     "storybook": "storybook dev --host 127.0.0.1 -p 6006 --no-open --disable-telemetry",
     "prebuild-storybook": "node scripts/stage-wasm.ts",

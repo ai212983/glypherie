@@ -1,8 +1,9 @@
 import { errorName, fontDatabase, isDatabaseBlocked, runWithReopen } from "../database.ts";
 import type { VariantRow } from "../database.ts";
-import { TEXT_DEFAULT } from "../renderer/render-spec.ts";
+import { DEFAULT_MONO_RASTER, TEXT_DEFAULT } from "../renderer/render-spec.ts";
 import {
   defaultVariantSettings,
+  currentPreviewSettings,
   validateVariantName,
   validateVariantSampleText,
   validateVariantSettings,
@@ -11,18 +12,29 @@ import {
   type VariantSettings,
 } from "./model.ts";
 
+import { resolvePalette } from "../palettes/model.ts";
+import { paletteProfile } from "../palettes/render.ts";
+
 export { VariantStorageError };
+
+async function definedPaletteSettings(settings: VariantSettings): Promise<VariantSettings> {
+  const row = settings.paletteId === undefined ? undefined : await fontDatabase.palettes.get(settings.paletteId);
+  const preset = resolvePalette(row ? [row] : [], settings.paletteId);
+  return currentPreviewSettings({ ...settings, paletteId: preset.id, profile: paletteProfile(preset) });
+}
 
 export interface VariantInput {
   name?: string;
   settings?: VariantSettings;
   sampleText?: string;
+  inheritSampleText?: boolean;
 }
 
 export interface VariantChanges {
   name?: string;
   settings?: VariantSettings;
   sampleText?: string;
+  inheritSampleText?: boolean;
 }
 
 function throwIfBlocked(): void {
@@ -71,8 +83,18 @@ function toVariant(row: VariantRow): FontVariant {
     fontId: row.fontId,
     name: row.name,
     settingsVersion: row.settingsVersion,
-    settings: { ...row.settings, axes: { ...row.settings.axes } },
+    // Rows written before scan controls carry no monoRaster, and rows
+    // written before the font-instructions toggle carry no flag. Fill the
+    // historical schema before applying the current preview policy.
+    settings: currentPreviewSettings({
+      ...row.settings,
+      monoRaster: row.settings.monoRaster === undefined
+        ? { ...DEFAULT_MONO_RASTER }
+        : { ...row.settings.monoRaster, fontInstructions: row.settings.monoRaster.fontInstructions ?? false },
+      axes: { ...row.settings.axes },
+    }),
     sampleText: row.sampleText,
+    inheritSampleText: row.inheritSampleText ?? false,
     revision: row.revision,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -87,13 +109,14 @@ export async function createVariant(fontId: string, input: VariantInput = {}): P
   const id = newVariantId();
   const now = Date.now();
   return runVariant(() =>
-    fontDatabase.transaction("rw", [fontDatabase.fonts, fontDatabase.variants], async () => {
+    fontDatabase.transaction("rw", [fontDatabase.fonts, fontDatabase.variants, fontDatabase.palettes], async () => {
       const font = await fontDatabase.fonts.get(fontId);
       if (!font) {
         throw new VariantStorageError("font-not-found", `Refusing to create a variant for missing font "${fontId}".`);
       }
-      const settings = input.settings ?? defaultVariantSettings(font);
-      validateVariantSettings(settings, font.metadata);
+      const inputSettings = input.settings ?? defaultVariantSettings(font);
+      validateVariantSettings(inputSettings, font.metadata);
+      const settings = await definedPaletteSettings(inputSettings);
       let name = input.name;
       if (name === undefined) {
         // Counted inside the transaction so concurrent creates sequence stably.
@@ -102,7 +125,8 @@ export async function createVariant(fontId: string, input: VariantInput = {}): P
       }
       validateVariantName(name);
       const sampleText = input.sampleText ?? TEXT_DEFAULT;
-      validateVariantSampleText(sampleText);
+      const inheritSampleText = input.inheritSampleText ?? input.sampleText === undefined;
+      validateVariantSampleText(sampleText, inheritSampleText);
       const row: VariantRow = {
         id,
         fontId,
@@ -110,6 +134,7 @@ export async function createVariant(fontId: string, input: VariantInput = {}): P
         settingsVersion: 1,
         settings: { ...settings, axes: { ...settings.axes } },
         sampleText,
+        inheritSampleText,
         revision: 1,
         createdAt: now,
         updatedAt: now,
@@ -123,7 +148,7 @@ export async function createVariant(fontId: string, input: VariantInput = {}): P
 export async function getVariant(id: string): Promise<FontVariant | undefined> {
   return runVariant(async () => {
     const row = await fontDatabase.variants.get(id);
-    return row ? toVariant(row) : undefined;
+    return row ? toVariant({ ...row, settings: await definedPaletteSettings(row.settings) }) : undefined;
   });
 }
 
@@ -132,7 +157,7 @@ export async function listVariants(fontId?: string): Promise<FontVariant[]> {
     const rows = fontId === undefined
       ? await fontDatabase.variants.toArray()
       : await fontDatabase.variants.where("fontId").equals(fontId).toArray();
-    return rows.map(toVariant).sort(compareVariants);
+    return (await Promise.all(rows.map(async (row) => toVariant({ ...row, settings: await definedPaletteSettings(row.settings) })))).sort(compareVariants);
   });
 }
 
@@ -148,7 +173,7 @@ export async function updateVariant(
     throw new VariantStorageError("invalid-input", "Variant updates need an integer expected revision.");
   }
   return runVariant(() =>
-    fontDatabase.transaction("rw", [fontDatabase.fonts, fontDatabase.variants], async () => {
+    fontDatabase.transaction("rw", [fontDatabase.fonts, fontDatabase.variants, fontDatabase.palettes], async () => {
       // Read-compare-write in one transaction; a deleted row stays deleted.
       const existing = await fontDatabase.variants.get(id);
       if (!existing) {
@@ -170,23 +195,23 @@ export async function updateVariant(
           );
         }
         validateVariantSettings(changes.settings, font.metadata);
-        settings = { ...changes.settings, axes: { ...changes.settings.axes } };
+        settings = await definedPaletteSettings({ ...changes.settings, axes: { ...changes.settings.axes } });
       }
       let name = existing.name;
       if (changes.name !== undefined) {
         validateVariantName(changes.name);
         name = changes.name;
       }
-      let sampleText = existing.sampleText;
-      if (changes.sampleText !== undefined) {
-        validateVariantSampleText(changes.sampleText);
-        sampleText = changes.sampleText;
-      }
+      const sampleText = changes.sampleText === undefined ? existing.sampleText : changes.sampleText;
+      const inheritSampleText = changes.inheritSampleText
+        ?? (changes.sampleText !== undefined ? false : existing.inheritSampleText ?? false);
+      validateVariantSampleText(sampleText, inheritSampleText);
       const next: VariantRow = {
         ...existing,
         name,
         settings: { ...settings, axes: { ...settings.axes } },
         sampleText,
+        inheritSampleText,
         revision: existing.revision + 1,
         updatedAt: Date.now(),
       };

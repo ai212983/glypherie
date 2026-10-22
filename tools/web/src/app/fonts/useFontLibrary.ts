@@ -1,3 +1,4 @@
+import { UserFacingError, userError } from "../user-error";
 import * as React from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
@@ -6,6 +7,7 @@ import {
   removeFont,
   saveFont,
   seedBundledFonts,
+  updateFontMetadata,
   type StoredFont,
 } from "./storage.js";
 import { BUNDLED_FONTS, relativeFontUrl } from "./bundled-fonts";
@@ -40,7 +42,7 @@ export interface FontLibrary {
 export function useFontLibrary(): FontLibrary {
   // The render worker is owned by RendererProvider; this hook only consumes
   // it for inspection and font loading, never creating or terminating one.
-  const { service: client, session, available, availabilityError } = useRenderer();
+  const { service: client, session, available } = useRenderer();
   const rendererAvailable = available;
   // Reactive font list: variant writes touch only the variants store, so
   // editing a variant never re-reads font binaries. Worker load state below
@@ -63,7 +65,7 @@ export function useFontLibrary(): FontLibrary {
         setFontsQueryError("");
         return list;
       } catch (error) {
-        setFontsQueryError(error instanceof Error ? error.message : String(error ?? ""));
+        setFontsQueryError(userError(error, "Couldn’t load fonts."));
         return null;
       }
     },
@@ -133,7 +135,7 @@ export function useFontLibrary(): FontLibrary {
           async (bytes: ArrayBuffer) => renderer.inspect(bytes),
         );
       } catch (error) {
-        if (!cancelled) setSeedNote(error instanceof Error ? error.message : String(error ?? ""));
+        if (!cancelled) setSeedNote(userError(error, "Couldn’t load bundled fonts."));
       }
       // The font list arrives through the reactive query above: it runs its
       // post-readiness read only after this boundary, atomically past seeding.
@@ -164,6 +166,12 @@ export function useFontLibrary(): FontLibrary {
           const stored = await getFont(id);
           if (!live()) return;
           if (!stored) throw new Error("Font data is missing from the library.");
+          if (stored.metadata.font_hints === undefined) {
+            const metadata = await renderer.inspect(stored.bytes.slice(0));
+            if (!live()) return;
+            await updateFontMetadata(id, metadata);
+            if (!live()) return;
+          }
           await renderer.load(id, stored.bytes.slice(0));
           if (!live()) return;
           loadedRef.current.add(id);
@@ -174,7 +182,7 @@ export function useFontLibrary(): FontLibrary {
           failedRef.current.add(id);
           setLoadStates((prev) => ({
             ...prev,
-            [id]: { state: "error", error: error instanceof Error ? error.message : String(error ?? "") },
+            [id]: { state: "error", error: userError(error, "Couldn’t load font.") },
           }));
         } finally {
           if (live()) loadingRef.current.delete(id);
@@ -190,7 +198,7 @@ export function useFontLibrary(): FontLibrary {
       if (!client) throw new Error("The preview renderer is unavailable.");
       metadata = await client.inspect(bytes.slice(0));
     } catch (error) {
-      throw new Error(`Could not import ${file.name}: ${error instanceof Error ? error.message : String(error ?? "")}`);
+      throw new UserFacingError(userError(error, `Couldn’t import ${file.name}.`), { cause: error });
     }
     const names = (metadata as { names?: Record<string, string | null> }).names ?? {};
     const fallback = file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
@@ -201,7 +209,7 @@ export function useFontLibrary(): FontLibrary {
     try {
       saved = await saveFont({ bytes, fileName: file.name, name, metadata, source: "uploaded" });
     } catch (error) {
-      throw new Error(`Could not import ${file.name}: ${error instanceof Error ? error.message : String(error ?? "")}`);
+      throw new UserFacingError(userError(error, `Couldn’t import ${file.name}.`), { cause: error });
     }
     // The reactive font query picks up the new row; no manual refresh.
     return { saved };
@@ -226,7 +234,7 @@ export function useFontLibrary(): FontLibrary {
 
   // A failed ping still exposes stored fonts with the renderer unavailable;
   // only seeding and loading need the live renderer.
-  const bootError = (rendererAvailable === false ? availabilityError : "") || fontsQueryError;
+  const bootError = (rendererAvailable === false ? "Preview unavailable." : "") || fontsQueryError;
   return {
     fonts, rendererAvailable, loadedIds: exposedLoadedIds, bootError, seedNote,
     ensureLoaded, loadStatus, importUpload, removeStored, retryFonts,

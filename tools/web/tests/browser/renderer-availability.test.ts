@@ -41,24 +41,15 @@ test("stored library stays accessible when the renderer is unavailable", { skip:
     timeout: 30000,
   });
   assert.deepEqual(await cardIds(page), ids, "stored fonts list without a live renderer");
-  // Boot must settle past the failed ping first: the library notice carries
-  // the renderer's availability error, so the zero rendered-canvas assertion
-  // below is about a dead renderer, not a slow boot. (Card loads stay idle
-  // while unavailable; they never attempt, so no per-card error appears.)
-  await page.waitForFunction(() => document.querySelector("[data-route-notice]") !== null, null, {
-    timeout: 60000,
-  });
-  assert.ok(wasmIntercepts >= 1, `the WASM abort actually intercepted requests, got ${wasmIntercepts}`);
-  assert.equal(
-    await page.evaluate(() => document.querySelectorAll("[data-card-canvas][data-rendered]").length),
-    0,
-    "no canvas paints without a renderer",
-  );
+  await page.waitForFunction(() => document.querySelector("[data-route-notice]") !== null, null, { timeout: 60000 });
+  assert.ok(wasmIntercepts >= 1);
+  await page.waitForFunction(() => document.querySelectorAll('[data-source-preview][data-rendered="true"]').length === 5);
+  assert.equal(await page.locator("[data-library-variant-canvas]").count(), 0);
   assert.deepEqual(errors, []);
 
   await page.goto(`${url}#/font/${ids[0]}/`, { waitUntil: "networkidle" });
   await page.waitForFunction(
-    () => document.querySelector("section[role='alert'] h2")?.textContent === "Preview renderer unavailable.",
+    () => document.querySelector("section[role='alert'] h2")?.textContent === "Preview unavailable.",
     null,
     { timeout: 20000 },
   );

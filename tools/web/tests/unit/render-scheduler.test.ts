@@ -353,3 +353,84 @@ test("distinct consumers of one font stay independent", async () => {
   await flush();
   assert.equal(paintsA.length, 1);
 });
+
+test("pending includes debounce, superseding requests and both passes until paint", async () => {
+  const fake = new FakeRenderer();
+  const paints: PaintOutcome[] = [];
+  const errors: unknown[] = [];
+  const events: string[] = [];
+  const scheduler = new RenderScheduler((pending) => events.push(pending ? "pending" : "settled"));
+  scheduler.request(makeJob(fake, "a", paints, errors, { immediate: false, debounceMs: 5000 }));
+  assert.deepEqual(events, ["pending"], "pending starts before debounce ends");
+  scheduler.request(makeJob(fake, "b", paints, errors));
+  scheduler.request(makeJob(fake, "c", paints, errors, {
+    onPaint: () => events.push("paint"),
+  }));
+  fake.complete(fake.calls[0]!.token, pixels(60, 16, [10]));
+  await flush();
+  assert.deepEqual(events, ["pending"], "stale completion does not clear pending");
+  const token = fake.calls[1]!.token;
+  fake.complete(token, pixels(60, 16, [40]));
+  await flush();
+  assert.deepEqual(events, ["pending"], "second layout pass remains pending");
+  fake.complete(token, pixels(60, 40, [40]));
+  await flush();
+  assert.deepEqual(events, ["pending", "paint", "settled"]);
+});
+
+test("pending clears on cancellation, returning to painted inputs, errors and dropped results", async () => {
+  const fake = new FakeRenderer();
+  const paints: PaintOutcome[] = [];
+  const errors: unknown[] = [];
+  const states: boolean[] = [];
+  const scheduler = new RenderScheduler((pending) => states.push(pending));
+  const request = (key: string, overrides: Partial<RenderJob> = {}): void =>
+    scheduler.request(makeJob(fake, key, paints, errors, overrides));
+  request("a");
+  fake.complete(fake.calls[0]!.token, pixels(60, 16, [10]));
+  await flush();
+  request("b", { immediate: false, debounceMs: 5000 });
+  request("a");
+  assert.deepEqual(states, [true, false, true, false]);
+  request("c");
+  scheduler.cancel();
+  fake.fail(fake.calls[1]!.token, new Error("stale error"));
+  await flush();
+  assert.deepEqual(errors, []);
+  assert.equal(states.at(-1), false);
+  request("d");
+  fake.fail(fake.calls[2]!.token, new Error("current error"));
+  await flush();
+  assert.equal(errors.length, 1);
+  assert.equal(states.at(-1), false);
+  request("e");
+  fake.complete(fake.calls[3]!.token, pixels(60, 16, [10]), { dropped: true });
+  await flush();
+  assert.equal(states.at(-1), false);
+  request("f", { nextToken: () => { throw new Error("token failure"); } });
+  await flush();
+  assert.equal(errors.length, 2);
+  assert.equal(states.at(-1), false);
+});
+
+test("a failed request stays settled across parent rerenders and can restart explicitly", async () => {
+  const fake = new FakeRenderer();
+  const paints: PaintOutcome[] = [];
+  const errors: unknown[] = [];
+  const states: boolean[] = [];
+  const scheduler = new RenderScheduler((pending) => states.push(pending));
+  const job = makeJob(fake, "a", paints, errors);
+  scheduler.request(job);
+  fake.fail(fake.calls[0]!.token, new Error("failed"));
+  await flush();
+  scheduler.request({ ...job });
+  assert.equal(fake.calls.length, 1);
+  assert.deepEqual(states, [true, false]);
+  scheduler.cancel();
+  scheduler.request(job);
+  assert.equal(fake.calls.length, 2);
+  fake.complete(fake.calls[1]!.token, pixels(60, 16, [10]));
+  await flush();
+  assert.equal(paints.length, 1);
+  assert.deepEqual(states, [true, false, true, false]);
+});

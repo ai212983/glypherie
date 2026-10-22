@@ -5,9 +5,10 @@
 //
 // Format v1 (query, WHATWG URLSearchParams:
 // https://url.spec.whatwg.org/#interface-urlsearchparams):
-//   v=1 & font=<family-id> & profile=<id> & zoom=<1-4> & exact=<0|1>
-//   & stem=<font_hints_first|upstream_mono> & kerning=<0|1> & families=<JSON>
-// Older links may carry an obsolete `model` parameter; it is ignored on
+//   v=1 & font=<family-id> & profile=<id> & exact=<0|1>
+//   & stem=<font_hints_first|upstream_mono> & diagonals=<1, absent when off>
+//   & kerning=<0|1> & families=<JSON>
+// Older zoom, scan-control and model parameters are ignored on
 // decoding and dropped when the snapshot is next written.
 // `families` maps each family id to
 // {size, axes, spacing, preset, text, advancedOpen, kerningOpen,
@@ -15,13 +16,13 @@
 // multiline text even when a preset is selected, so a copied URL does not
 // depend on the other browser's storage or preset definitions. Unknown
 // query parameters are preserved; the hosting path prefix is untouched.
-import type { OutputProfile, StemFitting } from "../../../renderer/renderer-types.js";
+import type { MonoRaster, OutputProfile, Rasterization, StemFitting } from "../../../renderer/renderer-types.js";
+import { PREVIEW_MONO_RASTER } from "../../../renderer/render-spec.ts";
 import { OWNED_PARAMS, hashFamilyId } from "../../../navigation/router.ts";
 
 export const SNAPSHOT_VERSION = 1;
 const MAX_TEXT_LENGTH = 8192;
-const PROFILES: readonly OutputProfile[] = ["mono_1bit", "gray_3bit"];
-const ZOOM_STOPS: readonly number[] = [1, 2, 3, 4];
+const PROFILES: readonly OutputProfile[] = ["mono_1bit", "gray_2bit", "gray_3bit", "gray_4bit"];
 const STEM_FITTINGS: readonly StemFitting[] = ["font_hints_first", "upstream_mono"];
 
 export interface AxisMeta {
@@ -57,9 +58,13 @@ export interface PreviewSnapshot {
   version: 1;
   font: string;
   profile: OutputProfile;
-  zoom: number;
+  paletteId?: number;
   pixelAccurate: boolean;
   stemFitting: StemFitting;
+  // Independent native diagonal-width opt-in; default false.
+  diagonalFitting: boolean;
+  monoRaster: MonoRaster;
+  rasterization?: Rasterization;
   kerning: boolean;
   families: Record<string, FamilySnapshot>;
 }
@@ -67,7 +72,6 @@ export interface PreviewSnapshot {
 export interface GlobalDefaults {
   font: string;
   profile: OutputProfile;
-  zoom: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -119,9 +123,12 @@ export function defaultSnapshot(
     version: 1,
     font: defaults.font,
     profile: defaults.profile,
-    zoom: defaults.zoom,
-    pixelAccurate: false,
+    paletteId: 0,
+    pixelAccurate: true,
     stemFitting: "font_hints_first",
+    diagonalFitting: false,
+    monoRaster: { ...PREVIEW_MONO_RASTER },
+    rasterization: defaults.profile === "mono_1bit" ? "free_type_mono" : "coverage",
     kerning: true,
     families,
   };
@@ -184,11 +191,10 @@ export function parseUrlSnapshot(
   const profile = (PROFILES as readonly string[]).includes(profileParam ?? "")
     ? (profileParam as OutputProfile)
     : defaults.profile;
-  const zoomValue = Number(params.get("zoom"));
-  const zoom = ZOOM_STOPS.includes(zoomValue) ? zoomValue : defaults.zoom;
-  const exact = parseBoolParam(params.get("exact"));
   const stemParam = params.get("stem");
   const kerning = parseBoolParam(params.get("kerning"));
+  // Historical links carry no flag; the opt-in stays off unless set.
+  const diagonals = parseBoolParam(params.get("diagonals")) ?? false;
   let familiesRaw: unknown = null;
   const familiesParam = params.get("families");
   if (familiesParam) {
@@ -205,24 +211,27 @@ export function parseUrlSnapshot(
     version: 1,
     font,
     profile,
-    zoom,
-    pixelAccurate: exact ?? false,
+    paletteId: /^\d+$/.test(params.get("palette") ?? "") && Number.isSafeInteger(Number(params.get("palette"))) ? Number(params.get("palette")) : 0,
+    pixelAccurate: true,
     stemFitting: (STEM_FITTINGS as readonly string[]).includes(stemParam ?? "")
       ? (stemParam as StemFitting)
       : "font_hints_first",
+    diagonalFitting: diagonals,
+    monoRaster: { ...PREVIEW_MONO_RASTER },
+    rasterization: profile === "mono_1bit" ? "free_type_mono" : "coverage",
     kerning: kerning ?? true,
     families,
   };
 }
 
-/** Legacy profile/zoom query, minimal `font` links, and #family selection (no `v` parameter). */
+/** Legacy profile query, minimal `font` links, and #family selection (no `v` parameter). */
 export function parseLegacyState(
   search: string | URLSearchParams,
   hash: string,
   metas: FamilyMeta[],
-): { font?: string; profile?: OutputProfile; zoom?: number } {
+): { font?: string; profile?: OutputProfile } {
   const params = toSearchParams(search);
-  const result: { font?: string; profile?: OutputProfile; zoom?: number } = {};
+  const result: { font?: string; profile?: OutputProfile } = {};
   const ids = new Set(metas.map((meta) => meta.id));
   const hashId = hashFamilyId(hash ?? "");
   const fontParam = params.get("font");
@@ -232,8 +241,6 @@ export function parseLegacyState(
   if ((PROFILES as readonly string[]).includes(profile ?? "")) {
     result.profile = profile as OutputProfile;
   }
-  const zoom = Number(params.get("zoom"));
-  if (ZOOM_STOPS.includes(zoom)) result.zoom = zoom;
   return result;
 }
 
@@ -274,9 +281,12 @@ export function encodeUrlSnapshot(
   result.set("v", String(SNAPSHOT_VERSION));
   result.set("font", snapshot.font);
   result.set("profile", snapshot.profile);
-  result.set("zoom", String(snapshot.zoom));
-  result.set("exact", snapshot.pixelAccurate ? "1" : "0");
+  result.set("palette", String(snapshot.paletteId ?? 0));
+  result.set("exact", "1");
   result.set("stem", snapshot.stemFitting);
+  // False stays absent so historical links keep their shape.
+  if (snapshot.diagonalFitting === true) result.set("diagonals", "1");
+  result.set("raster", snapshot.profile === "mono_1bit" ? "free_type_mono" : "coverage");
   result.set("kerning", snapshot.kerning ? "1" : "0");
   result.set("families", JSON.stringify(familiesJson));
   return result;

@@ -11,9 +11,10 @@ interface LoadMessage { seq: number; kind: "load"; fontId: string; bytes: ArrayB
 interface InspectMessage { seq: number; kind: "inspect"; bytes: ArrayBuffer }
 interface RenderMessage { seq: number; kind: "render"; fontId: string; token: number; spec: Record<string, unknown> }
 interface KerningMessage { seq: number; kind: "kerning"; fontId: string; sizePx: number; axes: Record<string, number> }
+interface ExportMessage { seq: number; kind: "export-playdate"; fontId: string; request: import("./renderer-types.js").PlaydateExportRequest }
 interface UnloadMessage { seq: number; kind: "unload"; fontId: string }
 interface PingMessage { seq: number; kind: "ping" }
-type InMessage = LoadMessage | InspectMessage | RenderMessage | KerningMessage | UnloadMessage | PingMessage;
+type InMessage = ExportMessage | LoadMessage | InspectMessage | RenderMessage | KerningMessage | UnloadMessage | PingMessage;
 
 interface OkResponse { seq: number; ok: true; value?: unknown; token?: number; dropped?: boolean }
 interface ErrResponse { seq: number; ok: false; error: string }
@@ -84,6 +85,13 @@ async function handle(msg: InMessage): Promise<{ response: OutMessage; transfer?
       } finally {
         result.free();
       }
+    }
+    case "export-playdate": {
+      const font = fonts.get(msg.fontId);
+      if (!font) throw new Error("Font is not loaded in the render worker.");
+      const bytes = font.export_playdate(msg.request);
+      const buffer = new Uint8Array(bytes).buffer;
+      return { response: { seq: msg.seq, ok: true, value: buffer }, transfer: [buffer] };
     }
     case "kerning": {
       const font = fonts.get(msg.fontId);

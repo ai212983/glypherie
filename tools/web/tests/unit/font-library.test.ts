@@ -12,6 +12,7 @@ import {
   removeFont,
   saveFont,
   seedBundledFonts,
+  updateFontMetadata,
   type BundledFontDescriptor,
   type FontMetadata,
 } from "../../src/app/fonts/storage.ts";
@@ -108,6 +109,16 @@ test("fonts survive close and reopen", async () => {
   assert.deepEqual(reopened, stored);
   assert.ok(reopened);
   assert.deepEqual(Buffer.from(reopened.bytes), Buffer.from(bytes));
+});
+
+test("hint availability refresh keeps the stored font intact and cannot restore a deleted font", async () => {
+  const stored = await saveFont({ bytes: fontBytes(3), fileName: "persist.ttf", name: "My font", metadata: metadata(), source: "uploaded" });
+  const fresh = { ...metadata(), font_hints: true };
+  await updateFontMetadata(stored.id, fresh);
+  assert.deepEqual(await getFont(stored.id), { ...stored, metadata: fresh });
+  await removeFont(stored.id);
+  await updateFontMetadata(stored.id, fresh);
+  assert.equal(await getFont(stored.id), undefined);
 });
 
 test("removal deletes only that font", async () => {

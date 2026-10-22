@@ -1,6 +1,8 @@
+import { userError } from "./user-error";
 import * as React from "react";
 import type { StoredFont } from "./fonts/storage.js";
 import type { RendererRole } from "./renderer/renderer-types.js";
+import { DisplayPreferencesProvider, useDisplayPreferences } from "./shell/DisplayPreferences";
 import {
   canonicalHashFor,
   hasPendingSnapshotWrite,
@@ -23,24 +25,32 @@ import {
   buildMetas,
   metaForFont,
 } from "./features/preview/state/family-meta";
-import { indexHash, resolveRoute, splitHash, variantHashKeeping } from "./navigation/router";
-import { TEXT_DEFAULT } from "./renderer/render-spec";
+import { indexHash, palettesHash, resolveRoute, splitHash, variantHashKeeping } from "./navigation/router";
 import { useFontLibrary } from "./fonts/useFontLibrary";
 import { displayName } from "./fonts/metadata";
 import { createVariant } from "./variants/repository.js";
+import { GrayscalePage } from "./features/grayscale/GrayscalePage";
 import { LibraryPage } from "./features/library/LibraryPage";
+import { readStoredLibraryPreferences, writeStoredLibraryPreferences, type LibraryPreferences } from "./features/library/preferences";
 import { FontPage } from "./features/preview/FontPage";
 import { VariantPage } from "./features/variants/VariantPage";
 import { NavLink } from "../components/NavLink";
+import { PrimaryNav } from "./shell/PrimaryNav";
 import { SiteHeader } from "./shell/SiteHeader";
 import { SkipLink } from "./shell/SkipLink";
 
 type Page =
   | { name: "index" }
   | { name: "preview"; font: string }
-  | { name: "variant"; font: string; variant: string };
+  | { name: "variant"; font: string; variant: string }
+  | { name: "palettes" };
 
 export function App(): React.JSX.Element {
+  return <DisplayPreferencesProvider><AppContent /></DisplayPreferencesProvider>;
+}
+
+function AppContent(): React.JSX.Element {
+  const { zoom, canvas: { palette: indexPalette, inverse: indexInverse } } = useDisplayPreferences();
   const library = useFontLibrary();
   const [page, setPage] = React.useState<Page | null>(null);
   const [snapshot, setSnapshot] = React.useState<PreviewSnapshot | null>(null);
@@ -52,11 +62,17 @@ export function App(): React.JSX.Element {
   const [importStatus, setImportStatus] = React.useState("");
   const [detailNotice, setDetailNotice] = React.useState("");
   const [notice, setNotice] = React.useState("");
-  const [ratio, setRatio] = React.useState(() => Number(window.devicePixelRatio) || 1);
-  const [indexText, setIndexText] = React.useState(TEXT_DEFAULT);
-  const [indexZoom, setIndexZoom] = React.useState(1);
+  const [libraryPreferences, setLibraryPreferences] = React.useState(readStoredLibraryPreferences);
+  const { text: indexText, baseSize: indexBaseSize } = libraryPreferences;
+  const [indexFilter, setIndexFilter] = React.useState("");
   const [savingVariant, setSavingVariant] = React.useState(false);
   const [saveVariantError, setSaveVariantError] = React.useState("");
+
+  const onLibraryPreferences = (patch: Partial<LibraryPreferences>): void => {
+    const next = { ...libraryPreferences, ...patch };
+    setLibraryPreferences(next);
+    writeStoredLibraryPreferences(next);
+  };
 
   const fontsRef = React.useRef<StoredFont[] | null>(null);
   fontsRef.current = library.fonts;
@@ -64,6 +80,7 @@ export function App(): React.JSX.Element {
   snapshotRef.current = snapshot;
   const pageRef = React.useRef<Page | null>(null);
   pageRef.current = page;
+  const handledHref = React.useRef("");
 
   const applySnapshot = React.useCallback((next: PreviewSnapshot, immediate = false) => {
     setSnapshot(next);
@@ -83,6 +100,7 @@ export function App(): React.JSX.Element {
     // come from IndexedDB, never from history state, so Back cannot restore
     // stale settings over the database.
     window.history.pushState(null, "", `${window.location.pathname}${window.location.search}${hash}`);
+    handledHref.current = window.location.href;
   }, []);
 
   const migrationBase = (): string => {
@@ -134,7 +152,39 @@ export function App(): React.JSX.Element {
     pushHash(indexHash(migrationBase()));
   }, [pushHash]);
 
+  const openPalettes = React.useCallback(() => {
+    cancelSnapshotWrite();
+    setPage({ name: "palettes" });
+    setNotice("");
+    setPreviewStatus("");
+    setDetailNotice("");
+    setSaveVariantError("");
+    pushHash(palettesHash(migrationBase()));
+  }, [pushHash]);
+
+  const primaryNav = (active: "fonts" | "palettes"): React.JSX.Element => (
+    <PrimaryNav
+      active={active}
+      fontsHref={indexHash(migrationBase())}
+      palettesHref={palettesHash(migrationBase())}
+      onFonts={() => openIndex()}
+      onPalettes={openPalettes}
+    />
+  );
+
   React.useEffect(() => {
+    if (pageRef.current === null) {
+      const probe = resolveRoute(window.location.hash, window.location.search, []);
+      if (probe.page === "palettes") {
+        const metas = buildMetas([]);
+        const snap = readInitialSnapshot(metas);
+        setPage({ name: "palettes" });
+        setNotice("");
+        const inner = readHashSearch();
+        replaceCanonicalHash(probe, snap, [], inner || window.location.search);
+        setSnapshot(snap);
+      }
+    }
     if (library.fonts === null) return;
     if (pageRef.current !== null) return;
     const list = library.fonts;
@@ -157,13 +207,16 @@ export function App(): React.JSX.Element {
       }
       setPage({ name: "preview", font: route.font });
       setNotice("");
+    } else if (route.page === "palettes") {
+      setPage({ name: "palettes" });
+      setNotice("");
     } else {
       setPage({ name: "index" });
       setNotice(route.notice ?? "");
     }
     const inner = readHashSearch();
     replaceCanonicalHash(
-      route.page === "font" ? route : { page: "index" },
+      route.page === "index" ? { page: "index" } : route,
       snap,
       list.map((font) => font.id),
       inner || window.location.search,
@@ -171,13 +224,12 @@ export function App(): React.JSX.Element {
     setSnapshot(snap);
   }, [library.fonts]);
 
-  const handledHref = React.useRef("");
   React.useEffect(() => {
     const onRouteChange = (): void => {
       if (window.location.href === handledHref.current) return;
       cancelSnapshotWrite();
+      const libraryPending = fontsRef.current === null;
       const list = fontsRef.current ?? [];
-      if (!list.length) return;
       const metas = buildMetas(list);
       const route = resolveRoute(window.location.hash, window.location.search, list.map((font) => font.id));
       const inner = readHashSearch();
@@ -187,7 +239,18 @@ export function App(): React.JSX.Element {
       setSaveVariantError("");
       const order = list.map((font) => font.id);
       const base = readHashSearch() || window.location.search;
-      if (route.page === "variant") {
+      if (route.page === "palettes") {
+        // The palettes lab is font-independent, so it resolves with no fonts
+        // at all. Canonicalize to drop stale font snapshot params without
+        // disturbing pending library state.
+        const current = snapshotRef.current ?? readInitialSnapshot(metas);
+        replaceCanonicalHash(route, current, order, base);
+        if (!snapshotRef.current) setSnapshot(current);
+        setPage({ name: "palettes" });
+        setNotice("");
+      } else if (libraryPending) {
+        return;
+      } else if (route.page === "variant") {
         setPage({ name: "variant", font: route.font, variant: route.variant });
         setNotice("");
       } else if (route.page === "font") {
@@ -195,7 +258,7 @@ export function App(): React.JSX.Element {
         const params = new URLSearchParams(search);
         if (params.get("v") === "1") {
           let snap = parseUrlSnapshot(search, "", metas, {
-            font: route.font, profile: "mono_1bit", zoom: 1,
+            font: route.font, profile: "mono_1bit",
           }) ?? readInitialSnapshot(metas);
           if (!metas.some((meta) => meta.id === snap.font)) snap = { ...snap, font: metas[0]?.id ?? "" };
           snap = { ...snap, font: route.font };
@@ -207,7 +270,6 @@ export function App(): React.JSX.Element {
             const legacy = parseLegacyState(window.location.search, window.location.hash, metas);
             const next: PreviewSnapshot = { ...current, font: route.font };
             if (legacy.profile) next.profile = legacy.profile;
-            if (legacy.zoom !== undefined) next.zoom = legacy.zoom;
             if (!next.families[route.font]) {
               const meta = metas.find((entry) => entry.id === route.font);
               if (meta) next.families = { ...next.families, [route.font]: defaultFamilySnapshot(meta) };
@@ -240,17 +302,14 @@ export function App(): React.JSX.Element {
   }, []);
 
   React.useEffect(() => {
-    const onRatio = (): void => setRatio(Number(window.devicePixelRatio) || 1);
     const onHide = (): void => {
       const current = snapshotRef.current;
       if (current && hasPendingSnapshotWrite()) {
         writeSnapshotNow(current, (fontsRef.current ?? []).map((font) => font.id));
       }
     };
-    window.addEventListener("resize", onRatio);
     window.addEventListener("pagehide", onHide);
     return () => {
-      window.removeEventListener("resize", onRatio);
       window.removeEventListener("pagehide", onHide);
     };
   }, []);
@@ -268,18 +327,22 @@ export function App(): React.JSX.Element {
   };
 
   const onImport = (files: FileList | null): void => {
-    const file = files?.[0];
-    if (!file) return;
-    setImportStatus(`Importing ${file.name}…`);
+    const selected = Array.from(files ?? []);
+    if (selected.length === 0) return;
     void (async () => {
-      try {
-        const { saved } = await library.importUpload(file);
-        // Imports land on the library with the imported card; no variant is
-        // created automatically.
-        setImportStatus(`Imported ${saved.name}.`);
-      } catch (error) {
-        setImportStatus(error instanceof Error ? error.message : String(error ?? ""));
+      const results: string[] = [];
+      for (const file of selected) {
+        setImportStatus(`Importing ${file.name}…`);
+        try {
+          const { saved } = await library.importUpload(file);
+          // Imports land on the library with the imported card; no variant is
+          // created automatically.
+          results.push(`Imported ${saved.name}.`);
+        } catch (error) {
+          results.push(userError(error, `Couldn’t import ${file.name}.`));
+        }
       }
+      setImportStatus(results.join(" "));
     })();
   };
 
@@ -301,7 +364,7 @@ export function App(): React.JSX.Element {
         }
         openIndex(`Removed ${name}.`);
       } catch (error) {
-        setPreviewStatus(error instanceof Error ? error.message : String(error ?? ""));
+        setPreviewStatus(userError(error, "Couldn’t delete font."));
       }
     })();
   };
@@ -329,9 +392,13 @@ export function App(): React.JSX.Element {
             axes: { ...family.axes },
             letterSpacingPx: family.spacing,
             profile: snapshot.profile,
+            paletteId: snapshot.paletteId ?? 0,
             kerning: snapshot.kerning,
             stemFitting: snapshot.stemFitting,
-            renderer: role,
+            diagonalFitting: snapshot.diagonalFitting ?? false,
+            monoRaster: snapshot.monoRaster,
+            rasterization: snapshot.rasterization,
+            renderer: snapshot.rasterization === undefined ? role : "candidate",
           },
           sampleText: family.text,
         });
@@ -339,22 +406,41 @@ export function App(): React.JSX.Element {
         openVariantId(created.fontId, created.id);
       } catch (error) {
         setSavingVariant(false);
-        setSaveVariantError(error instanceof Error ? error.message : String(error ?? ""));
+        setSaveVariantError(userError(error, "Couldn’t save variant."));
       }
     })();
   }, [library.fonts, openVariantId, page, role, savingVariant, snapshot]);
 
+  const showPalettes = page?.name === "palettes"
+    || (page === null && resolveRoute(window.location.hash, window.location.search, []).page === "palettes");
+  if (showPalettes) {
+    return (
+      <>
+        <SkipLink />
+        <div className="flex flex-col lg:h-dvh lg:overflow-hidden">
+          <div className="sticky top-0 z-40 shrink-0">
+            <SiteHeader
+              title="Glypherie"
+              variant="brand"
+              nav={primaryNav("palettes")}
+            />
+          </div>
+          <main id="main" className="w-full flex-1 lg:flex lg:min-h-0 lg:flex-col">
+            <GrayscalePage embedded baseSize={indexBaseSize} />
+          </main>
+        </div>
+      </>
+    );
+  }
+
   if (library.fonts === null || page === null) {
     return (
       <>
-        <SiteHeader
-          eyebrow={<p className="eyebrow m-0 text-[.75rem] tracking-[.1em] uppercase">Font workshop</p>}
-          title="Font preview"
-        />
+        <SiteHeader title="Glypherie" variant="brand" nav={primaryNav("fonts")} />
         <main id="main" className="mx-auto my-12 w-[min(100%-3rem,1440px)] leading-[1.6]">
           {library.bootError ? (
             <p role="alert" data-library-error>
-              Font library could not be loaded: {library.bootError}{" "}
+              {library.bootError}{" "}
               <button type="button" className="underline" data-library-retry onClick={library.retryFonts}>
                 Retry
               </button>
@@ -374,19 +460,25 @@ export function App(): React.JSX.Element {
       <>
         <SkipLink />
         <LibraryPage
+          nav={primaryNav("fonts")}
           fonts={fonts}
           notice={notice || library.bootError}
           seedNote={library.seedNote}
           importStatus={importStatus}
           sampleText={indexText}
-          sampleZoom={indexZoom}
+          sampleBaseSize={indexBaseSize}
+          sampleZoom={zoom}
+          samplePalette={indexPalette}
+          sampleInverse={indexInverse}
+          filter={indexFilter}
           library={library}
           onAddVariant={onAddVariant}
           onOpenVariant={(font, variant) => openVariantId(font.id, variant.id)}
           onDeleteFont={onDeleteFont}
           onImport={onImport}
-          onSampleText={setIndexText}
-          onSampleZoom={setIndexZoom}
+          onFilter={setIndexFilter}
+          onSampleText={(text) => onLibraryPreferences({ text })}
+          onSampleBaseSize={(baseSize) => onLibraryPreferences({ baseSize })}
         />
       </>
     );
@@ -398,14 +490,17 @@ export function App(): React.JSX.Element {
       <>
         <SkipLink />
         <VariantPage
-          key={`${page.font}/${page.variant}`}
+          key={page.font}
+          nav={primaryNav("fonts")}
           font={active}
           variantId={page.variant}
+          baseSize={indexBaseSize}
+          rootSampleText={indexText}
           library={library}
-          ratio={ratio}
           onIndex={() => openIndex()}
           onOpenVariantId={openVariantId}
           onVariantDeleted={(name) => openIndex(`Deleted variant ${name}.`)}
+          onAddVariant={onAddVariant}
         />
       </>
     );
@@ -414,10 +509,7 @@ export function App(): React.JSX.Element {
   if (snapshot === null) {
     return (
       <>
-        <SiteHeader
-          eyebrow={<p className="eyebrow m-0 text-[.75rem] tracking-[-.035em]">Font workshop</p>}
-          title="Font preview"
-        />
+        <SiteHeader title="Glypherie" variant="brand" nav={primaryNav("fonts")} />
         <main id="main" className="mx-auto my-12 w-[min(100%-3rem,1440px)] leading-[1.6]">
           <p role="status">Loading font preview…</p>
         </main>
@@ -435,8 +527,8 @@ export function App(): React.JSX.Element {
         <main id="main" className="mx-auto my-12 w-[min(100%-3rem,1440px)] max-w-[45rem] leading-[1.6]">
           <h1 className="m-0 text-[clamp(1.8rem,3vw,2.25rem)] font-[650] tracking-[-.035em]">Font preview</h1>
           <section className="content-state my-12 leading-[1.6]" role="alert">
-            <h2>This font is no longer in the library.</h2>
-            <p>{notice || "It may have been removed in another tab."} Return to{" "}
+            <h2>Font not found</h2>
+            <p>
               <NavLink
                 href={`${window.location.pathname}#/`}
                 data-all-fonts
@@ -444,17 +536,16 @@ export function App(): React.JSX.Element {
               >
                 All fonts
               </NavLink>{" "}
-              to pick another.
             </p>
           </section>
         </main>
       ) : (
         <FontPage
+          nav={primaryNav("fonts")}
           font={active}
           meta={activeMeta}
           snapshot={snapshot}
           role={role}
-          ratio={ratio}
           previewStatus={previewStatus}
           notice={detailNotice}
           library={library}

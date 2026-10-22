@@ -9,18 +9,18 @@ import type { FontLibrary } from "../../fonts/useFontLibrary";
 import { FontEditor } from "./FontEditor";
 import { Button } from "../../../components/ui/button";
 import { Label } from "../../../components/ui/label";
-import { NativeSelect, NativeSelectOption } from "../../../components/ui/native-select";
+import { Select, SelectContent, SelectDisplay, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { indexHash } from "../../navigation/router.js";
 import { readHashSearch } from "../../navigation/snapshot";
 import { NavLink } from "../../../components/NavLink";
 import { SiteHeader } from "../../shell/SiteHeader";
 
 interface FontPageProps {
+  nav?: React.ReactNode;
   font: StoredFont;
   meta: FamilyMeta;
   snapshot: PreviewSnapshot;
   role: RendererRole;
-  ratio: number;
   previewStatus: string;
   notice: string;
   library: FontLibrary;
@@ -40,7 +40,7 @@ interface FontPageProps {
 // here at the URL boundary: the shared editor below speaks only native
 // settings and sample text.
 export function FontPage({
-  font, meta, snapshot, role, ratio, previewStatus, notice, library,
+  nav, font, meta, snapshot, role, previewStatus, notice, library,
   onSnapshot, onPatch, onRole, onStatus, onOpenFont, onIndex, onDelete,
   onSaveAsVariant, savingVariant, saveVariantError,
 }: FontPageProps): React.JSX.Element {
@@ -64,18 +64,32 @@ export function FontPage({
     axes: { ...family.axes },
     letterSpacingPx: family.spacing,
     profile: snapshot.profile,
+            paletteId: snapshot.paletteId ?? 0,
     kerning: snapshot.kerning,
     stemFitting: snapshot.stemFitting,
-    renderer: role,
+    diagonalFitting: snapshot.diagonalFitting ?? false,
+    monoRaster: snapshot.monoRaster,
+    rasterization: snapshot.rasterization,
+    renderer: snapshot.rasterization === undefined ? role : "candidate",
   };
+  const { axes: defaultAxes, ...defaultFields } = defaultFamilySnapshot(meta);
+  const { axes, ...fields } = family;
+  const singleFont = (library.fonts?.length ?? 0) <= 1;
+  const resetDisabled = snapshot.kerning
+    && Object.entries(defaultFields).every(([key, value]) => fields[key as keyof typeof fields] === value)
+    && Object.keys({ ...defaultAxes, ...axes }).every((tag) => axes[tag] === defaultAxes[tag]);
   const onSettings = (next: VariantSettings): void => {
     if (next.renderer !== role) {
       onRole(next.renderer);
     }
     onPatch({
       profile: next.profile,
+      paletteId: next.paletteId,
       kerning: next.kerning,
       stemFitting: next.stemFitting,
+      diagonalFitting: next.diagonalFitting,
+      monoRaster: next.monoRaster,
+      rasterization: next.rasterization,
       families: {
         ...snapshot.families,
         [font.id]: { ...family, size: next.sizePx, axes: next.axes, spacing: next.letterSpacingPx },
@@ -85,16 +99,8 @@ export function FontPage({
   return (
     <>
       <SiteHeader
-        eyebrow={
-          <NavLink
-            href={indexHref}
-            data-all-fonts
-            onNavigate={onIndex}
-          >
-            ← All fonts
-          </NavLink>
-        }
         title={displayName(font)}
+        nav={nav}
       />
       <main id="main" className="mx-auto w-[min(100%-3rem,1440px)]">
       <section className="content-state my-6 max-w-[45rem] leading-[1.6]" aria-label="Unsaved preview" data-unsaved-preview>
@@ -114,17 +120,24 @@ export function FontPage({
         </p>
       )}
       <div className="font-picker m-0 mt-5 flex flex-wrap items-center gap-[.6rem] text-[.875rem] font-semibold">
-        <Label htmlFor="font-select">Font</Label>
-        <NativeSelect
-          id="font-select"
+        <Label asChild={singleFont} id="font-select-label" htmlFor={singleFont ? undefined : "font-select"}>
+          {singleFont ? <span>Font</span> : "Font"}
+        </Label>
+        {singleFont ? (
+          <SelectDisplay id="font-select" role="group" aria-labelledby="font-select-label">{displayName(font)}</SelectDisplay>
+        ) : <Select
           value={font.id}
-          onChange={(event) => onOpenFont(event.target.value)}
-          disabled={!library.fonts?.length}
+          onValueChange={onOpenFont}
         >
-          {(library.fonts ?? []).map((entry) => (
-            <NativeSelectOption key={entry.id} value={entry.id}>{displayName(entry)}</NativeSelectOption>
-          ))}
-        </NativeSelect>
+          <SelectTrigger id="font-select">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(library.fonts ?? []).map((entry) => (
+              <SelectItem key={entry.id} value={entry.id}>{displayName(entry)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>}
         <Button data-delete-font variant="destructive" size="sm" onClick={onDelete}>
           Delete
         </Button>
@@ -134,6 +147,7 @@ export function FontPage({
         font={font}
         settings={settings}
         sampleText={family.text}
+        resetDisabled={resetDisabled}
         onSettings={onSettings}
         onSampleText={(text) => onPatch({
           families: { ...snapshot.families, [font.id]: { ...family, text, preset: presetForText(text) } },
@@ -143,13 +157,8 @@ export function FontPage({
           kerning: true,
           families: { ...snapshot.families, [font.id]: defaultFamilySnapshot(meta) },
         }, true)}
-        zoom={snapshot.zoom}
-        pixelAccurate={snapshot.pixelAccurate}
-        onZoom={(zoom) => onPatch({ zoom }, true)}
-        onPixelAccurate={(pixelAccurate) => onPatch({ pixelAccurate }, true)}
         fontReady={ready}
         fontLoadError={fontLoadError}
-        ratio={ratio}
         previewStatus={previewStatus}
         onStatus={onStatus}
       />

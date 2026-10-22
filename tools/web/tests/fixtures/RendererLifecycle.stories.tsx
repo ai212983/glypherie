@@ -23,6 +23,7 @@ interface HarnessArgs {
   latencyMs: number;
   viewportWidth: number;
   factoryBehavior: "ok" | "throw";
+  renderScenario: "ok" | "error";
   palette?: RGBA[];
 }
 
@@ -103,12 +104,12 @@ function LifecycleHarness(args: HarnessArgs): React.JSX.Element {
   const createService = React.useCallback(() => {
     if (args.factoryBehavior === "throw") throw new Error("Harness factory failure (synthetic).");
     return createFixtureRenderer({
-      scenario: "ok",
+      scenario: args.renderScenario,
       latencyMs: args.latencyMs,
       lineHeight: 24,
       events,
     });
-  }, [factoryId, args.factoryBehavior, args.latencyMs]);
+  }, [factoryId, args.factoryBehavior, args.latencyMs, args.renderScenario]);
   React.useEffect(() => {
     setStatus("Waiting for paint…");
   }, [text, fontId, isReady, mounted, narrow, width, factoryId, paletteText, args.mode, args.zoom, args.sizePx, args.profile]);
@@ -139,6 +140,7 @@ function LifecycleHarness(args: HarnessArgs): React.JSX.Element {
             spacing={0}
             kerning
             stemFitting="font_hints_first"
+            monoRaster={{ dropout: "smart", includeStubs: false, fontInstructions: false }}
             zoom={args.zoom}
             mode={args.mode}
             palette={palette}
@@ -202,6 +204,7 @@ function StrictCanvasSection({ shared }: { shared: StrictShared }): React.JSX.El
           spacing={0}
           kerning
           stemFitting="font_hints_first"
+          monoRaster={{ dropout: "smart", includeStubs: false, fontInstructions: false }}
           zoom={1}
           mode="normal"
           ready
@@ -344,6 +347,7 @@ const meta = {
     latencyMs: { control: { type: "number", min: 0, max: 1000 } },
     viewportWidth: { control: { type: "number", min: 0, max: 1200 } },
     factoryBehavior: { control: { type: "select" }, options: ["ok", "throw"] },
+    renderScenario: { control: { type: "select" }, options: ["ok", "error"] },
     palette: { control: "object" },
   },
   args: {
@@ -358,6 +362,7 @@ const meta = {
     latencyMs: 5,
     viewportWidth: 480,
     factoryBehavior: "ok",
+    renderScenario: "ok",
     palette: undefined,
   },
 } satisfies Meta<typeof LifecycleHarness>;

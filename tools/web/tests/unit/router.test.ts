@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  palettesHash,
   parseHashRoute,
   resolveRoute,
   splitHash,
@@ -79,10 +80,10 @@ test("variant hashes resolve to the variant page for known fonts", () => {
 test("variant hashes with unknown fonts recover on the library with a notice", () => {
   const unknown = resolveRoute("#/font/ghost/variant/vvv/", "", IDS);
   assert.equal(unknown.page, "index");
-  assert.match((unknown as { notice?: string }).notice ?? "", /is not in this library/);
+  assert.match((unknown as { notice?: string }).notice ?? "", /not found in this library/);
   const malformed = resolveRoute("#/font/bbb/variant/", "", IDS);
   assert.equal(malformed.page, "index");
-  assert.match((malformed as { notice?: string }).notice ?? "", /Unknown route/);
+  assert.match((malformed as { notice?: string }).notice ?? "", /Page not found/);
 });
 
 test("canonical font hashes win over conflicting legacy outer queries", () => {
@@ -104,20 +105,41 @@ test("versioned snapshots without a font stay on the library", () => {
   assert.deepEqual(resolveRoute("", "?v=1", IDS), { page: "index" });
 });
 
+test("palettes hashes parse with or without a trailing slash or query", () => {
+  assert.deepEqual(parseHashRoute("#/palettes/"), { name: "palettes" });
+  assert.deepEqual(parseHashRoute("#/palettes"), { name: "palettes" });
+  assert.deepEqual(parseHashRoute("#/palettes/?utm=keep"), { name: "palettes" });
+});
+
+test("palettes resolves without fonts and wins over stale font queries", () => {
+  assert.deepEqual(resolveRoute("#/palettes/", "", IDS), { page: "palettes" });
+  const noFonts: string[] = [];
+  assert.deepEqual(resolveRoute("#/palettes/", "", noFonts), { page: "palettes" });
+  assert.deepEqual(resolveRoute("#/palettes/", "?font=aaa&v=1", IDS), { page: "palettes" });
+  assert.deepEqual(resolveRoute("#/palettes/?v=1&font=aaa", "", IDS), { page: "palettes" });
+  assert.deepEqual(resolveRoute("#/palettes/?utm=keep", "", noFonts), { page: "palettes" });
+});
+
+test("palettes links drop snapshot state and keep foreign params", () => {
+  assert.equal(palettesHash(""), "#/palettes/");
+  assert.equal(palettesHash("v=1&font=aaa&profile=gray_3bit"), "#/palettes/");
+  assert.equal(palettesHash("v=1&font=aaa&utm=keep"), "#/palettes/?utm=keep");
+});
+
 test("unknown ids and malformed routes recover on the library with a notice", () => {
   const minimal = resolveRoute("", "?font=ghost", IDS);
   assert.equal(minimal.page, "index");
-  assert.match((minimal as { notice?: string }).notice ?? "", /is not in this library/);
+  assert.match((minimal as { notice?: string }).notice ?? "", /not found in this library/);
   const snapshot = resolveRoute("", "?v=1&font=ghost", IDS);
   assert.equal(snapshot.page, "index");
-  assert.match((snapshot as { notice?: string }).notice ?? "", /is not in this library/);
+  assert.match((snapshot as { notice?: string }).notice ?? "", /not found in this library/);
   const hash = resolveRoute("#family-ghost", "", IDS);
   assert.equal(hash.page, "index");
-  assert.match((hash as { notice?: string }).notice ?? "", /is not in this library/);
+  assert.match((hash as { notice?: string }).notice ?? "", /not found in this library/);
   const unknown = resolveRoute("#/font/ghost/", "", IDS);
   assert.equal(unknown.page, "index");
-  assert.match((unknown as { notice?: string }).notice ?? "", /is not in this library/);
+  assert.match((unknown as { notice?: string }).notice ?? "", /not found in this library/);
   const malformed = resolveRoute("#/nope", "", IDS);
   assert.equal(malformed.page, "index");
-  assert.match((malformed as { notice?: string }).notice ?? "", /Unknown route/);
+  assert.match((malformed as { notice?: string }).notice ?? "", /Page not found/);
 });
