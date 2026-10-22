@@ -751,6 +751,108 @@ fn group_faces(
     members
 }
 
+struct BoundaryAnalysis {
+    comp_labels: Vec<BTreeSet<usize>>,
+    pinches: Vec<(u64, Vec<Vec<usize>>)>,
+    contacts: Vec<Vec<Vec<usize>>>,
+}
+
+impl BoundaryAnalysis {
+    fn build(arrangement: &Arrangement, analysis: &WindingAnalysis, regions: &FaceRegions) -> Self {
+        let comp_labels = Self::component_labels(arrangement, analysis, regions);
+        let (degree, vcomps) = Self::vertex_incidence(arrangement, analysis, regions);
+        let (pinches, contacts) = Self::rosters(&comp_labels, &degree, &vcomps);
+        Self {
+            comp_labels,
+            pinches,
+            contacts,
+        }
+    }
+
+    fn component_labels(
+        arrangement: &Arrangement,
+        analysis: &WindingAnalysis,
+        regions: &FaceRegions,
+    ) -> Vec<BTreeSet<usize>> {
+        let atomics = arrangement.atomics();
+        let global = analysis.totals();
+        let comp = regions.filled();
+        let ncomp = regions.nfilled() as usize;
+        let mut comp_labels: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); ncomp];
+        for e in atomics.iter() {
+            let (b1, b2) = (global[e.f1] != 0, global[e.f2] != 0);
+            if b1 != b2 {
+                let c = if b1 {
+                    comp[e.f1] as usize
+                } else {
+                    comp[e.f2] as usize
+                };
+                for label in e.cover.keys() {
+                    comp_labels[c].insert(*label);
+                }
+            }
+        }
+        comp_labels
+    }
+
+    fn vertex_incidence(
+        arrangement: &Arrangement,
+        analysis: &WindingAnalysis,
+        regions: &FaceRegions,
+    ) -> (Vec<u64>, Vec<BTreeSet<usize>>) {
+        let atomics = arrangement.atomics();
+        let global = analysis.totals();
+        let comp = regions.filled();
+        let nverts = arrangement.nverts();
+        let mut degree = vec![0u64; nverts];
+        let mut vcomps: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); nverts];
+        for e in atomics.iter() {
+            let (b1, b2) = (global[e.f1] != 0, global[e.f2] != 0);
+            for &v in &[e.va, e.vb] {
+                if b1 != b2 {
+                    degree[v] += 1;
+                }
+                if b1 {
+                    vcomps[v].insert(comp[e.f1] as usize);
+                }
+                if b2 {
+                    vcomps[v].insert(comp[e.f2] as usize);
+                }
+            }
+        }
+        (degree, vcomps)
+    }
+
+    fn rosters(
+        comp_labels: &[BTreeSet<usize>],
+        degree: &[u64],
+        vcomps: &[BTreeSet<usize>],
+    ) -> (Vec<(u64, Vec<Vec<usize>>)>, Vec<Vec<Vec<usize>>>) {
+        let mut pinches: Vec<(u64, Vec<Vec<usize>>)> = Vec::new();
+        let mut contacts: Vec<Vec<Vec<usize>>> = Vec::new();
+        for v in 0..degree.len() {
+            if degree[v] >= 4 {
+                let sides: Vec<Vec<usize>> = vcomps[v]
+                    .iter()
+                    .map(|&c| comp_labels[c].iter().cloned().collect())
+                    .collect();
+                let mut ordered = sides.clone();
+                for s in ordered.iter_mut() {
+                    s.sort();
+                }
+                ordered.sort();
+                pinches.push((degree[v], ordered.clone()));
+                if vcomps[v].len() >= 2 {
+                    contacts.push(ordered);
+                }
+            }
+        }
+        pinches.sort();
+        contacts.sort();
+        (pinches, contacts)
+    }
+}
+
 /// Public entry: canonical topology signature, or `None` fail-closed.
 pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
     let arrangement = Arrangement::build(loops)?;
@@ -770,61 +872,12 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
     let ncomp = regions.nfilled();
     let nwhite = regions.nwhite();
     let exterior = regions.exterior();
-    // Component contour labels from boundary half-edges.
+    let BoundaryAnalysis {
+        comp_labels,
+        pinches,
+        contacts,
+    } = BoundaryAnalysis::build(&arrangement, &analysis, &regions);
     let ncomp = ncomp as usize;
-    let mut comp_labels: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); ncomp];
-    for e in atomics.iter() {
-        let (b1, b2) = (global[e.f1] != 0, global[e.f2] != 0);
-        if b1 != b2 {
-            let c = if b1 {
-                comp[e.f1] as usize
-            } else {
-                comp[e.f2] as usize
-            };
-            for label in e.cover.keys() {
-                comp_labels[c].insert(*label);
-            }
-        }
-    }
-    // Boundary degree and filled-component contacts per vertex.
-    let mut degree = vec![0u64; nverts];
-    let mut vcomps: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); nverts];
-    for e in atomics.iter() {
-        let (b1, b2) = (global[e.f1] != 0, global[e.f2] != 0);
-        for &v in &[e.va, e.vb] {
-            if b1 != b2 {
-                degree[v] += 1;
-            }
-            if b1 {
-                vcomps[v].insert(comp[e.f1] as usize);
-            }
-            if b2 {
-                vcomps[v].insert(comp[e.f2] as usize);
-            }
-        }
-    }
-    // Pinch roster: degree >= 4 with labeled sides, canonical order.
-    let mut pinches: Vec<(u64, Vec<Vec<usize>>)> = Vec::new();
-    let mut contacts: Vec<Vec<Vec<usize>>> = Vec::new();
-    for v in 0..nverts {
-        if degree[v] >= 4 {
-            let sides: Vec<Vec<usize>> = vcomps[v]
-                .iter()
-                .map(|&c| comp_labels[c].iter().cloned().collect())
-                .collect();
-            let mut ordered = sides.clone();
-            for s in ordered.iter_mut() {
-                s.sort();
-            }
-            ordered.sort();
-            pinches.push((degree[v], ordered.clone()));
-            if vcomps[v].len() >= 2 {
-                contacts.push(ordered);
-            }
-        }
-    }
-    pinches.sort();
-    contacts.sort();
     // Holes are bounded white components; adjacency comes from the
     // hole's own boundary edges, not whole-component labels.
     let mut comp_holes = vec![0u64; ncomp];
