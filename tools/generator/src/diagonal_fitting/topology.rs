@@ -328,6 +328,90 @@ impl WindingAnalysis {
     }
 }
 
+struct FaceRegions {
+    filled: Vec<i32>,
+    white: Vec<i32>,
+    nfilled: i32,
+    nwhite: i32,
+    exterior: i32,
+}
+
+impl FaceRegions {
+    fn build(arrangement: &Arrangement, analysis: &WindingAnalysis) -> Self {
+        let atomics = arrangement.atomics();
+        let totals = analysis.totals();
+        let nfaces = arrangement.nfaces();
+        let (filled, nfilled) = Self::label(nfaces, atomics, totals, |t| t != 0);
+        let (white, nwhite) = Self::label(nfaces, atomics, totals, |t| t == 0);
+        // Face 0 has zero winding and belongs to the unbounded white region.
+        let exterior = white[0];
+        Self {
+            filled,
+            white,
+            nfilled,
+            nwhite,
+            exterior,
+        }
+    }
+
+    // Shared and neutral edges connect faces with the same fill state.
+    fn label(
+        nfaces: usize,
+        atomics: &[Atomic],
+        totals: &[i64],
+        keep: impl Fn(i64) -> bool,
+    ) -> (Vec<i32>, i32) {
+        let mut labels = vec![-1i32; nfaces];
+        let mut count = 0i32;
+        for f in 0..nfaces {
+            if !keep(totals[f]) || labels[f] >= 0 {
+                continue;
+            }
+            let mut q = VecDeque::new();
+            q.push_back(f);
+            labels[f] = count;
+            while let Some(cur) = q.pop_front() {
+                for e in 0..atomics.len() {
+                    if atomics[e].f1 != cur && atomics[e].f2 != cur {
+                        continue;
+                    }
+                    let ni = if atomics[e].f1 == cur {
+                        atomics[e].f2
+                    } else {
+                        atomics[e].f1
+                    };
+                    if keep(totals[ni]) && labels[ni] < 0 {
+                        labels[ni] = count;
+                        q.push_back(ni);
+                    }
+                }
+            }
+            count += 1;
+        }
+        (labels, count)
+    }
+
+    fn filled(&self) -> &[i32] {
+        &self.filled
+    }
+
+    fn white(&self) -> &[i32] {
+        &self.white
+    }
+
+    fn nfilled(&self) -> i32 {
+        self.nfilled
+    }
+
+    fn nwhite(&self) -> i32 {
+        self.nwhite
+    }
+
+    fn exterior(&self) -> i32 {
+        self.exterior
+    }
+}
+
 fn lift_inputs(loops: &[Vec<[f64; 2]>]) -> Option<Vec<Seg>> {
     let mut inputs: Vec<Seg> = Vec::new();
     for (label, contour) in loops.iter().enumerate() {
@@ -680,70 +764,12 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
     let wind = analysis.windings();
     let global = analysis.totals();
 
-    // Filled components merge over any shared edge, seams included.
-    let mut comp = vec![-1i32; nfaces];
-    let mut ncomp = 0i32;
-    for f in 0..nfaces {
-        if global[f] == 0 || comp[f] >= 0 {
-            continue;
-        }
-        let mut q = VecDeque::new();
-        q.push_back(f);
-        comp[f] = ncomp;
-        while let Some(cur) = q.pop_front() {
-            for e in 0..atomics.len() {
-                if atomics[e].f1 != cur && atomics[e].f2 != cur {
-                    continue;
-                }
-                let ni = if atomics[e].f1 == cur {
-                    atomics[e].f2
-                } else {
-                    atomics[e].f1
-                };
-                if global[ni] != 0 && comp[ni] < 0 {
-                    comp[ni] = ncomp;
-                    q.push_back(ni);
-                }
-            }
-        }
-        ncomp += 1;
-    }
-    // White components merge across zero edges; the unbounded holder
-    // is the exterior, never a counter.
-    let mut white = vec![-1i32; nfaces];
-    let mut nwhite = 0i32;
-    let mut exterior = 0i32;
-    for f in 0..nfaces {
-        if global[f] != 0 || white[f] >= 0 {
-            continue;
-        }
-        let mut q = VecDeque::new();
-        q.push_back(f);
-        white[f] = nwhite;
-        if f == 0 {
-            exterior = nwhite;
-        }
-        while let Some(cur) = q.pop_front() {
-            for e in 0..atomics.len() {
-                if atomics[e].f1 != cur && atomics[e].f2 != cur {
-                    continue;
-                }
-                let ni = if atomics[e].f1 == cur {
-                    atomics[e].f2
-                } else {
-                    atomics[e].f1
-                };
-                if global[ni] == 0 && white[ni] < 0 {
-                    white[ni] = nwhite;
-                    if ni == 0 {
-                        exterior = nwhite;
-                    }
-                    q.push_back(ni);
-                }
-            }
-        }
-        nwhite += 1;
-    }
+    let regions = FaceRegions::build(&arrangement, &analysis);
+    let comp = regions.filled();
+    let white = regions.white();
+    let ncomp = regions.nfilled();
+    let nwhite = regions.nwhite();
+    let exterior = regions.exterior();
     // Component contour labels from boundary half-edges.
     let ncomp = ncomp as usize;
     let mut comp_labels: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); ncomp];
@@ -1282,6 +1308,42 @@ mod tests {
         with_neutral.push(rect_cw(4.0, 1.0, 6.0, 9.0));
         assert_eq!(sig(&annulus)["holes"], json!(1));
         assert_eq!(sig(&with_neutral)["holes"], json!(1));
+        assert_eq!(sig(&annulus)["filled_components"], json!(1));
+        assert_eq!(
+            sig(&with_neutral)["filled_components"],
+            sig(&annulus)["filled_components"]
+        );
+    }
+
+    #[test]
+    fn cw_and_disjoint_opposite_stay_filled() {
+        let cw = sig(&[rect_cw(0.0, 0.0, 100.0, 50.0)]);
+        assert_eq!(cw["filled_components"], json!(1));
+        assert_eq!(cw["holes"], json!(0));
+        assert_eq!(cw["components"], json!([{"contours": [0], "holes": 0}]));
+        let v = sig(&[rect(0.0, 0.0, 10.0, 10.0), rect_cw(20.0, 0.0, 30.0, 10.0)]);
+        assert_eq!(v["filled_components"], json!(2));
+        assert_eq!(v["holes"], json!(0));
+        assert_eq!(
+            v["components"],
+            json!([{"contours": [0], "holes": 0}, {"contours": [1], "holes": 0}])
+        );
+    }
+
+    #[test]
+    fn two_separate_holes_share_one_outer() {
+        let v = sig(&[
+            rect(0.0, 0.0, 100.0, 50.0),
+            rect_cw(10.0, 10.0, 30.0, 40.0),
+            rect_cw(60.0, 10.0, 80.0, 40.0),
+        ]);
+        assert_eq!(v["filled_components"], json!(1));
+        assert_eq!(v["holes"], json!(2));
+        assert_eq!(v["hole_boundaries"], json!([[1], [2]]));
+        assert_eq!(
+            v["components"],
+            json!([{"contours": [0, 1, 2], "holes": 2}])
+        );
     }
 
     #[test]
@@ -1490,5 +1552,17 @@ mod tests {
         let twice_cw = WindingAnalysis::build(&twice_cw).expect("consistent winding");
         assert_eq!(twice_cw.windings(), &[vec![0], vec![-2]]);
         assert_eq!(twice_cw.totals(), &[0, -2]);
+    }
+
+    #[test]
+    fn face_regions_cover_unbounded_face() {
+        let arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0)]).expect("supported topology");
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        let regions = FaceRegions::build(&arrangement, &analysis);
+        assert!(regions.white()[0] >= 0);
+        assert_eq!(regions.white()[0], regions.exterior());
+        assert_eq!(regions.nwhite(), 1);
+        assert_eq!(regions.nfilled(), 1);
     }
 }
