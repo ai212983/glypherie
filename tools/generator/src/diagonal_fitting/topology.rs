@@ -215,6 +215,117 @@ impl Arrangement {
     fn nfaces(&self) -> usize {
         self.members.len()
     }
+
+    /// Returns (left face, right face) in the half-edge's direction.
+    fn half_edge_faces(&self, he: usize) -> (usize, usize) {
+        let e = &self.atomics[he / 2];
+        if he % 2 == 0 {
+            (e.f1, e.f2)
+        } else {
+            (e.f2, e.f1)
+        }
+    }
+}
+
+/// Validated per-contour windings and their per-face totals.
+struct WindingAnalysis {
+    wind: Vec<Vec<i64>>,
+    global: Vec<i64>,
+}
+
+impl WindingAnalysis {
+    fn build(arrangement: &Arrangement) -> Option<Self> {
+        let contours = arrangement.contours();
+        let ncont = contours.len();
+        let cindex: BTreeMap<usize, usize> =
+            contours.iter().enumerate().map(|(i, &c)| (c, i)).collect();
+        let jump = Self::jumps(arrangement, &cindex);
+        let wind = Self::propagate(arrangement, ncont, &jump)?;
+        Self::validate_consistency(arrangement, ncont, &jump, &wind)?;
+        let mut global = vec![0i64; arrangement.nfaces()];
+        for f in 0..arrangement.nfaces() {
+            global[f] = wind[f].iter().sum();
+        }
+        Some(Self { wind, global })
+    }
+
+    /// Directed jump of each half-edge: cover net, negated for twins.
+    fn jumps(arrangement: &Arrangement, cindex: &BTreeMap<usize, usize>) -> Vec<Vec<(usize, i64)>> {
+        let atomics = arrangement.atomics();
+        let mut jump: Vec<Vec<(usize, i64)>> = vec![Vec::new(); arrangement.nhe()];
+        for e in 0..atomics.len() {
+            for (label, net) in atomics[e].cover.iter() {
+                jump[2 * e].push((cindex[label], *net));
+                jump[2 * e + 1].push((cindex[label], -*net));
+            }
+        }
+        jump
+    }
+
+    /// Per-contour windings from the unbounded face: W[left] equals
+    /// W[right] plus the half-edge jump; spikes cancel in the sum.
+    fn propagate(
+        arrangement: &Arrangement,
+        ncont: usize,
+        jump: &[Vec<(usize, i64)>],
+    ) -> Option<Vec<Vec<i64>>> {
+        let mut wind = vec![vec![0i64; ncont]; arrangement.nfaces()];
+        let mut known = vec![false; arrangement.nfaces()];
+        let mut queue = VecDeque::new();
+        known[0] = true;
+        queue.push_back(0usize);
+        while let Some(cur) = queue.pop_front() {
+            for &he in arrangement.members()[cur].iter() {
+                let (left, right) = arrangement.half_edge_faces(he);
+                let (nxt, sign) = if left == cur && !known[right] {
+                    (right, -1i64)
+                } else if right == cur && !known[left] {
+                    (left, 1i64)
+                } else {
+                    continue;
+                };
+                wind[nxt] = wind[cur].clone();
+                for &(c, net) in jump[he].iter() {
+                    wind[nxt][c] += sign * net;
+                }
+                known[nxt] = true;
+                queue.push_back(nxt);
+            }
+        }
+        if known.iter().any(|&k| !k) {
+            return None; // Disconnected face graph fails closed.
+        }
+        Some(wind)
+    }
+
+    fn validate_consistency(
+        arrangement: &Arrangement,
+        ncont: usize,
+        jump: &[Vec<(usize, i64)>],
+        wind: &[Vec<i64>],
+    ) -> Option<()> {
+        for he in 0..arrangement.nhe() {
+            let (left, right) = arrangement.half_edge_faces(he);
+            let mut delta = vec![0i64; ncont];
+            for &(c, net) in jump[he].iter() {
+                delta[c] += net;
+            }
+            for c in 0..ncont {
+                if wind[left][c] - wind[right][c] != delta[c] {
+                    return None; // Inconsistent winding fails closed.
+                }
+            }
+        }
+        Some(())
+    }
+
+    fn windings(&self) -> &[Vec<i64>] {
+        &self.wind
+    }
+
+    fn totals(&self) -> &[i64] {
+        &self.global
+    }
 }
 
 fn lift_inputs(loops: &[Vec<[f64; 2]>]) -> Option<Vec<Seg>> {
@@ -561,77 +672,13 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
     let arrangement = Arrangement::build(loops)?;
     let atomics = arrangement.atomics();
     let incident = arrangement.incident();
-    let members = arrangement.members();
     let contours = arrangement.contours();
     let nverts = arrangement.nverts();
-    let nhe = arrangement.nhe();
     let nfaces = arrangement.nfaces();
     let ncont = contours.len();
-    let cindex: BTreeMap<usize, usize> =
-        contours.iter().enumerate().map(|(i, &c)| (c, i)).collect();
-
-    // Directed jump of each half-edge: cover net, negated for twins.
-    let mut jump: Vec<Vec<(usize, i64)>> = vec![Vec::new(); nhe];
-    for e in 0..atomics.len() {
-        for (label, net) in atomics[e].cover.iter() {
-            jump[2 * e].push((cindex[label], *net));
-            jump[2 * e + 1].push((cindex[label], -*net));
-        }
-    }
-    // Per-contour windings from the unbounded face: W[left] equals
-    // W[right] plus the half-edge jump; spikes cancel in the sum.
-    let mut wind = vec![vec![0i64; ncont]; nfaces];
-    let mut known = vec![false; nfaces];
-    let mut queue = VecDeque::new();
-    known[0] = true;
-    queue.push_back(0usize);
-    while let Some(cur) = queue.pop_front() {
-        for &he in members[cur].iter() {
-            let e = he / 2;
-            let (left, right) = if he % 2 == 0 {
-                (atomics[e].f1, atomics[e].f2)
-            } else {
-                (atomics[e].f2, atomics[e].f1)
-            };
-            let (nxt, sign) = if left == cur && !known[right] {
-                (right, -1i64)
-            } else if right == cur && !known[left] {
-                (left, 1i64)
-            } else {
-                continue;
-            };
-            wind[nxt] = wind[cur].clone();
-            for &(c, net) in jump[he].iter() {
-                wind[nxt][c] += sign * net;
-            }
-            known[nxt] = true;
-            queue.push_back(nxt);
-        }
-    }
-    if known.iter().any(|&k| !k) {
-        return None; // Disconnected face graph fails closed.
-    }
-    for he in 0..nhe {
-        let e = he / 2;
-        let (left, right) = if he % 2 == 0 {
-            (atomics[e].f1, atomics[e].f2)
-        } else {
-            (atomics[e].f2, atomics[e].f1)
-        };
-        let mut delta = vec![0i64; ncont];
-        for &(c, net) in jump[he].iter() {
-            delta[c] += net;
-        }
-        for c in 0..ncont {
-            if wind[left][c] - wind[right][c] != delta[c] {
-                return None; // Inconsistent winding fails closed.
-            }
-        }
-    }
-    let mut global = vec![0i64; nfaces];
-    for f in 0..nfaces {
-        global[f] = wind[f].iter().sum();
-    }
+    let analysis = WindingAnalysis::build(&arrangement)?;
+    let wind = analysis.windings();
+    let global = analysis.totals();
 
     // Filled components merge over any shared edge, seams included.
     let mut comp = vec![-1i32; nfaces];
@@ -1393,5 +1440,55 @@ mod tests {
             .map(|i| [i as f64, (i % 2) as f64 * 10.0])
             .collect();
         assert!(signature(&[big]).is_none());
+    }
+
+    #[test]
+    fn unreached_face_fails_closed() {
+        let mut arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0)]).expect("supported topology");
+        arrangement.members.push(Vec::new());
+        assert!(WindingAnalysis::build(&arrangement).is_none());
+    }
+
+    #[test]
+    fn swapped_incidence_fails_closed() {
+        // Every face stays reachable, but one edge's jump no longer matches
+        // the propagated windings across it.
+        let mut arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0)]).expect("supported topology");
+        let (f1, f2) = (arrangement.atomics[0].f1, arrangement.atomics[0].f2);
+        arrangement.atomics[0].f1 = f2;
+        arrangement.atomics[0].f2 = f1;
+        assert!(WindingAnalysis::build(&arrangement).is_none());
+    }
+
+    #[test]
+    fn winding_sign_and_multiplicity() {
+        let opposed =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0), rect_cw(0.0, 0.0, 100.0, 50.0)])
+                .expect("supported topology");
+        let opposed = WindingAnalysis::build(&opposed).expect("consistent winding");
+        assert_eq!(opposed.windings(), &[vec![0, 0], vec![1, -1]]);
+        assert_eq!(opposed.totals(), &[0, 0]);
+        let doubled =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0), rect(0.0, 0.0, 100.0, 50.0)])
+                .expect("supported topology");
+        let doubled = WindingAnalysis::build(&doubled).expect("consistent winding");
+        assert_eq!(doubled.windings(), &[vec![0, 0], vec![1, 1]]);
+        assert_eq!(doubled.totals(), &[0, 2]);
+        let twice = [rect(0.0, 0.0, 100.0, 50.0), rect(0.0, 0.0, 100.0, 50.0)].concat();
+        let twice = Arrangement::build(&[twice]).expect("supported topology");
+        let twice = WindingAnalysis::build(&twice).expect("consistent winding");
+        assert_eq!(twice.windings(), &[vec![0], vec![2]]);
+        assert_eq!(twice.totals(), &[0, 2]);
+        let twice_cw = [
+            rect_cw(0.0, 0.0, 100.0, 50.0),
+            rect_cw(0.0, 0.0, 100.0, 50.0),
+        ]
+        .concat();
+        let twice_cw = Arrangement::build(&[twice_cw]).expect("supported topology");
+        let twice_cw = WindingAnalysis::build(&twice_cw).expect("consistent winding");
+        assert_eq!(twice_cw.windings(), &[vec![0], vec![-2]]);
+        assert_eq!(twice_cw.totals(), &[0, -2]);
     }
 }
