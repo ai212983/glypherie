@@ -1386,6 +1386,135 @@ fn fit_impl<const SELECTING: bool>(
     )
 }
 
+struct ControlOwnership {
+    weld: HashMap<usize, usize>,
+    quads: Vec<[usize; 3]>,
+    involved: HashSet<usize>,
+    cols: Vec<usize>,
+}
+
+enum OwnershipAbort {
+    WeldMismatch,
+    NoFreeControls,
+}
+
+fn compatible_welds(
+    raw: &SourceOutline,
+    fitted: &geometry::Parsed,
+    base_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+) -> Result<HashMap<usize, usize>, OwnershipAbort> {
+    // Weld aliases must agree between raw and upstream encodings.
+    let weld = weld_map(&raw.contours, base_all);
+    let up_weld = weld_map(&fitted.contours, up_all);
+    if weld != up_weld {
+        return Err(OwnershipAbort::WeldMismatch);
+    }
+    for (dup, canon) in &weld {
+        if up_all[*dup] != up_all[*canon] {
+            return Err(OwnershipAbort::WeldMismatch);
+        }
+    }
+    Ok(weld)
+}
+
+fn quadratic_indices(raw: &SourceOutline) -> Vec<[usize; 3]> {
+    let no = raw.oncurve.len();
+    let mut quads: Vec<[usize; 3]> = Vec::new();
+    for contour in &raw.contours {
+        for seg in contour {
+            if let GeomSegment::Quad { c, a, b } = *seg {
+                quads.push([a, no + c, b]);
+            }
+        }
+    }
+    quads
+}
+
+fn involved_closure(
+    prepared: &[geometry::PreppedPair],
+    quads: &[[usize; 3]],
+    weld: &HashMap<usize, usize>,
+) -> HashSet<usize> {
+    let mut involved: HashSet<usize> = HashSet::new();
+    for info in prepared {
+        for side in [&info.a, &info.b] {
+            involved.insert(side.i0);
+            involved.insert(side.i1);
+        }
+    }
+    loop {
+        let mut grown = involved.clone();
+        for idx in quads {
+            if idx.iter().any(|v| involved.contains(v)) {
+                grown.extend(idx.iter().copied());
+            }
+        }
+        for v in involved.iter() {
+            grown.insert(*weld.get(v).unwrap_or(v));
+        }
+        if grown == involved {
+            break;
+        }
+        involved = grown;
+    }
+    involved
+}
+
+fn upright_controls(
+    raw: &SourceOutline,
+    base_all: &[[f64; 2]],
+    weld: &HashMap<usize, usize>,
+) -> HashSet<usize> {
+    let mut upright: HashSet<usize> = HashSet::new();
+    for contour in &raw.contours {
+        for seg in contour {
+            if let GeomSegment::Line { a, b } = *seg {
+                if base_all[a][0] == base_all[b][0] && base_all[a][1] != base_all[b][1] {
+                    upright.insert(a);
+                    upright.insert(b);
+                }
+            }
+        }
+    }
+    for v in upright.clone() {
+        if let Some(canon) = weld.get(&v) {
+            upright.insert(*canon);
+        }
+    }
+    upright
+}
+
+impl ControlOwnership {
+    fn prepare(
+        raw: &SourceOutline,
+        fitted: &geometry::Parsed,
+        base_all: &[[f64; 2]],
+        up_all: &[[f64; 2]],
+        prepared: &[geometry::PreppedPair],
+    ) -> Result<ControlOwnership, OwnershipAbort> {
+        let weld = compatible_welds(raw, fitted, base_all, up_all)?;
+        let quads = quadratic_indices(raw);
+        let involved = involved_closure(prepared, &quads, &weld);
+        let upright = upright_controls(raw, base_all, &weld);
+        let mut cols: Vec<usize> = involved
+            .iter()
+            .filter(|v| !upright.contains(v) && !weld.contains_key(v))
+            .copied()
+            .collect();
+        cols.sort();
+        if cols.is_empty() {
+            return Err(OwnershipAbort::NoFreeControls);
+        }
+        Ok(ControlOwnership {
+            weld,
+            quads,
+            involved,
+            cols,
+        })
+    }
+}
+
 struct JointGate {
     j: usize,
     iv: usize,
@@ -1441,22 +1570,14 @@ fn finish(
         .flat_map(|(u, b)| [u[0] - b[0], u[1] - b[1]])
         .collect();
     let flat_up = ravel(&up_all);
-    // Weld aliases must agree between raw and upstream encodings.
-    let weld = weld_map(&raw.contours, &base_all);
-    let up_weld = weld_map(&fitted.contours, &up_all);
-    if weld != up_weld {
-        return Ok(abstain(
-            upstream,
-            "weld-mismatch",
-            serde_json::json!({
-                "size_px": size_px,
-                "skipped": skipped_json(),
-                "waist": waist_json(),
-            }),
-        ));
-    }
-    for (dup, canon) in &weld {
-        if up_all[*dup] != up_all[*canon] {
+    let ControlOwnership {
+        weld,
+        quads,
+        involved,
+        cols,
+    } = match ControlOwnership::prepare(raw, fitted, &base_all, &up_all, prepared) {
+        Ok(ownership) => ownership,
+        Err(OwnershipAbort::WeldMismatch) => {
             return Ok(abstain(
                 upstream,
                 "weld-mismatch",
@@ -1467,72 +1588,18 @@ fn finish(
                 }),
             ));
         }
-    }
-    // Involved set grows through curves and weld aliases.
-    let mut involved: HashSet<usize> = HashSet::new();
-    for info in prepared {
-        for side in [&info.a, &info.b] {
-            involved.insert(side.i0);
-            involved.insert(side.i1);
+        Err(OwnershipAbort::NoFreeControls) => {
+            return Ok(abstain(
+                upstream,
+                "no-free-controls",
+                serde_json::json!({
+                    "size_px": size_px,
+                    "skipped": skipped_json(),
+                    "waist": waist_json(),
+                }),
+            ));
         }
-    }
-    let mut quads: Vec<[usize; 3]> = Vec::new();
-    for contour in &raw.contours {
-        for seg in contour {
-            if let GeomSegment::Quad { c, a, b } = *seg {
-                quads.push([a, no + c, b]);
-            }
-        }
-    }
-    loop {
-        let mut grown = involved.clone();
-        for idx in &quads {
-            if idx.iter().any(|v| involved.contains(v)) {
-                grown.extend(idx.iter().copied());
-            }
-        }
-        for v in involved.iter() {
-            grown.insert(*weld.get(v).unwrap_or(v));
-        }
-        if grown == involved {
-            break;
-        }
-        involved = grown;
-    }
-    // Native verticals stay pinned; Y never moves in this solve.
-    let mut upright: HashSet<usize> = HashSet::new();
-    for contour in &raw.contours {
-        for seg in contour {
-            if let GeomSegment::Line { a, b } = *seg {
-                if base_all[a][0] == base_all[b][0] && base_all[a][1] != base_all[b][1] {
-                    upright.insert(a);
-                    upright.insert(b);
-                }
-            }
-        }
-    }
-    for v in upright.clone() {
-        if let Some(canon) = weld.get(&v) {
-            upright.insert(*canon);
-        }
-    }
-    let mut cols: Vec<usize> = involved
-        .iter()
-        .filter(|v| !upright.contains(v) && !weld.contains_key(v))
-        .copied()
-        .collect();
-    cols.sort();
-    if cols.is_empty() {
-        return Ok(abstain(
-            upstream,
-            "no-free-controls",
-            serde_json::json!({
-                "size_px": size_px,
-                "skipped": skipped_json(),
-                "waist": waist_json(),
-            }),
-        ));
-    }
+    };
     // Shape rows from raw geometry with the upstream gap substituted.
     let mut system = RowSys::new(base_all.clone(), size_px);
     for contour in &raw.contours {
@@ -2391,4 +2458,283 @@ fn deliver(
             "size_px": size_px,
         }),
     })
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+    use geometry::{Portion, PreppedPair};
+
+    fn prep(a0: usize, a1: usize, b0: usize, b1: usize, pts: &[[f64; 2]]) -> PreppedPair {
+        let side = |i0: usize, i1: usize| Portion {
+            contour: 0,
+            seg: 0,
+            t0: 0.0,
+            t1: 1.0,
+            p0: pts[i0],
+            p1: pts[i1],
+            i0,
+            i1,
+            hidden: false,
+            unknown: false,
+        };
+        PreppedPair {
+            id: String::from("t"),
+            a: side(a0, a1),
+            b: side(b0, b1),
+            normal: [0.0, 1.0],
+            stations: Vec::new(),
+            src_widths: Vec::new(),
+            fit_widths: Vec::new(),
+            arc: 0.0,
+            span_lo: 0.0,
+            span_hi: 0.0,
+        }
+    }
+
+    fn parsed(
+        oncurve: Vec<[f64; 2]>,
+        offcurve: Vec<[f64; 2]>,
+        contours: Vec<Vec<GeomSegment>>,
+    ) -> SourceOutline {
+        SourceOutline {
+            oncurve,
+            offcurve,
+            contours,
+        }
+    }
+
+    fn sorted(set: &HashSet<usize>) -> Vec<usize> {
+        let mut out: Vec<usize> = set.iter().copied().collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn transitive_quad_closure_through_alias_needs_fixpoint() {
+        let pts: Vec<[f64; 2]> = vec![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [2.0, 0.0],
+            [3.0, 0.0],
+            [2.0, 0.0],
+            [9.0, 9.0],
+            [10.0, 10.0],
+        ];
+        let raw = parsed(
+            pts.clone(),
+            vec![[1.5, 1.0], [2.5, 1.0], [9.5, 10.0]],
+            vec![
+                vec![
+                    GeomSegment::Quad { c: 1, a: 2, b: 3 },
+                    GeomSegment::Line { a: 3, b: 0 },
+                    GeomSegment::Line { a: 0, b: 1 },
+                    GeomSegment::Quad { c: 0, a: 1, b: 4 },
+                    GeomSegment::Line { a: 4, b: 2 },
+                ],
+                vec![
+                    GeomSegment::Quad { c: 2, a: 5, b: 6 },
+                    GeomSegment::Line { a: 6, b: 5 },
+                ],
+            ],
+        );
+        let base: Vec<[f64; 2]> = raw.oncurve.clone();
+        let weld = weld_map(&raw.contours, &base);
+        assert_eq!(weld, HashMap::from([(4, 2)]));
+        let quads = quadratic_indices(&raw);
+        assert_eq!(quads, vec![[2, 8, 3], [1, 7, 4], [5, 9, 6]]);
+        let prepared = vec![prep(0, 1, 0, 1, &pts)];
+        assert_eq!(
+            sorted(&involved_closure(&prepared, &quads, &weld)),
+            vec![0, 1, 2, 3, 4, 7, 8]
+        );
+    }
+
+    #[test]
+    fn alias_expansion_runs_dup_to_canon_only() {
+        let pts: Vec<[f64; 2]> = vec![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [2.0, 0.0],
+            [3.0, 0.0],
+            [2.0, 0.0],
+            [5.0, 0.0],
+        ];
+        let weld: HashMap<usize, usize> = HashMap::from([(4, 2)]);
+        let no_quads: Vec<[usize; 3]> = Vec::new();
+        let canon_seed = involved_closure(&[prep(2, 3, 2, 3, &pts)], &no_quads, &weld);
+        assert_eq!(sorted(&canon_seed), vec![2, 3]);
+        let chain: Vec<[usize; 3]> = vec![[4, 6, 5]];
+        let dup_seed = involved_closure(&[prep(5, 3, 5, 3, &pts)], &chain, &weld);
+        assert_eq!(sorted(&dup_seed), vec![2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn free_columns_keep_canonical_drop_aliases_sorted() {
+        let raw = parsed(
+            vec![
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [2.0, 0.0],
+                [3.0, 1.0],
+                [2.0, 0.0],
+                [5.0, 0.0],
+            ],
+            Vec::new(),
+            vec![vec![
+                GeomSegment::Line { a: 2, b: 3 },
+                GeomSegment::Line { a: 3, b: 5 },
+                GeomSegment::Line { a: 5, b: 4 },
+                GeomSegment::Line { a: 4, b: 2 },
+            ]],
+        );
+        let base_all: Vec<[f64; 2]> = raw.oncurve.clone();
+        let ownership = ControlOwnership::prepare(
+            &raw,
+            &raw,
+            &base_all,
+            &base_all,
+            &[prep(2, 5, 3, 4, &base_all)],
+        )
+        .ok()
+        .expect("aliased columns must prepare");
+        assert_eq!(ownership.weld, HashMap::from([(4, 2)]));
+        assert_eq!(sorted(&ownership.involved), vec![2, 3, 4, 5]);
+        assert_eq!(ownership.cols, vec![2, 3, 5]);
+    }
+
+    #[test]
+    fn upright_pins_endpoints_canon_alias_and_skips_near_misses() {
+        let raw = parsed(
+            vec![
+                [2.0, 0.0],
+                [9.0, 9.0],
+                [9.0, 9.0],
+                [2.0, 0.0],
+                [2.0, 3.0],
+                [9.0, 9.0],
+                [3.0, 0.0],
+                [3.5, 2.0],
+                [4.0, 0.0],
+                [4.0 + 1e-9, 2.0],
+                [5.0, 5.0],
+                [5.0, 5.0],
+            ],
+            Vec::new(),
+            vec![
+                vec![
+                    GeomSegment::Line { a: 0, b: 1 },
+                    GeomSegment::Line { a: 1, b: 4 },
+                    GeomSegment::Line { a: 4, b: 3 },
+                    GeomSegment::Line { a: 3, b: 0 },
+                ],
+                vec![GeomSegment::Line { a: 6, b: 7 }],
+                vec![GeomSegment::Line { a: 8, b: 9 }],
+                vec![GeomSegment::Line { a: 10, b: 11 }],
+            ],
+        );
+        let base: Vec<[f64; 2]> = raw.oncurve.clone();
+        let weld = weld_map(&raw.contours, &base);
+        assert_eq!(weld, HashMap::from([(3, 0)]));
+        assert_eq!(sorted(&upright_controls(&raw, &base, &weld)), vec![0, 3, 4]);
+    }
+
+    #[test]
+    fn slanted_raw_beats_vertical_fitted() {
+        let raw = parsed(
+            vec![[0.0, 0.0], [0.0, 2.0], [3.0, 0.0], [3.5, 2.0]],
+            Vec::new(),
+            vec![vec![GeomSegment::Line { a: 2, b: 3 }]],
+        );
+        let fitted = parsed(
+            vec![[0.0, 0.0], [0.0, 2.0], [3.0, 0.0], [3.0, 2.0]],
+            Vec::new(),
+            vec![vec![GeomSegment::Line { a: 2, b: 3 }]],
+        );
+        let base_all: Vec<[f64; 2]> = raw.oncurve.clone();
+        let up_all: Vec<[f64; 2]> = fitted.oncurve.clone();
+        let ownership = ControlOwnership::prepare(
+            &raw,
+            &fitted,
+            &base_all,
+            &up_all,
+            &[prep(2, 3, 2, 3, &base_all)],
+        )
+        .ok()
+        .expect("slanted raw must prepare");
+        assert_eq!(ownership.weld, HashMap::new());
+        assert_eq!(ownership.quads, Vec::<[usize; 3]>::new());
+        assert_eq!(sorted(&ownership.involved), vec![2, 3]);
+        assert_eq!(ownership.cols, vec![2, 3]);
+    }
+
+    #[test]
+    fn weld_mismatch_orders_before_no_free_controls() {
+        let base: Vec<[f64; 2]> = vec![[0.0, 0.0], [0.0, 2.0], [0.0, 0.0]];
+        let closed = vec![
+            GeomSegment::Line { a: 0, b: 1 },
+            GeomSegment::Line { a: 1, b: 2 },
+            GeomSegment::Line { a: 2, b: 0 },
+        ];
+        let raw = parsed(base.clone(), Vec::new(), vec![closed.clone()]);
+        let fitted = parsed(base.clone(), Vec::new(), vec![closed]);
+        assert_eq!(
+            compatible_welds(&raw, &fitted, &base, &base).ok(),
+            Some(HashMap::from([(2, 0)]))
+        );
+        let open = vec![
+            GeomSegment::Line { a: 0, b: 1 },
+            GeomSegment::Line { a: 1, b: 2 },
+        ];
+        let open_fitted = parsed(base.clone(), Vec::new(), vec![open.clone()]);
+        assert!(matches!(
+            compatible_welds(&raw, &open_fitted, &base, &base),
+            Err(OwnershipAbort::WeldMismatch)
+        ));
+        let open_raw = parsed(base.clone(), Vec::new(), vec![open]);
+        assert!(matches!(
+            compatible_welds(&open_raw, &fitted, &base, &base),
+            Err(OwnershipAbort::WeldMismatch)
+        ));
+        assert!(matches!(
+            ControlOwnership::prepare(&raw, &open_fitted, &base, &base, &[prep(0, 1, 0, 1, &base)]),
+            Err(OwnershipAbort::WeldMismatch)
+        ));
+        let pinned = parsed(
+            vec![[0.0, 0.0], [0.0, 2.0]],
+            Vec::new(),
+            vec![vec![GeomSegment::Line { a: 0, b: 1 }]],
+        );
+        let pinned_base: Vec<[f64; 2]> = pinned.oncurve.clone();
+        assert!(matches!(
+            ControlOwnership::prepare(
+                &pinned,
+                &pinned,
+                &pinned_base,
+                &pinned_base,
+                &[prep(0, 1, 0, 1, &pinned_base)]
+            ),
+            Err(OwnershipAbort::NoFreeControls)
+        ));
+        let mixed = parsed(
+            vec![[0.0, 0.0], [0.0, 2.0], [5.0, 0.0], [6.0, 3.0]],
+            Vec::new(),
+            vec![vec![
+                GeomSegment::Line { a: 0, b: 1 },
+                GeomSegment::Line { a: 2, b: 3 },
+            ]],
+        );
+        let mixed_base: Vec<[f64; 2]> = mixed.oncurve.clone();
+        let ownership = ControlOwnership::prepare(
+            &mixed,
+            &mixed,
+            &mixed_base,
+            &mixed_base,
+            &[prep(0, 1, 2, 3, &mixed_base)],
+        )
+        .ok()
+        .expect("mixed ownership must prepare");
+        assert_eq!(sorted(&ownership.involved), vec![0, 1, 2, 3]);
+        assert_eq!(ownership.cols, vec![2, 3]);
+    }
 }
