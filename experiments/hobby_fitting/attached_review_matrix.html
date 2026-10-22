@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Attached diagonal comparison</title>
+<style>
+  body { font: 14px system-ui; margin: 18px; color: #222; }
+  select { margin-right: 16px; }
+  iframe { border: 0; width: 100%; height: 1800px; margin-top: 16px; }
+</style>
+<h1>Attached diagonal comparison — assessment pending</h1>
+<p>The previous joint candidate compared with attached-diagonal fitting. Final pixels use the captured monochrome policy and the same native text layout. Width and placement tradeoffs require visual assessment.</p>
+<label>Family <select id="family"></select></label>
+<label>Weight <select id="weight"></select></label>
+<label>Size <select id="size"></select></label>
+<label>Hints <select id="hint"></select></label>
+<iframe id="cell" title="Selected comparison"></iframe>
+<script>
+fetch('matrix.json').then(r=>r.json()).then(cells=>{
+  const defaults={family:'Roboto',weight:400,size:16,hint:'selective_default'};
+  for(const key of Object.keys(defaults)) {
+    const select=document.querySelector('#'+key);
+    [...new Set(cells.map(c=>c[key]))].forEach(value=>{
+      const option=document.createElement('option');option.value=value;option.textContent=value;select.append(option);
+    });select.value=defaults[key];select.addEventListener('change',show);
+  }
+  function show(){
+    const selected=cells.find(c=>Object.keys(defaults).every(k=>String(c[k])===document.querySelector('#'+k).value));
+    document.querySelector('#cell').src=selected.directory+'/';
+  }
+  show();
+});
+</script>

@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- cspell:words unhinted -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Source contrast and crossing balance</title>
+<style>
+body{font:14px system-ui;color:#222;background:white;margin:24px}h1{font-size:23px}
+.controls,.arms{display:flex;gap:24px;flex-wrap:wrap;align-items:start}.controls{position:sticky;top:0;background:white;padding:12px 0;z-index:1}
+select{margin-left:8px;font:inherit}section{border-top:1px solid #ccc;margin-top:20px;padding-top:12px}
+canvas{image-rendering:pixelated;display:block;margin:8px 0}svg{width:240px;height:240px;border:1px solid #ddd}
+table{border-collapse:collapse;margin:12px 0}td,th{border:1px solid #ddd;padding:6px;text-align:left}p{max-width:1100px}.arm{overflow:auto;max-width:100%}
+#error{color:#a00}.muted{color:#666}
+</style>
+<h1>Source contrast and crossing balance</h1>
+<p>Source Sans and Roboto at weight 400. Compare unhinted source geometry with automatic fitting, width-only fitting and the combined candidate.
+  This assessment changes no fitting rules. Exact reflection is not a quality requirement.</p>
+<div class="controls">
+<label>Font<select id="family"><option>SourceSans3</option><option>Roboto</option></select></label>
+<label>Size<select id="size"><option>12</option><option>14</option><option selected>16</option><option>20</option></select></label>
+<label>Font hints<select id="hint"><option value="selective_default">On</option><option value="auto_default">Off</option></select></label>
+</div>
+<p id="scope"></p><p id="error" role="alert"></p><div id="glyphs"></div><div id="text"></div>
+<script>
+const controls=['family','size','hint'],query=new URLSearchParams(location.search);
+for(const id of controls){const select=document.getElementById(id);if([...select.options].some(o=>o.value===query.get(id)))select.value=query.get(id);}
+const names={source:'Unfitted source · same scanner',upstream:'Automatic upstream',width_only:'Width-only baseline',combined:'Combined candidate'};
+function path(commands){return commands.map(c=>({move_to:()=>`M${c.x},${-c.y}`,line_to:()=>`L${c.x},${-c.y}`,quad_to:()=>`Q${c.x1},${-c.y1} ${c.x},${-c.y}`,close:()=>`Z`}[c.op]())).join(' ');}
+function bitmap(parent,tile,frame,zoom,label){const wrap=document.createElement('div');wrap.className='arm';wrap.textContent=label;
+ const canvas=document.createElement('canvas');canvas.width=frame.width;canvas.height=frame.height;canvas.style.width=`${frame.width*zoom}px`;canvas.style.height=`${frame.height*zoom}px`;
+ const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#111';
+ tile.pixels.forEach((v,i)=>{if(v)ctx.fillRect(tile.left-frame.left+i%tile.width,tile.top-frame.top+Math.floor(i/tile.width),1,1);});wrap.append(canvas);parent.append(wrap);}
+function vector(parent,commands,size,label,color='#111'){const wrap=document.createElement('div');wrap.textContent=label;
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`-1 ${-size-1} ${size+2} ${size+2}`);
+ const p=document.createElementNS(svg.namespaceURI,'path');p.setAttribute('d',path(commands));p.setAttribute('fill',color);svg.append(p);wrap.append(svg);parent.append(wrap);return svg;}
+function measure(profile,raster=false){const item=profile[raster?'raster':'geometry'];if(!item)return 'Outside frame';
+ if(item.spans.length!==2)return `${item.spans.length} ink span${item.spans.length===1?'':'s'} (crossing or empty)`;
+ return raster?`${item.left_width} : ${item.right_width}`:`${item.left_width.toFixed(3)} / ${item.right_width.toFixed(3)} (${item.ratio.toFixed(3)})`;}
+let generation=0;
+async function show(){const current=++generation,values=Object.fromEntries(controls.map(id=>[id,document.getElementById(id).value]));
+ history.replaceState(null,'',`?${new URLSearchParams(values)}`);document.getElementById('error').textContent='';
+ try{const response=await fetch(`${values.family}-400-${values.size}-${values.hint}.json`);if(!response.ok)throw Error('Missing comparison packet');const data=await response.json();if(current!==generation)return;
+ document.getElementById('scope').textContent=`${data.family}, weight 400, ${data.size}px, font hints ${values.hint==='selective_default'?'on':'off'}. All bitmap arms replay the captured Mono scanner. The unfitted arm isolates scan conversion; it is not an alternative fitted baseline.`;
+ const glyphs=document.getElementById('glyphs');glyphs.replaceChildren();
+ for(const g of data.glyphs){const section=document.createElement('section'),h=document.createElement('h2');h.textContent=g.char;section.append(h);
+ const note=document.createElement('p');note.className='muted';note.textContent=`Joint crossing: ${g.joint_reason}. Attached diagonal: ${g.attached_reason}. Unrounded source vs captured source: maximum coordinate difference ${g.source_rounding_max.toFixed(5)}px.`;section.append(note);
+ const stages=Object.values(g.stages),left=Math.min(0,...stages.map(s=>s.tile.left)),top=Math.min(0,...stages.map(s=>s.tile.top));
+ const right=Math.max(...stages.map(s=>s.tile.left+s.tile.width)),bottom=Math.max(0,...stages.map(s=>s.tile.top+s.tile.height));const frame={left,top,width:right-left,height:bottom-top};
+ const arms=document.createElement('div');arms.className='arms';
+ for(const [key,stage] of Object.entries(g.stages)){const group=document.createElement('div');bitmap(group,stage.tile,frame,1,`${names[key]} · 1×`);bitmap(group,stage.tile,frame,8,'8×');arms.append(group);}section.append(arms);
+ const details=document.createElement('details'),summary=document.createElement('summary');summary.textContent='Source contours and arm measurements';details.append(summary);
+ const vectors=document.createElement('div');vectors.className='arms';vector(vectors,g.raw_source,data.size,'Independent unrounded source');
+ const svg=vector(vectors,g.raw_source,data.size,'Source gray / width-only green / combined red','#ddd');
+ for(const [key,color] of [['width_only','#19833c'],['combined','#d33228']]){const p=document.createElementNS(svg.namespaceURI,'path');p.setAttribute('d',path(g.stages[key].commands));p.setAttribute('fill','none');p.setAttribute('stroke',color);p.setAttribute('stroke-width','.055');svg.append(p);}details.append(vectors);
+ const explanation=document.createElement('p');explanation.textContent='Horizontal arm widths in pixels, left / right (ratio), at matching fractions of each outline’s height. These are projected widths, not perpendicular stroke thickness. Bitmap rows use the nearest containing pixel row; their exact heights can differ. Four sections are diagnostic probes, not an optical acceptance score.';details.append(explanation);
+ const table=document.createElement('table'),head=document.createElement('tr');for(const title of ['Height','Unrounded source',...Object.keys(g.stages).map(k=>names[k])]){const th=document.createElement('th');th.textContent=title;head.append(th);}table.append(head);
+ g.raw_profiles.forEach((profile,i)=>{for(const raster of [false,true]){const tr=document.createElement('tr');const values=[`${profile.fraction*100}% ${raster?'bitmap':'geometry'}`,raster?'—':measure(profile),...Object.values(g.stages).map(s=>measure(s.profiles[i],raster))];for(const value of values){const td=document.createElement('td');td.textContent=value;tr.append(td);}table.append(tr);}});details.append(table);
+ const caption=document.createElement('p');caption.textContent='Straight arm sections measured along each pair’s fixed source normal, in pixels. These use the existing certified contact locations. Source curve recognition and final pixel balance remain separate questions.';details.append(caption);
+ const normals=document.createElement('table'),nh=document.createElement('tr');for(const title of ['Arm section','Unrounded source','Captured source','Automatic','Width-only','Combined']){const th=document.createElement('th');th.textContent=title;nh.append(th);}normals.append(nh);
+ g.pairs.forEach((pair,i)=>{const row=document.createElement('tr');for(const value of [`${i+1}`,...['raw_source','source','upstream','width_only','combined'].map(k=>pair.measurements[k].width.toFixed(3))]){const td=document.createElement('td');td.textContent=value;row.append(td);}normals.append(row);});details.append(normals);section.append(details);glyphs.append(section);}
+ const text=document.getElementById('text');text.replaceChildren();for(const line of data.text_lines){const section=document.createElement('section'),p=document.createElement('p');p.textContent=line.text;section.append(p);const arms=document.createElement('div');arms.className='arms';
+ const frame={left:0,top:0,width:line.frame.width,height:line.frame.height};for(const [key,label] of [['upstream','Width-only baseline'],['width_only','Complete combined candidate']])bitmap(arms,{left:0,top:0,width:frame.width,height:frame.height,pixels:line[key].pixels},frame,1,label);section.append(arms);text.append(section);}
+ }catch(error){if(current===generation)document.getElementById('error').textContent=error.message;}}
+controls.forEach(id=>document.getElementById(id).addEventListener('change',show));show();
+</script>

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fast-math · Glyph comparison</title>
+  <style>
+    :root { color-scheme: light; font: 15px/1.5 system-ui,sans-serif; color: #252724; background: #f6f7f3; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1400px; padding: 28px 24px 64px; margin: auto; }
+    h1 { font-size: 28px; line-height: 1.2; letter-spacing: -.025em; margin: 8px 0 12px; }
+    h2 { margin: 0; font-size: 22px; }
+    h3 { font-size: 22px; margin: 0 0 14px; }
+    p { margin: 8px 0 18px; }
+    .muted { color: #61665d; }
+    .tag { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: #516048; }
+    .controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 20px; margin: 24px 0 12px; }
+    label { display: block; font-size: 13px; font-weight: 600; }
+    select { display: block; margin-top: 5px; font: inherit; font-weight: 400; padding: 8px 30px 8px 10px; border: 1px solid #b8beb1; border-radius: 7px; color: inherit; background: #fff; }
+    select:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #597b45; outline-offset: 3px; }
+    .check { display: flex; gap: 8px; align-items: center; min-height: 39px; font-weight: 400; }
+    input[type=checkbox] { width: 17px; height: 17px; accent-color: #48653b; }
+    details { margin: 12px 0; }
+    summary { cursor: pointer; width: fit-content; }
+    details .controls { margin-top: 12px; }
+    .family { padding-top: 30px; margin-top: 24px; border-top: 1px solid #cdd2c5; }
+    .context { background: #fff; border: 1px solid #dfe3d9; border-radius: 10px; padding: 16px 20px; margin: 20px 0; }
+    .context-pair { margin-top: 14px; overflow-x: auto; padding-bottom: 4px; }
+    .context-row { display: flex; align-items: center; gap: 14px; min-height: 34px; width: max-content; }
+    .context-row > span { width: 82px; flex-shrink: 0; font-size: 12px; color: #61665d; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(285px,1fr)); gap: 16px; }
+    .glyph { min-width: 0; border: 1px solid #d5dbcd; background: #fff; border-radius: 10px; padding: 18px; }
+    .pair { display: flex; gap: 22px; overflow-x: auto; padding-bottom: 5px; }
+    .arm { flex: 0 0 auto; min-width: 92px; }
+    .arm-label { font-size: 12px; color: #61665d; margin: 0 0 8px; }
+    canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; background: #fff; }
+    .native { margin-top: 14px; display: flex; align-items: center; gap: 6px; }
+    .native span { font-size: 11px; color: #767c70; }
+    .difference { margin-top: 16px; padding-top: 12px; border-top: 1px solid #e5e8df; overflow-x: auto; }
+    .legend { font-size: 13px; color: #61665d; }
+    .blue { color: #0060ff; } .red { color: #e02020; }
+    .error { color: #a52121; }
+    [hidden] { display: none !important; }
+    @media (max-width: 620px) { main { padding: 20px 16px 40px; } h1 { font-size: 25px; } .grid { grid-template-columns: 1fr; } .context { padding: 12px; } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="tag">Experimental comparison</div>
+  <h1>Fast-math: changed glyphs</h1>
+  <p class="muted">Current SIMD rendering beside the fast-math experiment. Compare stroke weight, shape and joins.<br>The main app is unchanged.</p>
+  <div class="controls">
+    <label>Font<select id="family"><option value="both">Both fonts</option><option value="Roboto">Roboto</option><option value="SourceSans3">Source Sans</option></select></label>
+    <label>Size<select id="size"><option>12</option><option>14</option><option selected>16</option><option>18</option><option>20</option><option>24</option></select></label>
+    <label>Weight<select id="weight"><option value="300">Light · 300</option><option value="400" selected>Regular · 400</option><option value="700">Bold · 700</option></select></label>
+    <label>Detail zoom<select id="zoom"><option value="4">4×</option><option value="8" selected>8×</option><option value="12">12×</option></select></label>
+    <label class="check"><input type="checkbox" id="overlay">Highlight changed pixels</label>
+  </div>
+  <details><summary>More settings</summary><div class="controls">
+    <label>Use font hints<select id="fitting"><option value="font_hints_auto">On</option><option value="upstream_mono">Off</option></select></label>
+    <label>Scanner<select id="scanner"><option value="free_type_mono">FreeType Mono</option><option value="free_type_mono_terminals">FreeType Mono + terminal fitting</option></select></label>
+  </div></details>
+  <p id="status" role="status" class="muted">Loading comparison…</p>
+  <p id="legend" class="legend" hidden><span class="blue">Blue: added ink.</span> <span class="red">Red: removed ink.</span> The overlay shows where pixels differ.</p>
+  <p id="error" class="error" role="alert"></p>
+  <div id="content"></div>
+</main>
+<script>
+const names=['family','size','weight','zoom','fitting','scanner'], controls=Object.fromEntries(names.map(n=>[n,document.getElementById(n)]));
+const params=new URLSearchParams(location.search);
+for(const [name,control] of Object.entries(controls))if([...control.options].some(o=>o.value===params.get(name)))control.value=params.get(name);
+document.getElementById('overlay').checked=params.get('overlay')==='1';
+let matrix, generation=0;
+const cache=new Map();
+function element(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
+function bits(base64,length){const bytes=Uint8Array.from(atob(base64),v=>v.charCodeAt(0));return Uint8Array.from({length},(_,i)=>bytes[i>>3]>>(i&7)&1);}
+function canvas(data,arm,zoom){
+  const a=bits(data.pixels[0],data.width*data.height),b=bits(data.pixels[1],a.length),c=element('canvas');c.width=data.width;c.height=data.height;
+  c.style.width=`${c.width*zoom}px`;c.style.height=`${c.height*zoom}px`;
+  c.setAttribute('role','img');c.setAttribute('aria-label',arm===2?'Highlighted pixel differences':arm===0?'Current rendering':'Fast-math rendering');
+  c.dataset.arm=String(arm);c.dataset.zoom=String(zoom);
+  const ctx=c.getContext('2d'),im=ctx.createImageData(c.width,c.height);
+  for(let i=0;i<a.length;i++){
+    let color=(arm===1?b[i]:a[i])?[0,0,0]:[255,255,255];
+    if(arm===2&&a[i]!==b[i])color=b[i]?[0,96,255]:[224,32,32];
+    im.data.set([...color,255],i*4);
+  }
+  ctx.putImageData(im,0,0);return c;
+}
+function arm(data,index,zoom){const wrap=element('div','arm');wrap.append(element('p','arm-label',index===0?'Current':'Fast-math'),canvas(data,index,zoom));
+ const native=element('div','native');native.append(canvas(data,index,1),element('span','','1×'));wrap.append(native);return wrap;}
+async function show(){
+  const version=++generation,values=Object.fromEntries(names.map(n=>[n,controls[n].value])),overlay=document.getElementById('overlay').checked;
+  const query=new URLSearchParams(values);if(overlay)query.set('overlay','1');history.replaceState(null,'',`?${query}`);
+  document.getElementById('error').textContent='';document.getElementById('status').textContent='Loading comparison…';
+  document.getElementById('legend').hidden=!overlay;document.documentElement.dataset.loaded='';
+  try{
+    const families=values.family==='both'?matrix.families:[values.family];
+    const rows=await Promise.all(families.map(async family=>{
+      const entry=matrix.cells.find(c=>c.family===family&&c.size===+values.size&&c.weight===+values.weight&&c.fitting===values.fitting&&c.scanner===values.scanner);
+      if(!entry)throw Error('This comparison setting is unavailable.');
+      if(!cache.has(entry.file))cache.set(entry.file,fetch(entry.file).then(r=>{if(!r.ok)throw Error('Comparison could not be loaded.');return r.json();}));
+      return cache.get(entry.file);
+    }));
+    if(version!==generation)return;
+    const content=document.getElementById('content');content.replaceChildren();let count=0;
+    for(const data of rows){
+      count+=data.glyphs.length;const section=element('section','family');section.dataset.family=data.family;
+      section.append(element('h2','',data.family==='SourceSans3'?'Source Sans':data.family),element('p','muted',`${data.size}px · weight ${data.weight} · ${data.glyphs.length} changed glyphs`));
+      const context=element('div','context');context.append(element('strong','','Text at actual size'));
+      for(const line of data.lines){const pair=element('div','context-pair');
+        for(let i=0;i<2;i++){const row=element('div','context-row');row.append(element('span','',i===0?'Current':'Fast-math'),canvas(line,i,1));pair.append(row);}
+        context.append(pair);
+      }
+      section.append(context);
+      if(!data.glyphs.length)section.append(element('p','muted','No glyph pixels change at these settings.'));
+      const grid=element('div','grid');
+      for(const glyph of data.glyphs){const card=element('article','glyph');card.dataset.character=glyph.character;
+        card.append(element('h3','',glyph.character));const pair=element('div','pair');pair.append(arm(glyph,0,+values.zoom),arm(glyph,1,+values.zoom));card.append(pair);
+        if(overlay){const diff=element('div','difference');diff.append(element('p','arm-label','Changes'),canvas(glyph,2,+values.zoom));card.append(diff);}
+        grid.append(card);
+      }
+      section.append(grid);content.append(section);
+    }
+    document.getElementById('status').textContent=`${count} changed glyphs shown. Details use exact pixels enlarged ${values.zoom}×; the small samples are 1×.`;
+    document.documentElement.dataset.loaded='true';document.documentElement.dataset.count=String(count);
+  }catch(e){if(version===generation){document.getElementById('error').textContent=e.message;document.getElementById('status').textContent='Comparison unavailable.';}}
+}
+for(const control of [...Object.values(controls),document.getElementById('overlay')])control.addEventListener('change',show);
+fetch('matrix.json').then(r=>{if(!r.ok)throw Error('Comparison index could not be loaded.');return r.json();}).then(data=>{matrix=data;return show();}).catch(e=>document.getElementById('error').textContent=e.message);
+</script>
+</body>
+</html>

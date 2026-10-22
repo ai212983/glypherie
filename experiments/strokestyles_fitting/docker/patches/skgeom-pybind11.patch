@@ -1,0 +1,13 @@
+--- a/setup.py
++++ b/setup.py
+@@ -229,8 +229,8 @@
+     description='scikit-geometry, the python computational geometry library',
+     long_description='',
+     ext_modules=ext_modules,
+-    install_requires=['pybind11>=2.3,<2.8', 'numpy'],
+-    setup_requires=['pybind11>=2.3,<2.8'],
++    install_requires=['pybind11==2.11.1', 'numpy'],
++    setup_requires=['pybind11==2.11.1'],
+     extras_require={
+         "drawing": ["matplotlib"],
+     },

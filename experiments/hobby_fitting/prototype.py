@@ -199,22 +199,43 @@ class System:
                     * np.dot(normal, [offset[1], -offset[0]]) / pair.width**2)
         self.add("offset-obliquity", np.zeros(self.points.size), constant)
 
-    def solve(self, frozen=()):
+    def solve(self, frozen=(), fixed_displacements=None):
         """SVD least squares in free displacements; frozen controls stay exact.
 
+        fixed_displacements maps a vertex to its known (dx, dy): the
+        variable is eliminated and its matrix contribution joins the
+        constants. Coefficients stay fixed per the linearity requirement.
         No arbitrary regularization or acceptance score. Rank deficiency is
-        reported; NumPy returns the minimum-norm solution in unconstrained modes.
+        reported; NumPy returns the minimum-norm solution in free modes.
         """
         frozen = set(frozen)
         if any(not isinstance(i, int) or not 0 <= i < len(self.points) for i in frozen):
             raise ValueError("invalid frozen control")
+        fixed = {int(i): (float(v[0]), float(v[1]))
+                 for i, v in dict(fixed_displacements or {}).items()}
+        if any(not 0 <= i < len(self.points) for i in fixed):
+            raise ValueError("invalid fixed control")
+        if any(not (math.isfinite(dx) and math.isfinite(dy))
+               for dx, dy in fixed.values()):
+            raise ValueError("nonfinite fixed displacement")
+        if set(fixed) & frozen:
+            raise ValueError("control cannot be frozen and fixed")
         if not self.rows:
             raise ValueError("no residuals")
         matrix = np.array([row for _, row, _ in self.rows])
         constants = np.array([c for _, _, c in self.rows])
+        fixed_cols = np.array([2*i+c for i in fixed for c in (0, 1)],
+                              dtype=int)
+        fixed_vals = np.array([v[c] for v in
+                               [fixed[i] for i in fixed] for c in (0, 1)])
+        if len(fixed_cols):
+            constants = constants + matrix[:, fixed_cols] @ fixed_vals
         free = np.array([2*i+c for i in range(len(self.points))
-                         if i not in frozen for c in (0, 1)], dtype=int)
+                         if i not in frozen and i not in fixed
+                         for c in (0, 1)], dtype=int)
         delta = np.zeros(self.points.size)
+        for i, (dx, dy) in fixed.items():
+            delta[2*i], delta[2*i+1] = dx, dy
         if len(free):
             delta[free], _, rank, singular = np.linalg.lstsq(
                 matrix[:, free], -constants, rcond=None)

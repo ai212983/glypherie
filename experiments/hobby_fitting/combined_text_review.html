@@ -1,0 +1,92 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Combined stroke fitting — text review</title>
+<style>
+  body { font: 14px system-ui; margin: 24px; color: #222; background: #fff; }
+  h1 { font-size: 22px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; position: sticky; top: 0; padding: 12px 0; background: white; z-index: 1; }
+  select { margin-left: 6px; font: inherit; }
+  section { border-top: 1px solid #ddd; padding: 12px 0; }
+  .arms { display: flex; flex-wrap: wrap; gap: 20px 40px; align-items: start; }
+  .arm { max-width: 100%; overflow-x: auto; }
+  canvas { display: block; image-rendering: pixelated; margin-top: 8px; }
+  .text { color: #666; margin-bottom: 10px; }
+  #glyphs { display: flex; flex-wrap: wrap; gap: 24px; }
+  #glyphs section { min-width: 220px; }
+  #error { color: #a00; }
+</style>
+<h1>Combined stroke fitting — text review</h1>
+<p>Width-only baseline compared with the combined crossing, curve and attached-diagonal candidate.
+  Both use the same native spacing and scan conversion. Review weight, shape, joins and reading rhythm.</p>
+<div class="controls">
+  <label>Font<select id="family"><option>Roboto</option><option>SourceSans3</option></select></label>
+  <label>Size<select id="size"><option>12</option><option>14</option><option selected>16</option><option>18</option><option>20</option><option>24</option></select></label>
+  <label>Weight<select id="weight"><option>300</option><option selected>400</option><option>700</option></select></label>
+  <label>Font hints<select id="hint"><option value="selective_default">On</option><option value="auto_default">Off</option></select></label>
+  <label>Text zoom<select id="zoom"><option>1</option><option>2</option><option>4</option></select></label>
+</div>
+<p id="scope"></p><p id="error" role="alert"></p>
+<div id="lines"></div>
+<h2>Stroke and join details</h2>
+<p>Aligned glyph pairs at 8×. The text above uses native pen positions.</p>
+<div id="glyphs"></div>
+<details><summary>Other changed glyphs</summary><p id="changes"></p></details>
+<script>
+const controls = ['family','size','weight','hint','zoom'];
+const query = new URLSearchParams(location.search);
+for (const name of controls) {
+  const select = document.getElementById(name);
+  if ([...select.options].some(o=>o.value===query.get(name))) select.value=query.get(name);
+}
+function bitmap(parent, pixels, frame, zoom, label) {
+  const wrap=document.createElement('div');wrap.className='arm';wrap.textContent=label;
+  const canvas=document.createElement('canvas');canvas.width=frame.width;canvas.height=frame.height;
+  canvas.style.width=`${frame.width*zoom}px`;canvas.style.height=`${frame.height*zoom}px`;
+  const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#111';pixels.forEach((v,i)=>{if(v)ctx.fillRect(i%frame.width,Math.floor(i/frame.width),1,1);});
+  wrap.append(canvas);parent.append(wrap);
+}
+function framed(g) {
+  const left=Math.min(g.old.left,g.new.left,0),top=Math.min(g.old.top,g.new.top,0);
+  const right=Math.max(g.old.left+g.old.width,g.new.left+g.new.width,0);
+  const bottom=Math.max(g.old.top+g.old.height,g.new.top+g.new.height,0);
+  const frame={width:right-left,height:bottom-top};
+  return [frame,...[g.old,g.new].map(tile=>{
+    const pixels=Array(frame.width*frame.height).fill(0);
+    tile.pixels.forEach((v,i)=>{if(v)pixels[(tile.top-top+Math.floor(i/tile.width))*frame.width+tile.left-left+i%tile.width]=1;});
+    return pixels;
+  })];
+}
+let generation=0;
+async function show() {
+  const current=++generation, values=Object.fromEntries(controls.map(n=>[n,document.getElementById(n).value]));
+  history.replaceState(null,'',`?${new URLSearchParams(values)}`);
+  document.getElementById('error').textContent='';
+  const name=`${values.family}-${values.weight}-${values.size}-${values.hint}`;
+  try {
+    const response=await fetch(`${name}/data.json`);if(!response.ok)throw Error(`Packet unavailable: ${response.status}`);
+    const data=await response.json();if(current!==generation)return;
+    document.getElementById('scope').textContent=`${data.family}, weight ${data.weight}, ${data.size}px, font hints ${values.hint==='selective_default'?'on':'off'}. ${data.changes.length} of 95 glyphs change. Zoom is an integer enlargement of delivered pixels.`;
+    const lines=document.getElementById('lines');lines.replaceChildren();
+    for (const line of data.lines) {
+      const section=document.createElement('section'), text=document.createElement('div');text.className='text';text.textContent=line.text;section.append(text);
+      const arms=document.createElement('div');arms.className='arms';
+      bitmap(arms,line.baseline,line.frame,+values.zoom,'Width-only baseline');
+      bitmap(arms,line.candidate,line.frame,+values.zoom,'Combined candidate');
+      section.append(arms);lines.append(section);
+    }
+    const glyphs=document.getElementById('glyphs');glyphs.replaceChildren();
+    for (const char of 'sxSX5yW2') {
+      const g=data.glyphs.find(g=>g.char===char),section=document.createElement('section');
+      const label=document.createElement('p');label.textContent=`${char} — ${g.changed?'changed':'unchanged'}`;section.append(label);
+      const arms=document.createElement('div');arms.className='arms';
+      const [frame,old,next]=framed(g);bitmap(arms,old,frame,8,'Baseline');bitmap(arms,next,frame,8,'Candidate');
+      section.append(arms);glyphs.append(section);
+    }
+    document.getElementById('changes').textContent=data.changes.map(g=>g.char).join(' ')||'None';
+    document.documentElement.dataset.loaded=name;
+  } catch(error) { if(current===generation)document.getElementById('error').textContent=error.message; }
+}
+controls.forEach(n=>document.getElementById(n).addEventListener('change',show));show();
+</script>

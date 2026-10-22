@@ -1,0 +1,26 @@
+# Pinned sources for the StrokeStyles extraction image.
+#
+# Snapshot of the running build context (hashes verified at copy time):
+#   docker/Dockerfile                                    7b9ae515…
+#   docker/requirements.txt                              d750e36c…
+#   docker/patches/cautograff-debian.patch               51885c22…
+#   docker/patches/skgeom-pybind11.patch                 be801ca7…
+#
+# Observed: requirements.txt pins pybind11==2.9.2 but the Dockerfile later
+# installs pybind11==2.11.1 explicitly for the skgeom build, so the final
+# image carries 2.11.1. Both pins are preserved verbatim here.
+#
+# Base image (pinned by digest in the Dockerfile):
+#   python:3.10-slim-bookworm@sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370
+#
+# Late runtime layer (runtime-requirements.txt, installed after the native
+# build so the compiled cache is untouched):
+#   svgpathtools==1.6.1 svgwrite==1.4.3
+# Built image: sha256:7b3d30c96c60e2e48a8823533c3208f4782527d496da8578d41f8d076b077fa3
+
+[repos]
+strokestyles = "https://github.com/autograff-devel/strokestyles @ 3a74c98df66e9053aabf2a0299bbba188d270153"
+autograff = "https://github.com/autograff-devel/autograff @ 9352fcccad9950149fe96eb0d88f40dbb8bf99d9"
+csfs = "https://github.com/autograff-devel/csfs @ d24f33e3f0bb0508852131c62bf9bcc7c6c2ed5c"
+cautograff = "https://github.com/autograff-devel/cautograff @ 4566a3741c0008c4b555f41e8e9ffc9ecd7bc70f"
+skgeom = "https://github.com/scikit-geometry/scikit-geometry @ e4a25c0cde054a3a4bd6b21d3ca30db8e7e6a178"

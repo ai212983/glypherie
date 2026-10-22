@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<title>Shape balance review (assessment pending)</title>
+<style>
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:16px;color:#222;max-width:1400px}
+canvas{image-rendering:pixelated;border:1px solid #999;background:#fff}
+fieldset{border:1px solid #ccc;margin:0 0 12px 0;padding:8px 12px}
+fieldset label{margin-right:12px;font-size:14px}
+.line{margin:12px 0;padding:8px;border:1px solid #ddd}
+.line p{margin:4px 0;font-size:13px}
+.row{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+.arm b{display:block;margin-bottom:4px;font-size:14px}
+table{border-collapse:collapse;font-size:13px;margin-top:8px}
+td,th{border:1px solid #ccc;padding:2px 8px;text-align:left}
+.note{font-size:13px;color:#555}
+pre.diag{white-space:pre-wrap;max-width:640px;font-size:12px}
+svg.outline{border:1px solid #999;background:#fff}
+</style>
+</head>
+<body>
+<h1 id="title">Shape balance review (assessment pending)</h1>
+<p class="note">Upstream, preferred width-only, experimental placement and (when enabled)
+experimental curves share one frame.
+No CSS font glyph is used as a render reference. Assessment pending: this page
+derives no semantic classification from count metrics.</p>
+<fieldset id="filters">
+<legend>Selection</legend>
+<label for="fFam">Family</label><select id="fFam"></select>
+<label for="fWght">Weight</label><select id="fWght"></select>
+<label for="fSize">Size</label><select id="fSize"></select>
+<label for="fHint">Hints</label><select id="fHint"></select>
+<label for="fGlyph">Glyph</label><select id="fGlyph"></select>
+<label for="fZoom">Text zoom</label><select id="fZoom"></select>
+</fieldset>
+<div id="cell"></div>
+<script>
+let DATA = null;
+function fill(id, values, current) {
+  const sel = document.getElementById(id);
+  sel.innerHTML = "";
+  values.forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; sel.appendChild(o); });
+  if (values.includes(current)) sel.value = current;
+  sel.onchange = render;
+}
+function selected(id) { return document.getElementById(id).value; }
+function identicalInk(first, second) {
+  function ink(art) {
+    const f = art.frame || art;
+    const points = new Set();
+    (art.pixels || []).forEach((v, i) => {
+      if (v) points.add((f.left + i % f.width) + "," +
+        (f.top + Math.floor(i / f.width)));
+    });
+    return points;
+  }
+  const a = ink(first), b = ink(second);
+  return a.size === b.size && [...a].every(p => b.has(p));
+}
+function draw(canvas, art, scale) {
+  canvas.width = Math.max(art.width, 1) * scale;
+  canvas.height = Math.max(art.height, 1) * scale;
+  canvas.style.width = canvas.width + "px";
+  canvas.style.height = canvas.height + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (!art.width || !art.height || !art.pixels) return;
+  const img = ctx.createImageData(art.width, art.height);
+  for (let i = 0; i < art.pixels.length; i++) {
+    const v = art.pixels[i] ? 0 : 255;
+    img.data[4*i] = v; img.data[4*i+1] = v; img.data[4*i+2] = v; img.data[4*i+3] = 255;
+  }
+  const off = document.createElement("canvas");
+  off.width = art.width; off.height = art.height;
+  off.getContext("2d").putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+}
+function showArt(parent, label, art, zoom) {
+  const div = document.createElement("div");
+  div.className = "arm";
+  const b = document.createElement("b");
+  b.textContent = label;
+  div.appendChild(b);
+  const cv = document.createElement("canvas");
+  draw(cv, art, zoom);
+  div.appendChild(cv);
+  parent.appendChild(div);
+}
+function commandsToPath(commands) {
+  let d = "";
+  (commands || []).forEach(c => {
+    if (c.op === "move_to") d += "M" + c.x + " " + c.y;
+    else if (c.op === "line_to") d += "L" + c.x + " " + c.y;
+    else if (c.op === "quad_to") d += "Q" + c.x1 + " " + c.y1 + " " + c.x + " " + c.y;
+    else if (c.op === "curve_to") d += "C" + c.x1 + " " + c.y1 + " " + c.x2 + " " + c.y2 + " " + c.x + " " + c.y;
+    else if (c.op === "close") d += "Z";
+  });
+  return d;
+}
+function commandsBBox(all) {
+  let box = null;
+  all.forEach(commands => {
+    (commands || []).forEach(c => {
+      [["x", "y"], ["x1", "y1"], ["x2", "y2"]].forEach(([kx, ky]) => {
+        if (typeof c[kx] === "number" && typeof c[ky] === "number") {
+          if (!box) box = [c[kx], c[ky], c[kx], c[ky]];
+          else box = [Math.min(box[0], c[kx]), Math.min(box[1], c[ky]),
+                      Math.max(box[2], c[kx]), Math.max(box[3], c[ky])];
+        }
+      });
+    });
+  });
+  return box || [0, 0, 1, 1];
+}
+function overlaySVG(layers, scale) {
+  const NS = "http://www.w3.org/2000/svg";
+  const box = commandsBBox(layers.map(l => l.commands));
+  const pad = 0.5;
+  const x0 = box[0] - pad, y0 = box[1] - pad;
+  const W = box[2] - box[0] + 2 * pad, H = box[3] - box[1] + 2 * pad;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("width", Math.max(W * scale, 8));
+  svg.setAttribute("height", Math.max(H * scale, 8));
+  svg.setAttribute("class", "outline");
+  svg.setAttribute("viewBox", x0 + " " + y0 + " " + W + " " + H);
+  const g = document.createElementNS(NS, "g");
+  g.setAttribute("transform", "translate(0," + (2 * y0 + H) + ") scale(1,-1)");
+  layers.forEach(l => {
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", commandsToPath(l.commands));
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", l.color);
+    path.setAttribute("stroke-width", String(0.6 / scale));
+    g.appendChild(path);
+  });
+  svg.appendChild(g);
+  return svg;
+}
+function load() {
+  fetch("summary.json").then(r => r.json()).then(s => { DATA = s; build(); });
+}
+function build() {
+  const cells = DATA.cells;
+  const fam = [...new Set(cells.map(c => c.family))];
+  const wght = [...new Set(cells.map(c => String(c.weight)))];
+  const size = [...new Set(cells.map(c => String(c.size)))];
+  const hint = [...new Set(cells.map(c => c.hint_mode))];
+  const focus = (DATA.focus || {});
+  fill("fFam", fam, focus.family || "Roboto");
+  fill("fWght", wght, focus.weight || "400");
+  fill("fSize", size, focus.size || "16");
+  fill("fHint", hint, hint.includes("selective_default") ? "selective_default" : hint[0]);
+  fill("fGlyph", [], "");
+  fill("fZoom", ["1", "2", "4"], "1");
+  render();
+}
+function cellKey(c) {
+  return c.family === selected("fFam") && String(c.weight) === selected("fWght") &&
+    String(c.size) === selected("fSize") && c.hint_mode === selected("fHint");
+}
+function render() {
+  const box = document.getElementById("cell");
+  box.innerHTML = "";
+  const meta = DATA.cells.find(cellKey);
+  if (!meta) { box.textContent = "no cell matches the filters"; return; }
+  fetch(meta.file).then(r => r.json()).then(data => {
+    const zoom = parseInt(selected("fZoom"), 10);
+    const armNames = ["upstream", "preferred", "placement"];
+    if (data.curves_enabled) armNames.push("curves");
+    document.getElementById("title").textContent =
+      "Shape balance review (" + armNames.length + " arms, assessment pending)";
+    const avail = document.createElement("p");
+    avail.className = "note";
+    avail.textContent = "placement arm: " + (DATA.placement_arm || data.placement_arm || "?") +
+      (data.curves_enabled ? "; curves arm enabled (experimental)" : "; curves arm hidden") +
+      " — applied " + data.counts.applied + ", abstained " + data.counts.abstained +
+      (data.curves_enabled ? "; curves applied " + data.counts.curve_applied +
+        ", abstained " + data.counts.curve_abstained : "") +
+      "; assessment pending, no optical categories assigned";
+    box.appendChild(avail);
+    const spot = document.createElement("p");
+    spot.className = "note";
+    spot.textContent = Object.entries(data.spot || {}).map(([ch, s]) => {
+      let line = ch + ": placement " + (s.placement_applied ? "applied" : "upstream (" + s.placement_reason + ")") +
+        ", identical bitmap to preferred: " + (s.identical_bitmap ? "yes" : "no");
+      if (s.curves_identical_bitmap !== undefined) {
+        line += "; curves " + (s.curves_applied ? "applied" : "upstream (" + s.curves_reason + ")") +
+          ", identical bitmap to preferred: " + (s.curves_identical_bitmap ? "yes" : "no");
+      }
+      return line + " (geometric only)";
+    }).join(" | ");
+    box.appendChild(spot);
+    (data.lines || []).forEach(line => {
+      const div = document.createElement("div");
+      div.className = "line";
+      const p = document.createElement("p");
+      p.textContent = line.text;
+      div.appendChild(p);
+      const armList = [["upstream", line.arms.upstream],
+        ["preferred", line.arms.preferred], ["placement", line.arms.placement]];
+      if (line.arms.curves) armList.push(["curves", line.arms.curves]);
+      [zoom === 1 ? 1 : zoom].forEach(z => {
+        const row = document.createElement("div");
+        row.className = "row";
+        armList.forEach(([name, art]) => showArt(row, name + " " + z + "x", art, z));
+        div.appendChild(row);
+      });
+      box.appendChild(div);
+    });
+    const gsel = document.getElementById("fGlyph");
+    const codes = data.glyphs.map(g => g.char + " U+" + g.codepoint.toString(16).toUpperCase());
+    const current = gsel.value;
+    gsel.innerHTML = "";
+    codes.forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; gsel.appendChild(o); });
+    const wantX = codes.find(v => v.startsWith("x "));
+    if (codes.includes(current)) gsel.value = current;
+    else if (wantX) gsel.value = wantX;
+    const glyph = data.glyphs.find(g => (g.char + " U+" + g.codepoint.toString(16).toUpperCase()) === gsel.value) || data.glyphs[0];
+    const wrap = document.createElement("div");
+    wrap.className = "line";
+    const head = document.createElement("p");
+    const sameBitmap = identicalInk(glyph.placement, glyph.preferred);
+    let curveBitmap = "";
+    if (glyph.curves) {
+      const same = identicalInk(glyph.curves, glyph.preferred);
+      curveBitmap = "; curves " + (glyph.curve_applied ? "applied" : "upstream (" + glyph.curve_reason + ")") +
+        ", identical bitmap to preferred: " + (same ? "yes" : "no");
+    }
+    head.textContent = "selected glyph " + glyph.char + " U+" +
+      glyph.codepoint.toString(16).toUpperCase() +
+      " placement " + (glyph.placement_applied ? "applied" : "upstream (" + glyph.placement_reason + ")") +
+      "; identical bitmap to preferred: " + (sameBitmap ? "yes" : "no") + curveBitmap + " (geometric only)";
+    wrap.appendChild(head);
+    const row = document.createElement("div");
+    row.className = "row";
+    function pad(art, frame) {
+      const pixels = new Array(frame.width * frame.height).fill(0);
+      for (let y = 0; y < art.height; y++) for (let x = 0; x < art.width; x++) {
+        pixels[(art.top - frame.top + y) * frame.width + art.left - frame.left + x] =
+          art.pixels[y * art.width + x];
+      }
+      return {width: frame.width, height: frame.height, pixels};
+    }
+    const frame = glyph.frame.width && glyph.frame.height ? glyph.frame :
+      {left: 0, top: 0, width: 1, height: 1};
+    const up = {left: glyph.upstream.left, top: glyph.upstream.top,
+      width: glyph.upstream.width, height: glyph.upstream.height, pixels: glyph.upstream.pixels};
+    const pr = {left: glyph.preferred.frame.left || 0, top: glyph.preferred.frame.top || 0,
+      width: glyph.preferred.frame.width || 0, height: glyph.preferred.frame.height || 0,
+      pixels: glyph.preferred.pixels};
+    const pl = {left: glyph.placement.frame.left || 0, top: glyph.placement.frame.top || 0,
+      width: glyph.placement.frame.width || 0, height: glyph.placement.frame.height || 0,
+      pixels: glyph.placement.pixels};
+    const cv = glyph.curves ? {left: glyph.curves.frame.left || 0, top: glyph.curves.frame.top || 0,
+      width: glyph.curves.frame.width || 0, height: glyph.curves.frame.height || 0,
+      pixels: glyph.curves.pixels} : null;
+    const blank = {width: 1, height: 1, pixels: [0]};
+    [8, 16].forEach(z => {
+      showArt(row, "upstream " + z + "x", up.width ? pad(up, frame) : blank, z);
+      showArt(row, "preferred " + z + "x", pr.width ? pad(pr, frame) : blank, z);
+      showArt(row, "placement " + z + "x", pl.width ? pad(pl, frame) : blank, z);
+      if (cv) showArt(row, "curves " + z + "x", cv.width ? pad(cv, frame) : blank, z);
+    });
+    wrap.appendChild(row);
+    const diag = document.createElement("pre");
+    diag.className = "diag";
+    diag.textContent = JSON.stringify({diagnostics: glyph.diagnostics,
+      preferred_applied: glyph.preferred_applied, preferred_reason: glyph.preferred_reason,
+      native_axes: glyph.native_axes, ownership: glyph.ownership,
+      assessment: "pending"}, null, 2);
+    wrap.appendChild(diag);
+    const outlines = document.createElement("div");
+    outlines.className = "row";
+    const legend = document.createElement("p");
+    legend.className = "note";
+    legend.textContent = "Vector overlay in one shared viewBox (y-up outline coordinates): " +
+      "source gray, preferred green, placement red" +
+      (glyph.curve_commands ? ", curves blue" : "") +
+      ". Curves drawn as true quadratic/cubic paths.";
+    outlines.appendChild(legend);
+    const overlay = document.createElement("div");
+    overlay.className = "arm";
+    const ob = document.createElement("b");
+    ob.textContent = "source / preferred / placement" +
+      (glyph.curve_commands ? " / curves" : "") + " overlay";
+    overlay.appendChild(ob);
+    const layers = [
+      {commands: glyph.source_commands, color: "#888"},
+      {commands: glyph.preferred_commands, color: "#060"},
+      {commands: glyph.placement_commands, color: "#600"}];
+    if (glyph.curve_commands) layers.push({commands: glyph.curve_commands, color: "#006"});
+    overlay.appendChild(overlaySVG(layers, 16));
+    outlines.appendChild(overlay);
+    [["source", glyph.source_commands, "#888"],
+     ["preferred", glyph.preferred_commands, "#060"],
+     ["placement", glyph.placement_commands, "#600"]].forEach(([label, cmds, color]) => {
+      const div = document.createElement("div");
+      div.className = "arm";
+      const b = document.createElement("b");
+      b.textContent = label + " outline (shared viewBox)";
+      div.appendChild(b);
+      div.appendChild(overlaySVG([{commands: glyph.source_commands, color: "#888"},
+        {commands: cmds, color: color}], 16));
+      outlines.appendChild(div);
+    });
+    wrap.appendChild(outlines);
+    box.appendChild(wrap);
+  });
+}
+load();
+</script>
+</body>
+</html>

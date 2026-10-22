@@ -1,0 +1,41 @@
+--- a/py/CMakeLists.txt
++++ b/py/CMakeLists.txt
+@@ -3,8 +3,9 @@
+ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+ 
+ set(CMAKE_MACOSX_RPATH 0)
+-set(CMAKE_C_COMPILER "/usr/bin/clang")
+-set(CMAKE_CXX_COMPILER "/usr/bin/clang++")
++# Container adaptation: build with the container GCC instead of macOS clang.
++set(CMAKE_C_COMPILER "gcc")
++set(CMAKE_CXX_COMPILER "g++")
+ 
+ add_definitions(-g)
+ #set(CMAKE_CXX_FLAGS "-O3")
+@@ -21,24 +22,8 @@
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-deprecated-declarations") # AG_DISABLE_COLORMOTOR (fixme)
+ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-dynamic-class-memaccess") # Chunk swig binding. Non-critical now but fix
+ 
+-# Add base path where your principal library/include are located here
+-# In order of priority
+-# This should not require editing unless 
+-set(BASE_DIRS 
+-    $ENV{HOME}/miniconda3
+-    $ENV{HOME}/opt/miniconda3
+-    $ENV{HOME}/anaconda3
+-    $ENV{HOME}/opt/anaconda3
+-    /usr/local
+-)
+-
+-foreach(DIR ${BASE_DIRS})
+-    message("Testing possible base path:" ${DIR})
+-    if(EXISTS ${DIR})
+-        set(BASE_SEARCH_DIR ${DIR})
+-        break()
+-    endif()
+-endforeach()
++# Container adaptation: Debian system paths provide OpenCV and Boost.
++set(BASE_SEARCH_DIR /usr)
+ 
+ # The following can be used to force a base path
+ # set(BASE_SEARCH_DIR $ENV{HOME}/miniconda3) 

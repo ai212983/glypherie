@@ -1,0 +1,100 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Curved crossing fitting candidate</title>
+<style>
+  body { font: 14px system-ui; margin: 24px; color: #222; }
+  section { margin: 18px 0; border: 1px solid #ddd; padding: 12px; }
+  .arms { display: flex; gap: 32px; align-items: start; flex-wrap: wrap; }
+  canvas { image-rendering: pixelated; display: block; margin: 6px 0; }
+  svg { width: 240px; height: 220px; border: 1px solid #ddd; }
+  pre { white-space: pre-wrap; font-size: 12px; }
+  #spot { display: grid; grid-template-columns: repeat(auto-fit,minmax(420px,1fr)); gap: 16px; }
+</style>
+<h1>Curved crossing fitting candidate</h1>
+<p id="scope"></p>
+<label>Glyph <select id="glyph"></select></label>
+<div id="spot"></div>
+<div id="lines"></div>
+<script>
+function bitmap(parent, pixels, frame, zoom, label) {
+  const wrap = document.createElement('div');
+  wrap.textContent = label;
+  const c = document.createElement('canvas');
+  c.width = frame.width; c.height = frame.height;
+  c.style.width = `${c.width * zoom}px`; c.style.height = `${c.height * zoom}px`;
+  const ctx = c.getContext('2d'); ctx.fillStyle = 'white'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#111';
+  pixels.forEach((v, i) => { if (v) ctx.fillRect(i % c.width, Math.floor(i / c.width), 1, 1); });
+  wrap.append(c); parent.append(wrap);
+}
+function framed(g) {
+  const left = Math.min(g.old.left, g.new.left, 0);
+  const top = Math.min(g.old.top, g.new.top, 0);
+  const right = Math.max(g.old.left + g.old.width, g.new.left + g.new.width, 0);
+  const bottom = Math.max(g.old.top + g.old.height, g.new.top + g.new.height, 0);
+  const frame = { width: right-left, height: bottom-top };
+  return [frame, ...[g.old, g.new].map(tile => {
+    const pixels = Array(frame.width * frame.height).fill(0);
+    tile.pixels.forEach((v,i) => {
+      if(v) pixels[(tile.top-top+Math.floor(i/tile.width))*frame.width+tile.left-left+i%tile.width]=1;
+    }); return pixels;
+  })];
+}
+function path(cmds) {
+  return cmds.map(c => ({move_to:()=>`M${c.x},${-c.y}`,line_to:()=>`L${c.x},${-c.y}`,
+    quad_to:()=>`Q${c.x1},${-c.y1} ${c.x},${-c.y}`,
+    curve_to:()=>`C${c.x1},${-c.y1} ${c.x2},${-c.y2} ${c.x},${-c.y}`,close:()=>`Z`}[c.op]())).join(' ');
+}
+function showGlyph(spot, data, g) {
+  const section = document.createElement('section');
+  const status = document.createElement('p');
+  status.textContent = `${g.char}: ${g.result.reason}; applied ${g.result.applied}; delivered bitmap changed ${g.changed}`;
+  section.append(status);
+  if (g.result.arms?.rising && g.result.arms?.falling) {
+    const p = document.createElement('p');
+    const a = g.result.arms.rising, b = g.result.arms.falling;
+    p.textContent = `Mean arm widths, measured normal to each stroke: source ${a.source.toFixed(3)} / ${b.source.toFixed(3)} px; experiment ${a.candidate.toFixed(3)} / ${b.candidate.toFixed(3)} px. Exact pixel symmetry is not the target.`;
+    section.append(p);
+  }
+  const [frame, old, candidate] = framed(g);
+  for (const zoom of [1, 12]) {
+    const arms = document.createElement('div'); arms.className = 'arms';
+    bitmap(arms, old, frame, zoom, `Previous combined ${zoom}×`);
+    bitmap(arms, candidate, frame, zoom, `Experiment ${zoom}×`);
+    section.append(arms);
+  }
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox', `-1 ${-data.size-1} ${data.size+2} ${data.size+2}`);
+  for (const [commands, color] of [[g.raw_source,'#aaa'],[g.preferred_commands,'#19833c'],[g.commands,'#d33228']]) {
+    const p = document.createElementNS(svg.namespaceURI,'path');
+    p.setAttribute('d',path(commands)); p.setAttribute('fill','none');
+    p.setAttribute('stroke',color); p.setAttribute('stroke-width','.035'); svg.append(p);
+  }
+  section.append(svg);
+  const pre = document.createElement('pre'); pre.textContent = JSON.stringify(g.result,null,2);
+  const details = document.createElement('details');
+  const summary = document.createElement('summary'); summary.textContent = 'Geometry diagnostics'; details.append(summary);
+  details.append(pre); section.append(details); spot.append(section);
+}
+function show(data) {
+  const spot = document.querySelector('#spot'); spot.replaceChildren();
+  const selection = document.querySelector('#glyph').value;
+  const glyphs = selection === 'focus' ? data.glyphs.filter(g=>[120,88].includes(g.codepoint))
+      : data.glyphs.filter(g=>g.codepoint == selection);
+  glyphs.forEach(g=>showGlyph(spot,data,g));
+}
+fetch('data.json').then(r=>r.json()).then(data=>{
+  document.querySelector('#scope').textContent = `${data.family} ${data.weight} / ${data.size}px; ${data.hint}. ${data.probed.length === 95 ? 'All ASCII glyphs evaluated.' : 'Selected glyphs only; remaining text retains the preceding packet.'} Green: previous combined outline, red: candidate, gray: unrounded source. Curved arms share width and placement constraints from unrounded source geometry. Inspect source contrast, crossing shape, terminal heights and text rhythm.`;
+  const select=document.querySelector('#glyph');
+  const focusOption=document.createElement('option');focusOption.value='focus';focusOption.textContent='x / X';select.append(focusOption);
+  data.glyphs.forEach(g=>{const o=document.createElement('option');o.value=g.codepoint;o.textContent=g.char;select.append(o);});
+  select.value='focus';
+  select.addEventListener('change',()=>show(data)); show(data);
+  data.lines.forEach(line=>{
+    const s=document.createElement('section'); const p=document.createElement('p');p.textContent=line.text;s.append(p);
+    const a=document.createElement('div');a.className='arms';
+    bitmap(a,line.upstream.pixels,line.frame,1,'Previous combined 1×');
+    bitmap(a,line.width_only.pixels,line.frame,1,'Experiment 1×');s.append(a);document.querySelector('#lines').append(s);
+  });
+});
+</script>

@@ -257,5 +257,98 @@ class RasterControls(unittest.TestCase):
         self.assertEqual(sum(p['center_fill'] for p in cells), 1)
 
 
+class FixedDisplacementTests(unittest.TestCase):
+    @staticmethod
+    def two_stems():
+        system = System([(0, 0), (2, 0), (0, 8), (2, 8)], 14)
+        system.edge(0, 1)
+        system.edge(2, 3)
+        bottom = system.pair(Sample.vertex(0), Sample.vertex(1), 8)
+        top = system.pair(Sample.vertex(2), Sample.vertex(3), 8)
+        system.match_width(bottom, top)
+        return system, bottom, top
+
+    def test_fixed_rejects_nonfinite_bad_index_and_frozen_overlap(self):
+        system, _, _ = self.two_stems()
+        with self.assertRaises(ValueError):
+            system.solve(fixed_displacements={0: (float('inf'), 0)})
+        with self.assertRaises(ValueError):
+            system.solve(fixed_displacements={0: (0, float('nan'))})
+        with self.assertRaises(ValueError):
+            system.solve(fixed_displacements={9: (0.1, 0)})
+        with self.assertRaises(ValueError):
+            system.solve(frozen=(0,), fixed_displacements={0: (0.1, 0)})
+
+    def test_fixed_pins_vertex_and_transfers_known_narrowing(self):
+        # Top pair fixed 20% narrower; the free pair follows the coupling.
+        system, bottom, top = self.two_stems()
+        assert_allclose(top.error @ np.zeros(8), 0.0, atol=1e-12)
+        fixed = {2: (0.2, 0.0), 3: (-0.2, 0.0)}
+        result = system.solve(fixed_displacements=fixed)
+        delta = result['delta'].reshape(-1, 2)
+        assert_allclose(delta[2], (0.2, 0.0), atol=1e-12)
+        assert_allclose(delta[3], (-0.2, 0.0), atol=1e-12)
+        moved = (np.asarray([(0, 0), (2, 0), (0, 8), (2, 8)]) + delta)
+        bottom_width = moved[1][0] - moved[0][0]
+        self.assertAlmostEqual(bottom_width, 1.6, delta=0.1)
+
+    def test_fixed_translation_invariance(self):
+        system, _, _ = self.two_stems()
+        fixed = {2: (0.2, 0.0), 3: (-0.2, 0.0)}
+        expected = system.solve(
+            fixed_displacements=fixed)['delta'].reshape(-1, 2)
+        shift = np.array([2.3, -4.7])
+        moved = System((np.asarray([(0, 0), (2, 0), (0, 8), (2, 8)])
+                        + shift).tolist(), 14)
+        moved.edge(0, 1)
+        moved.edge(2, 3)
+        bottom = moved.pair(Sample.vertex(0), Sample.vertex(1), 8)
+        top = moved.pair(Sample.vertex(2), Sample.vertex(3), 8)
+        moved.match_width(bottom, top)
+        actual = moved.solve(
+            fixed_displacements=fixed)['delta'].reshape(-1, 2)
+        assert_allclose(actual, expected, atol=1e-12)
+
+    def test_fixed_rotation90_grid_preserving(self):
+        # Quarter turns map the integer grid onto itself, unlike general
+        # angles, so the coupled system rotates exactly with the input.
+        system, _, _ = self.two_stems()
+        fixed = {2: (0.2, 0.0), 3: (-0.2, 0.0)}
+        expected = system.solve(
+            fixed_displacements=fixed)['delta'].reshape(-1, 2)
+        points = np.array([(0, 0), (2, 0), (0, 8), (2, 8)], dtype=float)
+        rotation = np.array([[0, -1], [1, 0]])
+        rotated = System((points@rotation.T).tolist(), 14)
+        rotated.edge(0, 1)
+        rotated.edge(2, 3)
+        bottom = rotated.pair(Sample.vertex(0), Sample.vertex(1), 8)
+        top = rotated.pair(Sample.vertex(2), Sample.vertex(3), 8)
+        rotated.match_width(bottom, top)
+        fixed_rot = {i: tuple(rotation@v)
+                     for i, v in fixed.items()}
+        actual = rotated.solve(
+            fixed_displacements=fixed_rot)['delta'].reshape(-1, 2)
+        assert_allclose(actual, expected@rotation.T, atol=1e-12)
+
+    def test_fixed_scaled_units_with_explicit_quantum(self):
+        # Doubling coordinates and H keeps relative errors; the 0.7 pixel
+        # width scale is explicit, so it doubles too. Not a tuned gate.
+        system, _, _ = self.two_stems()
+        fixed = {2: (0.2, 0.0), 3: (-0.2, 0.0)}
+        expected = system.solve(
+            fixed_displacements=fixed)['delta'].reshape(-1, 2)
+        points = 2 * np.array([(0, 0), (2, 0), (0, 8), (2, 8)], dtype=float)
+        doubled = System(points.tolist(), 14 * 2)
+        doubled.edge(0, 1)
+        doubled.edge(2, 3)
+        bottom = doubled.pair(Sample.vertex(0), Sample.vertex(1), 8 * 2)
+        top = doubled.pair(Sample.vertex(2), Sample.vertex(3), 8 * 2)
+        doubled.match_width(bottom, top, width_scale=0.7 * 2)
+        fixed_doubled = {i: (2 * v[0], 2 * v[1]) for i, v in fixed.items()}
+        actual = doubled.solve(
+            fixed_displacements=fixed_doubled)['delta'].reshape(-1, 2)
+        assert_allclose(actual, 2 * expected, atol=1e-9)
+
+
 if __name__ == '__main__':
     unittest.main()
