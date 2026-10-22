@@ -158,9 +158,66 @@ fn crossing(p: &Pt, r: &(Exact, Exact), q: &Pt, s: &(Exact, Exact)) -> Pt {
     Pt(&p.0 + &t * &r.0, &p.1 + &t * &r.1)
 }
 
-/// Public entry: canonical topology signature, or `None` fail-closed.
-pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
-    // Exact finite transport; last point may repeat first (dropped below).
+/// Exact arrangement with assigned vertex and face incidence.
+struct Arrangement {
+    atomics: Vec<Atomic>,
+    incident: Vec<Vec<usize>>,
+    members: Vec<Vec<usize>>,
+    contours: Vec<usize>,
+}
+
+impl Arrangement {
+    fn build(loops: &[Vec<[f64; 2]>]) -> Option<Self> {
+        let inputs = lift_inputs(loops)?;
+        let mut splits = split_inputs(&inputs);
+        let mut atomics = assemble_atomics(&inputs, &mut splits)?;
+        // Contour order matches the reference (sorted input labels).
+        let mut contour_set = BTreeSet::new();
+        for s in inputs.iter() {
+            contour_set.insert(s.contour);
+        }
+        let contours: Vec<usize> = contour_set.into_iter().collect();
+        let incident = index_vertices(&mut atomics);
+        let (cycles, he_cycle) = trace_cycles(&atomics, incident.len())?;
+        let members = group_faces(&mut atomics, &cycles, &he_cycle);
+        Some(Self {
+            atomics,
+            incident,
+            members,
+            contours,
+        })
+    }
+
+    fn atomics(&self) -> &[Atomic] {
+        &self.atomics
+    }
+
+    fn incident(&self) -> &[Vec<usize>] {
+        &self.incident
+    }
+
+    fn members(&self) -> &[Vec<usize>] {
+        &self.members
+    }
+
+    fn contours(&self) -> &[usize] {
+        &self.contours
+    }
+
+    fn nverts(&self) -> usize {
+        self.incident.len()
+    }
+
+    fn nhe(&self) -> usize {
+        2 * self.atomics.len()
+    }
+
+    fn nfaces(&self) -> usize {
+        self.members.len()
+    }
+}
+
+fn lift_inputs(loops: &[Vec<[f64; 2]>]) -> Option<Vec<Seg>> {
     let mut inputs: Vec<Seg> = Vec::new();
     for (label, contour) in loops.iter().enumerate() {
         let mut pts: Vec<Pt> = Vec::with_capacity(contour.len());
@@ -187,10 +244,11 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
     if inputs.is_empty() || inputs.len() > MAX_INPUT_EDGES {
         return None;
     }
+    Some(inputs)
+}
 
-    // Split every segment at all exact intersections (proper crossings
-    // plus any endpoint lying on another segment, covering T-junctions
-    // and collinear overlaps).
+/// Split proper crossings, endpoint contacts and collinear overlaps.
+fn split_inputs(inputs: &[Seg]) -> Vec<Vec<Pt>> {
     let mut splits: Vec<Vec<Pt>> = inputs
         .iter()
         .map(|s| vec![s.a.clone(), s.b.clone()])
@@ -222,8 +280,11 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
             }
         }
     }
+    splits
+}
 
-    // Atomic undirected edges, canonical endpoints, accumulated cover.
+/// Retain neutral edges when opposing contour contributions cancel.
+fn assemble_atomics(inputs: &[Seg], splits: &mut [Vec<Pt>]) -> Option<Vec<Atomic>> {
     let mut atomics: Vec<Atomic> = Vec::new();
     let mut edge_index: BTreeMap<(Pt, Pt), usize> = BTreeMap::new();
     for (i, seg) in inputs.iter().enumerate() {
@@ -242,9 +303,8 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
                 (&w[1], &w[0])
             };
             let key = (lo.clone(), hi.clone());
-            // Cover sign against the canonical direction: exact dot
-            // product (nonzero, as the sub-edge is a collinear slice of
-            // a nonzero input).
+            // Each split edge is collinear with a nonzero input segment,
+            // so this dot product cannot be zero.
             let dot =
                 (&seg.b.0 - &seg.a.0) * (&hi.0 - &lo.0) + (&seg.b.1 - &seg.a.1) * (&hi.1 - &lo.1);
             let aligned = dot.is_positive();
@@ -278,8 +338,11 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
     if atomics.is_empty() {
         return None;
     }
+    Some(atomics)
+}
 
-    // Vertices in exact lexicographic order; neutral edges kept.
+/// Merge endpoints by exact coordinate equality.
+fn index_vertices(atomics: &mut [Atomic]) -> Vec<Vec<usize>> {
     let mut vertex_index: BTreeMap<Pt, usize> = BTreeMap::new();
     let mut incident: Vec<Vec<usize>> = Vec::new();
     for e in atomics.iter_mut() {
@@ -297,8 +360,11 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
         incident[e.va].push(id);
         incident[e.vb].push(id);
     }
+    incident
+}
+
+fn trace_cycles(atomics: &[Atomic], nverts: usize) -> Option<(Vec<Vec<usize>>, Vec<usize>)> {
     // Directed half-edges: 2e is a->b, 2e+1 is b->a.
-    let nverts = incident.len();
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); nverts];
     for e in 0..atomics.len() {
         outgoing[atomics[e].va].push(2 * e);
@@ -369,6 +435,14 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
         }
         cycles.push(cyc);
     }
+    Some((cycles, he_cycle))
+}
+
+fn group_faces(
+    atomics: &mut [Atomic],
+    cycles: &[Vec<usize>],
+    he_cycle: &[usize],
+) -> Vec<Vec<usize>> {
     // Doubled signed areas classify outers (+) / holes (-) / bridges (0).
     let mut cycle_area: Vec<Exact> = Vec::with_capacity(cycles.len());
     for cyc in cycles.iter() {
@@ -384,11 +458,10 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
         }
         cycle_area.push(s);
     }
-    // Group boundary cycles into faces. Each positive cycle is the
-    // outer boundary of a new face; negative/zero cycles attach to the
-    // face of the innermost strictly containing positive cycle (or the
-    // unbounded face). Probes sit exactly left of a cycle edge at half
-    // the nearest positive ray distance to any edge, so no epsilon.
+    // Each positive cycle is the outer boundary of a new face;
+    // negative/zero cycles attach to the innermost strictly containing
+    // positive cycle (or the unbounded face). Probes sit left of a cycle
+    // edge at half the nearest positive ray distance, so no epsilon.
     let cycle_verts = |cyc: &[usize]| -> Vec<Pt> {
         cyc.iter()
             .map(|&he| {
@@ -471,6 +544,7 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
         face_of_cycle[c] = owner;
     }
     let nfaces = positives.len() + 1;
+    let nhe = 2 * atomics.len();
     let mut members: Vec<Vec<usize>> = vec![Vec::new(); nfaces];
     for he in 0..nhe {
         members[face_of_cycle[he_cycle[he]]].push(he);
@@ -479,15 +553,23 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
         atomics[e].f1 = face_of_cycle[he_cycle[2 * e]];
         atomics[e].f2 = face_of_cycle[he_cycle[2 * e + 1]];
     }
-    // Contour order matches the reference (sorted input labels).
-    let mut contour_set = BTreeSet::new();
-    for s in inputs.iter() {
-        contour_set.insert(s.contour);
-    }
-    let contours: Vec<usize> = contour_set.into_iter().collect();
+    members
+}
+
+/// Public entry: canonical topology signature, or `None` fail-closed.
+pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
+    let arrangement = Arrangement::build(loops)?;
+    let atomics = arrangement.atomics();
+    let incident = arrangement.incident();
+    let members = arrangement.members();
+    let contours = arrangement.contours();
+    let nverts = arrangement.nverts();
+    let nhe = arrangement.nhe();
+    let nfaces = arrangement.nfaces();
     let ncont = contours.len();
     let cindex: BTreeMap<usize, usize> =
         contours.iter().enumerate().map(|(i, &c)| (c, i)).collect();
+
     // Directed jump of each half-edge: cover net, negated for twins.
     let mut jump: Vec<Vec<(usize, i64)>> = vec![Vec::new(); nhe];
     for e in 0..atomics.len() {
