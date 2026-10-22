@@ -853,6 +853,71 @@ impl BoundaryAnalysis {
     }
 }
 
+struct HoleAttribution {
+    comp_holes: Vec<u64>,
+    hole_adj: Vec<Vec<usize>>,
+}
+
+impl HoleAttribution {
+    fn build(arrangement: &Arrangement, analysis: &WindingAnalysis, regions: &FaceRegions) -> Self {
+        let nfaces = arrangement.nfaces();
+        let white = regions.white();
+        let nwhite = regions.nwhite();
+        let exterior = regions.exterior();
+        let ncomp = regions.nfilled() as usize;
+        let mut comp_holes = vec![0u64; ncomp];
+        let mut hole_adj: Vec<Vec<usize>> = Vec::new();
+        let white_faces_of =
+            |w: i32| -> Vec<usize> { (0..nfaces).filter(|&f| white[f] == w).collect() };
+        for w in 0..nwhite as i32 {
+            if w == exterior {
+                continue;
+            }
+            let (adjacent, adj_comps) =
+                Self::boundary_adjacency(arrangement, analysis, regions, &white_faces_of(w));
+            for &c in adj_comps.iter() {
+                comp_holes[c] += 1;
+            }
+            hole_adj.push(adjacent.into_iter().collect());
+        }
+        hole_adj.sort();
+        Self {
+            comp_holes,
+            hole_adj,
+        }
+    }
+
+    fn boundary_adjacency(
+        arrangement: &Arrangement,
+        analysis: &WindingAnalysis,
+        regions: &FaceRegions,
+        faces: &[usize],
+    ) -> (BTreeSet<usize>, BTreeSet<usize>) {
+        let atomics = arrangement.atomics();
+        let global = analysis.totals();
+        let comp = regions.filled();
+        let mut adjacent = BTreeSet::new();
+        let mut adj_comps = BTreeSet::new();
+        for &f in faces.iter() {
+            for e in atomics.iter() {
+                if e.f1 != f && e.f2 != f {
+                    continue;
+                }
+                let ni = if e.f1 == f { e.f2 } else { e.f1 };
+                if global[ni] == 0 {
+                    continue;
+                }
+                adj_comps.insert(comp[ni] as usize);
+                // A hole's labels come from its own boundary edges.
+                for label in e.cover.keys() {
+                    adjacent.insert(*label);
+                }
+            }
+        }
+        (adjacent, adj_comps)
+    }
+}
+
 /// Public entry: canonical topology signature, or `None` fail-closed.
 pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
     let arrangement = Arrangement::build(loops)?;
@@ -864,53 +929,19 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
     let ncont = contours.len();
     let analysis = WindingAnalysis::build(&arrangement)?;
     let wind = analysis.windings();
-    let global = analysis.totals();
 
     let regions = FaceRegions::build(&arrangement, &analysis);
-    let comp = regions.filled();
-    let white = regions.white();
     let ncomp = regions.nfilled();
-    let nwhite = regions.nwhite();
-    let exterior = regions.exterior();
     let BoundaryAnalysis {
         comp_labels,
         pinches,
         contacts,
     } = BoundaryAnalysis::build(&arrangement, &analysis, &regions);
     let ncomp = ncomp as usize;
-    // Holes are bounded white components; adjacency comes from the
-    // hole's own boundary edges, not whole-component labels.
-    let mut comp_holes = vec![0u64; ncomp];
-    let mut hole_adj: Vec<Vec<usize>> = Vec::new();
-    let white_faces_of =
-        |w: i32| -> Vec<usize> { (0..nfaces).filter(|&f| white[f] == w).collect() };
-    for w in 0..nwhite as i32 {
-        if w == exterior {
-            continue;
-        }
-        let mut adjacent = BTreeSet::new();
-        let mut adj_comps = BTreeSet::new();
-        for f in white_faces_of(w) {
-            for e in atomics.iter() {
-                if e.f1 != f && e.f2 != f {
-                    continue;
-                }
-                let ni = if e.f1 == f { e.f2 } else { e.f1 };
-                if global[ni] == 0 {
-                    continue;
-                }
-                adj_comps.insert(comp[ni] as usize);
-                for label in e.cover.keys() {
-                    adjacent.insert(*label);
-                }
-            }
-        }
-        for &c in adj_comps.iter() {
-            comp_holes[c] += 1;
-        }
-        hole_adj.push(adjacent.into_iter().collect());
-    }
-    hole_adj.sort();
+    let HoleAttribution {
+        comp_holes,
+        hole_adj,
+    } = HoleAttribution::build(&arrangement, &analysis, &regions);
     // Per-pair attachment classes; masks use individual contour
     // windings so coincident cancellations still expose sharing.
     let mut pairs: Vec<(Vec<usize>, u64, u64, u64, u64, Vec<u64>)> = Vec::new();
