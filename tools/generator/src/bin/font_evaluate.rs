@@ -76,7 +76,7 @@ fn run() -> Result<bool, String> {
                 size_px: case.size_px,
                 axes: case.axes.clone(),
                 characters: loaded.config.characters.clone(),
-                hinting: variant.hinting,
+                hinting: Hinting::Auto,
                 output_bits: profile.output_bits,
                 mono_threshold: profile.mono_threshold,
                 gray_gamma: profile.gray_gamma,

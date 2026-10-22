@@ -6,9 +6,9 @@ default-run = "font_generator"
 
 [features]
 default = ["candidate", "native-io"]
-# The candidate is registry-Skrifa based (font-hints-01) with no vendored
-# fork; this feature only gates the registry-backed candidate policy.
-candidate = []
+# Manual fitting stays on registry Skrifa; optional font scan state uses a
+# metadata-only snapshot of the same release.
+candidate = ["dep:cc", "dep:skrifa_scan", "dep:nalgebra", "dep:num-bigint", "dep:num-rational", "dep:num-traits"]
 # Filesystem/publication-only modules (specimens, comparison, specimen_config)
 # and tempfile stay behind this gate so WASM builds without them.
 native-io = ["dep:tempfile"]
@@ -16,6 +16,7 @@ native-io = ["dep:tempfile"]
 [dependencies]
 harfrust = "=0.14.0"
 skrifa = "=0.48.0"
+skrifa_scan = { path = "vendor/skrifa-scan", optional = true }
 skrifa_baseline = { path = "vendor/skrifa-baseline" }
 zeno = "=0.3.3"
 serde = { version = "1", features = ["derive"] }
@@ -25,6 +26,10 @@ unicode-script = "0.5"
 unicode-general-category = "1"
 png = "=0.18.1"
 tempfile = { version = "3", optional = true }
+nalgebra = { version = "=0.35.0", default-features = false, features = ["std"], optional = true }
+num-bigint = { version = "=0.4.6", optional = true }
+num-rational = { version = "=0.4.2", optional = true }
+num-traits = { version = "=0.2.19", optional = true }
 
 [[bin]]
 name = "font_specimens"
@@ -51,6 +56,7 @@ name = "specimens"
 required-features = ["native-io"]
 
 [build-dependencies]
+cc = { version = "=1.9.0", optional = true }
 sha2 = "0.10"
 
 [dev-dependencies]

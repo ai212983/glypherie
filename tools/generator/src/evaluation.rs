@@ -137,8 +137,14 @@ pub fn evaluate(
             );
         }
     }
-    let font_hints_candidate = candidate.extensions
+    let selective_candidate =
+        candidate.extensions == crate::stem_fitting::EXTENSIONS_FONT_HINTS_AUTO;
+    let source_width_candidate = candidate.extensions
+        == crate::stem_fitting::EXTENSIONS_SOURCE_WIDTH_01
+        || selective_candidate;
+    let font_hints_candidate = (candidate.extensions
         == crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST
+        || source_width_candidate)
         && candidate.profile != PROFILE_GRAY_3BIT;
     let mono_width_candidate = candidate.extensions
         == crate::stem_fitting::EXTENSIONS_MONO_WIDTH_01
@@ -213,7 +219,10 @@ pub fn evaluate(
             if record.target != report.target
                 || (record.selected_engine != report.hinting_requested
                     && !(report.hinting_requested == "auto_fallback"
-                        && matches!(record.selected_engine.as_str(), "auto" | "interpreter")))
+                        && (matches!(record.selected_engine.as_str(), "auto" | "interpreter")
+                            || (name == "candidate"
+                                && selective_candidate
+                                && record.selective_fitting.is_some()))))
                 || record.smooth_mode != report.smooth_mode
                 || record.symmetric_rendering != report.symmetric_rendering
                 || record.preserve_linear_metrics != report.preserve_linear_metrics
@@ -273,29 +282,76 @@ pub fn evaluate(
                 push(name, Some(codepoint), "glyph render policy changed");
             }
         }
-        // The bounded 4x overlap Mono raster without horizontal correction
-        // metadata is shared by both mono candidates.
+        // Both candidate Mono strategies share the pinned scan converter.
         if font_hints_candidate || mono_width_candidate {
             let kind = if font_hints_candidate {
                 "font-hints"
             } else {
                 "mono-width"
             };
-            if fitted.raster_policy != RasterPolicy::CoverageOverlap4xDropout
-                || fitted.side_bearing_deltas_26_6.is_some()
+            if !matches!(
+                fitted.raster_policy,
+                RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+            ) || fitted.side_bearing_deltas_26_6.is_some()
                 || fitted.diagonal_pairs.is_some()
             {
                 push(
                     "candidate",
                     Some(codepoint),
                     &format!(
-                        "{kind} candidate requires overlap 4x dropout without horizontal correction metadata"
+                        "{kind} candidate requires FreeType mono without horizontal correction metadata"
                     ),
                 );
             }
         }
+        if let Some(commands) = &fitted.source_commands {
+            if (!matches!(
+                fitted.raster_policy,
+                RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+            ) || (fitted.raster_policy != RasterPolicy::FreeTypeMonoTerminals
+                && fitted.width_fitting.is_none()
+                && fitted.selective_fitting.is_none()
+                && fitted.diagonal_fitting.is_none()))
+                || *commands != raw.fitted_commands
+            {
+                push(
+                    "candidate",
+                    Some(codepoint),
+                    "source outline identity changed",
+                );
+            }
+        } else if fitted.raster_policy == RasterPolicy::FreeTypeMonoTerminals {
+            push(
+                "candidate",
+                Some(codepoint),
+                "terminal source outline missing",
+            );
+        }
+        if let Some(width) = &fitted.width_fitting {
+            if !source_width_candidate
+                || width.size_px != candidate.size_px
+                || (fitted.selected_engine == baseline.selected_engine
+                    && width.upstream_commands != baseline.fitted_commands)
+            {
+                push(
+                    "candidate",
+                    Some(codepoint),
+                    "width fitting input identity changed",
+                );
+            }
+        }
+        if let Some(selective) = &fitted.selective_fitting {
+            if !selective_candidate || selective.automatic_commands != baseline.fitted_commands {
+                push(
+                    "candidate",
+                    Some(codepoint),
+                    "selective automatic input identity changed",
+                );
+            }
+        }
         if (font_hints_candidate
-            && !matches!(fitted.selected_engine.as_str(), "auto" | "interpreter"))
+            && !matches!(fitted.selected_engine.as_str(), "auto" | "interpreter")
+            && !(selective_candidate && fitted.selective_fitting.is_some()))
             || (!font_hints_candidate && fitted.selected_engine != baseline.selected_engine)
         {
             push(
@@ -335,7 +391,7 @@ pub fn evaluate(
         hard_invariants_pass: failures.is_empty(),
         hard_failures: failures,
         glyphs,
-        limits: "Mechanical invariants and descriptive diagnostics only. Coordinate correspondence is not a shape-distance metric; topology cannot distinguish intentional components/counters/serifs from defects; threshold samples are local probes, not robustness proof. No ink-count preference or optical acceptance score. Designer intent and optical weight still require assessment in the web preview.",
+        limits: "Mechanical invariants and descriptive diagnostics only. Coordinate correspondence is not a shape-distance metric; topology cannot distinguish intentional components/counters/serifs from defects; threshold samples describe hypothetical AA conversion (not center-fill output), not robustness proof. No ink-count preference or optical acceptance score. Designer intent and optical weight still require assessment in the web preview.",
     }
 }
 
@@ -456,12 +512,202 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
         output_bits: record.output_bits,
         mono_threshold: record.mono_threshold,
         gray_gamma: record.gray_gamma,
+        mono_raster: record.mono_raster.unwrap_or_default(),
         ..Config::default()
     };
+    if record.source_commands.is_some()
+        && record.raster_policy != RasterPolicy::FreeTypeMonoTerminals
+        && !(record.raster_policy == RasterPolicy::FreeTypeMono
+            && (record.width_fitting.is_some()
+                || record.selective_fitting.is_some()
+                || record.diagonal_fitting.is_some()))
+    {
+        failures.push("source outline on an incompatible raster policy");
+    }
+    #[cfg(feature = "candidate")]
+    if let Some(diagonal) = &record.diagonal_fitting {
+        // Independent replay from captured inputs: the stored reference
+        // must deserialize and the re-fit must reproduce the applied
+        // reason and exact commands. Older width/selective captures stay
+        // valid against the pre-diagonal outline below.
+        if !matches!(
+            record.raster_policy,
+            RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+        ) || diagonal.upstream_commands.is_empty()
+            || diagonal.reason.is_empty()
+        {
+            failures.push("diagonal capture inconsistent");
+        } else {
+            let Some(source) = &record.source_commands else {
+                failures.push("diagonal source outline missing");
+                return failures;
+            };
+            let reference: crate::diagonal_fitting::Reference =
+                match serde_json::from_value(diagonal.reference.clone()) {
+                    Ok(reference) => reference,
+                    Err(_) => {
+                        failures.push("diagonal reference does not deserialize");
+                        return failures;
+                    }
+                };
+            let replay = if diagonal.model == "diagonal-shape-04" {
+                let raw: Option<crate::fitting_source::SourceOutline> = match diagonal
+                    .raw_source
+                    .clone()
+                    .map(serde_json::from_value)
+                    .transpose()
+                {
+                    Ok(raw) => raw,
+                    Err(_) => {
+                        failures.push("diagonal raw source does not deserialize");
+                        return failures;
+                    }
+                };
+                crate::diagonal_fitting::approved::fit(
+                    raw.as_ref(),
+                    source,
+                    &diagonal.upstream_commands,
+                    diagonal.size_px,
+                    &reference,
+                    diagonal.native_axes,
+                )
+            } else {
+                crate::diagonal_fitting::fit(
+                    source,
+                    &diagonal.upstream_commands,
+                    diagonal.size_px,
+                    &reference,
+                    diagonal.native_axes,
+                )
+            };
+            match replay {
+                Ok(fit)
+                    if fit.applied
+                        && fit.reason == diagonal.reason
+                        && fit.commands == record.fitted_commands => {}
+                _ => failures.push("diagonal fitting does not reproduce from captured inputs"),
+            }
+        }
+    }
+    #[cfg(feature = "candidate")]
+    if let Some(selective) = &record.selective_fitting {
+        let axes = selective.native_axes;
+        let engine = match axes {
+            [false, true] => "auto_x_native_y",
+            [true, false] => "native_x_auto_y",
+            [false, false] => "auto_with_native_scan",
+            _ => "invalid",
+        };
+        let valid_source = record.source_commands.as_ref().is_some_and(|source| {
+            axes == [false; 2]
+                || crate::selective_fitting::unowned_unchanged(
+                    source,
+                    &selective.native_commands,
+                    axes,
+                )
+        });
+        let combined = if axes == [false; 2] {
+            Some(selective.automatic_commands.clone())
+        } else {
+            crate::selective_fitting::combine(
+                &selective.native_commands,
+                &selective.automatic_commands,
+                axes,
+            )
+        };
+        // Post-diagonal records reproduce the pre-diagonal outline.
+        let expected = record
+            .diagonal_fitting
+            .as_ref()
+            .map(|diagonal| &diagonal.upstream_commands)
+            .unwrap_or(&record.fitted_commands);
+        if record.selected_engine != engine
+            || engine == "invalid"
+            || !valid_source
+            || record.raster_policy != RasterPolicy::FreeTypeMono
+            || record
+                .font_scan
+                .as_ref()
+                .is_some_and(|s| s.hinting_axes != axes)
+            || combined.as_ref() != Some(expected)
+        {
+            failures.push("selective fitting does not reproduce from captured inputs");
+        }
+    }
+    #[cfg(feature = "candidate")]
+    if let Some(width) = &record.width_fitting {
+        if record.selected_engine != "auto"
+            || !matches!(
+                record.raster_policy,
+                RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+            )
+        {
+            failures.push("width fitting on an incompatible render policy");
+        }
+        let Some(source) = &record.source_commands else {
+            failures.push("width source outline missing");
+            return failures;
+        };
+        // Post-diagonal records reproduce the pre-diagonal outline.
+        let expected: &[crate::probe::FittedCommand] = record
+            .diagonal_fitting
+            .as_ref()
+            .map(|diagonal| diagonal.upstream_commands.as_slice())
+            .unwrap_or(record.fitted_commands.as_slice());
+        match crate::source_width::fit(source, &width.upstream_commands, width.size_px) {
+            Ok(fit) if fit.applied && fit.commands == expected => {}
+            _ => failures.push("width fitting does not reproduce from captured inputs"),
+        }
+    }
+    if record.mono_raster.is_some()
+        && !matches!(
+            record.raster_policy,
+            RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+        )
+    {
+        failures.push("monochrome scan settings on a coverage raster");
+    }
+    if record.font_scan.is_some()
+        && (record.raster_policy != RasterPolicy::FreeTypeMono
+            || !config.mono_raster.font_instructions
+            || (record.selected_engine != "interpreter" && record.selective_fitting.is_none()))
+    {
+        failures.push("font scan state on an incompatible render policy");
+    }
     let reproduced = match record.raster_policy {
         RasterPolicy::Coverage => rasterize(&record.fitted_commands, &config),
         RasterPolicy::CoverageDropout if record.output_bits == 1 => {
             crate::dropout::rasterize(&record.fitted_commands, &config)
+        }
+        #[cfg(feature = "candidate")]
+        RasterPolicy::FreeTypeMono if record.output_bits == 1 => {
+            if record.mono_rasterizer != Some(crate::reference::MonoRasterizer::current()) {
+                failures.push("monochrome scanner identity inconsistent");
+            }
+            if record.mono_raster.is_none() {
+                failures.push("monochrome scan settings missing");
+            }
+            crate::mono::rasterize_with_scan_state(
+                &record.fitted_commands,
+                &config,
+                record.font_scan.as_ref(),
+            )
+        }
+        #[cfg(feature = "candidate")]
+        RasterPolicy::FreeTypeMonoTerminals if record.output_bits == 1 => {
+            if record.mono_rasterizer != Some(crate::reference::MonoRasterizer::current())
+                || record.mono_raster.is_none()
+                || record.selected_engine != "auto"
+                || !config.mono_raster.include_stubs
+                || config.mono_raster.dropout != crate::MonoDropoutMode::Smart
+            {
+                failures.push("terminal scan settings or identity inconsistent");
+            }
+            let Some(source) = &record.source_commands else {
+                failures.push("terminal source outline missing");
+                return failures;
+            };
+            crate::candidate::rasterize_terminals(source, &record.fitted_commands, &config)
         }
         #[cfg(feature = "candidate")]
         RasterPolicy::CoverageOverlap4xDropout if record.output_bits == 1 => {

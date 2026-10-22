@@ -350,8 +350,8 @@ fn threshold_once_then_original_dropout_once_with_raw_coverage() {
 }
 
 #[test]
-fn candidate_raster_keeps_native_grid_and_matches_full_high_oracle() {
-    // A real-font outline checks the shared overlap raster, independently of
+fn candidate_mono_keeps_native_grid_and_raw_coverage() {
+    // A real-font outline checks candidate scanner routing, independently of
     // which upstream engine produced that outline.
     let bytes = fs::read(
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -376,9 +376,9 @@ fn candidate_raster_keeps_native_grid_and_matches_full_high_oracle() {
     let candidate = candidate::render(&bytes, &request).unwrap();
     assert_eq!(candidate.records.len(), 1);
     let record = &candidate.records[0];
-    assert_eq!(record.raster_policy, RasterPolicy::CoverageOverlap4xDropout);
+    assert_eq!(record.raster_policy, RasterPolicy::FreeTypeMono);
     let plain =
-        font_generator::dropout::rasterize(&record.fitted_commands, &request.settings).unwrap();
+        font_generator::probe::rasterize(&record.fitted_commands, &request.settings).unwrap();
     assert_eq!(
         placement(&RasterOutput {
             pixels: record.pixels.clone(),
@@ -392,8 +392,9 @@ fn candidate_raster_keeps_native_grid_and_matches_full_high_oracle() {
         "native grid preserved"
     );
     // The fitter may move geometry. This raster contract compares against
-    // the independent full-size high-resolution oracle on that same outline.
-    let expected = full_high_oracle(&record.fitted_commands, &request.settings);
+    // the shared scanner on that same outline; independent fixtures live in mono_scanner.rs.
+    let expected =
+        font_generator::mono::rasterize(&record.fitted_commands, &request.settings).unwrap();
     assert_eq!(record.coverage, expected.coverage);
     assert_eq!(record.pixels, expected.pixels);
 }

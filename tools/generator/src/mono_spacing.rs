@@ -584,6 +584,9 @@ mod tests {
     ) -> ReferenceRecord {
         ReferenceRecord {
             side_bearing_deltas_26_6: None,
+            mono_rasterizer: None,
+            mono_raster: None,
+            font_scan: None,
             raster_policy: RasterPolicy::Coverage,
             diagonal_pairs: None,
             codepoint,
@@ -601,6 +604,10 @@ mod tests {
             output_bits: 1,
             mono_threshold: 128,
             gray_gamma: 1.0,
+            source_commands: None,
+            width_fitting: None,
+            selective_fitting: None,
+            diagonal_fitting: None,
             fitted_commands: commands,
             coverage: Vec::new(),
             coverage_sha256: String::new(),

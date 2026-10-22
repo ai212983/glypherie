@@ -6,6 +6,10 @@ layout; the [specimen contract](CONTRACT.md) defines published packages. Use the
 [evaluation guide](../../docs/evaluation.md) for assessment and the [revision guide](../../docs/revisions/README.md) for
 iteration work.
 
+The default candidate build also requires a C compiler. It builds the vendored FreeType monochrome scanner; no system
+FreeType library is needed. Source, license and update requirements are in
+[the scanner policy](vendor/freetype-mono/PATCH.md).
+
 ## Run
 
 ```sh
@@ -19,6 +23,18 @@ The example uses the existing font in [fonts](../../fonts/README.md). Font paths
 Change its font path, checksum and settings to use another supported font; there are no font-family presets. Create the
 output parent directory first. Generation validates inputs before replacing output and protects the font and job file
 from overwrite.
+
+Export a Playdate source font with the maintained `font_playdate` adapter (default build; requires the `candidate` and
+`native-io` features):
+
+```sh
+cargo run --locked --manifest-path tools/generator/Cargo.toml --bin font_playdate -- \
+  FONT REQUEST.json OUTPUT.fnt
+```
+
+`REQUEST.json` supplies an `ExportRequest`: `config`, `pipeline` and `letter_spacing_px` as defined in the
+[API](API.md#playdate-font-export). The Playdate Font Lab staging script documents its request defaults in
+[tools/playdate/README.md](../playdate/README.md).
 
 Each job supplies `font`, `provenance` (source description, license declaration and expected SHA-256), and `settings`. A
 checksum mismatch fails generation. Source and license declarations are caller-provided; use `unknown` when unverified.
@@ -55,8 +71,11 @@ Settings are JSON fields within the job's `settings` object. Unknown fields fail
 | `missing_glyphs`  | Default `error`, or `skip` with explicit missing-codepoint output                                        |
 | `kerning`         | Default true; false disables source pair adjustments while retaining representability checks             |
 | `metric_rounding` | Default `subpixel` rounds to 1/64px; `pixel` rounds advances and pair adjustments individually to pixels |
+| `mono_raster`     | Optional scan settings; schema and defaults in the [API](API.md#monochrome-scan-converter-settings)      |
 
-Mono threshold applies only to 1-bit output, and gamma only to gray output. Each glyph allocation is bounded to 4 Mi
+Mono threshold applies to coverage-based 1-bit renderers; candidate Mono uses center fill and ignores it. Gamma applies
+only to gray output. `mono_raster` dropout correction (`off`/`simple`/`smart`) and short-stroke preservation apply only
+to candidate Mono; every other renderer or depth rejects non-default values. Each glyph allocation is bounded to 4 Mi
 pixels. Renderer-specific restrictions and candidate integer metrics are defined in the [API](API.md).
 
 ## Specimen configuration

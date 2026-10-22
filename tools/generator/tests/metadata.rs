@@ -44,6 +44,12 @@ fn shipped_fonts_export_names_license_axes_style_and_coverage() {
     ] {
         let data = fs::read(root.join(file)).unwrap();
         let metadata = extract(&data).unwrap();
+        assert_eq!(
+            metadata.glyph_count,
+            Some(u32::from(
+                FontRef::new(&data).unwrap().maxp().unwrap().num_glyphs()
+            ))
+        );
         assert_eq!(metadata.names["family"].as_deref(), Some(family));
         assert!(metadata.names["license"]
             .as_deref()
@@ -103,6 +109,7 @@ fn static_and_variable_postscript_fonts_and_absent_optional_metadata() {
     assert_eq!(unknown.classification.panose, None);
     assert_eq!(unknown.classification.monospaced, None);
     assert!(unknown.coverage.is_none());
+    assert_eq!(unknown.glyph_count, None);
     assert!(extract(b"not a font").is_err());
 }
 
@@ -202,7 +209,13 @@ fn coverage_reports_actual_scalars_not_declared_ranges_or_notdef() {
         .add_raw(Tag::new(b"cmap"), cmap)
         .add_raw(Tag::new(b"maxp"), words(&[0, 0x5000, 5]))
         .build();
-    let coverage = extract(&data).unwrap().coverage.unwrap();
+    let metadata = extract(&data).unwrap();
+    assert_eq!(
+        metadata.glyph_count,
+        Some(5),
+        "glyph total includes unencoded glyphs and .notdef"
+    );
+    let coverage = metadata.coverage.unwrap();
     assert_eq!(coverage.character_count, 3);
     assert_eq!(coverage.ranges, [[65, 66], [0x1f600, 0x1f600]]);
 }

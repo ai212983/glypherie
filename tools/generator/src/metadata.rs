@@ -20,6 +20,12 @@ pub struct FontMetadata {
     /// English when available, otherwise the first localized value. Missing strings are null.
     pub names: BTreeMap<String, Option<String>>,
     pub axes: Vec<AxisMetadata>,
+    /// Total glyphs from OpenType maxp.numGlyphs, including unencoded glyphs.
+    #[serde(default)]
+    pub glyph_count: Option<u32>,
+    /// Source hint presence, not a claim about quality or axis coverage.
+    #[serde(default)]
+    pub font_hints: Option<bool>,
     pub kerning: KerningMetadata,
     pub style: StyleMetadata,
     pub classification: ClassificationMetadata,
@@ -177,10 +183,10 @@ pub fn extract(data: &[u8]) -> Result<FontMetadata, Error> {
             table.ul_unicode_range_4(),
         ]
     });
+    let glyph_count = optional(font.maxp())?.map(|table| u32::from(table.num_glyphs()));
     let cmap = optional(font.cmap())?;
     let charmap = font.charmap();
     let coverage = if cmap.is_some() && charmap.has_map() && !charmap.is_symbol() {
-        let glyph_count = optional(font.maxp())?.map(|table| table.num_glyphs() as u32);
         let mut ranges: Vec<[u32; 2]> = Vec::new();
         let mut character_count = 0;
         for (cp, gid) in charmap.mappings() {
@@ -206,12 +212,31 @@ pub fn extract(data: &[u8]) -> Result<FontMetadata, Error> {
     Ok(FontMetadata {
         names,
         axes,
+        glyph_count,
+        font_hints: font_hint_presence(data)?,
         kerning: kerning(&font)?,
         style,
         classification,
         coverage,
         declared_unicode_ranges,
     })
+}
+
+fn font_hint_presence(data: &[u8]) -> Result<Option<bool>, Error> {
+    let font = FontRef::new(data).map_err(|e| fail(e.to_string()))?;
+    #[cfg(feature = "candidate")]
+    let outlines = skrifa_scan::MetadataProvider::outline_glyphs(&font);
+    #[cfg(not(feature = "candidate"))]
+    let outlines = font.outline_glyphs();
+    let mut unknown = false;
+    for (_, glyph) in outlines.iter() {
+        match glyph.has_hinting() {
+            Some(true) => return Ok(Some(true)),
+            None => unknown = true,
+            _ => {}
+        }
+    }
+    Ok(if unknown { None } else { Some(false) })
 }
 
 fn kerning(font: &FontRef<'_>) -> Result<KerningMetadata, Error> {

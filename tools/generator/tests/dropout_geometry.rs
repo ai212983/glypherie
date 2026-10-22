@@ -308,6 +308,146 @@ fn dead_end_stub_tip_is_included_without_extension() {
     assert!(fixed.pixels.iter().all(|pixel| *pixel == 1));
 }
 
+#[cfg(feature = "candidate")]
+#[test]
+fn candidate_excludes_terminal_caps_under_curve_subdivision_and_grid_transforms() {
+    // SCANTYPE rule 6 / FreeType ftraster.c at
+    // 57617782464411201ce7bbc93b086c1b4d7d84a5: a contour cap closing before
+    // the next scan line is a stub. This shallow diagonal terminal has no
+    // pixel center in its cap, while the stroke below is already visible.
+    let points = [(0.25, 2.25), (1.75, 2.25), (4.75, -2.25), (3.25, -2.25)];
+    for degree in [1, 2, 3] {
+        for (dx, dy, reflect, turn) in [
+            (0.0, 0.0, false, false),
+            (-5.0, 3.0, false, false),
+            (0.0, 0.0, true, false),
+            (0.0, 0.0, false, true),
+        ] {
+            let map = |(x, y): (f32, f32)| {
+                let x = if reflect { -x } else { x };
+                let (x, y) = if turn { (-y, x) } else { (x, y) };
+                (x + dx, y + dy)
+            };
+            let p: Vec<_> = points.into_iter().map(map).collect();
+            let mut commands = vec![FittedCommand::MoveTo(p[0].0, p[0].1)];
+            for i in 0..4 {
+                let (a, b) = (p[i], p[(i + 1) % 4]);
+                commands.push(match degree {
+                    1 => FittedCommand::LineTo(b.0, b.1),
+                    2 => FittedCommand::QuadTo((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0, b.0, b.1),
+                    _ => FittedCommand::CurveTo(
+                        (2.0 * a.0 + b.0) / 3.0,
+                        (2.0 * a.1 + b.1) / 3.0,
+                        (a.0 + 2.0 * b.0) / 3.0,
+                        (a.1 + 2.0 * b.1) / 3.0,
+                        b.0,
+                        b.1,
+                    ),
+                });
+            }
+            commands.push(FittedCommand::Close);
+            let candidate = font_generator::overlap::rasterize(&commands, &mono()).unwrap();
+            let legacy = dropout::rasterize(&commands, &mono()).unwrap();
+            let (x, y) = map((0.5, 2.5));
+            let index = ((-y).floor() as i32 - candidate.top) as usize * candidate.width as usize
+                + (x.floor() as i32 - candidate.left) as usize;
+            assert!(candidate.coverage[index] < 128, "cap is below threshold");
+            assert_eq!(candidate.pixels[index], 0, "terminal cap excluded");
+            assert_eq!(legacy.pixels[index], 1, "legacy still includes stubs");
+            assert!(candidate.pixels.iter().any(|&p| p != 0), "stroke retained");
+            for (&coverage, &pixel) in candidate.coverage.iter().zip(&candidate.pixels) {
+                if coverage >= 128 {
+                    assert_eq!(pixel, 1, "ordinary ink is never removed");
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "candidate")]
+#[test]
+fn candidate_retains_interior_dropouts_and_cancels_opposite_winding() {
+    // Rule 6 permits rescue where both borders continue to adjacent scan
+    // lines. It must not manufacture a connection across nonzero-fill holes.
+    let stem = rect(0.4, 0.0, 0.6, 6.0);
+    let candidate = font_generator::overlap::rasterize(&stem, &mono()).unwrap();
+    assert!(candidate.coverage.iter().all(|&c| c < 128));
+    for y in [2, 3] {
+        assert_eq!(at(&candidate, 0, y), 1, "interior stem survives");
+    }
+    let mut cancelled = stem;
+    cancelled.extend(rect_reversed(0.4, 0.0, 0.6, 6.0));
+    let candidate = font_generator::overlap::rasterize(&cancelled, &mono()).unwrap();
+    assert!(candidate.pixels.iter().all(|&p| p == 0));
+}
+
+#[cfg(feature = "candidate")]
+#[test]
+fn candidate_preserves_curved_interior_stroke_continuity() {
+    // Rule 6 excludes caps rather than curved interior bands. These real
+    // quadratic/cubic extrema must be examined, not just curve endpoints.
+    for upper in [
+        FittedCommand::QuadTo(4.0, 5.0, 8.0, 1.0),
+        FittedCommand::CurveTo(2.5, 5.0, 5.5, 5.0, 8.0, 1.0),
+    ] {
+        let lower = match upper {
+            FittedCommand::QuadTo(..) => FittedCommand::QuadTo(4.0, 4.6, 0.0, 0.6),
+            _ => FittedCommand::CurveTo(5.5, 4.6, 2.5, 4.6, 0.0, 0.6),
+        };
+        let commands = vec![
+            FittedCommand::MoveTo(0.0, 1.0),
+            upper,
+            FittedCommand::LineTo(8.0, 0.6),
+            lower,
+            FittedCommand::Close,
+        ];
+        let fixed = font_generator::overlap::rasterize(&commands, &mono()).unwrap();
+        assert_eq!(components(&fixed), 1, "curved band remains one stroke");
+        for x in 1..fixed.width as i32 - 1 {
+            assert!(
+                (0..fixed.height as i32).any(|y| at(&fixed, x, y) != 0),
+                "interior band column {x} lost continuity"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "candidate")]
+#[test]
+fn candidate_preserves_thin_counter_walls_without_filling_the_counter() {
+    // SCANTYPE rule 6 requires a cap joining the paired borders. A wall
+    // between separate outer/hole contours has no such cap to exclude.
+    let mut ring = rect(0.0, 0.0, 6.0, 6.0);
+    ring.extend(rect_reversed(0.375, 0.375, 5.625, 5.625));
+    let fixed = font_generator::overlap::rasterize(&ring, &mono()).unwrap();
+    assert_eq!(components(&fixed), 1, "thin ring remains connected");
+    for i in 0..6 {
+        assert_eq!(at(&fixed, i, 0), 1);
+        assert_eq!(at(&fixed, i, 5), 1);
+        assert_eq!(at(&fixed, 0, i), 1);
+        assert_eq!(at(&fixed, 5, i), 1);
+    }
+    for y in 1..5 {
+        for x in 1..5 {
+            assert_eq!(at(&fixed, x, y), 0, "counter remains open");
+        }
+    }
+}
+
+#[cfg(feature = "candidate")]
+#[test]
+fn candidate_leaves_subpixel_detached_stubs_to_ordinary_coverage() {
+    // Both sides of this detached contour close before another scan line.
+    // Rule 6 excludes its rescues in both directions. This explicitly
+    // records the small-mark limitation, not optical acceptance of erasure.
+    let mark = rect(0.375, 0.375, 0.625, 0.625);
+    let fixed = font_generator::overlap::rasterize(&mark, &mono()).unwrap();
+    assert!(fixed.coverage.iter().all(|&c| c < 128));
+    assert!(fixed.pixels.iter().all(|&p| p == 0));
+    let legacy = dropout::rasterize(&mark, &mono()).unwrap();
+    assert!(legacy.pixels.iter().any(|&p| p != 0));
+}
+
 #[test]
 fn empty_and_degenerate_outlines_invent_no_ink() {
     let empty: Vec<FittedCommand> = vec![];

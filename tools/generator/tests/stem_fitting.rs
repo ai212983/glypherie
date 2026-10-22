@@ -2,14 +2,14 @@
 
 //! Selectable stem-fitting strategies: `FontHintsFirst` is the default and
 //! `UpstreamMono` (`mono-width-01`, explicit experimental) renders registry
-//! `Target::Mono` through the same overlap 4x raster with source metrics.
+//! `Target::Mono` through the same pinned monochrome scanner with source metrics.
 //! Mechanical checks only; no optical acceptance. There is no StrokeStyles
 //! strategy, and none may be named here until one executes.
 
 use font_generator::{
     candidate,
     evaluation::evaluate,
-    overlap,
+    mono,
     reference::{
         reference, RasterPolicy, ReferenceRequest, EXTENSIONS_NONE, PROFILE_GRAY_3BIT,
         PROFILE_MONO_1BIT,
@@ -25,6 +25,15 @@ use std::path::Path;
 fn font_bytes() -> Vec<u8> {
     std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fonts/Roboto.ttf"))
         .expect("fixture fonts/Roboto.ttf")
+}
+
+fn fixture_bytes(name: &str) -> Vec<u8> {
+    std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fonts")
+            .join(name),
+    )
+    .unwrap_or_else(|_| panic!("fixture fonts/{name}"))
 }
 
 fn mono_config() -> Config {
@@ -87,6 +96,62 @@ fn strategy_selects_extension_with_font_hints_default() {
 }
 
 #[test]
+fn literata_scan_only_prep_falls_back_to_automatic() {
+    use skrifa::{FontRef, MetadataProvider};
+    let data = fixture_bytes("Literata.ttf");
+    let face = FontRef::new(&data).unwrap();
+    // Fixture premise: no `fpgm`, a scan-control-only `prep` (PUSHW 511,
+    // SCANCTRL, PUSHB 4, SCANTYPE), and a misleading zero maximum, so
+    // upstream still prefers the interpreter despite empty glyph programs.
+    assert!(face.table_data(skrifa::Tag::new(b"fpgm")).is_none());
+    assert_eq!(
+        face.table_data(skrifa::Tag::new(b"prep"))
+            .unwrap()
+            .as_bytes(),
+        &[0xb8, 0x01, 0xff, 0x85, 0xb0, 0x04, 0x8d]
+    );
+    let maxp = face.table_data(skrifa::Tag::new(b"maxp")).unwrap();
+    assert_eq!(&maxp.as_bytes()[26..28], &[0u8, 0u8][..]);
+    assert!(face.outline_glyphs().prefer_interpreter());
+    let mut config = mono_config();
+    config.characters = "ij".into();
+    config.hinting = Hinting::AutoFallback;
+    config.axes.insert("opsz".into(), 12.0);
+    let actual = candidate::render(
+        &data,
+        &ReferenceRequest {
+            profile: PROFILE_MONO_1BIT.into(),
+            extensions: EXTENSIONS_FONT_HINTS_FIRST.into(),
+            settings: config.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(actual.hinting_requested, "auto_fallback");
+    assert!(!actual.records.is_empty());
+    for record in &actual.records {
+        assert_eq!(record.selected_engine, "auto", "U+{:04X}", record.codepoint);
+    }
+    let mut explicit = config.clone();
+    explicit.hinting = Hinting::Auto;
+    let expected = font_generator::reference::reference(
+        &data,
+        &ReferenceRequest {
+            profile: PROFILE_MONO_1BIT.into(),
+            extensions: font_generator::reference::EXTENSIONS_NONE.into(),
+            settings: explicit,
+        },
+    )
+    .unwrap();
+    for (a, b) in actual.records.iter().zip(&expected.records) {
+        assert_eq!(
+            a.fitted_commands, b.fitted_commands,
+            "U+{:04X}",
+            a.codepoint
+        );
+    }
+}
+
+#[test]
 fn mono_strategy_geometry_matches_independent_upstream_mono() {
     let data = font_bytes();
     let upstream = reference(&data, &request(EXTENSIONS_NONE, PROFILE_MONO_1BIT)).unwrap();
@@ -112,14 +177,14 @@ fn mono_strategy_geometry_matches_independent_upstream_mono() {
         );
         assert_eq!(record.glyph_id, baseline.glyph_id);
         assert_eq!(record.advance_26_6, baseline.advance_26_6);
-        assert_eq!(record.raster_policy, RasterPolicy::CoverageOverlap4xDropout);
+        assert_eq!(record.raster_policy, RasterPolicy::FreeTypeMono);
         assert_eq!(record.side_bearing_deltas_26_6, None);
         assert_eq!(record.diagonal_pairs, None);
     }
 }
 
 #[test]
-fn mono_strategy_pixels_match_overlap_raster_on_upstream_geometry() {
+fn mono_strategy_pixels_match_pinned_scanner_on_upstream_geometry() {
     let data = font_bytes();
     let config = mono_config();
     let upstream = reference(&data, &request(EXTENSIONS_NONE, PROFILE_MONO_1BIT)).unwrap();
@@ -127,7 +192,7 @@ fn mono_strategy_pixels_match_overlap_raster_on_upstream_geometry() {
         candidate::render(&data, &request(EXTENSIONS_MONO_WIDTH_01, PROFILE_MONO_1BIT)).unwrap();
     let strategy_records = records_by_codepoint(&fitted);
     for record in &upstream.records {
-        let raster = overlap::rasterize(&record.fitted_commands, &config).unwrap();
+        let raster = mono::rasterize(&record.fitted_commands, &config).unwrap();
         let stored = strategy_records[&record.codepoint];
         assert_eq!(stored.pixels, raster.pixels);
         assert_eq!(stored.coverage, raster.coverage);

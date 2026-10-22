@@ -8,9 +8,33 @@
 //! allocated here; fitted rendering remains the caller's one raster.
 
 use crate::{fail, fixed, spacing, Config, Error, FontMetrics, KerningPair};
-use sha2::{Digest, Sha256};
 use skrifa_baseline::{instance::Size, MetadataProvider};
-use std::collections::BTreeSet;
+use std::{cell::OnceCell, collections::BTreeSet};
+
+/// Immutable owned font bytes with a lazily computed byte identity.
+/// Rendering validates each request; exact completed diagonal fits may be reused.
+/// https://doc.rust-lang.org/std/cell/struct.OnceCell.html
+pub struct PreparedFont {
+    data: Vec<u8>,
+    pub(crate) identity: OnceCell<String>,
+    #[cfg(feature = "candidate")]
+    pub(crate) diagonal_fits: std::cell::RefCell<crate::diagonal_fitting::reuse::FitCache>,
+}
+
+impl PreparedFont {
+    pub fn new(data: Vec<u8>) -> Self {
+        Self {
+            data,
+            identity: OnceCell::new(),
+            #[cfg(feature = "candidate")]
+            diagonal_fits: Default::default(),
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.data
+    }
+}
 
 /// One repertoire scalar resolved to the glyph actually drawn, with
 /// its rounded source advance. Identity/metrics only; no bitmap.
@@ -40,7 +64,11 @@ struct Identities {
     resolved: Vec<spacing::ResolvedScalar>,
 }
 
-fn prepare_identities(data: &[u8], config: &Config) -> Result<Identities, Error> {
+fn prepare_identities(
+    session: &crate::reference::CaptureSession<'_>,
+    config: &Config,
+) -> Result<Identities, Error> {
+    let data = session.data;
     crate::validate_config(config)?;
     let font = crate::open_font(data)?;
     crate::validate_axes(&font, &config.axes)?;
@@ -95,7 +123,7 @@ fn prepare_identities(data: &[u8], config: &Config) -> Result<Identities, Error>
         return Err(fail("repertoire contains no available glyphs"));
     }
     Ok(Identities {
-        source_sha256: format!("{:x}", Sha256::digest(data)),
+        source_sha256: session.source_sha256().to_owned(),
         metrics: FontMetrics {
             ascent_26_6: fixed(metrics.ascent, config.metric_rounding),
             descent_26_6: fixed(metrics.descent, config.metric_rounding),
@@ -109,8 +137,17 @@ fn prepare_identities(data: &[u8], config: &Config) -> Result<Identities, Error>
 
 /// Validate and resolve a repertoire to source advances, global
 /// metrics, missing glyphs and kerning, with no rasterization.
+#[cfg(any(feature = "candidate", test))]
 pub(crate) fn prepare_source(data: &[u8], config: &Config) -> Result<SourceFont, Error> {
-    let identities = prepare_identities(data, config)?;
+    prepare_source_in_session(&crate::reference::CaptureSession::new(data), config)
+}
+
+pub(crate) fn prepare_source_in_session(
+    session: &crate::reference::CaptureSession<'_>,
+    config: &Config,
+) -> Result<SourceFont, Error> {
+    let data = session.data;
+    let identities = prepare_identities(session, config)?;
     let kerning = spacing::extract(data, config, &identities.resolved)?;
     Ok(SourceFont {
         source_sha256: identities.source_sha256,
@@ -131,11 +168,13 @@ pub(crate) mod raster_counter {
     thread_local! {
         static LOGICAL_RASTERS: Cell<usize> = const { Cell::new(0) };
         static SOURCE_GEOMETRY_DRAWS: Cell<usize> = const { Cell::new(0) };
+        static FONT_IDENTITY_HASHES: Cell<usize> = const { Cell::new(0) };
     }
 
     pub(crate) fn reset() {
         LOGICAL_RASTERS.with(|c| c.set(0));
         SOURCE_GEOMETRY_DRAWS.with(|c| c.set(0));
+        FONT_IDENTITY_HASHES.with(|c| c.set(0));
     }
 
     pub(crate) fn logical_rasters() -> usize {
@@ -152,6 +191,14 @@ pub(crate) mod raster_counter {
 
     pub(crate) fn record_source_geometry(count: usize) {
         SOURCE_GEOMETRY_DRAWS.with(|c| c.set(c.get() + count));
+    }
+
+    pub(crate) fn font_identity_hashes() -> usize {
+        FONT_IDENTITY_HASHES.with(|c| c.get())
+    }
+
+    pub(crate) fn record_font_identity_hash() {
+        FONT_IDENTITY_HASHES.with(|c| c.set(c.get() + 1));
     }
 }
 

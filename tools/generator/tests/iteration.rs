@@ -75,7 +75,7 @@ fn direct(
         .draw(DrawSettings::hinted(&instance, false), &mut pen)
         .unwrap();
     let commands = pen.into_commands();
-    let raster = font_generator::overlap::rasterize(&commands, &req.settings).unwrap();
+    let raster = font_generator::mono::rasterize(&commands, &req.settings).unwrap();
     (commands, raster)
 }
 fn assert_direct(data: &[u8], req: &ReferenceRequest, engine: Engine) {
@@ -91,7 +91,7 @@ fn assert_direct(data: &[u8], req: &ReferenceRequest, engine: Engine) {
             (r.left, r.top, r.width, r.height),
             (pixels.left, pixels.top, pixels.width, pixels.height)
         );
-        assert_eq!(r.raster_policy, RasterPolicy::CoverageOverlap4xDropout);
+        assert_eq!(r.raster_policy, RasterPolicy::FreeTypeMono);
         assert_eq!(r.diagonal_pairs, None);
         assert_eq!(r.side_bearing_deltas_26_6, None);
     }
@@ -112,8 +112,24 @@ fn font_hints_first_and_automatic_match_unmodified_upstream_across_fonts_sizes_a
                 req.settings.axes.insert("wght".into(), 700.0);
                 req.settings.axes.insert("slnt".into(), -10.0);
             }
-            assert_direct(&data, &req, Engine::AutoFallback);
             let fitted = render(&data, &req).unwrap();
+            // The candidate reports the engine it actually selected; that
+            // selection stays a whole unmodified upstream outline draw. Scan-
+            // only programs fall back to automatic fitting while hinted fonts
+            // keep the interpreter, so select the direct draw per report.
+            assert!(fitted
+                .records
+                .iter()
+                .all(|record| record.selected_engine == fitted.records[0].selected_engine));
+            assert_direct(
+                &data,
+                &req,
+                match fitted.records[0].selected_engine.as_str() {
+                    "auto" => Engine::Auto(None),
+                    "interpreter" => Engine::Interpreter,
+                    other => panic!("unexpected selected engine {other}"),
+                },
+            );
             let mut source = req.clone();
             source.extensions = "none".into();
             source.settings.hinting = Hinting::None;

@@ -21,10 +21,59 @@ fn collect(root: &Path, directory: &Path, digest: &mut Sha256) {
     }
 }
 
+fn dependency_field(lock: &str, name: &str, field: &str) -> String {
+    let name = format!("name = \"{name}\"");
+    let field = format!("{field} = \"");
+    let mut selected = false;
+    for line in lock.lines().map(str::trim) {
+        if line == name {
+            selected = true;
+        } else if selected && line.starts_with(&field) {
+            return line.trim_start_matches(&field).trim_end_matches('"').into();
+        } else if line == "[[package]]" {
+            selected = false;
+        }
+    }
+    "unknown".into()
+}
+
 fn main() {
-    // Only the baseline fork is vendored; its hash input is unchanged so
-    // SKRIFA_BASELINE_SHA256 stays stable.
+    // Build provenance is immutable; report construction must not parse the
+    // dependency lock or hash its contents once per glyph.
+    let lock = fs::read_to_string("Cargo.lock").unwrap();
+    println!("cargo:rerun-if-changed=Cargo.lock");
+    println!(
+        "cargo:rustc-env=GENERATOR_LOCK_SHA256={:x}",
+        Sha256::digest(&lock)
+    );
+    for (key, name, field) in [
+        ("GENERATOR_SKRIFA_VERSION", "skrifa", "version"),
+        ("GENERATOR_SKRIFA_CHECKSUM", "skrifa", "checksum"),
+        ("GENERATOR_ZENO_VERSION", "zeno", "version"),
+    ] {
+        println!(
+            "cargo:rustc-env={key}={}",
+            dependency_field(&lock, name, field)
+        );
+    }
+
+    // Keep the baseline identity independent of candidate dependencies.
     renderer("baseline");
+    #[cfg(feature = "candidate")]
+    {
+        renderer("scan");
+        let root = Path::new("vendor/freetype-mono");
+        let mut hash = Sha256::new();
+        collect(root, root, &mut hash);
+        println!("cargo:rerun-if-changed={}", root.display());
+        println!("cargo:rustc-env=FREETYPE_MONO_SHA256={:x}", hash.finalize());
+        let mut compiler = cc::Build::new();
+        compiler.file(root.join("adapter.c")).include(root);
+        if std::env::var("TARGET").unwrap().starts_with("wasm32-") {
+            compiler.flag("-ffreestanding");
+        }
+        compiler.compile("font_freetype_mono");
+    }
 }
 
 fn renderer(role: &str) {

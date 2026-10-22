@@ -28,6 +28,51 @@
 use crate::{mono_spacing::TrackingGuard, reference::ReferenceRecord};
 use std::collections::HashMap;
 
+/// Uniform explicit tracking step in 26.6 for the separated bitmap pipeline.
+///
+/// Whole-pixel addition to every finalized advance, validated to the native
+/// -16..=16 px range. Bitmap advances, offsets and pair adjustments are
+/// independent storage in bitmap strikes (OpenType EBDT; BMFont), so the
+/// step touches only advances.
+/// https://freetype.org/freetype2/docs/glyphs/glyphs-3.html
+/// https://www.angelcode.com/products/bmfont/doc/file_format.html
+pub fn uniform_tracking_26_6(letter_spacing_px: f32) -> Result<i32, crate::Error> {
+    if !letter_spacing_px.is_finite() || !(-16.0..=16.0).contains(&letter_spacing_px) {
+        return Err(crate::fail(
+            "letter_spacing_px must be finite and within -16..=16",
+        ));
+    }
+    let pixels = letter_spacing_px.round() as i32;
+    pixels
+        .checked_mul(64)
+        .ok_or_else(|| crate::fail("uniform tracking advance overflow"))
+}
+
+/// Baked uniform tracking over finalized whole-pixel advances.
+///
+/// Adds the [`uniform_tracking_26_6`] step to every advance, including
+/// spaces and the final glyph advance; pair adjustments pass through
+/// unchanged, so kerning and any fitted bearing correction still apply
+/// exactly once. Zero is identity. Negative results are kept as-is:
+/// tightening may overlap and is never clamped per glyph. Only `i32`
+/// overflow fails.
+pub fn apply_uniform_tracking(
+    advances_26_6: &HashMap<u32, i32>,
+    letter_spacing_px: f32,
+) -> Result<HashMap<u32, i32>, crate::Error> {
+    let step = uniform_tracking_26_6(letter_spacing_px)?;
+    let mut tracked = HashMap::with_capacity(advances_26_6.len());
+    for (codepoint, advance) in advances_26_6 {
+        tracked.insert(
+            *codepoint,
+            advance
+                .checked_add(step)
+                .ok_or_else(|| crate::fail("uniform tracking advance overflow"))?,
+        );
+    }
+    Ok(tracked)
+}
+
 /// Quantize a signed 26.6 value to a whole pixel, returned in 26.6.
 ///
 /// Nearest pixel with ties away from zero, so negating an adjustment
@@ -399,6 +444,9 @@ mod tests {
     ) -> ReferenceRecord {
         ReferenceRecord {
             side_bearing_deltas_26_6: deltas,
+            mono_rasterizer: None,
+            mono_raster: None,
+            font_scan: None,
             raster_policy: RasterPolicy::Coverage,
             diagonal_pairs: None,
             codepoint,
@@ -416,6 +464,10 @@ mod tests {
             output_bits: 1,
             mono_threshold: 128,
             gray_gamma: 1.0,
+            source_commands: None,
+            width_fitting: None,
+            selective_fitting: None,
+            diagonal_fitting: None,
             fitted_commands: Vec::new(),
             coverage: Vec::new(),
             coverage_sha256: String::new(),

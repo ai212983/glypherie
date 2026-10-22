@@ -15,11 +15,49 @@ use crate::{
     fail,
     layout_spacing::{finalize_bitmap_metrics, EngineInputs, SpacingEngine},
     mono_spacing::font_spacing_properties,
+    reference::CaptureSession,
     renderer::RendererRole,
     stem_fitting::StemFittingStrategy,
     Config, Error, GeneratedFont, Glyph, MissingGlyphs,
 };
 use std::collections::{BTreeSet, HashMap};
+
+pub use crate::source::PreparedFont;
+
+impl PreparedFont {
+    /// Same validation and delivery as the raw-byte fitting entry point.
+    /// Completed diagonal fits can be reused for identical geometric inputs.
+    pub fn render_text_with_fitting_strategy(
+        &self,
+        request: &TextRenderRequest,
+        role: RendererRole,
+        letter_spacing_px: f32,
+        strategy: Option<StemFittingStrategy>,
+    ) -> Result<RenderedText, Error> {
+        render_fitting_in_session(
+            &CaptureSession::from_font(self),
+            request,
+            role,
+            letter_spacing_px,
+            strategy,
+        )
+    }
+
+    /// Same explicit pipeline as the raw-byte entry point, with shared identity.
+    pub fn render_text_with_pipeline_and_spacing(
+        &self,
+        request: &TextRenderRequest,
+        pipeline: crate::renderer::RenderPipeline,
+        letter_spacing_px: f32,
+    ) -> Result<RenderedText, Error> {
+        render_pipeline_in_session(
+            &CaptureSession::from_font(self),
+            request,
+            pipeline,
+            letter_spacing_px,
+        )
+    }
+}
 
 /// Maximum canvas width or height in pixels.
 pub const MAX_CANVAS_DIM: u32 = 4096;
@@ -146,7 +184,14 @@ pub struct RenderedText {
 /// shape, then canvas allocation. Blank requests validate settings, font,
 /// axes and palette before returning the background canvas.
 pub fn render_text(font_data: &[u8], request: &TextRenderRequest) -> Result<RenderedText, Error> {
-    render_inner(font_data, request, None, 0.0, None)
+    render_inner(
+        &CaptureSession::new(font_data),
+        request,
+        None,
+        0.0,
+        None,
+        None,
+    )
 }
 
 /// Render bounded multi-line text with an explicit stable renderer role.
@@ -184,7 +229,14 @@ pub fn render_text_with_renderer_and_spacing(
     role: RendererRole,
     letter_spacing_px: f32,
 ) -> Result<RenderedText, Error> {
-    render_inner(font_data, request, Some(role), letter_spacing_px, None)
+    render_inner(
+        &CaptureSession::new(font_data),
+        request,
+        Some(role),
+        letter_spacing_px,
+        None,
+        None,
+    )
 }
 
 /// Render bounded multi-line text with an explicit renderer role, preview
@@ -207,6 +259,22 @@ pub fn render_text_with_fitting_strategy(
     letter_spacing_px: f32,
     strategy: Option<StemFittingStrategy>,
 ) -> Result<RenderedText, Error> {
+    render_fitting_in_session(
+        &CaptureSession::new(font_data),
+        request,
+        role,
+        letter_spacing_px,
+        strategy,
+    )
+}
+
+fn render_fitting_in_session(
+    session: &CaptureSession<'_>,
+    request: &TextRenderRequest,
+    role: RendererRole,
+    letter_spacing_px: f32,
+    strategy: Option<StemFittingStrategy>,
+) -> Result<RenderedText, Error> {
     #[cfg(not(feature = "candidate"))]
     if role == RendererRole::Candidate {
         return Err(fail(
@@ -218,7 +286,80 @@ pub fn render_text_with_fitting_strategy(
     }
     // Explicit-strategy validation lives in `render_inner`, before blank
     // handling, so every entry point shares one gate.
-    render_inner(font_data, request, Some(role), letter_spacing_px, strategy)
+    render_inner(
+        session,
+        request,
+        Some(role),
+        letter_spacing_px,
+        strategy,
+        None,
+    )
+}
+
+/// Render explicit fitting and rasterization stages with one bitmap layout.
+/// Tracking is neutral and cannot activate preview minimum-gap corrections.
+/// The fitter's returned advances remain layout inputs; changing only the
+/// scanner therefore cannot change advances, pair adjustments or wrapping.
+pub fn render_text_with_pipeline(
+    font_data: &[u8],
+    request: &TextRenderRequest,
+    pipeline: crate::renderer::RenderPipeline,
+) -> Result<RenderedText, Error> {
+    render_text_with_pipeline_and_spacing(font_data, request, pipeline, 0.0)
+}
+
+/// Render explicit fitting and rasterization stages with uniform tracking.
+///
+/// Bakes a signed whole-pixel step into every finalized advance, including
+/// spaces and the final glyph advance; bitmaps, offsets and sparse pair
+/// adjustments are unchanged, with no minimum-gap floor and no word-gap
+/// refund. Zero is identity. Negative results are kept: tightening may
+/// overlap. Only `i32` overflow fails.
+pub fn render_text_with_pipeline_and_spacing(
+    font_data: &[u8],
+    request: &TextRenderRequest,
+    pipeline: crate::renderer::RenderPipeline,
+    letter_spacing_px: f32,
+) -> Result<RenderedText, Error> {
+    render_pipeline_in_session(
+        &CaptureSession::new(font_data),
+        request,
+        pipeline,
+        letter_spacing_px,
+    )
+}
+
+fn render_pipeline_in_session(
+    session: &CaptureSession<'_>,
+    request: &TextRenderRequest,
+    pipeline: crate::renderer::RenderPipeline,
+    letter_spacing_px: f32,
+) -> Result<RenderedText, Error> {
+    pipeline.validate(&request.config)?;
+    #[cfg(not(feature = "candidate"))]
+    {
+        let _ = (session, letter_spacing_px);
+        Err(fail(
+            "explicit pipeline requires the candidate Cargo feature",
+        ))
+    }
+    #[cfg(feature = "candidate")]
+    {
+        let mut effective = request.clone();
+        effective.config.hinting = if request.config.output_bits == 1 {
+            pipeline.fitting.hinting()
+        } else {
+            crate::Hinting::Auto
+        };
+        render_inner(
+            session,
+            &effective,
+            Some(RendererRole::Candidate),
+            letter_spacing_px,
+            (request.config.output_bits == 1).then_some(pipeline.fitting),
+            Some(pipeline),
+        )
+    }
 }
 
 /// Shared validation/layout/compositing pipeline behind [`render_text`]
@@ -227,12 +368,14 @@ pub fn render_text_with_fitting_strategy(
 /// decisions (finalized advances, single pair application, tracking and
 /// the tracking floor) run through the [`SpacingEngine`] built below.
 fn render_inner(
-    font_data: &[u8],
+    session: &CaptureSession<'_>,
     request: &TextRenderRequest,
     role: Option<RendererRole>,
     letter_spacing_px: f32,
     strategy: Option<StemFittingStrategy>,
+    pipeline: Option<crate::renderer::RenderPipeline>,
 ) -> Result<RenderedText, Error> {
+    let font_data = session.data;
     if !letter_spacing_px.is_finite() || !(-16.0..=16.0).contains(&letter_spacing_px) {
         return Err(fail("letter_spacing_px must be finite and within -16..=16"));
     }
@@ -267,10 +410,12 @@ fn render_inner(
     if request.text.chars().count() > MAX_TEXT_CHARS {
         return Err(fail("text exceeds 8192 characters"));
     }
-    // Preview roles bind to the interactive 1/3-bit profiles; anything else
-    // fails here, before any allocation, rather than rendering a nearby depth.
+    // Historical preview roles keep the interactive 1/3-bit profiles; 2/4-bit
+    // coverage stays on the explicit pipeline. Anything else fails here,
+    // before any allocation, rather than rendering a nearby depth.
     if let Some(role @ (RendererRole::Reference | RendererRole::Candidate)) = role {
-        if !matches!(request.config.output_bits, 1 | 3) {
+        let palette_coverage = pipeline.is_some() && matches!(request.config.output_bits, 2 | 4);
+        if !matches!(request.config.output_bits, 1 | 3) && !palette_coverage {
             return Err(fail(format!(
                 "preview role {} requires output_bits 1 or 3, got {}",
                 role_name(role),
@@ -291,6 +436,43 @@ fn render_inner(
                 )));
             }
             _ => {}
+        }
+    }
+    // Explicit scan overrides are gated here, before blank-text handling:
+    // candidate role with monochrome output and automatic hinting, nothing
+    // else. An explicit override on an incompatible blank request is an
+    // error, matching the strategy gate below. Baseline, reference and
+    // gray paths keep coverage and reject overrides in `generate()`,
+    // `reference()` and `validate_settings()`.
+    if request.config.mono_raster != crate::MonoRasterSettings::default() {
+        #[cfg(not(feature = "candidate"))]
+        {
+            return Err(fail(
+                "mono raster settings require the candidate Cargo feature",
+            ));
+        }
+        #[cfg(feature = "candidate")]
+        {
+            if role != Some(RendererRole::Candidate) {
+                return Err(fail(
+                    "mono raster settings require the candidate preview role",
+                ));
+            }
+            if request.config.output_bits != 1 {
+                return Err(fail(format!(
+                    "mono raster settings require monochrome output_bits 1, got {}",
+                    request.config.output_bits
+                )));
+            }
+            if !matches!(
+                request.config.hinting,
+                crate::Hinting::Auto | crate::Hinting::AutoFallback
+            ) {
+                return Err(fail(format!(
+                    "mono raster settings require automatic hinting, got {:?}",
+                    request.config.hinting
+                )));
+            }
         }
     }
     // Explicit fitting strategies are gated here, before blank-text
@@ -367,7 +549,7 @@ fn render_inner(
     // approved `generate()` path unchanged; reference Mono swaps its
     // independently captured bitmaps over that output.
     let (generated, role_report) = if is_candidate {
-        let source = match crate::source::prepare_source(font_data, &config) {
+        let source = match crate::source::prepare_source_in_session(session, &config) {
             Ok(source) => source,
             Err(error)
                 if request.config.missing_glyphs == MissingGlyphs::Skip
@@ -389,10 +571,34 @@ fn render_inner(
             } else {
                 crate::reference::PROFILE_GRAY_3BIT.to_string()
             },
-            extensions: StemFittingStrategy::extension(strategy).to_string(),
+            // Explicit pipelines stamp their own fitting; the legacy role
+            // path keeps the strategy-derived default.
+            extensions: StemFittingStrategy::extension(
+                pipeline.map(|selected| selected.fitting).or(strategy),
+            )
+            .to_string(),
             settings: config.clone(),
         };
-        let report = crate::renderer::render(font_data, &preview, RendererRole::Candidate)?;
+        let report = match pipeline {
+            #[cfg(feature = "candidate")]
+            Some(pipeline) => {
+                crate::candidate::render_with_pipeline_in_session(session, &preview, pipeline)?
+            }
+            _ => {
+                #[cfg(feature = "candidate")]
+                {
+                    crate::candidate::render_with_rasterization_in_session(
+                        session,
+                        &preview,
+                        crate::renderer::Rasterization::FreeTypeMono,
+                    )?
+                }
+                #[cfg(not(feature = "candidate"))]
+                {
+                    crate::renderer::render(font_data, &preview, RendererRole::Candidate)?
+                }
+            }
+        };
         let source_advance_by_codepoint: HashMap<u32, i32> = source
             .glyphs
             .iter()
@@ -462,7 +668,8 @@ fn render_inner(
                 extensions: crate::reference::EXTENSIONS_NONE.to_string(),
                 settings: generated.config.clone(),
             };
-            Some(crate::renderer::render(font_data, &preview, selected_role)?)
+            debug_assert_eq!(selected_role, RendererRole::Reference);
+            Some(session.reference(&preview)?)
         } else {
             None
         };
@@ -491,7 +698,11 @@ fn render_inner(
     // Finalize the one layout this role consumes. The candidate resolves
     // fitted advances and pair adjustments to whole pixels once, here and
     // in the exported strike, so preview, measurement and wrapping cannot
-    // diverge; other roles keep fractional source layout.
+    // diverge; other roles keep fractional source layout. The separated
+    // pipeline instead bakes uniform whole-pixel tracking into those
+    // advances and lays out with neutral engine tracking, so no
+    // minimum-gap guard or word-gap refund can activate.
+    let uniform = pipeline.is_some();
     let (advances, pair_adjustments, guard_kern, integer_positions) = if is_candidate {
         let report = role_report
             .as_ref()
@@ -507,17 +718,30 @@ fn render_inner(
             properties.monospace,
             properties.tabular_digits,
         );
-        let guard = if generated.config.kerning {
-            finalized.source_kern_26_6.clone()
+        if uniform {
+            let advances = crate::layout_spacing::apply_uniform_tracking(
+                &finalized.advances_26_6,
+                letter_spacing_px,
+            )?;
+            (
+                advances,
+                finalized.pair_adjustments_26_6,
+                HashMap::new(),
+                true,
+            )
         } else {
-            HashMap::new()
-        };
-        (
-            finalized.advances_26_6,
-            finalized.pair_adjustments_26_6,
-            guard,
-            true,
-        )
+            let guard = if generated.config.kerning {
+                finalized.source_kern_26_6.clone()
+            } else {
+                HashMap::new()
+            };
+            (
+                finalized.advances_26_6,
+                finalized.pair_adjustments_26_6,
+                guard,
+                true,
+            )
+        }
     } else {
         let guard = if generated.config.kerning {
             source_kern.clone()
@@ -526,8 +750,11 @@ fn render_inner(
         };
         (source_advances.clone(), source_kern.clone(), guard, false)
     };
+    // Uniform pipeline tracking already lives in the baked advances, so
+    // the engine itself stays neutral and draws no source geometry.
+    let engine_spacing = if uniform { 0.0 } else { letter_spacing_px };
     let tracking_26_6 =
-        SpacingEngine::normalize_tracking_offset(mono || integer_positions, letter_spacing_px);
+        SpacingEngine::normalize_tracking_offset(mono || integer_positions, engine_spacing);
     // Nonzero Mono tracking needs only unhinted source extents:
     // geometry is drawn without any coverage or raster.
     let geometry = if mono && tracking_26_6 != 0 {
@@ -546,7 +773,7 @@ fn render_inner(
         minimum: geometry.as_ref(),
         mono,
         integer_positions,
-        letter_spacing_px,
+        letter_spacing_px: engine_spacing,
     })?;
     let metrics = &generated.metrics;
     let line_height_px = ((i64::from(metrics.ascent_26_6) - i64::from(metrics.descent_26_6)
@@ -1007,6 +1234,222 @@ mod tests {
             background: [255, 255, 255, 255],
             palette: None,
         }
+    }
+
+    #[test]
+    fn prepared_font_hashes_once_but_refits_changed_requests() {
+        use crate::renderer::{Rasterization, RenderPipeline};
+        use crate::stem_fitting::StemFittingStrategy;
+        for family in ["Roboto", "SourceSans3"] {
+            let bytes = std::fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../fonts/{family}.ttf")),
+            )
+            .unwrap();
+            let font = super::PreparedFont::new(bytes);
+            assert!(font.identity.get().is_none());
+            for (i, (size, weight, text)) in [
+                (12., 300., "x s 2"),
+                (24., 700., "AyW"),
+                (16., 400., "k X"),
+                (12., 300., "x s 2"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut req = request(text);
+                req.config.size_px = size;
+                req.config.axes = [("wght".into(), weight)].into();
+                let pipeline = RenderPipeline {
+                    fitting: if i % 2 == 0 {
+                        StemFittingStrategy::FontHintsAuto
+                    } else {
+                        StemFittingStrategy::UpstreamMono
+                    },
+                    rasterization: if i % 2 == 0 {
+                        Rasterization::FreeTypeMono
+                    } else {
+                        Rasterization::FreeTypeMonoTerminals
+                    },
+                    diagonal_fitting: i != 2,
+                };
+                raster_counter::reset();
+                let cached = font
+                    .render_text_with_pipeline_and_spacing(&req, pipeline, 0.)
+                    .unwrap();
+                assert_eq!(raster_counter::font_identity_hashes(), usize::from(i == 0));
+                let fresh = super::render_text_with_pipeline_and_spacing(
+                    font.as_bytes(),
+                    &req,
+                    pipeline,
+                    0.,
+                )
+                .unwrap();
+                assert_eq!(
+                    raster_counter::font_identity_hashes(),
+                    usize::from(i == 0) + 1
+                );
+                assert_eq!(cached.pixels, fresh.pixels);
+                assert_eq!(cached.lines, fresh.lines);
+                assert_eq!(cached.missing_codepoints, fresh.missing_codepoints);
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "candidate")]
+    fn completed_fit_reuse_preserves_interactions_and_changed_inputs() {
+        use crate::renderer::{Rasterization, RenderPipeline};
+        use crate::stem_fitting::StemFittingStrategy;
+        for family in ["Roboto", "SourceSans3"] {
+            let bytes = std::fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../fonts/{family}.ttf")),
+            )
+            .unwrap();
+            let font = super::PreparedFont::new(bytes);
+            let base = RenderPipeline {
+                fitting: StemFittingStrategy::FontHintsAuto,
+                rasterization: Rasterization::FreeTypeMonoTerminals,
+                diagonal_fitting: true,
+            };
+            let mut previous_misses = 0;
+            for (i, text) in [
+                "s x y 2 A W",
+                "s x y 2 A W",
+                "s x y 2 A W é",
+                "s x",
+                "s x y 2 A W",
+                "s x y 2 A W",
+                "s x y 2 A W",
+                "s x y 2 A W",
+                "s x y 2 A W",
+                "s x y 2 A W",
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut req = request(text);
+                req.config.axes = [("wght".into(), if i == 4 { 410. } else { 400. })].into();
+                if i == 1 {
+                    req.width = 100;
+                }
+                if i == 6 {
+                    req.config.size_px = 18.;
+                }
+                let mut pipeline = base;
+                if i == 7 {
+                    pipeline.fitting = StemFittingStrategy::UpstreamMono;
+                }
+                if i == 8 {
+                    pipeline.rasterization = Rasterization::FreeTypeMono;
+                }
+                if i == 9 {
+                    pipeline.diagonal_fitting = false;
+                }
+                let tracking = if i == 3 { 1. } else { 0. };
+                let cached = font
+                    .render_text_with_pipeline_and_spacing(&req, pipeline, tracking)
+                    .unwrap();
+                let misses = font.diagonal_fits.borrow().misses;
+                if i == 1 || i == 3 || i == 5 {
+                    assert_eq!(misses, previous_misses);
+                }
+                if i == 4 || i == 6 {
+                    assert!(misses > previous_misses);
+                }
+                previous_misses = misses;
+                let fresh = super::render_text_with_pipeline_and_spacing(
+                    font.as_bytes(),
+                    &req,
+                    pipeline,
+                    tracking,
+                )
+                .unwrap();
+                assert_eq!(cached.pixels, fresh.pixels, "{family}/{i}");
+                assert_eq!(cached.lines, fresh.lines, "{family}/{i}");
+                assert_eq!(cached.missing_codepoints, fresh.missing_codepoints);
+            }
+            assert!(font.diagonal_fits.borrow().hits > 0);
+            let other = super::PreparedFont::new(font.as_bytes().to_vec());
+            assert_eq!(
+                (
+                    other.diagonal_fits.borrow().hits,
+                    other.diagonal_fits.borrow().misses
+                ),
+                (0, 0)
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "candidate")]
+    fn completed_fit_cache_cannot_hide_invalid_requests() {
+        use crate::renderer::{Rasterization, RenderPipeline};
+        use crate::stem_fitting::StemFittingStrategy;
+        let font = super::PreparedFont::new(roboto());
+        let pipeline = RenderPipeline {
+            fitting: StemFittingStrategy::FontHintsAuto,
+            rasterization: Rasterization::FreeTypeMonoTerminals,
+            diagonal_fitting: true,
+        };
+        font.render_text_with_pipeline_and_spacing(&request("s x"), pipeline, 0.)
+            .unwrap();
+        for i in 0..6 {
+            let mut req = request("s x");
+            match i {
+                0 => req.width = 0,
+                1 => req.config.axes = [("XXXX".into(), 1.)].into(),
+                2 => req.text = "a\u{301}".into(),
+                3 => req.text = "\t".into(),
+                4 => req.config.size_px = f32::NAN,
+                _ => req.palette = Some(vec![[0; 4]]),
+            }
+            let cached = font
+                .render_text_with_pipeline_and_spacing(&req, pipeline, 0.)
+                .unwrap_err();
+            let fresh =
+                super::render_text_with_pipeline_and_spacing(font.as_bytes(), &req, pipeline, 0.)
+                    .unwrap_err();
+            assert_eq!(cached.0, fresh.0, "invalid request {i}");
+        }
+    }
+
+    #[test]
+    fn prepared_font_does_not_skip_blank_or_cached_request_validation() {
+        use crate::renderer::RenderPipeline;
+        let font = super::PreparedFont::new(roboto());
+        let pipeline = RenderPipeline::default();
+        let mut req = request("");
+        raster_counter::reset();
+        font.render_text_with_pipeline_and_spacing(&req, pipeline, 0.)
+            .unwrap();
+        assert_eq!(raster_counter::font_identity_hashes(), 0);
+        for cached in [false, true] {
+            if cached {
+                font.render_text_with_pipeline_and_spacing(&request("x"), pipeline, 0.)
+                    .unwrap();
+                assert!(font.identity.get().is_some());
+            }
+            for text in ["", "x"] {
+                req = request(text);
+                req.config.axes.insert("XXXX".into(), 1.);
+                let actual = font
+                    .render_text_with_pipeline_and_spacing(&req, pipeline, 0.)
+                    .unwrap_err();
+                let expected = super::render_text_with_pipeline_and_spacing(
+                    font.as_bytes(),
+                    &req,
+                    pipeline,
+                    0.,
+                )
+                .unwrap_err();
+                assert_eq!(actual.to_string(), expected.to_string());
+            }
+        }
+        let invalid = super::PreparedFont::new(vec![0; 8]);
+        assert!(invalid
+            .render_text_with_pipeline_and_spacing(&request(""), pipeline, 0.)
+            .is_err());
+        assert!(invalid.identity.get().is_none());
     }
 
     #[test]

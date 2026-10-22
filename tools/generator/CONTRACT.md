@@ -1,6 +1,6 @@
 # Specimen generator output contract
 
-<!-- cspell:words fvar kerx vkrn subtables -->
+<!-- cspell:words fvar kerx vkrn subtables maxp -->
 
 The specimen generator publishes a self-contained package of native-resolution PNG specimens and display metadata,
 independent of the generator's implementation language. This document covers only that published interface.
@@ -60,13 +60,16 @@ IDs are single path segments of ASCII letters, digits, hyphens, and underscores.
 Exports include each family's descriptive `metadata`; consumers also accept packages without it. It has these fields:
 `names` (nullable `family`, `style`, `full`, `postscript`, `version`, `copyright`, `manufacturer`, `designer`,
 `description`, `vendor_url`, `designer_url`, `license`, `license_url`); `axes` (source-ordered `tag`, nullable `name`,
-`min`, `default`, `max`, `hidden`); `kerning` (`horizontal`, `vertical`, and `sources` drawn from `GPOS kern`, `GPOS
-vkrn`, `kern`, `kerx`); `style` (nullable `slope` of `upright`/`italic`/`oblique`, raw `weight_class` and `width_class`,
-`italic_angle` in degrees); `classification` (nullable raw IBM `family_class`, ten-byte `panose`, `monospaced`);
-`coverage` (nullable `character_count` and sorted, disjoint, inclusive scalar `ranges`); and `declared_unicode_ranges`
-(nullable four OS/2 range words). Definitions follow the OpenType
-[name](https://learn.microsoft.com/en-us/typography/opentype/spec/name),
+`min`, `default`, `max`, `hidden`); `glyph_count` (nullable total from `maxp.numGlyphs`, including unencoded glyphs;
+absent in older packages); `font_hints` (nullable source hint presence, absent in older packages; actual TrueType glyph
+instructions or PostScript stem/alignment hints, without a quality or axis-coverage claim); `kerning` (`horizontal`,
+`vertical`, and `sources` drawn from `GPOS kern`, `GPOS vkrn`, `kern`, `kerx`); `style` (nullable `slope` of
+`upright`/`italic`/`oblique`, raw `weight_class` and `width_class`, `italic_angle` in degrees); `classification`
+(nullable raw IBM `family_class`, ten-byte `panose`, `monospaced`); `coverage` (nullable `character_count` and sorted,
+disjoint, inclusive scalar `ranges`); and `declared_unicode_ranges` (nullable four OS/2 range words). Definitions follow
+the OpenType [name](https://learn.microsoft.com/en-us/typography/opentype/spec/name),
 [fvar](https://learn.microsoft.com/en-us/typography/opentype/spec/fvar),
+[maxp](https://learn.microsoft.com/en-us/typography/opentype/spec/maxp),
 [OS/2](https://learn.microsoft.com/en-us/typography/opentype/spec/os2), and
 [kern](https://learn.microsoft.com/en-us/typography/opentype/spec/kern) specifications.
 

@@ -1,19 +1,99 @@
 # Monochrome geometry and spacing
 
-<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit rekerning -->
+<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL -->
 
-Use unmodified upstream Mono fitting with font instructions first and automatic fitting as an explicit control. Assess
-binary continuity, feature balance and reading rhythm with pixel-aligned display and source kerning inspection. Source
-layout is independent of engine choice; fitted outlines need not preserve source coordinates.
+Combine native and automatic Mono fitting on independent axes, with each upstream policy retained as a control. Assess
+binary continuity, feature balance and reading rhythm with pixel-aligned display and source kerning inspection. The
+layout policy is independent of engine choice; fitted outlines need not preserve source coordinates.
 
 ## Topics
 
+### Local curved-stroke widths
+
+**Confirmed existing height defect, corrected:** Roboto Flex regular `k`, 16 px, default axes, monochrome with diagonal
+fitting enabled. The upper-right source cap is flat below the ascender. Both upstream endpoints are at 9 px, but the
+preceding terminal solve raises one to 9.3125 px while the other stays at 9 px. This occurs in both the approved
+preceding sequence and the local curve candidate; it is not introduced by the curve-attachment change. The global
+control-box cap restriction misses the edge because the left upright extends higher. The
+[reference-height model](../../hobby-fitting.md#terminal-reference-height-constraints) now preserves source-horizontal
+edges with a shared upstream height throughout the glyph, following Hobby §3.3's horizontal regions and Hersch §§5–6's
+separation of grid phase from diagonal width. Width fitting must retain that flat height inside the solve; no pixel or
+glyph-specific correction is used. Both delivered cap endpoints now remain at 9 px, matching the independent Python/CGAL
+reference. The browser preview confirms that the raised terminal pixel moves down one row while diagonal width
+correction remains active.
+
+**Pending assessment, placement and width:** the isolated three-family matrix described below changes 184 outlines and
+39 final bitmaps relative to the preceding local-curve candidate, confined to `k x z`. All 2,771 delivered terminal
+reference edges retain their upstream heights; there are no increased eight-neighbor ink-component counts. These are
+mechanical observations, not optical acceptance. Inspect the changed arm widths, flat-edge placement and joins across
+12/14/16/18/20/24 px, weights 300/400/700 and both hint modes in Roboto, Roboto Flex and Source Sans 3, monochrome.
+Other glyphs, including the preceding `s` correction, retain their preceding delivery. Eight apparently horizontal edges
+in quantized `x`/`y` captures have nonzero slopes in the unrounded source and correctly receive no height constraint.
+Evidence and reproducible inputs remain under `out/diagnostics/robotoflex-k-cap-20261022/`.
+
+The [Hobby curved-width model](../../hobby-fitting.md#joint-placement-and-smooth-curve-continuation) measures source
+stroke thickness through certified opposing borders, independent of horizontal, vertical or diagonal labels. Whole
+straight-to-curve attachment polynomials remain at the preceding fit while interior curve controls can participate in
+the source-relative width solve. This replaces the whole-outline exclusion triggered even by tiny vertical terminal
+segments. The preserved relationships are source contrast, existing Y alignment and exact attachment geometry; the local
+ownership boundary is a project adaptation of Hobby §6 and Hersch §2. Segment length is not an eligibility threshold.
+
+The curve topology certificate omits exact constant lines, which have no directed extent or winding, as in the CGAL
+arrangement model. This changes certificate adjacency only: source operators and delivered coordinates are retained,
+edges with distinct endpoints remain exact, and source, upstream and candidate still certify independently. A collapsed
+upstream terminal therefore cannot hide a real curve contact or force an unrelated interior stroke to abstain.
+
+**Pending assessment, thinning:** Roboto Flex regular at 16 px, all font axes at defaults, monochrome with diagonal
+fitting enabled. The middle's three sampled widths change from approximately 1.60 px to 1.30–1.34 px; attachment curves
+and all Y coordinates stay fixed. The final bitmap removes two middle pixels. Inspect retained curvature, staircase
+continuity and balance against the uprights; this does not establish optical acceptance or full width equalization. At
+12 px its delivered `s` remains unchanged; 14/18 px thin locally, while 20 px has both additions and removals and 24 px
+adds ink. Those neighboring cases remain pending for shape, placement and retained contrast.
+
+The isolated three-family control matrix covers Roboto, Roboto Flex and Source Sans 3 at 12/14/16/18/20/24 px, weights
+300/400/700 and both hint modes. No newly disconnected eight-neighbor ink components are observed. This is a diagnostic
+observation, not a continuity proof or acceptance score. Source Sans `h`/`m` in the earlier 12/14 px attachment concerns
+retain their preceding bitmaps. Their source-connected attachment polynomials remain fixed; broader optical assessment
+of the changed `5 G J S U c s` and mixed-outline cases remains open. The approved baseline, configured publication
+matrix and default-off preference retain their existing scope. Retaining Y can limit the achievable correction through
+nearly horizontal stroke portions; a joint two-dimensional grid-placement solve is outside this slice.
+
+### Fast-math visual assessment
+
+The [arithmetic experiment](../../hobby-fitting.md#global-fast-math-experiment) changes delivered Mono pixels while
+retaining layout in the tested matrix. Classification: confirmed regression in the reviewed appearance. The user reports
+that global fast-math negates most diagonal compensation. The separately demonstrated loss of compensated arithmetic
+also remains a numerical limitation. At 16 px, weight 400, selective font hints and FreeType Mono, changed Roboto glyphs
+are `* 1 2 M S V Y ^ w y`; changed Source Sans glyphs are `# < K S Z k s z`. Inspect their paired shapes and reading
+context without interpreting pixel counts as improvement. The review includes both families' existing size/weight,
+hint-policy and scanner matrix for broader inspection. Global fast-math is declined. A
+[selective solver experiment](../../hobby-fitting.md#selective-solver-arithmetic-experiment) investigates a narrower
+arithmetic boundary while preserving strict geometry.
+
+The paired default views show heavier diagonal spans in Roboto `2 M V Y w y` and Source Sans `< Z z`; inspect their
+contrast with vertical strokes and continuity through joins. Changes in `* ^ S # K k s` include localized tip, corner or
+curve differences, so inspect their retained shape as well as weight. These are visual inspection questions pending user
+assessment, not accepted improvements or glyph-specific fitting rules.
+
+### Defined preview palettes
+
+Font previews reference browser-local palette presets, with Monochrome as the default. Presets define 2, 4, 8 or 16
+coverage colors. Gray uses the existing upstream Normal automatic fitting and Alpha scan conversion at the selected
+output depth; no glyph geometry or layout rule depends on the preset. Coverage indices select the corresponding preset
+entry verbatim under the [surface palette contract](../../../tools/wasm/README.md#render-spec-controls). Display
+paper/ink tinting is applied to the preset gray codes. This extends the existing quantized coverage representation,
+following [scalar quantization](../../references/papers/2006-gallager-quantization/paper.md), rather than introducing a
+fitting model. Palette-lab specimens retain their browser mask and nearest-level linear-light quantization; their pixels
+are illustrative and need not match the native coverage index quantizer. Mechanical depth and palette membership checks
+do not establish optical acceptance. The configured specimen scope and historical renderer roles retain their existing
+depths.
+
 ### Mono fitting and engine selection
 
-The default candidate uses registry Skrifa's `Target::Mono` with `Engine::AutoFallback`. The library chooses the font's
-interpreter when appropriate and otherwise its automatic hinter. **Automatic Mono** forces `Engine::Auto(None)` as the
-second selectable policy. Both consume runtime font bytes in native and WASM rendering. No font-family, glyph, size or
-axis exceptions participate in engine selection.
+The font-hints-first comparison policy uses registry Skrifa's `Target::Mono` with `Engine::AutoFallback`. The library
+chooses the font's interpreter when appropriate and otherwise its automatic hinter. **Automatic Mono** forces
+`Engine::Auto(None)` as the second selectable policy. Both consume runtime font bytes in native and WASM rendering. No
+font-family, glyph, size or axis exceptions participate in engine selection.
 
 The [upstream engine API](https://docs.rs/skrifa/0.48.0/skrifa/outline/enum.Engine.html) and
 [FreeType load-target contract](https://freetype.org/freetype2/docs/reference/ft2-glyph_retrieval.html#ft_load_target_xxx)
@@ -22,11 +102,12 @@ CFF/CFF2 uses its interpreter. Presence of instructions does not establish their
 explicitly limits strong small-size monochrome quality to fonts with suitable black-and-white hints. No general Mono
 strength or diagonal-balance parameter is exposed by Skrifa.
 
-**Invariant:** retain whole outlines exactly as the selected upstream hinter returns them. Both engine policies feed the
-same overlap-aware coverage reduction, threshold and dropout raster. This is upstream fitting under the project raster,
-not byte-identical FreeType Mono rendering. Capture provenance names the effective policy and resolved engine. Gray
-retains upstream Normal automatic fitting. Layout finalizes bitmap metrics from the fitted results (see pair spacing
-below); source-coordinate identity is not an optical acceptance criterion.
+**Invariant for the upstream comparison policies:** retain whole outlines exactly as the selected upstream hinter
+returns them. Both engine policies can feed either the pinned FreeType monochrome scanner or coverage conversion; the
+scanner is selected independently. Its captured-outline parity is checked independently; this does not assert
+whole-font-renderer equivalence. Capture provenance names the effective policy and resolved engine. Gray retains
+upstream Normal automatic fitting. Layout finalizes bitmap metrics from the fitted results (see pair spacing below);
+source-coordinate identity is not an optical acceptance criterion.
 
 The previous `vertical_only` strategy combined source X and Smooth Light Y, following
 [ttfautohint's Y-only policy](https://freetype.org/ttfautohint/doc/ttfautohint.html#background-and-technical-details).
@@ -36,10 +117,27 @@ are rejected, not aliases for the new default. Earlier source-X findings below d
 
 ### Pair spacing and kerning
 
-The working candidate uses one bitmap placement policy for Mono and Gray, shared by the exported strike, native
-specimens and the interactive preview. After fitting, each glyph has a bitmap offset, a whole-pixel advance and sparse
-whole-pixel pair adjustments; pen positions accumulate in whole pixels. Reference and legacy baseline keep source-linear
-layout as independent comparison controls, not as selectable spacing policies.
+Native diagnostic comparisons select fitting and rasterization independently. Changing only rasterization preserves the
+fitted outline, glyph identity, returned metrics and bitmap placement. Changing fitting may legitimately change fitted
+metrics; the layout algorithm remains the same. The shared bitmap policy defaults to zero tracking. Explicit extra
+tracking uniformly changes advances without minimum-gap corrections, so it remains separate from fitting and scan
+conversion. This follows the separation between fitted glyph metrics and pen placement in
+[FreeType's metric model](https://freetype.org/freetype2/docs/glyphs/glyphs-3.html). Native diagnostics retain both Mono
+scan converters as controls for individual stages. The font preview fixes 1-bit scan conversion to FreeType Mono with
+the shared bitmap layout; retired Mono coverage and renderer selections resolve to this current pipeline, including
+saved variants. Gray previews also resolve historical settings to the current coverage pipeline. Native historical APIs
+retain their original policies. Mono previews follow executed font scan instructions when embedded TrueType fitting
+supplies them; otherwise they use smart dropout including short stubs. Font instructions take precedence and may exclude
+stubs or disable dropout, as defined by
+[SCANCTRL/SCANTYPE](https://learn.microsoft.com/en-us/typography/opentype/spec/tt_instructions#scan-conversion-control).
+This preview policy also replaces retired manual scan settings in saved variants. Native diagnostic settings remain
+independent. Mechanical comparisons establish geometry and layout isolation; they do not establish optical acceptance of
+coverage conversion or any combination of stages. The established preview corpus and legacy baseline remain unchanged.
+
+The working pipeline uses one bitmap placement policy for Mono and Gray, shared by the exported strike, native specimens
+and the interactive preview. After fitting, each glyph has a bitmap offset, a whole-pixel advance and sparse whole-pixel
+pair adjustments; pen positions accumulate in whole pixels. Reference and legacy baseline keep source-linear layout as
+independent comparison controls, not as selectable spacing policies.
 
 [FreeType glyph metrics](https://freetype.org/freetype2/docs/glyphs/glyphs-3.html),
 [bearing correction](https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L422)
@@ -106,18 +204,22 @@ of separation and rhythm across pairs, sizes and axes remains pending.
 
 ### Tracking and word separation
 
-Fractional tracking changes Mono rounding phase; tightening letters and spaces can compress word boundaries twice.
-[OpenType horizontal metrics](https://learn.microsoft.com/en-us/typography/opentype/spec/hmtx) supply source advances
-and bearings. Preserve neutral word separation and intentional overlaps.
+[FreeType glyph metrics](https://freetype.org/freetype2/docs/glyphs/glyphs-3.html) and
+[BMFont's bitmap format](https://www.angelcode.com/products/bmfont/doc/file_format.html) separate glyph images, advances
+and pair adjustments. Hersch's grid-placement model (§5) explains why fractional displacement can change a rasterized
+shape's phase. Uniform whole-pixel tracking preserves the glyph bitmaps and their relative pixel-grid phase.
 
-The adopted user policy uses whole-pixel Mono tracking, and whole-pixel candidate Gray tracking, with at least one blank
-column for normally separated Mono pairs under nonzero tracking, preserving fixed pitch, tabular digits and source
-zero/negative gaps. Baseline and reference Gray retain fractional tracking. Negative tracking preserves neutral ASCII
-word gaps; positive tracking widens letters and spaces. These are explicit layout choices, not sourced optical optima.
+For the explicit pipeline, extra tracking is a signed whole-pixel addition to each finalized advance, including spaces
+and the final glyph advance. It applies equally to Mono and Gray; zero is identity. Negative tracking can reduce word
+gaps and overlap glyphs. No clearance floor or word-gap refund changes the requested amount. This replaces the protected
+spacing behavior for current previews while historical role APIs retain their earlier policy.
 
-The [tracking constraints](../../../tools/generator/README.md#tracking-policy) make line-width changes non-additive. A
-one-column floor does not establish optical correctness for curved or diagonal pairs; Roboto 14 px, weight 641, width
-100 is an isolated spacing witness.
+Tracked export bakes the same offset into advances and retains the finalized source-kerning and fitted-bearing pair
+adjustments exactly once. Signed advances represent this operation without extra pair corrections, including zero or
+negative resulting advances. Any future adapter with narrower metric restrictions must explicitly handle or reject
+unrepresentable values while preserving preview/export parity. This does not introduce optical rekerning or a guarantee
+that a selected tracking value is visually appropriate. Diagnostic comparisons and static publication retain zero
+tracking unless explicitly requested.
 
 ### Compact marks and stem ownership
 
@@ -156,9 +258,7 @@ Controlled fractional composition reproduces unequal stems; the user's cause and
 ### Source-kerning inspection
 
 Expose authentic source pair adjustments independently of experimental spacing through the
-[WASM API](../../../tools/wasm/README.md#kerning-pairs). The
-[inspection interface](../../../tools/web/CONTRACT.md#specimens) distinguishes an unavailable API, absent font kerning
-and extraction failure; inspection failure does not block glyph rendering.
+[WASM API](../../../tools/wasm/README.md#kerning-pairs).
 
 ### Coordinate-selected scalar glyphs
 
@@ -337,6 +437,34 @@ joins and counters remain pending. The approved baseline, independent reference 
 policies. This experiment does not establish contour-representation invariance, general bitmap symmetry or acceptance of
 the combined fitting and raster model.
 
+#### Terminal stubs and dropout
+
+Candidate Mono excludes terminal stubs from dropout rescue, following
+[TrueType SCANTYPE mode 5, rule 6](https://learn.microsoft.com/en-us/typography/opentype/spec/tt_instructions#scantype).
+The pinned
+[FreeType recognizer](https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/raster/ftraster.c#L2206-L2242)
+relates a stub to neighboring contour profiles ending before the next scan line. The project adaptation follows the
+actual curve arc joining the filled span's borders: a cap that closes on one side before the next pixel-center scan line
+is excluded. Curve extrema determine continuation; coverage, glyph identity and ink connectivity do not. The
+coverage-thresholded raster remains a project adaptation rather than TrueType center-fill conversion, and does not adopt
+FreeType's overshoot exceptions. Ordinary threshold ink, fitted geometry, placement and metrics are preserved; legacy
+baseline and independent reference retain their existing policies.
+
+Roboto Flex regular `x` at the web defaults (16 px, weight 400, width 100, optical size 14, slant zero, Mono) has
+identical source and interpreter-fitted outlines, with both upper terminals at 8.21875 px. A vertical scan through the
+left cap previously promoted coverage 34/255 to full ink, adding one row to that arm alone. **Classification: confirmed
+terminal-shape defect from stub rescue.** The candidate removes that one added pixel and retains the source terminal
+height relationship. At optical size 14, the same left-only top-row additions disappear at 14/18/20 px too.
+
+**Pending optical assessment:** Literata `E` at 14/16/18 px and `@` at 14 px, weight 400 and optical size equal to pixel
+size, Mono. Terminal removal opens small enclosed white regions at the right serifs of `E` and the right shoulder of
+`@`; the principal stroke components remain connected. Source `E` has one contour and `@` has two; the changed regions
+are terminal closures rather than missing stroke components. Inspect serif length and attachment, shoulder balance and
+counter openness. Broader terminal weight, joins and mark clearance remain pending. Ordinary coverage can erase a tiny
+detached contour when all of its potential rescues are stubs; no special mark exemption is introduced. Very complex
+contours can also exhaust the bounded dropout work and fail generation rather than bypass stub exclusion. No
+glyph-specific correction is permitted.
+
 #### Binary stem weight and source phase
 
 Roboto 14 px, weight 400, width 100, Mono threshold 128 has a two-column middle stem in `m`, right stem in `u` and stem
@@ -420,3 +548,442 @@ has identical delivered pixels in all 48 isolated glyph controls across Roboto 1
 select their interpreter; several carry only minimal programs. A separately constructed instruction-free source
 exercises actual automatic fallback. Broader optical assessment, correct weight at neighboring sizes, diagonal balance,
 counters and joins remain pending. User selection of the default engine policy does not establish optical acceptance.
+
+#### Scan-control-only program fallback
+
+Literata at 16 px, optical size 12, weight 400 has equal 93-unit (1.488 px) `i`/`j` stems, yet the interpreter leaves
+the outlines unchanged and the raster delivers two pixels against one. Forced automatic Mono fits both stems to two
+pixels. The font carries no `fpgm`, a `maxp` maximum of zero, and a seven-byte `prep` program that only pushes scan
+settings; upstream still prefers its interpreter for any nonempty `prep`, so automatic fitting is never reached.
+
+[prep](https://learn.microsoft.com/en-us/typography/opentype/spec/prep) programs cannot move glyph-associated outline
+points, and
+[SCANCTRL/SCANTYPE](https://learn.microsoft.com/en-us/typography/opentype/spec/tt_instructions#scan-conversion-control)
+only tune scan conversion, which the candidate raster does not consume.
+[Simple and composite instruction lengths](https://learn.microsoft.com/en-us/typography/opentype/spec/glyf) identify
+real outline programs, and [stem-width normalization](https://freetype.org/autohinting/alignment.html) explains why the
+automatic hinter restores the equal stems. This is a deliberate project policy adaptation, not upstream behavior.
+
+The adopted candidate policy uses upstream automatic Mono fitting for TrueType fonts verified to carry no glyph
+instruction streams (simple or composite), no `fpgm`, and an absent or scan-control-only `prep`; every other font keeps
+upstream engine selection. Upstream's own interpreter preference is unchanged, as are CFF/CFF2/VARC fonts, explicit
+engine requests, and the raw font bytes. The decision is font-wide and structural, with no requested-glyph, size, or
+name exceptions. The request stays `auto_fallback` while provenance reports the actual engine.
+
+**Classification: confirmed engine-selection defect with demonstrated automatic recovery on the reported stems.**
+Optical assessment of stem-weight balance under automatic fitting across pairs, sizes, and axes remains pending; the
+revision stays open and no optical acceptance is claimed.
+
+#### Native monochrome scan conversion
+
+Candidate Mono adopts
+[FreeType 2.15.0's monochrome scan converter](https://github.com/freetype/freetype/blob/VER-2-15-0/src/raster/ftraster.c)
+on the whole Skrifa-fitted outline. Nonzero-winding center fill and two-direction smart dropout, excluding stubs with
+upstream overshoot handling, replace the coverage-threshold/dropout approximation. Fitting engines, source geometry,
+integer origin and layout policy remain separate. Coordinates cross the scanner's 26.6 boundary by nearest rounding;
+ties go towards positive infinity. The default remains uniform smart dropout without stubs; manual dropout and stub
+controls expose upstream policies without moving outlines. Raw Zeno coverage remains diagnostic and no longer determines
+candidate Mono ink. The earlier overlap-coverage and terminal-stub experiments above describe the superseded raster
+model.
+
+The question is whether established monochrome scan conversion restores source-connected thin features without
+unacceptable weight, counter or terminal changes. Controls hold captured outlines and grid placement fixed against an
+independent full FreeType build at the same release; Gray, baseline and independent-reference paths remain unchanged.
+Assessment includes Source Sans 3 weights 200/400/700 at nearby sizes and the existing five-family corpus, with no
+publication-matrix expansion. Mechanical parity is required; topology or ink counts alone do not establish acceptance.
+StrokeStyles and further width fitting are deferred.
+
+The optional font-instruction policy forwards executed TrueType scan state through a metadata-only snapshot of the same
+Skrifa release.
+[SCANCTRL/SCANTYPE](https://learn.microsoft.com/en-us/typography/opentype/spec/tt_instructions#scan-conversion-control)
+supply the state; [FreeType's loader](https://github.com/freetype/freetype/blob/VER-2-15-0/src/truetype/ttgload.c)
+supplies the global flag mapping and first-point component-marker semantics. Composite instructions update the final
+global state while retaining the component contour markers. Fitting and engine selection remain unchanged. Automatic
+fitting does not execute font bytecode and retains the manual fallback; scan-only fonts routed automatically therefore
+keep their existing behavior. Reference and Gray continue using registry Skrifa independently. This adopts scan-state
+transport, not a new fitting model or complete FreeType driver behavior.
+
+**Assessment scope:** default rendering is unchanged; explicit manual or font policies may add or remove thin-feature
+ink without moving outlines or layout. Their optical effect depends on the selected font and size and remains subject to
+comparison in the browser. No policy is an optical-quality guarantee, and no broader font-mode acceptance is claimed.
+
+**Confirmed correction, scoped browser assessment:** Source Sans 3 at 16 px, weight 200, Mono regains the
+source-connected `e` crossbar attachment and the shortened ends of `x`, `c`, `k` and `w`. The same fitted outlines
+produce these features with independent full FreeType; no outline movement or glyph-specific rule is needed. At 12–17 px
+the `e` loop returns while the `0` and `8` counter counts remain unchanged across 12–20 px at weight 200. Browser
+inspection at 14/16/20 px weight 200 and 16 px weights 400/700 supports this local continuity and terminal correction;
+counts alone are not the acceptance basis. Restored ends increase local ink, so this is not a global weight-preservation
+claim.
+
+**Existing limitation, unresolved:** Roboto 14 px, weight 400, width 100 still has unequal principal stem widths in `m`
+and `u` against `n` under font instructions first. The scanner removes isolated cap pixels but does not regularize those
+upstream-fitted widths. Inspect stroke-weight balance rather than treating restored continuity as its resolution.
+Literata 16 px, weight 400, optical size 12 keeps equal two-column `i`/`j` body stems in the inspected preview. Roboto
+Flex 16 px, weight 400, width 100, optical size 14, slant zero retains readable joins and counters in the inspected
+sample; broader optical acceptance, especially other weights and sizes, remains pending. These observations do not close
+the iteration or alter the approved comparison baseline.
+
+#### Terminal tips and junction continuity
+
+The web preview's automatic-fitting fallback includes terminal stubs; executed font scan instructions still take
+precedence. Roboto Flex at the font-default axes (weight 400, width 100, optical size 14, slant zero), 16 px, Mono has a
+**confirmed terminal-shape defect** at the lower-right tip of `k`: stub rescue extends the last row by one pixel.
+Excluding stubs removes that extension with identical fitted geometry and metrics. The same terminal extension occurs at
+12–19, 21–22 and 24 px. This finding does not establish broader optical acceptance of stub exclusion.
+
+**Global stub exclusion is held:** Source Sans 3 ExtraLight (weight 200), 12 px, Mono loses the attachment of the `R`
+diagonal leg, a **confirmed continuity regression**. The same policy opens the `6` bowl at 12–13 px and the `9` bowl at
+12–15 px; their source-connected bowl attachments need protection. Regular-weight cases retain their ink-component
+counts, while terminal and enclosed-white-region changes in Literata and Roboto Flex remain pending optical assessment.
+The preview retains its existing policy while join protection is investigated; these broader diagnostic cases do not
+expand the published specimen matrix.
+
+The pinned [FreeType stub recognizer](https://github.com/freetype/freetype/blob/VER-2-15-0/src/raster/ftraster.c)
+classifies adjacent scan profiles and local extrema, rather than semantic stroke endpoints and junctions. Investigate
+source-derived feature ownership and continuation evidence, with the same rule protecting joins and excluding true
+terminal tips; bitmap component counts alone cannot supply that classification. Independent full FreeType with simple or
+smart dropout, at ordinary or high precision, still disconnects the ExtraLight `R` leg when excluding stubs. These
+existing controls do not supply join protection.
+
+[Hobby §3.2](../../references/papers/1993-hobby/paper.md#32-width-control) derives stroke widths and relationships from
+the medial axis of the filled shape. A **project hypothesis for investigation** is to distinguish terminal branches from
+junctions and closed counter paths in this source geometry, retaining rescues needed by connected strokes while
+excluding terminal extensions. Analyze the whole filled shape, including overlaps and holes; contour identity is not
+stroke ownership. Feature recognition, geometric tolerance, movement-free raster integration and ambiguous-case fallback
+need a separate design before implementation. Retain the current policy when the geometric classification is uncertain.
+This is not an adopted modification of the pinned FreeType scanner.
+
+Roboto Flex `1` at the same defaults has a separate **confirmed weight imbalance, unchanged by stub policy**. Upstream
+automatic Mono fitting narrows its vertical stem from 1.5 to 1 px while retaining roughly the source thickness in the
+slanted head. The [coupled-width research direction](#coupled-width-geometry-research-direction) applies to this
+relationship: measure widths across source-derived normals and couple relative width changes, preserving attachment,
+direction and intentional contrast. Real-outline feature recognition, ownership and raster assessment remain
+prerequisites; the correction below owns the resulting source-relative fitting policy.
+
+The first terminal experiment is deliberately conservative: prove a straight cap is a supporting boundary of the whole
+filled shape, with both adjacent stroke borders continuing into the filled half-plane. Apply the TrueType cap-closure
+test only to such certified tips; leave curves, interior junctions, holes and ambiguous overlap ownership unchanged.
+This supporting-cap eligibility restriction is a project hypothesis grounded in the scan-conversion terminal model, not
+a substitute for general medial-axis recognition. Inputs are captured source/fitted outlines and fixed-grid FreeType
+scans with stubs included/excluded. Controls include transformed synthetic caps, holes, overlaps and junctions, Roboto
+Flex `k` at default axes over 12–24 px, and the Source Sans 3 ExtraLight `R`/`6`/`9` failures. The question is whether
+certified terminal suppression removes the reported extension without changing any source-connected junction. Any
+required glyph exception, unsupported geometric separator or damaged join rejects the slice. Production adoption
+requires independent raster checks and browser assessment; the published preview stays unchanged during the experiment.
+
+#### Supporting-cap correction assessment
+
+The current web preview adopts the supporting-cap correction through the explicit `free_type_mono_terminals` stage;
+historical role APIs, the approved baseline, Gray and the published specimen matrix keep their existing policies. The
+kernel requires matching source/fitted contour and edge ownership, a whole-outline supporting half-plane,
+adjacent-border continuation and a unique finite cap crossing the rescued pixel square. Other boundaries, curve hulls
+and uncertain predicates veto suppression. Optional geometry work exhaustion keeps the original scan. This is the
+conservative project adaptation described above, rather than a general medial-axis endpoint detector. The maintained
+kernel has no dependency on the experiment.
+
+**Confirmed correction, scoped browser assessment:** Roboto Flex at the reported default axes, 16 px, Mono loses the
+extra lower-right `k` pixel while its outline, coverage, frame and metrics remain identical. Browser inspection supports
+the corrected tip and the retained Source Sans 3 ExtraLight `R`/`6`/`9` attachments at 12 px. The previously
+demonstrated join regressions keep the original scan at their affected sizes. No glyph-specific production exception is
+used.
+
+The isolated 52-case, 4,888-glyph sweep changes 150 glyphs by removing 217 certified rescue pixels; all hard invariants
+pass, and ink-component and enclosed-background counts stay unchanged. Counts establish control evidence only. Changed
+straight terminals in Roboto Flex, Literata and Source Sans 3 remain **pending broader optical assessment** for retained
+end shape and local weight. Hull-supporting long borders can satisfy the eligibility test: the unique cap-square and
+other-boundary gates are conservative controls, not proof of semantic stroke ownership. Inspect their ends, and retain
+this as a model limitation rather than claiming general terminal recognition or optical acceptance.
+
+**Existing limitation:** the conservative gate suppresses the `k` extension at 13, 16, 19 and 22 px in the 12–24 px
+sweep. Other sizes abstain, including some with the original extension. The terminal-only policy leaves the `1` head
+imbalance unchanged; the separate source-relative correction below addresses that relationship. Native/WASM parity,
+source-identity validation and reconstruction tests cover the new stage; optical closure remains with this open
+iteration.
+
+#### Source-relative straight-stroke correction
+
+The `1` investigation applies [Hobby's coupled-width model](../../hobby-fitting.md#valid-straight-medial-intervals) to
+the valid straight portions of the source medial axis. Third-boundary contacts end each portion rather than vetoing the
+entire pair or being ignored. Source normals and medial radii define relative width error; all related/anchor sample
+pairs carry their own arc-length product from (17). The existing upstream-fitted rectilinear stem supplies the anchor
+change, and its shared attachment stays fixed. This is a conservative project adaptation of the source feature model,
+not an integer-target search or a glyph-specific correction.
+
+The native correction is isolated behind the explicit `source_relative` fitting policy so original fitting controls and
+the approved baseline stay independently available. Curves, multiple contours, conflicting anchors or ownership,
+numerical uncertainty and movement/validity failures keep the upstream geometry. Inspect retained head direction,
+attachment, intentional contrast and the final Mono bitmap at the reported defaults and neighboring sizes; mechanical
+convergence and outline validity alone do not establish optical acceptance. The current working preview adopts this
+policy; the iteration remains open.
+
+**Confirmed correction, scoped browser assessment:** Roboto Flex Regular at 16 px and default axes, Mono, loses the
+reported upper-left thickening of `1`. Its principal stem, attachment and advances remain fixed. The source-normal head
+width proxy decreases from about 1.395 to 1.016 px against a 1 px fitted stem; shape terms retain the upstream placement
+while allowing local head taper and direction changes. Browser comparison supports the corrected local weight balance
+and retained attachment at 16 px, with nearby-size inspection at 12 and 20 px. This is a width-and-local-shape
+correction, not a claim of exact border-direction preservation. The existing `k` correction and the ExtraLight Source
+Sans 3 `R`/`6`/`9` joins retain their delivered pixels.
+
+**Assessment limits:** the isolated corpus has 34 geometric applications and 20 changes to visible ink. The additional
+Roboto Flex `7` changes affect weight along the leg and its end; browser inspection at 12/16/20 px shows retained
+continuity, while broader shape/weight assessment remains pending. Some apostrophe outlines and `1` at 20–23 px change
+geometry with unchanged visible ink. Source Sans 3 ExtraLight `L` at 20 px gains only an empty bitmap-frame row, with
+unchanged visible ink and advance. All mechanical checks pass and component/counter counts stay unchanged; these facts
+are controls rather than optical acceptance. Other axes, curved or conflicting features remain outside the scoped
+assessment, and unsupported ownership keeps the upstream fit.
+
+#### Selective native hints and automatic fitting
+
+The working Mono preview uses automatic fitting with an optional **Use font hints** preference. When enabled, native
+instructions own the axes they constrain or measure, and automatic fitting supplies the remaining axes. When disabled,
+upstream automatic Mono owns both axes. Existing URL and variant settings retain their encoding: `font_hints_first` now
+selects this selective preview policy, while `upstream_mono` disables native hints. Historical renderer policies remain
+independent controls. The approved baseline and configured publication matrix are unchanged.
+
+[Turner and Lemberg](../../references/papers/2003-turner-lemberg/paper.md) describe independent X/Y feature analysis and
+fitting.
+[TrueType projection, freedom and interpolation semantics](https://learn.microsoft.com/en-us/typography/opentype/spec/tt_instructions)
+provide conservative evidence of native ownership. Coordinate differences alone cannot identify ownership: a hint may
+constrain a point without moving it, and UTP can clear touched flags. Executed coordinate measurements reserve their
+axes too, preserving dependencies whose results feed another axis. An IUP on an axis without touched points contributes
+no ownership. PostScript stem operators and alignment zones supply the corresponding source hint evidence.
+
+**Project adaptation:** combine corresponding command coordinates from the independently captured native and automatic
+fits only on demonstrably independent axes. Keep native-controlled coordinates exactly; horizontal metrics follow the
+X-axis owner. Explicit native hint disabling, failed execution, point-defined vector dependencies, constrained composite
+programs, implicit changes on an unreserved axis, transformed PostScript outlines or incompatible command streams retain
+the complete native fit. This is conservative axis fallback, not per-point feature completion. Existing source-relative
+straight-stroke correction remains on wholly automatic glyphs, and executed font scan settings remain authoritative.
+
+**Confirmed geometric correction:** Roboto Regular, 16 px, weight 400, width 100 has nearly equal source stems in
+`i`/`t`/`f`, but native Y-only instructions leave their X positions uncontrolled and deliver unequal widths. The
+selective fit takes automatic X while preserving every native Y coordinate. Independent source/automatic captures and
+the current evaluator check reconstruction across Roboto, Roboto Italic, Roboto Flex, Literata and Source Sans 3 at
+12/16/20 px; Roboto axis-ownership checks also cover 14/18/24 px. These mechanical checks do not establish optical
+acceptance.
+
+**Scoped browser assessment:** Roboto at the reported default axes, 16 px, has equal body stems in `i`/`t`/`f` while
+retaining its native dot and hook heights. Inspection at 12 and 20 px supports local continuity and stem balance.
+Broader assessment of changed glyphs, weights, counters and spacing remains pending. Fonts with both axes reserved
+intentionally retain the native result, even if a remaining optical imbalance exists; semantic feature-level completion
+is outside this slice.
+
+#### Remaining stroke balance
+
+The [joint placement and smooth curve study](../../hobby-fitting.md#joint-placement-and-smooth-curve-continuation) owns
+the isolated candidate. Native coordinates and finalized layout remain fixed; the maintained app retains its previous
+width-only model. The following Roboto 400/16, width 100, Mono (`free_type_mono`, font hints enabled) findings remain
+**pending assessment**:
+
+| Feature | Candidate evidence                                                                                                                       | Inspection question                                                                                                     |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `s`     | Curved spine and shoulder fitting reduces ink from 29 to 25 pixels with native Y retained; the ink frame widens from 7 to 8 px.          | Does the lighter, wider shape retain the lower bowl, terminals, continuity and spacing in text?                         |
+| `x`     | Crossing phase produces a symmetric raster; normal widths rise from about 0.89–0.92 to 1.11–1.15 px, and ink rises from 18 to 23 pixels. | Is the heavier crossing preferable, and does its half-pixel placement preserve reading rhythm and side-bearing balance? |
+| `S`     | Curve fitting reduces ink from 32 to 26 pixels; the ink frame widens from 8 to 10 px.                                                    | Does the lighter, wider capital preserve contrast, shape and spacing?                                                   |
+| `X`     | Phase moves right by about half a pixel; mean projected width falls from 1.49 to 1.18 px while delivered ink rises from 28 to 32 pixels. | Do the crossing, arm weight and side bearings preserve capital balance?                                                 |
+
+The joint crossing/curve candidate leaves default Roboto `2` unchanged. The existing width fit reduces mean normal width
+from 1.056 to 0.867 px, but its straight borders diverge (47.24° and 43.61°), and the lower staircase remains heavy.
+Fixed curve-incident endpoints make the parallelism/grid constraints incompatible. The
+[attached diagonal continuation](#attached-diagonal-consistency) addresses this separate source feature class.
+
+Other sizes and weights, and the Source Sans control require their own shape and contrast assessment. Mechanical and
+independent topology checks establish finite geometric invariants, not optical acceptance. The candidate remains
+separate from the maintained renderer and the previous comparisons.
+
+**Confirmed regressions, excluded controls:** the free-Y arm broke Source Sans 400/14 `h` and 300/12 `m`; retaining Y
+still broke 300/14 `h` and 400/14 `m`; additionally pinning upright X endpoints still broke 300/12 `h`, in both hint
+modes. The review candidate conservatively abstains on outlines containing source vertical straight segments. This
+general geometry restriction preserves the existing mixed upright-and-curve output, including those regression cases; it
+also leaves default Roboto `c`, `5`, `G`, `J` and `U` unchanged. A broader attachment model remains unresolved.
+
+The final isolated matrix covers 72 cells and 6,840 ASCII glyph cases; 315 geometric fits deliver 218 changed bitmaps.
+All native coordinate, retained-axis, movement, layout and independent topology checks pass, as do 387 tests. The
+component census finds no new components; this is diagnostic evidence, not a continuity or optical verdict. The scope
+exception withholds 258 bitmap changes from the anchored control, including the two demonstrated broken-arch tiles and
+256 unassessed changes. Browser inspection confirms the default `s` intervention and symmetric, heavier `x`, and the
+retained Source Sans 300/12 `h` attachment. Weight, increased curved ink extents and reading rhythm remain pending.
+
+#### Attached diagonal consistency
+
+The [attached diagonal model](../../hobby-fitting.md#attached-diagonal-and-curve-constraints) shares straight-border and
+curve-control variables while preserving existing Y fitting, upright X anchors and finalized layout. Sharp line corners
+may rotate without reversing orientation; curve joins retain their upstream signed cross, with zero cross at source
+smooth joins. Quadratic curvature and tangent inequalities prevent border alignment from reversing the bowl. The
+comparison baseline is the preceding isolated joint candidate, and the maintained app remains separate.
+
+For Roboto 400/16, width 100, Mono with hints enabled, the user **visually accepted `2`** on 2026-10-21 in the
+[attached diagonal comparison](https://solitaire.taile005dc.ts.net:8909/) ("looks great"). Ink falls from 30 to 26
+pixels; the lower diagonal forms a thinner, more even staircase with the bowl and baseline connected. Y fitting and the
+baseline stay fixed. This acceptance covers this default `2` case only.
+
+`5` remains **pending assessment**: upper-stem and bowl pixels redistribute, with net ink unchanged at 28 pixels.
+Inspect whether the stem, bowl attachment and top-bar extent preserve shape and contrast.
+
+At 14 px, weight 400, `2` changes from 25 to 23 ink pixels with a visibly continuous diagonal. The 300/12 control
+remains unchanged. Source Sans 400/16 `v` redistributes terminal/apex ink without changing its 16-pixel total; terminal
+alignment and apex balance remain pending. The broader changed cases include `2`, `5`, `V`, `v`, `W`, `w`, `X`, `x`,
+`Y`, `y` and `S`; their own source geometry determines applicability and target widths. They require weight, join and
+spacing assessment rather than a universal thinning claim.
+
+The isolated matrix covers the same 72 cells and 6,840 ASCII cases: 206 fits deliver 174 changed bitmaps. All 401 tests
+pass, including coordinate-encoding controls and analytic constrained-optimum checks. Native capture replay, coordinate
+ownership, movement, layout, source curve certificates and independent exact topology checks pass. The component census
+finds no increases; these mechanical checks alone do not establish optical acceptance. Unsupported geometry retains the
+preceding candidate. No glyph-specific correction or raster-dependent selection is used; iteration 001.03 remains open.
+
+#### Combined text assessment
+
+The [combined text comparison](https://solitaire.taile005dc.ts.net:8910/) compares the frozen joint/curve and
+attached-diagonal result with the maintained width-only baseline using identical native pen positions, advances and pair
+adjustments. Browser inspection covers Roboto 300 at 12/16 px, 400 at 12/14/16/20 px and 700 at 12/16 px with hints
+enabled, plus 400/700 at 16 px with hints disabled. Source Sans controls cover 300/12, 400/14, 400/16 and 700/14; their
+delivered glyph pairs are identical in both hint modes. Ordinary sentences, alphabets, numerals and aligned enlarged
+details support retained attachments and readable text in those cases, without a demonstrated new break or collision.
+This bounded assessment does not establish acceptance of the entire matrix.
+
+The following shape and contrast tradeoffs remain **pending assessment**:
+
+| Case                                     | Finding and inspection question                                                                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Roboto 400/16, hints on/off, `x`/`X`     | The symmetric crossing remains heavier than the width-only result. Does its weight and placement balance the surrounding text?                                           |
+| Roboto 400/20, hints on, `s`             | The upper shoulder is visibly flatter and squarer. Does the changed silhouette retain the intended curved shape?                                                         |
+| Roboto 700/12, hints on, `S`             | The wider bold form gains ink, from 37 to 42 pixels. Do its terminals and bowl openings retain suitable contrast?                                                        |
+| Source Sans 700/14, both hint modes, `s` | The upper aperture becomes pinched at a diagonal pixel contact, enclosing one white pixel under four-neighbor connectivity. Does it read as an unwanted closed aperture? |
+
+Roboto 300/16 `5` loses a four-neighbor enclosed white pixel in both hint modes; enlarged inspection shows an open lower
+bowl with connected ink, consistent with the source's open form. The changed default `5` also retains its bowl and
+upright attachment in the inspected text, while its redistributed weight remains part of broader assessment. The Source
+Sans 300/12 control stays unchanged, including the earlier upright/curve attachment cases.
+
+Across the full matrix, the combined result changes 386 of 6,840 glyph cases against width-only output. Exact replay of
+both input packets and shared layout passes; eight-neighbor ink component counts remain unchanged. These are mechanical
+controls, not a verdict on the pending apertures or silhouettes. The isolated comparison preserves the existing model
+and previous previews; 18/24 px and the remaining size/weight combinations retain their pending optical status.
+
+#### Source Sans crossing balance
+
+The [source contrast assessment](../../hobby-fitting.md#source-contrast-and-crossing-assessment) compares weight 400
+`x`/`X` at 12/14/16/20 px with both hint preferences and Roboto controls. Source Sans delivers identical glyphs in the
+two hint modes. Its source is approximately, rather than exactly, reflective: independent unrounded straight-arm
+measurements at 16 px give about 1.125 versus 1.186 px for `x` and 1.185 versus 1.245 px for `X`, along the existing
+source-normal directions. This small contrast is part of the source evidence; exact bitmap symmetry is not required.
+
+**Confirmed unresolved fitting/raster imbalance, rather than a new combined-candidate regression:** default `x` at 16 px
+preserves roughly the source's five-percent arm contrast in the width-only geometry, but acquires an extra top pixel on
+only the right arm. The two terminal outlines retain the same height. The original automatic result does not have that
+one-sided upper row, and the combined candidate retains the width-only output. Browser inspection confirms the unequal
+terminal footprint, so the source's small width difference does not justify accepting the complete raster imbalance as
+designed.
+
+The width-only fit also tilts the originally horizontal top caps, moving their ends from Y = 8 to 7.9375–8.03125 px. An
+internal axis control retaining its X but restoring automatic Y removes the extra upper row yet still produces unequal
+terminal ink. This is a causality control rather than a valid fitted candidate: preserving heights alone does not
+resolve the coupled placement and scan-conversion effect.
+
+At 14 px, the lower terminal row of `x` is two pixels on the geometrically thinner left arm and one on the right;
+unfitted and automatic output have two on each side there. This is demonstrated local quantization amplification, while
+its significance for the complete staircase remains **pending assessment**. At 12 px, `X` also retains a crowded,
+asymmetric crossing already present in automatic output; this unchanged concern is not evidence of a new regression. The
+16/20 px attached `X` fit makes horizontal arm separations nearly equal while leaving some staircase asymmetry. Its
+reduction of the source's small arm contrast remains an optical tradeoff, not a reason to force exact reflection.
+
+**Confirmed representation limitation:** the joint crossing model does not support these curved outlines. The attached
+fit abstains on `x` at 14/16/20 px and `X` at 12/14 px because captured source quadratics become exactly collinear. At
+16 px `x`, two such curves have nonzero signed curvature in the independently instantiated unrounded source. Their
+maximum coordinate discrepancy is about 0.013 px. The existing gate correctly rejects its degenerate input; weakening
+that gate would not recover the lost source information or establish a safe crossing correction.
+
+The resulting decision is to pursue source-preserving curved crossing placement before accepting these cases. Retain
+unrounded source feature geometry, keep delivered rounding and native coordinates authoritative, and investigate the
+shared curve correspondence described by Hobby §6. This is a general geometric continuation, with no glyph exception,
+weight adjustment or bitmap-symmetry target. Source precision and crossing placement require separate verification; the
+existing app, model and approval scope are unchanged.
+
+The [curved crossing continuation](../../hobby-fitting.md#curved-crossing-prototype) now supplies an isolated candidate
+for straight arms with quadratic attachments. Finite source-relative reflection and width terms share one X solve;
+automatic/native Y and layout remain fixed. Approximate matches can compromise with shape rather than becoming
+incompatible exact equalities. A fork with a separate hook does not qualify as the common four-arm crossing.
+
+**Pending optical assessment:** default Source Sans 400/16 `x` loses the isolated upper-right row while retaining small
+source arm contrast. Its unequal terminal footprints remain visible. `X` redistributes the crossing and terminal ink,
+with a wider ink extent in the inspected result. The [separate comparison](https://solitaire.taile005dc.ts.net:8912/)
+includes enlarged details and ordinary text for assessing weight, crossing shape and spacing. This candidate does not
+establish optical acceptance or renderer adoption; the preceding combined result retains its existing review status.
+
+#### Terminal reference heights
+
+The [terminal constraint prototype](../../hobby-fitting.md#terminal-reference-height-constraints) keeps recognized
+source-horizontal caps at their original automatic/native heights inside the width solve. It also holds X on recognized
+source-vertical attachments, including short uprights sharing diagonal vertices. The preceding curved crossing packet
+remains the baseline and the fallback wherever the new feature is unsupported or its cap heights already hold.
+
+**Confirmed terminal-placement correction, with broader optical assessment pending:** default Source Sans 400/16,
+monochrome output and hints on/off, removes the two pixels below `A`'s baseline and the extra upper-left row on `y`.
+Their recognized feet and upper caps retain Y = 0 and Y = 8 respectively. This is a constrained solve rather than a
+coordinate-restoration or bitmap-cleanup pass. The default `x`/`X` crossing output remains unchanged. The intervention
+also removes one pixel at `K`'s upper diagonal tip while retaining its top ink height; neighboring diagonal weight and
+attachment shape remain review questions.
+
+**Pending assessment:** the default Source Sans `*` and grave accent redistribute ink as cap heights and neighboring
+strokes are refitted. Inspect arm balance and the accent's position rather than treating a net pixel reduction as a
+quality verdict. The asterisk's lower-right tip now contacts its center diagonally; the grave accent ends in a wider
+horizontal pixel step. Their silhouette and weight remain pending. Source Sans 400 at 14/20 px and Roboto 400/16 with
+hints disabled also change terminal/diagonal placement; inspect continuity, local weight and retained source contrast in
+enlarged glyphs and ordinary text. The 14 px `A`/`y` bitmaps remain unchanged despite constrained geometry; the unequal
+`A` foot staircase is an existing pending concern. At 20 px `A` changes while `y` remains visibly unchanged. Roboto
+400/16 with hints enabled remains unchanged. The broader weight/size matrix remains pending. Existing unresolved
+curve/aperture findings retain their previous status.
+
+The [separate comparison](https://solitaire.taile005dc.ts.net:8913/) preserves the maintained app and every preceding
+preview. This prototype does not establish renderer adoption or close iteration 001.03.
+
+The 72-cell matrix evaluates 6,840 ASCII cases, applies 852 geometric fits and changes 291 delivered bitmaps. Native
+replay, shared layout, exact retained coordinates, per-pair movement bounds and independent raw/captured topology checks
+pass. None of the changed cases adds an eight-neighbor ink component. All 464 tests pass, including the 37 new terminal
+tests; malformed inputs and unresolved closure ownership retain the previous result. These are mechanical controls, not
+optical acceptance.
+
+**User approval, 2026-10-21:** the terminal comparison at port 8913 is approved for adoption in the main app. This
+supersedes the prototype-only disposition for the reviewed fitting sequence. Native implementation and verification
+follow the [adoption record](../../hobby-fitting.md#approved-fitting-sequence-adoption); the existing diagonal
+preference and unrelated pending findings remain in scope as recorded there. Iteration 001.03 stays open.
+
+### Native adoption verification
+
+The maintained native sequence reproduces every delivered bitmap and frame in the approved comparison: 72 cells and
+6,840 ASCII cases, Roboto and Source Sans 3, weights 300/400/700, sizes 12/14/16/18/20/24, hints on/off. The source
+adapter uses live font geometry rather than the comparison packets. All 509 generator tests pass, including retained
+native coordinates, scanner authority, layout invariance, exact unsupported-input fallback and captured-input replay.
+These checks verify adoption of the reviewed output; they do not close the earlier optical findings.
+
+**Acceptable deviations for this monochrome delivery:** four outline records differ at 26.6 rounding without changing
+their final pixels or bitmap frames: Roboto 300/14 `x` and Source Sans 3 300/18 `x`, both hint modes. Their source model
+and constraints are retained; no coordinate compensation is introduced. A fresh Python/Rust joint-system comparison
+agrees to about 1e-15 at the Roboto rounding tie. Roboto 300/18, hints off, `~` conservatively retains its preceding
+outline when the native curve solve cannot satisfy its bounded initialization; its delivered bitmap also matches the
+reviewed result. That numerical fallback remains a geometry follow-up, rather than a visible regression or a runtime
+glyph exception. The default 400/16 outline commands match for both families and hint modes.
+
+Evidence is retained under `out/diagnostics/approved-fitting-native/`: `final-summary.json`, `final-mismatches.json`,
+the six family/weight packets, `joint-rounding-analysis.json`, `final-tilde-control/` and `generator-tests-final.log`.
+The isolated approved comparison and all earlier previews remain separate. Browser checks confirm the reported `A y s x
+X 2` shapes in the production build and a working opt-in toggle.
+
+**Runtime limitation:** the 16 px, weight-400 pangram takes about 3.6–4.4 seconds for Roboto and 6.5–6.8 seconds for
+Source Sans 3 in the current WASM build on this host; disabled fitting takes about 26–69 ms. These measurements were
+taken during parallel verification and are approximate. Diagonal fitting remains opt-in; this adoption does not change
+the fast default path. The measurements are retained in `wasm-runtime-final.json`.
+
+**Adopted in the main app, 2026-10-21:** native/WASM parity passes for 288 valid render cases and eight rejection
+controls across the complete corpus matrix, both fitting policies, both mono raster policies and diagonal fitting
+on/off. Four Playdate export cases also match byte-for-byte. The additional default-settings run and seven web state
+tests pass; typecheck, production build and formatting checks pass. That adopted comparison is `diagonal-shape-02`; the
+[revision index](README.md) identifies the current working candidate.
+
+The [main app](https://solitaire.taile005dc.ts.net:8906/) now serves the verified build. All 33 deployed files match
+through local HTTP and Tailscale HTTPS, and the existing persistent backend remains in place. The previous app is backed
+up separately; all 394 protected files are preserved, including the frozen approved comparison and preceding preview.
+Browser update activation confirms build `261021-1519`. Publication evidence is retained in `wasm-summary.json`,
+`deployment-receipt.json` and `publication-verification.json`. The existing opt-in setting and iteration's unrelated
+pending findings remain unchanged.

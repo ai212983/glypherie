@@ -233,6 +233,17 @@ fn font_hints_evaluation_checks_raster_and_engine_metadata() {
         .iter()
         .any(|f| f.invariant == "font-hints candidate requires the upstream fallback policy"));
 
+    let mut wrong_scanner = candidate.clone();
+    wrong_scanner.records[0]
+        .mono_rasterizer
+        .as_mut()
+        .unwrap()
+        .version = "2.14.3".into();
+    assert!(evaluate(&source, &upstream, &wrong_scanner)
+        .hard_failures
+        .iter()
+        .any(|f| f.invariant == "monochrome scanner identity inconsistent"));
+
     // Recompute a valid coverage-only bitmap: raster reproduction alone
     // must not permit the candidate to silently drop the overlap policy.
     let mut coverage_only = candidate.clone();
@@ -244,11 +255,11 @@ fn font_hints_evaluation_checks_raster_and_engine_metadata() {
         .iter()
         .any(|failure| {
             failure.invariant
-                == "font-hints candidate requires overlap 4x dropout without horizontal correction metadata"
+                == "font-hints candidate requires FreeType mono without horizontal correction metadata"
         }));
 
     // A valid plain-dropout bitmap must not satisfy the font-hints candidate
-    // either: only the overlap 4x policy is accepted.
+    // either: only the pinned monochrome scanner is accepted.
     let mut plain_dropout = candidate.clone();
     let commands = plain_dropout.records[0].fitted_commands.clone();
     let config = Config {
@@ -278,7 +289,7 @@ fn font_hints_evaluation_checks_raster_and_engine_metadata() {
         .iter()
         .any(|failure| {
             failure.invariant
-                == "font-hints candidate requires overlap 4x dropout without horizontal correction metadata"
+                == "font-hints candidate requires FreeType mono without horizontal correction metadata"
         }));
 }
 
@@ -317,6 +328,7 @@ fn dropout_policy_cannot_be_declared_for_gray() {
     for policy in [
         RasterPolicy::CoverageDropout,
         RasterPolicy::CoverageOverlap4xDropout,
+        RasterPolicy::FreeTypeMono,
     ] {
         candidate.records[0].raster_policy = policy;
         assert!(evaluate(&source, &upstream, &candidate)

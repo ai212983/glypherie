@@ -1,8 +1,9 @@
 //! Outline-driven monochrome dropout control.
 //!
 //! Hersch (1993) §7 and TrueType SCANTYPE rules 5/6 select the pixel nearest
-//! an interior span's midpoint in both scan directions. We include stubs, as in
-//! SCANTYPE 4. Project hypothesis: adapt those rules to the existing coverage
+//! an interior span's midpoint in both scan directions. Legacy rendering includes
+//! stubs (SCANTYPE 4); candidate rendering excludes them (SCANTYPE 5, rule 6).
+//! Project hypothesis: adapt those rules to the existing coverage
 //! image by rescuing subpixel interior spans with no delivered ink. This is not
 //! full TrueType center-fill scan conversion. Raw coverage is never modified.
 use crate::{
@@ -43,6 +44,7 @@ impl Point {
 struct Segment {
     p: [Point; 4],
     degree: usize,
+    next: usize,
 }
 impl Segment {
     fn at(&self, t: f64) -> Point {
@@ -101,6 +103,7 @@ fn segments(commands: &[FittedCommand]) -> Result<Vec<Segment>, Error> {
     let mut segments = Vec::new();
     let mut current = None;
     let mut start = None;
+    let mut contour_start = 0;
     for c in commands {
         if segments.len() >= MAX_WORK {
             return Err(fail("dropout outline exceeds work limit"));
@@ -112,6 +115,7 @@ fn segments(commands: &[FittedCommand]) -> Result<Vec<Segment>, Error> {
                 }
                 current = Some(Point::new(x, y));
                 start = current;
+                contour_start = segments.len();
                 continue;
             }
             FittedCommand::Close => {
@@ -140,7 +144,12 @@ fn segments(commands: &[FittedCommand]) -> Result<Vec<Segment>, Error> {
                 ([a, Point::new(x1, y1), Point::new(x2, y2), b], 3)
             }
         };
-        segments.push(Segment { p, degree });
+        let next = if matches!(c, FittedCommand::Close) {
+            contour_start
+        } else {
+            segments.len() + 1
+        };
+        segments.push(Segment { p, degree, next });
     }
     if current.is_some() {
         return Err(fail("dropout outline has unclosed contour"));
@@ -151,6 +160,8 @@ fn segments(commands: &[FittedCommand]) -> Result<Vec<Segment>, Error> {
 struct Crossing {
     at: f64,
     winding: i32,
+    segment: usize,
+    t: f64,
 }
 
 // A numerical coincidence bound, not an optical width/phase threshold. Inputs
@@ -160,10 +171,70 @@ fn coincidence(a: f64, b: f64) -> f64 {
     32.0 * f64::EPSILON * a.abs().max(b.abs()).max(1.0)
 }
 
+// SCANTYPE rule 6 requires both borders to continue beyond a terminal cap.
+// FreeType's pinned ftraster.c (57617782464411201ce7bbc93b086c1b4d7d84a5,
+// lines 2206-2242) recognizes adjacent contour profiles ending before the
+// next scan line. Here we follow the actual curve arc between the borders:
+// if it closes on one side before the next pixel-center line, it is a stub.
+// This adapts that geometric criterion to coverage output; it does not copy
+// FreeType's center-fill or overshoot exceptions. No coverage cutoff is added.
+fn terminal_stub(
+    shape: &[Segment],
+    a: Crossing,
+    b: Crossing,
+    vertical: bool,
+    scan: f64,
+    work: &mut usize,
+) -> Result<bool, Error> {
+    for (from, to) in [(a, b), (b, a)] {
+        let mut segment = from.segment;
+        let mut t0 = from.t;
+        let mut min = scan;
+        let mut max = scan;
+        for step in 0..=shape.len() {
+            *work += 1;
+            if *work > MAX_WORK {
+                return Err(fail("dropout scan work exceeds limit"));
+            }
+            let reached = segment == to.segment && (step != 0 || to.t >= t0);
+            let t1 = if reached { to.t } else { 1.0 };
+            let curve = &shape[segment];
+            for t in [t0, t1].into_iter().chain(curve.cuts(vertical)) {
+                if t >= t0 && t <= t1 {
+                    let value = curve.at(t).scan(vertical);
+                    min = min.min(value);
+                    max = max.max(value);
+                }
+            }
+            if min <= scan - 1.0 || max >= scan + 1.0 {
+                break;
+            }
+            if reached {
+                let epsilon = coincidence(min, max);
+                if (min >= scan - epsilon && max < scan + 1.0)
+                    || (max <= scan + epsilon && min > scan - 1.0)
+                {
+                    return Ok(true);
+                }
+                break;
+            }
+            segment = curve.next;
+            t0 = 0.0;
+            if segment == from.segment && segment != to.segment {
+                // The two filled boundaries belong to different contours;
+                // no contour cap joins them (including holes/overlaps).
+                break;
+            }
+        }
+    }
+    Ok(false)
+}
+
 fn scan_axis(
     shape: &[Segment],
     raster: &RasterOutput,
     vertical: bool,
+    include_stubs: bool,
     rescue: &mut [bool],
     work: &mut usize,
 ) -> Result<(), Error> {
@@ -173,7 +244,7 @@ fn scan_axis(
         (raster.top, raster.left, raster.height, raster.width)
     };
     let mut lines = vec![Vec::<Crossing>::new(); scan_len as usize];
-    for segment in shape {
+    for (segment_id, segment) in shape.iter().enumerate() {
         let cuts = segment.cuts(vertical);
         for bounds in cuts.windows(2) {
             let (t0, t1) = (bounds[0], bounds[1]);
@@ -219,6 +290,8 @@ fn scan_axis(
                 line.push(Crossing {
                     at: segment.at(t).along(vertical),
                     winding: if s0 < s1 { 1 } else { -1 },
+                    segment: segment_id,
+                    t,
                 });
             }
         }
@@ -234,9 +307,11 @@ fn scan_axis(
         line.sort_by(|a, b| a.at.total_cmp(&b.at));
         let mut winding = 0i32;
         let mut beginning = 0.0;
+        let mut beginning_crossing = None;
         let mut n = 0;
         while n < line.len() {
             let at = line[n].at;
+            let crossing = line[n];
             let mut delta = 0;
             while n < line.len() && (line[n].at - at).abs() <= coincidence(line[n].at, at) {
                 delta += line[n].winding;
@@ -246,9 +321,22 @@ fn scan_axis(
             winding += delta;
             if before == 0 && winding != 0 {
                 beginning = at;
+                beginning_crossing = Some(crossing);
             } else if before != 0 && winding == 0 {
                 let width = at - beginning;
                 if width <= coincidence(beginning, at) || width >= 1.0 {
+                    continue;
+                }
+                if !include_stubs
+                    && terminal_stub(
+                        shape,
+                        beginning_crossing.unwrap(),
+                        crossing,
+                        vertical,
+                        f64::from(scan_origin) + scan as f64 + 0.5,
+                        work,
+                    )?
+                {
                     continue;
                 }
                 let first = (beginning - f64::from(along_origin) - 0.5).ceil().max(0.0) as usize;
@@ -301,14 +389,29 @@ pub(crate) fn apply_to_raster(
     commands: &[FittedCommand],
     raster: &mut RasterOutput,
 ) -> Result<(), Error> {
+    apply_with_stub_policy(commands, raster, true)
+}
+
+pub(crate) fn apply_without_stubs(
+    commands: &[FittedCommand],
+    raster: &mut RasterOutput,
+) -> Result<(), Error> {
+    apply_with_stub_policy(commands, raster, false)
+}
+
+fn apply_with_stub_policy(
+    commands: &[FittedCommand],
+    raster: &mut RasterOutput,
+    include_stubs: bool,
+) -> Result<(), Error> {
     if raster.pixels.is_empty() {
         return Ok(());
     }
     let shape = segments(commands)?;
     let mut rescue = vec![false; raster.pixels.len()];
     let mut work = shape.len();
-    scan_axis(&shape, raster, false, &mut rescue, &mut work)?;
-    scan_axis(&shape, raster, true, &mut rescue, &mut work)?;
+    scan_axis(&shape, raster, false, include_stubs, &mut rescue, &mut work)?;
+    scan_axis(&shape, raster, true, include_stubs, &mut rescue, &mut work)?;
     for (pixel, rescue) in raster.pixels.iter_mut().zip(rescue) {
         if rescue {
             *pixel = 1;

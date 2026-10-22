@@ -142,8 +142,7 @@ fn capture_enabled(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceR
     // Same coordinate-selected glyphs as production generation and the
     // independent reference: outlines, metrics and `glyph_id` use the
     // scalar's shaper-resolved glyph.
-    let resolved =
-        crate::spacing::resolve_scalars(data, &config.axes, config.kerning, &present)?;
+    let resolved = crate::spacing::resolve_scalars(data, &config.axes, config.kerning, &present)?;
     for scalar in &resolved {
         let ch = char::from_u32(scalar.codepoint).unwrap();
         let gid = fitting_skrifa::GlyphId::new(scalar.glyph_id);
@@ -169,6 +168,9 @@ fn capture_enabled(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceR
             // corrections, independently of how the selected hinter moves X.
             side_bearing_deltas_26_6: None,
             raster_policy: crate::reference::RasterPolicy::CoverageDropout,
+            mono_rasterizer: None,
+            mono_raster: None,
+            font_scan: None,
             diagonal_pairs: adjusted.diagonal_pairs,
             codepoint: ch as u32,
             glyph_id: scalar.glyph_id,
@@ -185,6 +187,10 @@ fn capture_enabled(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceR
             output_bits: config.output_bits,
             mono_threshold: config.mono_threshold,
             gray_gamma: config.gray_gamma,
+            source_commands: None,
+            width_fitting: None,
+            selective_fitting: None,
+            diagonal_fitting: None,
             fitted_commands: fitted,
             coverage_sha256: format!("{:x}", Sha256::digest(&output.coverage)),
             coverage: output.coverage,
@@ -215,11 +221,7 @@ fn capture_enabled(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceR
         symmetric_rendering: None,
         preserve_linear_metrics: None,
         draw_pedantic: false,
-        implementation: format!(
-            "skrifa-{}:{}",
-            request.extensions.as_str(),
-            FITTING_SHA256
-        ),
+        implementation: format!("skrifa-{}:{}", request.extensions.as_str(), FITTING_SHA256),
         fork: true,
         skrifa_version: fitting_skrifa_version(),
         skrifa_registry_checksum: fitting_skrifa_checksum(),

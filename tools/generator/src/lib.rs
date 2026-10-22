@@ -6,13 +6,25 @@ pub mod batch;
 pub mod candidate;
 #[cfg(feature = "native-io")]
 pub mod comparison;
+#[cfg(feature = "candidate")]
+pub mod diagonal_fitting;
 pub mod dropout;
 pub mod evaluation;
+#[cfg(feature = "candidate")]
+pub mod fitting_source;
+#[cfg(feature = "candidate")]
+pub(crate) mod font_hints;
+#[cfg(feature = "candidate")]
+pub(crate) mod font_scan;
 pub mod layout_spacing;
 pub mod metadata;
+#[cfg(feature = "candidate")]
+pub mod mono;
 pub mod mono_spacing;
 #[cfg(feature = "candidate")]
 pub mod overlap;
+#[cfg(feature = "candidate")]
+mod selective_fitting;
 /// Compatibility name for earlier diagnostic callers; renderer selection uses roles.
 #[cfg(feature = "candidate")]
 pub use candidate as iteration;
@@ -22,6 +34,8 @@ mod raster;
 pub mod reference;
 pub mod renderer;
 pub(crate) mod source;
+#[cfg(feature = "candidate")]
+pub mod source_width;
 mod spacing;
 pub use spacing::{ascii_kerning_pairs, AsciiKerning};
 #[cfg(feature = "native-io")]
@@ -30,6 +44,8 @@ pub mod specimen_config;
 pub mod specimens;
 pub mod stem_fitting;
 pub mod surface;
+#[cfg(feature = "candidate")]
+pub mod terminal_caps;
 
 use production_skrifa::{
     instance::Size,
@@ -65,6 +81,29 @@ pub enum MetricRounding {
     Pixel,
 }
 
+/// Upstream monochrome dropout correction, VER-2-15-0
+/// `include/freetype/ftimage.h` `FT_OUTLINE_*` flags. Smart is the pinned
+/// default; Simple selects plain dropout control; Off ignores dropouts
+/// (upstream then also ignores stub control).
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MonoDropoutMode {
+    Off,
+    Simple,
+    #[default]
+    Smart,
+}
+
+/// Monochrome scan policy; manual controls remain the fallback when no
+/// embedded TrueType interpreter produces scan state.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields, default)]
+pub struct MonoRasterSettings {
+    pub dropout: MonoDropoutMode,
+    pub include_stubs: bool,
+    pub font_instructions: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
@@ -79,6 +118,10 @@ pub struct Config {
     pub missing_glyphs: MissingGlyphs,
     pub kerning: bool,
     pub metric_rounding: MetricRounding,
+    /// Scan-converter overrides; default reproduces the pinned smart-dropout,
+    /// stub-excluded scan. Only the candidate Mono path applies non-defaults.
+    #[serde(default)]
+    pub mono_raster: MonoRasterSettings,
 }
 impl Default for Config {
     fn default() -> Self {
@@ -93,6 +136,7 @@ impl Default for Config {
             missing_glyphs: MissingGlyphs::Error,
             kerning: true,
             metric_rounding: MetricRounding::Subpixel,
+            mono_raster: MonoRasterSettings::default(),
         }
     }
 }
@@ -156,6 +200,7 @@ pub(crate) fn fixed(value: f32, rounding: MetricRounding) -> i32 {
 /// accepted only when representable as a left advance change.
 pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
     validate_config(config)?;
+    require_default_mono_raster(config)?;
     let font = open_font(data)?;
     validate_axes(&font, &config.axes)?;
     let location = font
@@ -306,8 +351,23 @@ pub(crate) fn validate_settings(c: &Config) -> Result<(), Error> {
     if c.mono_threshold == 0 {
         return Err(fail("mono_threshold must be within 1..=255"));
     }
+    if c.output_bits != 1 && c.mono_raster != MonoRasterSettings::default() {
+        return Err(fail("mono raster settings require output_bits 1"));
+    }
     if !c.gray_gamma.is_finite() || c.gray_gamma <= 0.0 {
         return Err(fail("gray_gamma must be finite and positive"));
+    }
+    Ok(())
+}
+/// Explicit scan overrides apply only through the candidate monochrome
+/// scanner. Every other 1-bit renderer uses coverage, so it must fail
+/// rather than silently ignore them. Non-1-bit depths are rejected in
+/// `validate_settings`.
+pub(crate) fn require_default_mono_raster(c: &Config) -> Result<(), Error> {
+    if c.mono_raster != MonoRasterSettings::default() {
+        return Err(fail(
+            "mono raster settings require the candidate monochrome scanner",
+        ));
     }
     Ok(())
 }

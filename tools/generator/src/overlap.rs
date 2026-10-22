@@ -16,8 +16,8 @@
 //! uniformly to every candidate Mono glyph, never gated on the fitted
 //! overlap flag (the reported Roboto A has that flag false). Original fitted
 //! commands, native integer grid/bounds, source advances and kerning are kept;
-//! coverage is thresholded once at native resolution, then the existing
-//! dropout scan runs once on the original geometry with raw coverage
+//! coverage is thresholded once at native resolution, then smart dropout
+//! excluding terminal stubs runs once on the original geometry with raw coverage
 //! untouched. No glyph tuning and no phase/threshold search.
 //!
 //! Storage bound: the full high-resolution image is never allocated.
@@ -203,9 +203,9 @@ pub fn rasterize(commands: &[FittedCommand], config: &Config) -> Result<RasterOu
         width,
         height,
     };
-    // Threshold once above, then the original dropout scan once on the
-    // original geometry; coverage stays raw.
-    crate::dropout::apply_to_raster(commands, &mut raster)?;
+    // SCANTYPE rule 6 excludes terminal caps; legacy dropout stays separate.
+    // Threshold once above, scan the original geometry, keep raw coverage.
+    crate::dropout::apply_without_stubs(commands, &mut raster)?;
     Ok(raster)
 }
 

@@ -12,10 +12,11 @@ use zeno::{Command, Format, Mask, Point};
 const LOCK: &str = include_str!("../Cargo.lock");
 
 pub fn lock_version(name: &str) -> String {
+    let package = format!("name = \"{name}\"");
     let mut want = false;
     for line in LOCK.lines() {
         let line = line.trim();
-        if line == format!("name = \"{name}\"") {
+        if line == package {
             want = true;
             continue;
         }
@@ -33,22 +34,23 @@ pub fn lock_version(name: &str) -> String {
 }
 
 pub fn skrifa_version() -> String {
-    lock_version("skrifa")
+    env!("GENERATOR_SKRIFA_VERSION").into()
 }
 
 pub fn zeno_version() -> String {
-    lock_version("zeno")
+    env!("GENERATOR_ZENO_VERSION").into()
 }
 
 pub fn lock_sha256() -> String {
-    format!("{:x}", Sha256::digest(LOCK))
+    env!("GENERATOR_LOCK_SHA256").into()
 }
 
 pub fn lock_package_checksum(name: &str) -> String {
+    let package = format!("name = \"{name}\"");
     let mut want = false;
     for line in LOCK.lines() {
         let line = line.trim();
-        if line == format!("name = \"{name}\"") {
+        if line == package {
             want = true;
             continue;
         }
@@ -66,7 +68,7 @@ pub fn lock_package_checksum(name: &str) -> String {
 }
 
 pub fn skrifa_checksum() -> String {
-    lock_package_checksum("skrifa")
+    env!("GENERATOR_SKRIFA_CHECKSUM").into()
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -221,20 +223,13 @@ pub struct RasterOutput {
     pub height: u32,
 }
 
-pub fn rasterize(commands: &[FittedCommand], config: &Config) -> Result<RasterOutput, Error> {
-    #[cfg(test)]
-    crate::source::raster_counter::record_logical(1);
+// Source-only captures retain exactly the raster path's rejection gates
+// before omitting coverage generation. The outline is never delivered as a
+// raster report; its commands feed fitting and independent replay only.
+pub(crate) fn validate_raster_bounds(commands: &[FittedCommand]) -> Result<(), Error> {
     if commands.is_empty() {
-        return Ok(RasterOutput {
-            pixels: vec![],
-            coverage: vec![],
-            left: 0,
-            top: 0,
-            width: 0,
-            height: 0,
-        });
+        return Ok(());
     }
-    let zeno = to_zeno(commands);
     let mut min = Point::new(f32::INFINITY, f32::INFINITY);
     let mut max = Point::new(f32::NEG_INFINITY, f32::NEG_INFINITY);
     let mut point = |p: Point| -> Result<(), Error> {
@@ -247,19 +242,19 @@ pub fn rasterize(commands: &[FittedCommand], config: &Config) -> Result<RasterOu
         max.y = max.y.max(p.y);
         Ok(())
     };
-    for command in &zeno {
+    for command in commands {
         match *command {
-            Command::MoveTo(p) | Command::LineTo(p) => point(p)?,
-            Command::QuadTo(a, b) => {
-                point(a)?;
-                point(b)?;
+            FittedCommand::MoveTo(x, y) | FittedCommand::LineTo(x, y) => point(Point::new(x, -y))?,
+            FittedCommand::QuadTo(x1, y1, x, y) => {
+                point(Point::new(x1, -y1))?;
+                point(Point::new(x, -y))?;
             }
-            Command::CurveTo(a, b, c) => {
-                point(a)?;
-                point(b)?;
-                point(c)?;
+            FittedCommand::CurveTo(x1, y1, x2, y2, x, y) => {
+                point(Point::new(x1, -y1))?;
+                point(Point::new(x2, -y2))?;
+                point(Point::new(x, -y))?;
             }
-            Command::Close => {}
+            FittedCommand::Close => {}
         }
     }
     let width = max.x.ceil() - min.x.floor();
@@ -267,6 +262,24 @@ pub fn rasterize(commands: &[FittedCommand], config: &Config) -> Result<RasterOu
     if width * height > 4_194_304.0 {
         return Err(fail("glyph bitmap exceeds 4 Mi pixels"));
     }
+    Ok(())
+}
+
+pub fn rasterize(commands: &[FittedCommand], config: &Config) -> Result<RasterOutput, Error> {
+    #[cfg(test)]
+    crate::source::raster_counter::record_logical(1);
+    validate_raster_bounds(commands)?;
+    if commands.is_empty() {
+        return Ok(RasterOutput {
+            pixels: vec![],
+            coverage: vec![],
+            left: 0,
+            top: 0,
+            width: 0,
+            height: 0,
+        });
+    }
+    let zeno = to_zeno(commands);
     let (coverage, placement) = Mask::new(zeno.as_slice()).format(Format::Alpha).render();
     let levels = (1u16 << config.output_bits) - 1;
     let pixels = coverage
@@ -330,6 +343,7 @@ pub struct ProbeReport {
 
 pub fn probe(data: &[u8], config: &Config) -> Result<ProbeReport, Error> {
     validate_config(config)?;
+    crate::require_default_mono_raster(config)?;
     if config.output_bits != 1 {
         return Err(fail("probe requires output_bits exactly 1 for mono target"));
     }
@@ -475,4 +489,70 @@ pub fn probe(data: &[u8], config: &Config) -> Result<ProbeReport, Error> {
         missing_codepoints,
         records,
     })
+}
+
+#[cfg(test)]
+mod preparation_tests {
+    use super::*;
+
+    #[test]
+    fn build_provenance_matches_the_embedded_lock() {
+        assert_eq!(skrifa_version(), lock_version("skrifa"));
+        assert_eq!(zeno_version(), lock_version("zeno"));
+        assert_eq!(skrifa_checksum(), lock_package_checksum("skrifa"));
+        assert_eq!(lock_sha256(), format!("{:x}", Sha256::digest(LOCK)));
+        assert_eq!(lock_version("nonexistent-package"), "unknown");
+        assert_eq!(lock_package_checksum("nonexistent-package"), "unknown");
+    }
+
+    #[test]
+    fn source_only_capture_retains_raster_rejection_boundaries() {
+        // Source-only capture omits rendering, never its coordinate/allocation
+        // gates. Exercise both sides of the coordinate limit and an area
+        // excess; a valid zero-area outline still captures without ink.
+        for (commands, error) in [
+            (vec![FittedCommand::MoveTo(32768.0, -32768.0)], None),
+            (
+                vec![FittedCommand::MoveTo(32769.0, 0.0)],
+                Some("outline coordinate exceeds supported bounds"),
+            ),
+            (
+                vec![FittedCommand::QuadTo(0.0, f32::NAN, 0.0, 0.0)],
+                Some("outline coordinate exceeds supported bounds"),
+            ),
+            (
+                vec![FittedCommand::CurveTo(
+                    0.0,
+                    0.0,
+                    f32::INFINITY,
+                    0.0,
+                    0.0,
+                    0.0,
+                )],
+                Some("outline coordinate exceeds supported bounds"),
+            ),
+            (
+                vec![
+                    FittedCommand::MoveTo(-1024.0, -1024.0),
+                    FittedCommand::LineTo(1025.0, 1025.0),
+                ],
+                Some("glyph bitmap exceeds 4 Mi pixels"),
+            ),
+        ] {
+            assert_eq!(
+                validate_raster_bounds(&commands)
+                    .err()
+                    .map(|e| e.to_string())
+                    .as_deref(),
+                error
+            );
+            assert_eq!(
+                rasterize(&commands, &Config::default())
+                    .err()
+                    .map(|e| e.to_string())
+                    .as_deref(),
+                error
+            );
+        }
+    }
 }
