@@ -8,6 +8,7 @@ Before tackling a problem, follow the [research workflow](docs/evaluation.md#res
 - Use sourced, general geometric models; do not tune individual glyphs for pixel gains.
 - Classify findings before requesting review or publishing; tests do not establish optical acceptance.
 - Preserve the agreed preview scope and separate approved baseline.
+- Use the shared shadcn Tooltip component for web tooltips instead of native `title` attributes.
 - Keep rules and current state in their owner documents; link rather than duplicate.
 - Keep contracts and READMEs concise. Apply this test to every contract statement: if changing it would break another
   component or an external consumer of its inputs, outputs, published formats, routes, forwarded requests, or build
