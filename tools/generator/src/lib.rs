@@ -2,6 +2,7 @@
 //! Metrics use signed 26.6 pixels. Bitmaps contain unpacked coverage levels, row-major.
 pub mod baseline;
 pub mod batch;
+pub mod bitmap_topology;
 #[cfg(feature = "candidate")]
 pub mod candidate;
 #[cfg(feature = "native-io")]

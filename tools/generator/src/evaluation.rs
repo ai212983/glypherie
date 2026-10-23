@@ -20,7 +20,7 @@ use crate::{
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Serialize)]
 pub struct Failure {
@@ -790,48 +790,15 @@ fn diagnostics(record: &ReferenceRecord) -> RasterDiagnostics {
 }
 
 fn topology(bitmap: &[bool], width: usize, height: usize) -> Topology {
-    // Complementary adjacency avoids calling a diagonal ink contact both a bridge
-    // and a background crossing. Enclosed background is measured against the
-    // actual bitmap boundary, equivalent to a surrounding white frame.
-    let mut seen = vec![false; bitmap.len()];
-    let mut ink = 0;
-    let mut holes = 0;
-    for start in 0..bitmap.len() {
-        if seen[start] {
-            continue;
-        }
-        let foreground = bitmap[start];
-        let mut boundary = false;
-        let mut queue = VecDeque::from([start]);
-        seen[start] = true;
-        while let Some(index) = queue.pop_front() {
-            let (x, y) = (index % width, index / width);
-            boundary |= x == 0 || y == 0 || x + 1 == width || y + 1 == height;
-            for dy in -1_isize..=1 {
-                for dx in -1_isize..=1 {
-                    if (dx == 0 && dy == 0) || (!foreground && dx != 0 && dy != 0) {
-                        continue;
-                    }
-                    let (nx, ny) = (x as isize + dx, y as isize + dy);
-                    if nx < 0 || ny < 0 || nx as usize >= width || ny as usize >= height {
-                        continue;
-                    }
-                    let next = ny as usize * width + nx as usize;
-                    if !seen[next] && bitmap[next] == foreground {
-                        seen[next] = true;
-                        queue.push_back(next);
-                    }
-                }
-            }
-        }
-        if foreground {
-            ink += 1;
-        } else if !boundary {
-            holes += 1;
-        }
-    }
+    let counts = crate::bitmap_topology::Bitmap::new(width, height, bitmap)
+        .expect("valid bitmap dimensions")
+        .counts();
     Topology {
-        ink_components_8: ink,
-        enclosed_background_components_4: holes,
+        ink_components_8: counts[0],
+        enclosed_background_components_4: counts[1],
     }
 }
+
+#[cfg(test)]
+#[path = "evaluation/topology_tests.rs"]
+mod topology_tests;

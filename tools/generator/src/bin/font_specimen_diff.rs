@@ -1,3 +1,4 @@
+use font_generator::bitmap_topology::Bitmap;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, env, fs, path::Path, process::ExitCode};
@@ -23,84 +24,11 @@ fn validate_bitmap(record: &Value) -> Result<ValidatedBitmap, String> {
     Ok(ValidatedBitmap { width, height, ink })
 }
 
-const INK_OFFSETS: [(isize, isize); 8] = [
-    (-1, -1),
-    (0, -1),
-    (1, -1),
-    (-1, 0),
-    (1, 0),
-    (-1, 1),
-    (0, 1),
-    (1, 1),
-];
-
-const WHITE_OFFSETS: [(isize, isize); 4] = [(0, -1), (-1, 0), (1, 0), (0, 1)];
-
-fn neighbors(
-    index: usize,
-    width: usize,
-    height: usize,
-    eight: bool,
-) -> impl Iterator<Item = usize> {
-    let x = index % width;
-    let y = index / width;
-    let offsets: &[(isize, isize)] = if eight { &INK_OFFSETS } else { &WHITE_OFFSETS };
-    offsets.iter().filter_map(move |(dx, dy)| {
-        let xx = x as isize + dx;
-        let yy = y as isize + dy;
-        if xx < 0 || yy < 0 || xx >= width as isize || yy >= height as isize {
-            None
-        } else {
-            Some(yy as usize * width + xx as usize)
-        }
-    })
-}
-
-fn flood_fill(
-    bitmap: &ValidatedBitmap,
-    start: usize,
-    visited: &mut [bool],
-    queue: &mut Vec<usize>,
-) -> (bool, bool) {
-    let color = bitmap.ink[start];
-    queue.clear();
-    queue.push(start);
-    visited[start] = true;
-    let mut next = 0;
-    let mut boundary = false;
-    while next < queue.len() {
-        let p = queue[next];
-        next += 1;
-        let x = p % bitmap.width;
-        let y = p / bitmap.width;
-        boundary |= x == 0 || y == 0 || x + 1 == bitmap.width || y + 1 == bitmap.height;
-        for q in neighbors(p, bitmap.width, bitmap.height, color) {
-            if !visited[q] && bitmap.ink[q] == color {
-                visited[q] = true;
-                queue.push(q);
-            }
-        }
-    }
-    (color, boundary)
-}
-
 fn topology(record: &Value) -> Result<[usize; 2], String> {
     let bitmap = validate_bitmap(record)?;
-    let mut visited = vec![false; bitmap.ink.len()];
-    let mut queue = Vec::new();
-    let mut counts = [0, 0];
-    for start in 0..bitmap.ink.len() {
-        if visited[start] {
-            continue;
-        }
-        let (color, boundary) = flood_fill(&bitmap, start, &mut visited, &mut queue);
-        if color {
-            counts[0] += 1;
-        } else if !boundary {
-            counts[1] += 1;
-        }
-    }
-    Ok(counts)
+    Ok(Bitmap::new(bitmap.width, bitmap.height, &bitmap.ink)
+        .expect("valid bitmap dimensions")
+        .counts())
 }
 
 fn key(case: &Value) -> String {

@@ -164,66 +164,6 @@ fn sole_bottom_opening_excluded() {
 }
 
 #[test]
-fn flood_fill_connected_unique_reusable_queue() {
-    let bitmap =
-        validate_bitmap(&json!({"width": 3, "height": 3, "pixels": [1, 1, 1, 1, 1, 1, 1, 1, 1]}))
-            .unwrap();
-    let mut visited = vec![false; 9];
-    let mut queue = vec![77, 88];
-    assert_eq!(
-        flood_fill(&bitmap, 4, &mut visited, &mut queue),
-        (true, true)
-    );
-    assert_eq!(visited, vec![true; 9]);
-    let mut ordered = queue.clone();
-    ordered.sort();
-    assert_eq!(ordered, vec![0, 1, 2, 3, 4, 5, 6, 7, 8]);
-}
-
-#[test]
-fn flood_fill_disconnected_and_enclosed_white() {
-    let bitmap = validate_bitmap(&json!({"width": 3, "height": 1, "pixels": [1, 0, 1]})).unwrap();
-    let mut visited = vec![false; 3];
-    let mut queue = Vec::new();
-    assert_eq!(
-        flood_fill(&bitmap, 0, &mut visited, &mut queue),
-        (true, true)
-    );
-    assert_eq!(visited, vec![true, false, false]);
-    assert_eq!(queue, vec![0]);
-    assert_eq!(
-        flood_fill(&bitmap, 2, &mut visited, &mut queue),
-        (true, true)
-    );
-    assert_eq!(visited, vec![true, false, true]);
-    assert_eq!(queue, vec![2]);
-    let ring =
-        validate_bitmap(&json!({"width": 3, "height": 3, "pixels": [1, 1, 1, 1, 0, 1, 1, 1, 1]}))
-            .unwrap();
-    let mut visited = vec![false; 9];
-    assert_eq!(
-        flood_fill(&ring, 4, &mut visited, &mut queue),
-        (false, false)
-    );
-    assert_eq!(
-        visited,
-        vec![false, false, false, false, true, false, false, false, false]
-    );
-}
-
-#[test]
-fn neighbor_center_order_and_corner_bounds() {
-    let ink: Vec<usize> = neighbors(4, 3, 3, true).collect();
-    assert_eq!(ink, vec![0, 1, 2, 3, 5, 6, 7, 8]);
-    let white: Vec<usize> = neighbors(4, 3, 3, false).collect();
-    assert_eq!(white, vec![1, 3, 5, 7]);
-    let ink_corner: Vec<usize> = neighbors(0, 3, 3, true).collect();
-    assert_eq!(ink_corner, vec![1, 3, 4]);
-    let white_corner: Vec<usize> = neighbors(0, 3, 3, false).collect();
-    assert_eq!(white_corner, vec![1, 3]);
-}
-
-#[test]
 fn transpose_preserves_counts() {
     let wide = json!({"width": 3, "height": 2, "pixels": [1, 0, 0, 0, 0, 1]});
     let tall = json!({"width": 2, "height": 3, "pixels": [1, 0, 0, 0, 0, 1]});
