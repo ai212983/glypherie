@@ -2,13 +2,29 @@
 
 Tools for font research and glyph generation.
 
-Prerequisites: [mise](https://mise.jdx.dev/) and [Git LFS](https://git-lfs.com/).
+Prerequisites: Node.js (>= 22.18) with npm, Rust with rustfmt, and [Git LFS](https://git-lfs.com/). The recommended Node
+version is pinned in [.node-version](.node-version).
 
 ## Commands
 
+From the repository root:
+
 ```sh
-mise exec -- just
+npm ci --ignore-scripts
+git lfs install --local
+npm run hooks:install
 ```
+
+Quality checks:
+
+```sh
+npm run fmt:check
+npm run spell:check
+cargo fmt --manifest-path tools/generator/Cargo.toml --check
+npm test
+```
+
+`just` recipes remain as optional convenience wrappers; they are not required.
 
 Before tackling a problem, follow the
 [research and adaptation workflow](docs/evaluation.md#research-before-implementation).

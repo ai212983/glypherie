@@ -4,47 +4,45 @@ default:
 # Install commit tooling and activate the Git hooks in this clone.
 hooks-setup:
     git lfs install --local
-    mise install --locked dprint just lefthook node npm:cspell
-    mise exec -- npm ci --ignore-scripts
-    mise exec -- lefthook install
+    npm ci --ignore-scripts
+    npm run hooks:install
 
 # Check a commit message file, defaulting to the most recent message.
 commit-check message_file=".git/COMMIT_EDITMSG":
-    mise exec -- node node_modules/@commitlint/cli/cli.js --edit "{{message_file}}"
+    node node_modules/@commitlint/cli/cli.js --edit "{{message_file}}"
 
 # Validate a range of new commits.
 commit-check-range from to="HEAD":
-    mise exec -- node node_modules/@commitlint/cli/cli.js --from "{{from}}" --to "{{to}}" --verbose
+    node node_modules/@commitlint/cli/cli.js --from "{{from}}" --to "{{to}}" --verbose
 
 # Test the hook and commit-message validation behavior.
 hooks-test:
-    mise exec -- npm test
+    npm test
 
 # Check Rust formatting without changing files.
 rust-fmt-check:
     cargo fmt --manifest-path tools/generator/Cargo.toml --check
 
-# Install the pinned formatter and spell checker using mise.
+# Install the pinned formatter and spell checker.
 docs-setup:
-    mise install --locked dprint node npm:cspell
-    mise exec -- dprint resolved-config > /dev/null
+    npm ci --ignore-scripts
+    npx --no-install dprint resolved-config > /dev/null
 
 # Format Markdown prose, tables, and JSON files.
 fmt:
-    mise exec -- dprint fmt
+    npm run fmt
 
 # Check Markdown and JSON formatting without changing files.
 fmt-check:
-    mise exec -- dprint check
+    npm run fmt:check
 
 # Check spelling in the project documentation.
 spell-check:
-    mise exec -- cspell --no-progress --gitignore
+    npm run spell:check
 
-# Install the pinned web runtime and locked web dependencies.
+# Install locked web dependencies.
 web-setup:
-    mise -C tools/web install --locked node
-    mise -C tools/web exec -- npm ci --ignore-scripts
+    npm --prefix tools/web ci --ignore-scripts
 
 # Build the WASM font renderer via tools/wasm/build.sh (owned separately; never
 # installs toolchains). The browser app stages the source package into a
@@ -80,19 +78,19 @@ specimens $config_path="tools/generator/specimens.json" $output_dir="out/specime
 
 # Check web browser types without emitting files.
 web-typecheck:
-    mise -C tools/web exec -- npm run typecheck
+    npm --prefix tools/web run typecheck
 
-# Run the web tests with the pinned runtime.
+# Run the web tests.
 web-test:
-    mise -C tools/web exec -- npm test
+    npm --prefix tools/web run test
 
 # Serve isolated web components with live reload.
 web-storybook:
-    mise -C tools/web exec -- npm run storybook
+    npm --prefix tools/web run storybook
 
 # Build the component explorer into out/storybook/.
 web-storybook-build:
-    mise -C tools/web exec -- npm run build-storybook
+    npm --prefix tools/web run build-storybook
 
 # Export aligned glyph images and pixel differences from published renders.
 comparisons $config_path="tools/generator/comparisons.json" $specimen_dir="out/specimens":

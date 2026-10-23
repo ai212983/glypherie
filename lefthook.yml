@@ -1,4 +1,4 @@
-lefthook: mise exec -- lefthook
+lefthook: npx --no-install lefthook
 glob_matcher: doublestar
 
 pre-commit:
@@ -16,7 +16,7 @@ pre-commit:
         - "**/target/**"
         - "**/out/**"
         - "**/.venv/**"
-      run: mise exec -- dprint check {staged_files}
+      run: npx --no-install dprint check {staged_files}
     - name: spelling
       glob:
         - "README.md"
@@ -34,7 +34,7 @@ pre-commit:
         - "**/target/**"
         - "**/out/**"
         - "**/.venv/**"
-      run: mise exec -- cspell --no-progress --gitignore --no-must-find-files {staged_files}
+      run: npx --no-install cspell --no-progress --gitignore --no-must-find-files {staged_files}
     - name: rust-formatting
       glob:
         - "tools/generator/**/*.rs"
@@ -45,4 +45,4 @@ pre-commit:
 commit-msg:
   jobs:
     - name: conventional-commit
-      run: mise exec -- node node_modules/@commitlint/cli/cli.js --edit "{1}"
+      run: node node_modules/@commitlint/cli/cli.js --edit "{1}"
