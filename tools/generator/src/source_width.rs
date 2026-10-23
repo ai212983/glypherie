@@ -1131,11 +1131,7 @@ fn recognize(
     loops: &[Vec<usize>],
     work: &mut u64,
 ) -> Recognition {
-    // Source: one border yields one pair; exact score ties abstain. Sampling
-    // uses every retained interval, never index-matched thirds.
     struct Scored {
-        width: f64,
-        ilen: f64,
         samples: Vec<SamplePt>,
         verts: [usize; 4],
         borders: [usize; 2],
@@ -1173,21 +1169,6 @@ fn recognize(
                 Some(v) => v,
                 None => continue,
             };
-            // Scoring contact at the widest interval midpoint.
-            let mut best: Option<(f64, f64)> = None;
-            for (ta, tb) in &raw.intervals {
-                let r = raw.r0 + raw.g * (ta + tb) / 2.0;
-                if r > 0.0 {
-                    let w = 2.0 * r;
-                    if best.is_none_or(|(bw, _)| w > bw) {
-                        best = Some((w, tb - ta));
-                    }
-                }
-            }
-            let (width, ilen) = match best {
-                Some(v) => v,
-                None => continue,
-            };
             // Three equal-midpoint samples per actual valid interval; a
             // failing recheck drops the interval.
             let mut samples = Vec::new();
@@ -1222,8 +1203,6 @@ fn recognize(
                 continue;
             }
             scored.push(Scored {
-                width,
-                ilen,
                 samples,
                 verts: [e1.va, e1.vb, e2.va, e2.vb],
                 borders: [i, j],
@@ -1236,9 +1215,7 @@ fn recognize(
             ambiguous: true,
         };
     }
-    // This restricted recognizer owns one pair per border. Multiple surviving
-    // partners require interval ownership across branches, outside this slice;
-    // do not resolve that conflict by preferring a narrow or long stroke.
+    // Multiple surviving partners require interval ownership across branches.
     let mut claims = vec![0usize; n];
     for pair in &scored {
         for border in pair.borders {
@@ -1252,43 +1229,21 @@ fn recognize(
         };
     }
     let mut kept = Vec::new();
-    let mut used = vec![false; n];
-    let mut ambiguous = false;
     for idx in 0..scored.len() {
-        let borders = scored[idx].borders;
-        let width = scored[idx].width;
-        let ilen = scored[idx].ilen;
-        if used[borders[0]] || used[borders[1]] {
-            // Exact score ties on a shared border abstain the slice.
-            for o in scored.iter() {
-                if o.borders == borders {
-                    continue;
-                }
-                let shares = o
-                    .borders
-                    .iter()
-                    .any(|b| *b == borders[0] || *b == borders[1]);
-                if shares && o.width == width && o.ilen == ilen {
-                    ambiguous = true;
-                }
-            }
-            continue;
-        }
-        used[borders[0]] = true;
-        used[borders[1]] = true;
         let samples = std::mem::take(&mut scored[idx].samples);
         kept.push(PairOut {
             verts: scored[idx].verts,
             samples,
         });
     }
-    Recognition { kept, ambiguous }
+    Recognition {
+        kept,
+        ambiguous: false,
+    }
 }
 
 /// Rectilinear anchor with integral fitted boundaries, unique.
 fn select_anchor(pairs: &[PairOut], edges: &[Edge], fit_pts: &[[f64; 2]]) -> Option<usize> {
-    // Source: rectilinear support segments paired on integral red lines.
-    // Hysteresis and grid fitting live outside this slice.
     let mut found = None;
     for (idx, pair) in pairs.iter().enumerate() {
         let e1 = edges.get(pair_edge_index(edges, pair, 0)?)?;
