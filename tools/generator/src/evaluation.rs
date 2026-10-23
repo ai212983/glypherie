@@ -441,6 +441,80 @@ fn motion(a: &[FittedCommand], b: &[FittedCommand]) -> Option<Motion> {
     })
 }
 
+#[cfg(feature = "candidate")]
+enum DiagonalReplay {
+    Consistent,
+    Flaw(&'static str),
+    Abort(&'static str),
+}
+
+#[cfg(feature = "candidate")]
+fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
+    let Some(diagonal) = &record.diagonal_fitting else {
+        return DiagonalReplay::Consistent;
+    };
+    // Independent replay from captured inputs: the stored reference
+    // must deserialize and the re-fit must reproduce the applied
+    // reason and exact commands.
+    if !matches!(
+        record.raster_policy,
+        RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+    ) || diagonal.upstream_commands.is_empty()
+        || diagonal.reason.is_empty()
+    {
+        return DiagonalReplay::Flaw("diagonal capture inconsistent");
+    }
+    let Some(source) = &record.source_commands else {
+        return DiagonalReplay::Abort("diagonal source outline missing");
+    };
+    let reference: crate::diagonal_fitting::Reference =
+        match serde_json::from_value(diagonal.reference.clone()) {
+            Ok(reference) => reference,
+            Err(_) => {
+                return DiagonalReplay::Abort("diagonal reference does not deserialize");
+            }
+        };
+    let replay = if diagonal.model == "diagonal-shape-04" {
+        let raw: Option<crate::fitting_source::SourceOutline> = match diagonal
+            .raw_source
+            .clone()
+            .map(serde_json::from_value)
+            .transpose()
+        {
+            Ok(raw) => raw,
+            Err(_) => {
+                return DiagonalReplay::Abort("diagonal raw source does not deserialize");
+            }
+        };
+        crate::diagonal_fitting::approved::fit(
+            raw.as_ref(),
+            source,
+            &diagonal.upstream_commands,
+            diagonal.size_px,
+            &reference,
+            diagonal.native_axes,
+        )
+    } else {
+        crate::diagonal_fitting::fit(
+            source,
+            &diagonal.upstream_commands,
+            diagonal.size_px,
+            &reference,
+            diagonal.native_axes,
+        )
+    };
+    match replay {
+        Ok(fit)
+            if fit.applied
+                && fit.reason == diagonal.reason
+                && fit.commands == record.fitted_commands =>
+        {
+            DiagonalReplay::Consistent
+        }
+        _ => DiagonalReplay::Flaw("diagonal fitting does not reproduce from captured inputs"),
+    }
+}
+
 fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     let mut failures = Vec::new();
     // Each pinned phantom-point rounding residual is at most half a pixel;
@@ -525,68 +599,12 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
         failures.push("source outline on an incompatible raster policy");
     }
     #[cfg(feature = "candidate")]
-    if let Some(diagonal) = &record.diagonal_fitting {
-        // Independent replay from captured inputs: the stored reference
-        // must deserialize and the re-fit must reproduce the applied
-        // reason and exact commands. Older width/selective captures stay
-        // valid against the pre-diagonal outline below.
-        if !matches!(
-            record.raster_policy,
-            RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
-        ) || diagonal.upstream_commands.is_empty()
-            || diagonal.reason.is_empty()
-        {
-            failures.push("diagonal capture inconsistent");
-        } else {
-            let Some(source) = &record.source_commands else {
-                failures.push("diagonal source outline missing");
-                return failures;
-            };
-            let reference: crate::diagonal_fitting::Reference =
-                match serde_json::from_value(diagonal.reference.clone()) {
-                    Ok(reference) => reference,
-                    Err(_) => {
-                        failures.push("diagonal reference does not deserialize");
-                        return failures;
-                    }
-                };
-            let replay = if diagonal.model == "diagonal-shape-04" {
-                let raw: Option<crate::fitting_source::SourceOutline> = match diagonal
-                    .raw_source
-                    .clone()
-                    .map(serde_json::from_value)
-                    .transpose()
-                {
-                    Ok(raw) => raw,
-                    Err(_) => {
-                        failures.push("diagonal raw source does not deserialize");
-                        return failures;
-                    }
-                };
-                crate::diagonal_fitting::approved::fit(
-                    raw.as_ref(),
-                    source,
-                    &diagonal.upstream_commands,
-                    diagonal.size_px,
-                    &reference,
-                    diagonal.native_axes,
-                )
-            } else {
-                crate::diagonal_fitting::fit(
-                    source,
-                    &diagonal.upstream_commands,
-                    diagonal.size_px,
-                    &reference,
-                    diagonal.native_axes,
-                )
-            };
-            match replay {
-                Ok(fit)
-                    if fit.applied
-                        && fit.reason == diagonal.reason
-                        && fit.commands == record.fitted_commands => {}
-                _ => failures.push("diagonal fitting does not reproduce from captured inputs"),
-            }
+    match validate_diagonal_replay(record) {
+        DiagonalReplay::Consistent => {}
+        DiagonalReplay::Flaw(failure) => failures.push(failure),
+        DiagonalReplay::Abort(failure) => {
+            failures.push(failure);
+            return failures;
         }
     }
     #[cfg(feature = "candidate")]
