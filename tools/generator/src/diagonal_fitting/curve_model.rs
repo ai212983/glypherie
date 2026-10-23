@@ -17,9 +17,9 @@
 
 use super::exact::Exact as BigRational;
 use super::{
-    abstain, curves, filtered, geometry, intervals, min_norm_solve,
+    abstain, acute, curves, filtered, geometry, intervals, min_norm_solve,
     qp::{bounded_equalities, QpInfo},
-    width_weight, FitResult, Reference, HEADROOM, MAX_COMMANDS,
+    reference_meta, width_weight, FitResult, Reference, HEADROOM, MAX_COMMANDS,
 };
 use crate::{fail, probe::FittedCommand, Error};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1708,14 +1708,6 @@ pub(super) fn emit(upstream: &[FittedCommand], cand: &[[f64; 2]], no: usize) -> 
     out
 }
 
-fn reference_meta(reference: &Reference) -> serde_json::Value {
-    serde_json::json!({
-        "n_anchors": reference.n_anchors,
-        "rel_min": reference.rel_min,
-        "rel_max": reference.rel_max,
-    })
-}
-
 fn qp_json(info: &QpInfo) -> serde_json::Value {
     serde_json::json!({
         "iterations": info.iterations,
@@ -1752,14 +1744,6 @@ struct SolveCtx {
     base: Vec<[f64; 2]>,
     upstream: Vec<[f64; 2]>,
     no: usize,
-}
-
-fn acute(tangent: [f64; 2], other: [f64; 2]) -> [f64; 2] {
-    if tangent[0] * other[0] + tangent[1] * other[1] < 0.0 {
-        [-tangent[0], -tangent[1]]
-    } else {
-        tangent
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
