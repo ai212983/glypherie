@@ -575,6 +575,48 @@ fn quantization_config(record: &ReferenceRecord) -> Option<Config> {
     })
 }
 
+#[cfg(feature = "candidate")]
+fn selective_replay_valid(
+    record: &ReferenceRecord,
+    selective: &crate::reference::SelectiveFittingCapture,
+) -> bool {
+    let axes = selective.native_axes;
+    let engine = match axes {
+        [false, true] => "auto_x_native_y",
+        [true, false] => "native_x_auto_y",
+        [false, false] => "auto_with_native_scan",
+        _ => "invalid",
+    };
+    let valid_source = record.source_commands.as_ref().is_some_and(|source| {
+        axes == [false; 2]
+            || crate::selective_fitting::unowned_unchanged(source, &selective.native_commands, axes)
+    });
+    let combined = if axes == [false; 2] {
+        Some(selective.automatic_commands.clone())
+    } else {
+        crate::selective_fitting::combine(
+            &selective.native_commands,
+            &selective.automatic_commands,
+            axes,
+        )
+    };
+    // Post-diagonal records reproduce the pre-diagonal outline.
+    let expected = record
+        .diagonal_fitting
+        .as_ref()
+        .map(|diagonal| &diagonal.upstream_commands)
+        .unwrap_or(&record.fitted_commands);
+    !(record.selected_engine != engine
+        || engine == "invalid"
+        || !valid_source
+        || record.raster_policy != RasterPolicy::FreeTypeMono
+        || record
+            .font_scan
+            .as_ref()
+            .is_some_and(|s| s.hinting_axes != axes)
+        || combined.as_ref() != Some(expected))
+}
+
 fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     let mut failures = metric_failures(record);
     let size = u64::from(record.width) * u64::from(record.height);
@@ -624,46 +666,7 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     }
     #[cfg(feature = "candidate")]
     if let Some(selective) = &record.selective_fitting {
-        let axes = selective.native_axes;
-        let engine = match axes {
-            [false, true] => "auto_x_native_y",
-            [true, false] => "native_x_auto_y",
-            [false, false] => "auto_with_native_scan",
-            _ => "invalid",
-        };
-        let valid_source = record.source_commands.as_ref().is_some_and(|source| {
-            axes == [false; 2]
-                || crate::selective_fitting::unowned_unchanged(
-                    source,
-                    &selective.native_commands,
-                    axes,
-                )
-        });
-        let combined = if axes == [false; 2] {
-            Some(selective.automatic_commands.clone())
-        } else {
-            crate::selective_fitting::combine(
-                &selective.native_commands,
-                &selective.automatic_commands,
-                axes,
-            )
-        };
-        // Post-diagonal records reproduce the pre-diagonal outline.
-        let expected = record
-            .diagonal_fitting
-            .as_ref()
-            .map(|diagonal| &diagonal.upstream_commands)
-            .unwrap_or(&record.fitted_commands);
-        if record.selected_engine != engine
-            || engine == "invalid"
-            || !valid_source
-            || record.raster_policy != RasterPolicy::FreeTypeMono
-            || record
-                .font_scan
-                .as_ref()
-                .is_some_and(|s| s.hinting_axes != axes)
-            || combined.as_ref() != Some(expected)
-        {
+        if !selective_replay_valid(record, selective) {
             failures.push("selective fitting does not reproduce from captured inputs");
         }
     }
