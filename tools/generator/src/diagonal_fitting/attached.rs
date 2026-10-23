@@ -376,6 +376,36 @@ fn collect_joint_constraints(
     Ok(joint_checks)
 }
 
+fn rounded_hard_checks(
+    hard: &[HardRow],
+    point_count: usize,
+    up_flat: &[f64],
+    raw: &[[f64; 2]],
+    up: &[[f64; 2]],
+    cand: &[[f64; 2]],
+) -> Result<Vec<serde_json::Value>, Vec<serde_json::Value>> {
+    let raw_flat: Vec<f64> = raw.iter().flat_map(|p| [p[0], p[1]]).collect();
+    let cand_flat: Vec<f64> = cand.iter().flat_map(|p| [p[0], p[1]]).collect();
+    let mut hard_checks = Vec::new();
+    for h in hard {
+        let raw_error = (dot(&h.row, &raw_flat) - dot(&h.row, &up_flat) + h.constant).abs();
+        let error = (dot(&h.row, &cand_flat) - dot(&h.row, &up_flat) + h.constant).abs();
+        let allowance = (0..point_count)
+            .filter(|v| raw[*v][0] != up[*v][0])
+            .map(|v| h.row[2 * v].abs() / 128.0)
+            .sum::<f64>();
+        let ok = raw_error <= 1e-8 * (1.0 + h.constant.abs()) && error <= allowance + 1e-9;
+        hard_checks.push(serde_json::json!({
+            "kind": h.kind, "raw_error": raw_error, "rounded_error": error,
+            "allowance": allowance, "ok": ok,
+        }));
+        if !ok {
+            return Err(hard_checks);
+        }
+    }
+    Ok(hard_checks)
+}
+
 /// One bounded solve from the original upstream outline.
 ///
 /// Hersch fixed-direction constraints (parallel borders plus the integer
@@ -807,29 +837,16 @@ pub(super) fn fit_with_analysis(
             serde_json::json!({"size_px": size_px}),
         ));
     }
-    let raw_flat: Vec<f64> = raw.iter().flat_map(|p| [p[0], p[1]]).collect();
-    let cand_flat: Vec<f64> = cand.iter().flat_map(|p| [p[0], p[1]]).collect();
-    let mut hard_checks = Vec::new();
-    for h in &hard {
-        let raw_error = (dot(&h.row, &raw_flat) - dot(&h.row, &up_flat) + h.constant).abs();
-        let error = (dot(&h.row, &cand_flat) - dot(&h.row, &up_flat) + h.constant).abs();
-        let allowance = (0..base.len())
-            .filter(|v| raw[*v][0] != up[*v][0])
-            .map(|v| h.row[2 * v].abs() / 128.0)
-            .sum::<f64>();
-        let ok = raw_error <= 1e-8 * (1.0 + h.constant.abs()) && error <= allowance + 1e-9;
-        hard_checks.push(serde_json::json!({
-            "kind": h.kind, "raw_error": raw_error, "rounded_error": error,
-            "allowance": allowance, "ok": ok,
-        }));
-        if !ok {
+    let hard_checks = match rounded_hard_checks(&hard, base.len(), &up_flat, &raw, &up, &cand) {
+        Ok(checks) => checks,
+        Err(prefix) => {
             return Ok(abstain(
                 upstream,
                 "rounded-hard-constraint",
-                serde_json::json!({"size_px": size_px, "hard_checks": hard_checks}),
+                serde_json::json!({"size_px": size_px, "hard_checks": prefix}),
             ));
         }
-    }
+    };
     let mut continuity = Vec::new();
     for jc in &joint_checks {
         let (raw_cross, li, lo) = scf::cross_of(&raw, jc.j, jc.iv, jc.ov);
@@ -1097,5 +1114,165 @@ mod tests {
             collect_joint_constraints(&parsed, &up, &involved, 16.0, &mut hard),
             Err("degenerate-leg")
         ));
+    }
+
+    #[test]
+    fn rounded_checks_accept_exact_allowance_tie() {
+        let h = 1.0 / 128.0;
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![1.0, 0.0],
+            constant: -h,
+        }];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[h, 0.0]];
+        let cand = [[2.0 * h, 0.0]];
+        let checks = rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand).expect("tie passes");
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0]["ok"], true);
+        assert_eq!(checks[0]["raw_error"].as_f64().unwrap(), 0.0);
+        assert_eq!(checks[0]["rounded_error"].as_f64().unwrap(), h);
+        assert_eq!(checks[0]["allowance"].as_f64().unwrap(), h);
+    }
+
+    #[test]
+    fn rounded_checks_enforce_additive_bound() {
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![1.0, 0.0],
+            constant: 0.0,
+        }];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[0.0, 0.0]];
+        let fine = [[2.0_f64.powi(-31), 0.0]];
+        let checks =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &fine).expect("2^-31 passes");
+        assert_eq!(checks[0]["ok"], true);
+        let coarse = [[2.0_f64.powi(-29), 0.0]];
+        let prefix =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &coarse).expect_err("2^-29 fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn rounded_checks_gate_raw_before_rounded() {
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![1.0, 0.0],
+            constant: 0.125,
+        }];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[-0.125 + 3.0 * 2.0_f64.powi(-28), 0.0]];
+        let cand = [[-0.125, 0.0]];
+        let checks = rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand)
+            .expect("near-tolerance raw passes");
+        assert_eq!(checks[0]["ok"], true);
+        let raw_bad = [[1.0, 0.0]];
+        let prefix = rounded_hard_checks(&hard, 1, &up_flat, &raw_bad, &up, &cand)
+            .expect_err("raw-bad fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["rounded_error"].as_f64().unwrap(), 0.0);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn rounded_checks_stop_at_first_failure() {
+        let hard = [
+            HardRow {
+                kind: "first",
+                row: vec![0.0, 1.0],
+                constant: 0.0,
+            },
+            HardRow {
+                kind: "second",
+                row: vec![1.0, 0.0],
+                constant: 0.0,
+            },
+            HardRow {
+                kind: "third",
+                row: vec![1.0, 0.0],
+                constant: 0.0,
+            },
+        ];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[0.0, 0.0]];
+        let cand = [[1.0, 0.0]];
+        let prefix =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand).expect_err("second fails");
+        assert_eq!(prefix.len(), 2);
+        assert_eq!(prefix[0]["kind"], "first");
+        assert_eq!(prefix[1]["kind"], "second");
+        assert_eq!(prefix[0]["ok"], true);
+        assert_eq!(prefix[1]["ok"], false);
+    }
+
+    #[test]
+    fn rounded_checks_accept_empty() {
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[0.0, 0.0]];
+        let cand = [[0.0, 0.0]];
+        let checks = rounded_hard_checks(&[], 1, &up_flat, &raw, &up, &cand).expect("empty passes");
+        assert!(checks.is_empty());
+    }
+
+    #[test]
+    fn rounded_checks_translated_nonzero_xy() {
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![1.0, 2.0],
+            constant: 0.0,
+        }];
+        let up = [[2.0, 3.0]];
+        let up_flat = [2.0, 3.0];
+        let raw = [[2.0, 3.0]];
+        let cand = [[2.0, 3.0]];
+        let checks =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand).expect("translated passes");
+        assert_eq!(checks[0]["raw_error"].as_f64().unwrap(), 0.0);
+        assert_eq!(checks[0]["rounded_error"].as_f64().unwrap(), 0.0);
+        assert_eq!(checks[0]["allowance"].as_f64().unwrap(), 0.0);
+        assert_eq!(checks[0]["ok"], true);
+    }
+
+    #[test]
+    fn rounded_checks_raw_inclusive_boundary() {
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![1.0, 0.0],
+            constant: 0.0,
+        }];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[1e-8, 0.0]];
+        let cand = [[0.0, 0.0]];
+        let checks =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand).expect("raw tie passes");
+        assert_eq!(checks[0]["raw_error"].as_f64().unwrap(), 1e-8);
+        assert_eq!(checks[0]["ok"], true);
+    }
+
+    #[test]
+    fn rounded_checks_round_inclusive_boundary() {
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![0.0, 1.0],
+            constant: 1e-9,
+        }];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[0.0, 0.0]];
+        let cand = [[0.0, 0.0]];
+        let checks =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand).expect("round tie passes");
+        assert_eq!(checks[0]["raw_error"].as_f64().unwrap(), 1e-9);
+        assert_eq!(checks[0]["rounded_error"].as_f64().unwrap(), 1e-9);
+        assert_eq!(checks[0]["allowance"].as_f64().unwrap(), 0.0);
+        assert_eq!(checks[0]["ok"], true);
     }
 }
