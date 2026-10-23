@@ -2040,6 +2040,58 @@ fn finish(
     )
 }
 
+fn rounded_hard_checks(
+    cols: &[usize],
+    kept_hard: &[(Vec<f64>, f64)],
+    raw_new: &[[f64; 2]],
+    cand_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+) -> (bool, Vec<serde_json::Value>) {
+    // Rounded hard-constraint check with per-coordinate allowance.
+    let col_x: Vec<usize> = cols.iter().map(|v| 2 * v).collect();
+    let flat = |pts: &[[f64; 2]]| -> Vec<f64> { ravel(pts) };
+    let raw_flat = flat(raw_new);
+    let cand_flat = flat(cand_all);
+    let up_flat = flat(up_all);
+    let d_raw: Vec<f64> = raw_flat
+        .iter()
+        .zip(up_flat.iter())
+        .map(|(a, b)| a - b)
+        .collect();
+    let d_cand: Vec<f64> = cand_flat
+        .iter()
+        .zip(up_flat.iter())
+        .map(|(a, b)| a - b)
+        .collect();
+    let mut hard_checks: Vec<serde_json::Value> = Vec::new();
+    for (red, target_h) in kept_hard {
+        // Reduced rows act on the free X columns only.
+        let d_raw_red: Vec<f64> = col_x.iter().map(|c| d_raw[*c]).collect();
+        let d_cand_red: Vec<f64> = col_x.iter().map(|c| d_cand[*c]).collect();
+        let raw_error = (dotv(red, &d_raw_red) - target_h).abs();
+        let error = (dotv(red, &d_cand_red) - target_h).abs();
+        let mut allowance = 0.0;
+        for (k, v) in cols.iter().enumerate() {
+            if raw_new[*v][0] != up_all[*v][0] {
+                allowance += red[k].abs() * RESERVE_26_6;
+            }
+        }
+        let norm_red = red.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let ok = raw_error <= 1e-7 * (1.0 + target_h.abs()) * (1.0 + norm_red)
+            && error <= allowance + 1e-9;
+        hard_checks.push(serde_json::json!({
+            "raw_error": raw_error,
+            "rounded_error": error,
+            "allowance": allowance,
+            "ok": ok,
+        }));
+        if !ok {
+            return (false, hard_checks);
+        }
+    }
+    (true, hard_checks)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn deliver(
     raw: &SourceOutline,
@@ -2114,56 +2166,19 @@ fn deliver(
             }),
         ));
     }
-    // Rounded hard-constraint check with per-coordinate allowance.
-    let col_x: Vec<usize> = cols.iter().map(|v| 2 * v).collect();
-    let flat = |pts: &[[f64; 2]]| -> Vec<f64> { ravel(pts) };
-    let raw_flat = flat(&raw_new);
-    let cand_flat = flat(&cand_all);
-    let up_flat = flat(up_all);
-    let d_raw: Vec<f64> = raw_flat
-        .iter()
-        .zip(up_flat.iter())
-        .map(|(a, b)| a - b)
-        .collect();
-    let d_cand: Vec<f64> = cand_flat
-        .iter()
-        .zip(up_flat.iter())
-        .map(|(a, b)| a - b)
-        .collect();
-    let mut hard_checks: Vec<serde_json::Value> = Vec::new();
-    for (red, target_h) in &kept_hard {
-        // Reduced rows act on the free X columns only.
-        let d_raw_red: Vec<f64> = col_x.iter().map(|c| d_raw[*c]).collect();
-        let d_cand_red: Vec<f64> = col_x.iter().map(|c| d_cand[*c]).collect();
-        let raw_error = (dotv(red, &d_raw_red) - target_h).abs();
-        let error = (dotv(red, &d_cand_red) - target_h).abs();
-        let mut allowance = 0.0;
-        for (k, v) in cols.iter().enumerate() {
-            if raw_new[*v][0] != up_all[*v][0] {
-                allowance += red[k].abs() * RESERVE_26_6;
-            }
-        }
-        let norm_red = red.iter().map(|x| x * x).sum::<f64>().sqrt();
-        let ok = raw_error <= 1e-7 * (1.0 + target_h.abs()) * (1.0 + norm_red)
-            && error <= allowance + 1e-9;
-        hard_checks.push(serde_json::json!({
-            "raw_error": raw_error,
-            "rounded_error": error,
-            "allowance": allowance,
-            "ok": ok,
-        }));
-        if !ok {
-            return Ok(abstain(
-                upstream,
-                "rounded-hard-constraint",
-                serde_json::json!({
-                    "size_px": size_px,
-                    "skipped": skipped_json(),
-                    "waist": waist_json(),
-                    "hard_checks": hard_checks,
-                }),
-            ));
-        }
+    let (hard_ok, hard_checks) =
+        rounded_hard_checks(&cols, &kept_hard, &raw_new, &cand_all, up_all);
+    if !hard_ok {
+        return Ok(abstain(
+            upstream,
+            "rounded-hard-constraint",
+            serde_json::json!({
+                "size_px": size_px,
+                "skipped": skipped_json(),
+                "waist": waist_json(),
+                "hard_checks": hard_checks,
+            }),
+        ));
     }
     // Joint continuity with the 26.6 perturbation bound.
     let mut continuity: Vec<serde_json::Value> = Vec::new();
@@ -2843,3 +2858,6 @@ mod quadratic_tests;
 
 #[cfg(test)]
 mod sharp_joint_tests;
+
+#[cfg(test)]
+mod hard_check_tests;
