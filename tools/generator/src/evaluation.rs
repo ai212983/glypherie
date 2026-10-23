@@ -399,19 +399,7 @@ pub fn evaluate(
                 "mono-only iteration changed gray output",
             );
         }
-        let source_to_candidate = motion(&raw.fitted_commands, &fitted.fitted_commands);
-        glyphs.push(GlyphDiagnostics {
-            codepoint,
-            source: diagnostics(raw),
-            upstream: diagnostics(baseline),
-            candidate: diagnostics(fitted),
-            source_to_upstream: motion(&raw.fitted_commands, &baseline.fitted_commands),
-            source_command_correspondence: source_to_candidate.is_some(),
-            source_to_candidate,
-            upstream_to_candidate: motion(&baseline.fitted_commands, &fitted.fitted_commands),
-            candidate_outline_changed: fitted.fitted_commands != baseline.fitted_commands,
-            candidate_diagonal_pairs: fitted.diagonal_pairs,
-        });
+        glyphs.push(glyph_diagnostics(codepoint, raw, baseline, fitted));
     }
     Evaluation {
         schema_version: 1,
@@ -419,6 +407,27 @@ pub fn evaluate(
         hard_failures: failures,
         glyphs,
         limits: "Mechanical invariants and descriptive diagnostics only. Coordinate correspondence is not a shape-distance metric; topology cannot distinguish intentional components/counters/serifs from defects; threshold samples describe hypothetical AA conversion (not center-fill output), not robustness proof. No ink-count preference or optical acceptance score. Designer intent and optical weight still require assessment in the web preview.",
+    }
+}
+
+fn glyph_diagnostics(
+    codepoint: u32,
+    source: &ReferenceRecord,
+    upstream: &ReferenceRecord,
+    candidate: &ReferenceRecord,
+) -> GlyphDiagnostics {
+    let source_to_candidate = motion(&source.fitted_commands, &candidate.fitted_commands);
+    GlyphDiagnostics {
+        codepoint,
+        source: diagnostics(source),
+        upstream: diagnostics(upstream),
+        candidate: diagnostics(candidate),
+        source_to_upstream: motion(&source.fitted_commands, &upstream.fitted_commands),
+        source_command_correspondence: source_to_candidate.is_some(),
+        source_to_candidate,
+        upstream_to_candidate: motion(&upstream.fitted_commands, &candidate.fitted_commands),
+        candidate_outline_changed: candidate.fitted_commands != upstream.fitted_commands,
+        candidate_diagonal_pairs: candidate.diagonal_pairs,
     }
 }
 

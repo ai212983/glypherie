@@ -78,8 +78,21 @@ fn changed_ink_quantity_is_not_an_acceptance_rule() {
         wider.glyphs[0].upstream.coverage_area_px,
         wider.glyphs[0].candidate.coverage_area_px
     );
+    assert!(wider.glyphs[0].candidate_outline_changed);
+    assert!(narrower.glyphs[0].candidate_outline_changed);
     let serialized = serde_json::to_value(wider).unwrap();
     assert!(serialized.get("score").is_none());
+    assert_eq!(
+        serialized["glyphs"][0]["candidate_outline_changed"],
+        serde_json::Value::Bool(true)
+    );
+    let (source, upstream, candidate) = reports("mono_1bit");
+    let identical = evaluate(&source, &upstream, &candidate);
+    assert!(!identical.glyphs[0].candidate_outline_changed);
+    assert_eq!(
+        serde_json::to_value(identical).unwrap()["glyphs"][0]["candidate_outline_changed"],
+        serde_json::Value::Bool(false)
+    );
 }
 
 #[test]
