@@ -279,6 +279,13 @@ fn add_quad_shape(system: &mut super::System, ctrl: [usize; 3]) {
     }
 }
 
+/// Hard equality row over full-coordinate displacements.
+struct HardRow {
+    kind: &'static str,
+    row: Vec<f64>,
+    constant: f64,
+}
+
 /// Retained joint leg for the post-rounding continuity check.
 #[derive(Clone, Copy)]
 struct JointCheck {
@@ -318,6 +325,55 @@ fn reduce_row(row: &[f64], weld: &HashMap<usize, usize>, cols: &[usize]) -> Vec<
         full[2 * c] += full[2 * d];
     }
     cols.iter().map(|v| full[2 * v]).collect()
+}
+
+fn collect_joint_constraints(
+    parsed: &geometry::Parsed,
+    up: &[[f64; 2]],
+    involved: &HashSet<usize>,
+    size_px: f64,
+    hard: &mut Vec<HardRow>,
+) -> Result<Vec<JointCheck>, &'static str> {
+    let joints_map = scf::joints(parsed);
+    let mut ordered_j: Vec<usize> = joints_map.keys().copied().collect();
+    ordered_j.sort();
+    let mut joint_checks: Vec<JointCheck> = Vec::new();
+    for j in ordered_j {
+        let mut occs = joints_map[&j].clone();
+        occs.sort_by_key(|o| leg_far(o.prev, o.seg));
+        for occ in &occs {
+            let (iv, ov) = leg_far(occ.prev, occ.seg);
+            if ![j, iv, ov].iter().any(|v| involved.contains(v)) {
+                continue;
+            }
+            if occ.degenerate {
+                return Err("degenerate-joint");
+            }
+            let curved_join = matches!(occ.prev, scf::SegRef::Quad { .. })
+                || matches!(occ.seg, scf::SegRef::Quad { .. });
+            let constrained = curved_join || occ.smooth;
+            if constrained {
+                match scf::g1_row(up, j, occ.prev, occ.seg, size_px, occ.smooth) {
+                    Some((row, constant)) => hard.push(HardRow {
+                        kind: "joint",
+                        row,
+                        constant,
+                    }),
+                    None => {
+                        return Err("degenerate-leg");
+                    }
+                }
+            }
+            joint_checks.push(JointCheck {
+                j,
+                iv,
+                ov,
+                constrained,
+                smooth: occ.smooth,
+            });
+        }
+    }
+    Ok(joint_checks)
 }
 
 /// One bounded solve from the original upstream outline.
@@ -549,11 +605,6 @@ pub(super) fn fit_with_analysis(
         .flat_map(|(b, u)| [u[0] - b[0], u[1] - b[1]])
         .collect();
     let up_flat: Vec<f64> = up.iter().flat_map(|p| [p[0], p[1]]).collect();
-    struct HardRow {
-        kind: &'static str,
-        row: Vec<f64>,
-        constant: f64,
-    }
     let mut hard: Vec<HardRow> = Vec::new();
     for info in &prepared {
         let n = info.normal;
@@ -615,60 +666,20 @@ pub(super) fn fit_with_analysis(
             }
         }
     }
-    // Hersch's border rotation changes angular line-line corners. Their
-    // orientation is checked below; curve joins and collinear subdivision
-    // joints retain exact tangent/cross constraints.
-    let joints_map = scf::joints(&parsed);
-    let mut ordered_j: Vec<usize> = joints_map.keys().copied().collect();
-    ordered_j.sort();
-    let mut joint_checks: Vec<JointCheck> = Vec::new();
-    for j in ordered_j {
-        let mut occs = joints_map[&j].clone();
-        occs.sort_by_key(|o| leg_far(o.prev, o.seg));
-        for occ in &occs {
-            let (iv, ov) = leg_far(occ.prev, occ.seg);
-            if ![j, iv, ov].iter().any(|v| involved.contains(v)) {
-                continue;
-            }
-            if occ.degenerate {
-                return Ok(abstain(
-                    upstream,
-                    "degenerate-joint",
-                    serde_json::json!({"size_px": size_px}),
-                ));
-            }
-            let curved_join = matches!(occ.prev, scf::SegRef::Quad { .. })
-                || matches!(occ.seg, scf::SegRef::Quad { .. });
-            // Cubic joins never reach here: the contour gate admits lines and
-            // quads only, so every joint leg is a line or a quad control.
-            let constrained = curved_join || occ.smooth;
-            if constrained {
-                match scf::g1_row(&up, j, occ.prev, occ.seg, size_px, occ.smooth) {
-                    Some((row, constant)) => hard.push(HardRow {
-                        kind: "joint",
-                        row,
-                        constant,
-                    }),
-                    // A degenerate leg cannot linearize: the joint keeps the
-                    // upstream defect instead of constraining it.
-                    None => {
-                        return Ok(abstain(
-                            upstream,
-                            "degenerate-leg",
-                            serde_json::json!({"size_px": size_px}),
-                        ));
-                    }
-                }
-            }
-            joint_checks.push(JointCheck {
-                j,
-                iv,
-                ov,
-                constrained,
-                smooth: occ.smooth,
-            });
+    // Hersch's border rotation changes angular line-line corners; curve
+    // joins and collinear subdivision joints retain exact tangent/cross
+    // constraints.
+    let joint_checks = match collect_joint_constraints(&parsed, &up, &involved, size_px, &mut hard)
+    {
+        Ok(checks) => checks,
+        Err(reason) => {
+            return Ok(abstain(
+                upstream,
+                reason,
+                serde_json::json!({"size_px": size_px}),
+            ));
         }
-    }
+    };
     let mat: Vec<Vec<f64>> = obj_rows
         .iter()
         .map(|r| reduce_row(r, &weld, &cols))
@@ -961,5 +972,130 @@ mod tests {
         let moved = [(true, false), (false, false), (false, false)];
         let got = scf::quant_cross_bound(leg_in, leg_out, moved);
         assert_eq!(got, 1.0 / 128.0 * leg_out[1].abs());
+    }
+
+    fn joint_shape_source() -> Vec<FittedCommand> {
+        vec![
+            FittedCommand::MoveTo(0.0, 0.0),
+            FittedCommand::LineTo(2.0, 0.0),
+            FittedCommand::QuadTo(3.0, 1.0, 2.0, 2.0),
+            FittedCommand::LineTo(1.0, 2.0),
+            FittedCommand::LineTo(0.0, 2.0),
+            FittedCommand::Close,
+        ]
+    }
+
+    fn degenerate_joint_source() -> Vec<FittedCommand> {
+        let mut source = joint_shape_source();
+        source[2] = FittedCommand::QuadTo(2.0, 0.0, 2.0, 2.0);
+        source
+    }
+
+    fn flat_up(parsed: &geometry::Parsed) -> Vec<[f64; 2]> {
+        parsed
+            .oncurve
+            .iter()
+            .chain(parsed.offcurve.iter())
+            .copied()
+            .collect()
+    }
+
+    fn prefixed_hard(n: usize) -> Vec<HardRow> {
+        vec![
+            HardRow {
+                kind: "parallel",
+                row: (0..n).map(|i| i as f64 + 1.0).collect(),
+                constant: 3.25,
+            },
+            HardRow {
+                kind: "separation",
+                row: (0..n).map(|i| -(i as f64) - 2.0).collect(),
+                constant: -7.5,
+            },
+        ]
+    }
+
+    fn check_by_j(checks: &[JointCheck], j: usize) -> JointCheck {
+        *checks.iter().find(|c| c.j == j).expect("joint collected")
+    }
+
+    #[test]
+    fn collect_preserves_prefix_and_joint_metadata() {
+        let parsed = geometry::parse_commands(&joint_shape_source()).expect("valid shape");
+        let up = flat_up(&parsed);
+        let involved: HashSet<usize> = (0..up.len()).collect();
+        let mut hard = prefixed_hard(2 * up.len());
+        let checks =
+            collect_joint_constraints(&parsed, &up, &involved, 16.0, &mut hard).expect("valid");
+        assert_eq!(hard.len(), 2 + 3);
+        assert_eq!(hard[0].kind, "parallel");
+        assert_eq!(hard[1].kind, "separation");
+        assert_eq!(
+            hard[0].row,
+            (0..2 * up.len())
+                .map(|i| i as f64 + 1.0)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(hard[0].constant, 3.25);
+        assert_eq!(
+            hard[1].row,
+            (0..2 * up.len())
+                .map(|i| -(i as f64) - 2.0)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(hard[1].constant, -7.5);
+        assert!(hard[2..].iter().all(|h| h.kind == "joint"));
+        let js: Vec<usize> = checks.iter().map(|c| c.j).collect();
+        assert_eq!(js, vec![0, 1, 2, 3, 4]);
+        let (j1, j2) = (check_by_j(&checks, 1), check_by_j(&checks, 2));
+        assert!(j1.constrained && !j1.smooth);
+        assert!(j2.constrained && !j2.smooth);
+        let j3 = check_by_j(&checks, 3);
+        assert!(j3.constrained && j3.smooth);
+        let j0 = check_by_j(&checks, 0);
+        assert!(!j0.constrained);
+    }
+
+    #[test]
+    fn collect_reports_degenerate_joint() {
+        let parsed = geometry::parse_commands(&degenerate_joint_source()).expect("valid commands");
+        let up = flat_up(&parsed);
+        let involved: HashSet<usize> = HashSet::from([1]);
+        let mut hard = prefixed_hard(2 * up.len());
+        assert!(matches!(
+            collect_joint_constraints(&parsed, &up, &involved, 16.0, &mut hard),
+            Err("degenerate-joint")
+        ));
+    }
+
+    #[test]
+    fn collect_skips_unrelated_degenerate_joint() {
+        let parsed = geometry::parse_commands(&degenerate_joint_source()).expect("valid commands");
+        let up = flat_up(&parsed);
+        let involved: HashSet<usize> = HashSet::from([3]);
+        let mut hard = prefixed_hard(2 * up.len());
+        let checks =
+            collect_joint_constraints(&parsed, &up, &involved, 16.0, &mut hard).expect("skips j1");
+        assert!(!checks.iter().any(|c| c.j == 1));
+        let j3 = check_by_j(&checks, 3);
+        assert!(j3.constrained && j3.smooth);
+        let j2 = check_by_j(&checks, 2);
+        assert!(j2.constrained && !j2.smooth);
+        assert_eq!(hard.len(), 2 + 2);
+        assert!(hard[2..].iter().all(|h| h.kind == "joint"));
+    }
+
+    #[test]
+    fn collect_reports_degenerate_leg() {
+        let parsed = geometry::parse_commands(&joint_shape_source()).expect("valid shape");
+        let mut up = flat_up(&parsed);
+        let off = parsed.oncurve.len();
+        up[off] = up[1];
+        let involved: HashSet<usize> = HashSet::from([1]);
+        let mut hard = prefixed_hard(2 * up.len());
+        assert!(matches!(
+            collect_joint_constraints(&parsed, &up, &involved, 16.0, &mut hard),
+            Err("degenerate-leg")
+        ));
     }
 }
