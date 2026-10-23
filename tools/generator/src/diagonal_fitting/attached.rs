@@ -406,6 +406,52 @@ fn rounded_hard_checks(
     Ok(hard_checks)
 }
 
+fn joint_continuity_checks(
+    joint_checks: &[JointCheck],
+    base: &[[f64; 2]],
+    up: &[[f64; 2]],
+    raw: &[[f64; 2]],
+    cand: &[[f64; 2]],
+) -> Result<Vec<serde_json::Value>, Vec<serde_json::Value>> {
+    let mut continuity = Vec::new();
+    for jc in joint_checks {
+        let (raw_cross, li, lo) = scf::cross_of(raw, jc.j, jc.iv, jc.ov);
+        let (old_cross, old_li, old_lo) = scf::cross_of(up, jc.j, jc.iv, jc.ov);
+        let (cross, new_li, new_lo) = scf::cross_of(cand, jc.j, jc.iv, jc.ov);
+        let (source_cross, _, _) = scf::cross_of(base, jc.j, jc.iv, jc.ov);
+        let target = if jc.smooth { 0.0 } else { old_cross };
+        let moved_flags = [
+            (raw[jc.iv][0] != up[jc.iv][0], false),
+            (raw[jc.j][0] != up[jc.j][0], false),
+            (raw[jc.ov][0] != up[jc.ov][0], false),
+        ];
+        let allowance = scf::quant_cross_bound(li, lo, moved_flags);
+        let legs_live = new_li[0].hypot(new_li[1]) > 0.0 && new_lo[0].hypot(new_lo[1]) > 0.0;
+        let mut ok = legs_live;
+        if jc.constrained {
+            ok &= (raw_cross - target).abs() <= 1e-8 * (1.0 + target.abs())
+                && (cross - target).abs() <= allowance + 1e-9;
+            ok &= (new_li[0] * old_li[0] + new_li[1] * old_li[1]) > 0.0
+                && (new_lo[0] * old_lo[0] + new_lo[1] * old_lo[1]) > 0.0;
+            if jc.smooth {
+                ok &= (new_li[0] * new_lo[0] + new_li[1] * new_lo[1]) > 0.0;
+            }
+        } else if source_cross != 0.0 {
+            ok &= cross * source_cross > 0.0;
+        }
+        continuity.push(serde_json::json!({
+            "joint": jc.j, "constrained": jc.constrained, "smooth": jc.smooth,
+            "raw_cross": raw_cross, "raw_target": if jc.constrained { Some(target) } else { None },
+            "source_cross": source_cross, "cross_up": old_cross,
+            "cross_cand": cross, "allowed": allowance, "ok": ok,
+        }));
+        if !ok {
+            return Err(continuity);
+        }
+    }
+    Ok(continuity)
+}
+
 /// One bounded solve from the original upstream outline.
 ///
 /// Hersch fixed-direction constraints (parallel borders plus the integer
@@ -847,47 +893,16 @@ pub(super) fn fit_with_analysis(
             ));
         }
     };
-    let mut continuity = Vec::new();
-    for jc in &joint_checks {
-        let (raw_cross, li, lo) = scf::cross_of(&raw, jc.j, jc.iv, jc.ov);
-        let (old_cross, old_li, old_lo) = scf::cross_of(&up, jc.j, jc.iv, jc.ov);
-        let (cross, new_li, new_lo) = scf::cross_of(&cand, jc.j, jc.iv, jc.ov);
-        let (source_cross, _, _) = scf::cross_of(&base, jc.j, jc.iv, jc.ov);
-        let target = if jc.smooth { 0.0 } else { old_cross };
-        let moved_flags = [
-            (raw[jc.iv][0] != up[jc.iv][0], false),
-            (raw[jc.j][0] != up[jc.j][0], false),
-            (raw[jc.ov][0] != up[jc.ov][0], false),
-        ];
-        let allowance = scf::quant_cross_bound(li, lo, moved_flags);
-        let legs_live = new_li[0].hypot(new_li[1]) > 0.0 && new_lo[0].hypot(new_lo[1]) > 0.0;
-        let mut ok = legs_live;
-        if jc.constrained {
-            ok &= (raw_cross - target).abs() <= 1e-8 * (1.0 + target.abs())
-                && (cross - target).abs() <= allowance + 1e-9;
-            ok &= (new_li[0] * old_li[0] + new_li[1] * old_li[1]) > 0.0
-                && (new_lo[0] * old_lo[0] + new_lo[1] * old_lo[1]) > 0.0;
-            if jc.smooth {
-                ok &= (new_li[0] * new_lo[0] + new_li[1] * new_lo[1]) > 0.0;
-            }
-        } else if source_cross != 0.0 {
-            ok &= cross * source_cross > 0.0;
-        }
-        continuity.push(serde_json::json!({
-            "joint": jc.j, "constrained": jc.constrained, "smooth": jc.smooth,
-            "raw_cross": raw_cross, "raw_target": if jc.constrained { Some(target) } else { None },
-            "source_cross": source_cross, "cross_up": old_cross,
-            "cross_cand": cross, "allowed": allowance, "ok": ok,
-        }));
-
-        if !ok {
+    let continuity = match joint_continuity_checks(&joint_checks, &base, &up, &raw, &cand) {
+        Ok(entries) => entries,
+        Err(prefix) => {
             return Ok(abstain(
                 upstream,
                 "joint-continuity",
-                serde_json::json!({"size_px": size_px, "continuity": continuity}),
+                serde_json::json!({"size_px": size_px, "continuity": prefix}),
             ));
         }
-    }
+    };
     let moved: HashSet<usize> = (0..base.len()).filter(|i| cand[*i] != up[*i]).collect();
     for c in &curves_idx {
         if c.len() != 3 || !c.iter().any(|i| moved.contains(i)) {
@@ -1209,6 +1224,347 @@ mod tests {
         assert_eq!(prefix[1]["kind"], "second");
         assert_eq!(prefix[0]["ok"], true);
         assert_eq!(prefix[1]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_accepts_smooth_zero() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let pts = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let entries =
+            joint_continuity_checks(&checks, &pts, &pts, &pts, &pts).expect("straight passes");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["ok"], true);
+        assert_eq!(entries[0]["raw_target"], 0.0);
+    }
+
+    #[test]
+    fn continuity_accepts_sharp_old_cross() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: false,
+        }];
+        let pts = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        let entries =
+            joint_continuity_checks(&checks, &pts, &pts, &pts, &pts).expect("corner passes");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["ok"], true);
+        assert_eq!(entries[0]["raw_target"], 1.0);
+    }
+
+    #[test]
+    fn continuity_unconstrained_tracks_source_sign() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: false,
+            smooth: false,
+        }];
+        let base = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        let keep = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        let entries =
+            joint_continuity_checks(&checks, &base, &base, &base, &keep).expect("sign kept");
+        assert_eq!(entries[0]["ok"], true);
+        let flip = [[0.0, 0.0], [1.0, 0.0], [1.0, -1.0]];
+        let prefix = joint_continuity_checks(&checks, &base, &base, &base, &flip)
+            .expect_err("sign flip fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+        let flat_base = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let entries = joint_continuity_checks(&checks, &flat_base, &flat_base, &flat_base, &flip)
+            .expect("zero source bypasses sign");
+        assert_eq!(entries[0]["ok"], true);
+    }
+
+    #[test]
+    fn continuity_rejects_dead_leg() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let pts = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let cand = [[0.0, 0.0], [1.0, 0.0], [1.0, 0.0]];
+        let prefix =
+            joint_continuity_checks(&checks, &pts, &pts, &pts, &cand).expect_err("dead leg fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_rejects_reversed_forward_leg() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let pts = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let cand = [[2.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let prefix = joint_continuity_checks(&checks, &pts, &pts, &pts, &cand)
+            .expect_err("reversed leg fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_rejects_smooth_fold() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let pts = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let s = 2.0_f64.powi(-18);
+        let cand = [[1.0 - s, -10.0 * s], [1.0, 0.0], [1.0 + s, -10.0 * s]];
+        let prefix = joint_continuity_checks(&checks, &pts, &pts, &pts, &cand)
+            .expect_err("fold fails orientation");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_keeps_valid_prefix_before_failure() {
+        let keep = JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: false,
+            smooth: false,
+        };
+        let flip = JointCheck {
+            j: 4,
+            iv: 3,
+            ov: 5,
+            constrained: false,
+            smooth: false,
+        };
+        let base = [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+            [5.0, 5.0],
+            [6.0, 5.0],
+            [6.0, 6.0],
+        ];
+        let cand = [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+            [5.0, 5.0],
+            [6.0, 5.0],
+            [6.0, 4.0],
+        ];
+        let prefix = joint_continuity_checks(&[keep, flip], &base, &base, &base, &cand)
+            .expect_err("second fails");
+        assert_eq!(prefix.len(), 2);
+        assert_eq!(prefix[0]["joint"], 1);
+        assert_eq!(prefix[0]["ok"], true);
+        assert_eq!(prefix[1]["joint"], 4);
+        assert_eq!(prefix[1]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_x_only_bound_table() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: false,
+            smooth: false,
+        }];
+        let base = [[2.0, 3.0], [5.0, 7.0], [11.0, 17.0]];
+        let cases: [([[f64; 2]; 3], f64); 4] = [
+            (base, 0.0),
+            (
+                [[2.0 + 1.0 / 256.0, 3.0], [5.0, 7.0], [11.0, 17.0]],
+                10.0 / 128.0,
+            ),
+            (
+                [[2.0, 3.0], [5.0 + 1.0 / 256.0, 7.0], [11.0, 17.0]],
+                14.0 / 128.0,
+            ),
+            (
+                [[2.0, 3.0], [5.0, 7.0], [11.0 + 1.0 / 256.0, 17.0]],
+                4.0 / 128.0,
+            ),
+        ];
+        for (raw, allowed) in cases {
+            let entries =
+                joint_continuity_checks(&checks, &base, &base, &raw, &base).expect("accepted");
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0]["allowed"].as_f64().unwrap(), allowed);
+            assert_eq!(entries[0]["ok"], true);
+        }
+    }
+
+    #[test]
+    fn continuity_zero_source_dead_legs_rejected() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: false,
+            smooth: false,
+        }];
+        let base = [[5.0, 0.0], [5.0, 1.0], [5.0, 2.0]];
+        let entries =
+            joint_continuity_checks(&checks, &base, &base, &base, &base).expect("live passes");
+        assert_eq!(entries[0]["ok"], true);
+        let dead_in = [[5.0, 1.0], [5.0, 1.0], [5.0, 2.0]];
+        let prefix = joint_continuity_checks(&checks, &base, &base, &base, &dead_in)
+            .expect_err("dead incoming fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+        let dead_out = [[5.0, 0.0], [5.0, 1.0], [5.0, 1.0]];
+        let prefix = joint_continuity_checks(&checks, &base, &base, &base, &dead_out)
+            .expect_err("dead outgoing fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_sharp_skew_accepted() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: false,
+        }];
+        let base = [[-0.5, -2.0], [0.0, 0.0], [0.0, 1.0]];
+        let cand = [[2.0, -1.0], [0.0, 0.0], [-2.5, 1.0]];
+        let entries =
+            joint_continuity_checks(&checks, &base, &base, &base, &cand).expect("skew passes");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["cross_up"], 0.5);
+        assert_eq!(entries[0]["cross_cand"], 0.5);
+        assert_eq!(entries[0]["ok"], true);
+    }
+
+    #[test]
+    fn continuity_perpendicular_forward_rejected() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: false,
+        }];
+        let up = [[-1.0, 0.0], [0.0, 0.0], [1.0, 1.0]];
+        let cand = [[0.0, 1.0], [0.0, 0.0], [1.0, 1.0]];
+        let prefix = joint_continuity_checks(&checks, &up, &up, &up, &cand)
+            .expect_err("incoming perpendicular fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+        let up = [[-1.0, -1.0], [0.0, 0.0], [0.0, 1.0]];
+        let cand = [[-1.0, -1.0], [0.0, 0.0], [-1.0, 0.0]];
+        let prefix = joint_continuity_checks(&checks, &up, &up, &up, &cand)
+            .expect_err("outgoing perpendicular fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_smooth_diagonal_accepted() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let pts = [[1.0, -2.0], [0.0, 0.0], [-1.0, 2.0]];
+        let entries =
+            joint_continuity_checks(&checks, &pts, &pts, &pts, &pts).expect("diagonal passes");
+        assert_eq!(entries[0]["ok"], true);
+    }
+
+    #[test]
+    fn continuity_smooth_right_angle_fold_rejected() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let up = [[-1.0, -1.0], [0.0, 0.0], [1.0, 1.0]];
+        let s = 2.0_f64.powi(-18);
+        let cand = [[-s, 0.0], [0.0, 0.0], [0.0, s]];
+        let prefix = joint_continuity_checks(&checks, &up, &up, &up, &cand)
+            .expect_err("fold fails orientation");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_raw_rounded_independent() {
+        let smooth = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let up = [[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]];
+        let raw = [[-1.0, 0.0], [0.0, 0.0], [1.0, 1e-8]];
+        let entries =
+            joint_continuity_checks(&smooth, &up, &up, &raw, &up).expect("raw tie passes");
+        assert_eq!(entries[0]["ok"], true);
+        let sharp = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: false,
+        }];
+        let up = [[-1.0, 0.0], [0.0, 0.0], [1.0, 1.0]];
+        let raw = [[-1.0, 0.0], [0.0, 0.0], [1.0, 1.0 + 1.5e-8]];
+        let entries =
+            joint_continuity_checks(&sharp, &up, &up, &raw, &up).expect("near tolerance passes");
+        assert_eq!(entries[0]["ok"], true);
+        let raw_bad = [[-1.0, 0.0], [0.0, 0.0], [1.0, 2.0]];
+        let prefix =
+            joint_continuity_checks(&sharp, &up, &up, &raw_bad, &up).expect_err("raw bad fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+        let flat = [[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]];
+        let cand = [[-1.0, 0.0], [0.0, 0.0], [1.0, 1e-9]];
+        let entries =
+            joint_continuity_checks(&smooth, &flat, &flat, &flat, &cand).expect("round tie passes");
+        assert_eq!(entries[0]["ok"], true);
+    }
+
+    #[test]
+    fn continuity_unconstrained_flat_live_rejected() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: false,
+            smooth: false,
+        }];
+        let base = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        let cand = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let prefix = joint_continuity_checks(&checks, &base, &base, &base, &cand)
+            .expect_err("zero cross fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
     }
 
     #[test]
