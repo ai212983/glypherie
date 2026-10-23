@@ -2,52 +2,98 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, env, fs, path::Path, process::ExitCode};
 
-fn topology(record: &Value) -> Result<[usize; 2], String> {
+#[derive(Debug)]
+struct ValidatedBitmap {
+    width: usize,
+    height: usize,
+    ink: Vec<bool>,
+}
+
+fn validate_bitmap(record: &Value) -> Result<ValidatedBitmap, String> {
     let width = record["width"].as_u64().ok_or("missing width")? as usize;
     let height = record["height"].as_u64().ok_or("missing height")? as usize;
     let pixels = record["pixels"].as_array().ok_or("missing pixels")?;
     if width.checked_mul(height) != Some(pixels.len()) || pixels.len() > 4_194_304 {
         return Err("invalid bitmap allocation".into());
     }
-    let ink: Vec<_> = pixels
+    let ink = pixels
         .iter()
         .map(|p| p.as_u64().map(|p| p != 0).ok_or("invalid pixel"))
         .collect::<Result<_, _>>()?;
-    let mut visited = vec![false; pixels.len()];
+    Ok(ValidatedBitmap { width, height, ink })
+}
+
+const INK_OFFSETS: [(isize, isize); 8] = [
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+    (-1, 0),
+    (1, 0),
+    (-1, 1),
+    (0, 1),
+    (1, 1),
+];
+
+const WHITE_OFFSETS: [(isize, isize); 4] = [(0, -1), (-1, 0), (1, 0), (0, 1)];
+
+fn neighbors(
+    index: usize,
+    width: usize,
+    height: usize,
+    eight: bool,
+) -> impl Iterator<Item = usize> {
+    let x = index % width;
+    let y = index / width;
+    let offsets: &[(isize, isize)] = if eight { &INK_OFFSETS } else { &WHITE_OFFSETS };
+    offsets.iter().filter_map(move |(dx, dy)| {
+        let xx = x as isize + dx;
+        let yy = y as isize + dy;
+        if xx < 0 || yy < 0 || xx >= width as isize || yy >= height as isize {
+            None
+        } else {
+            Some(yy as usize * width + xx as usize)
+        }
+    })
+}
+
+fn flood_fill(
+    bitmap: &ValidatedBitmap,
+    start: usize,
+    visited: &mut [bool],
+    queue: &mut Vec<usize>,
+) -> (bool, bool) {
+    let color = bitmap.ink[start];
+    queue.clear();
+    queue.push(start);
+    visited[start] = true;
+    let mut next = 0;
+    let mut boundary = false;
+    while next < queue.len() {
+        let p = queue[next];
+        next += 1;
+        let x = p % bitmap.width;
+        let y = p / bitmap.width;
+        boundary |= x == 0 || y == 0 || x + 1 == bitmap.width || y + 1 == bitmap.height;
+        for q in neighbors(p, bitmap.width, bitmap.height, color) {
+            if !visited[q] && bitmap.ink[q] == color {
+                visited[q] = true;
+                queue.push(q);
+            }
+        }
+    }
+    (color, boundary)
+}
+
+fn topology(record: &Value) -> Result<[usize; 2], String> {
+    let bitmap = validate_bitmap(record)?;
+    let mut visited = vec![false; bitmap.ink.len()];
+    let mut queue = Vec::new();
     let mut counts = [0, 0];
-    for start in 0..pixels.len() {
+    for start in 0..bitmap.ink.len() {
         if visited[start] {
             continue;
         }
-        let color = ink[start];
-        let mut queue = vec![start];
-        visited[start] = true;
-        let mut next = 0;
-        let mut boundary = false;
-        while next < queue.len() {
-            let p = queue[next];
-            next += 1;
-            let x = p % width;
-            let y = p / width;
-            boundary |= x == 0 || y == 0 || x + 1 == width || y + 1 == height;
-            for dy in -1..=1isize {
-                for dx in -1..=1isize {
-                    if (dx == 0 && dy == 0) || (!color && dx != 0 && dy != 0) {
-                        continue;
-                    }
-                    let xx = x as isize + dx;
-                    let yy = y as isize + dy;
-                    if xx < 0 || yy < 0 || xx >= width as isize || yy >= height as isize {
-                        continue;
-                    }
-                    let p = yy as usize * width + xx as usize;
-                    if !visited[p] && ink[p] == color {
-                        visited[p] = true;
-                        queue.push(p);
-                    }
-                }
-            }
-        }
+        let (color, boundary) = flood_fill(&bitmap, start, &mut visited, &mut queue);
         if color {
             counts[0] += 1;
         } else if !boundary {
@@ -263,6 +309,10 @@ fn main() -> ExitCode {
 #[cfg(test)]
 #[path = "font_specimen_diff/comparison_tests.rs"]
 mod comparison_tests;
+
+#[cfg(test)]
+#[path = "font_specimen_diff/topology_tests.rs"]
+mod topology_tests;
 
 #[cfg(test)]
 mod tests {
