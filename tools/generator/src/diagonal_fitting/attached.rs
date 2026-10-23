@@ -477,6 +477,58 @@ fn joint_continuity_checks(
     Ok(continuity)
 }
 
+fn quad_inequality_rows(
+    curves_idx: &[Vec<usize>],
+    base: &[[f64; 2]],
+    up: &[[f64; 2]],
+    up_flat: &[f64],
+    weld: &HashMap<usize, usize>,
+    cols: &[usize],
+    involved: &HashSet<usize>,
+) -> Option<(Vec<Vec<f64>>, Vec<f64>)> {
+    // Hersch section 2's quadratic derivatives: the signed curvature is
+    // cross(C-P0,P1-C), linear in X when Y is fixed. The four source-leg
+    // dot products certify forward tangents over the entire interval. One
+    // 26.6 product quantum plus the exact X-rounding reserve makes each
+    // strict sign representable without a curvature threshold.
+    let mut ineq_rows: Vec<Vec<f64>> = Vec::new();
+    let mut ineq_lower: Vec<f64> = Vec::new();
+    for c in curves_idx {
+        if c.len() != 3 || !c.iter().any(|i| involved.contains(i)) {
+            continue;
+        }
+        let (p0, ctrl, p1) = (c[0], c[1], c[2]);
+        let su = [base[ctrl][0] - base[p0][0], base[ctrl][1] - base[p0][1]];
+        let sv = [base[p1][0] - base[ctrl][0], base[p1][1] - base[ctrl][1]];
+        let source_cross = su[0] * sv[1] - su[1] * sv[0];
+        if source_cross == 0.0 {
+            return None;
+        }
+        let sign = if source_cross > 0.0 { 1.0 } else { -1.0 };
+        let mut row = vec![0.0; 2 * base.len()];
+        row[2 * p0] = sign * (up[ctrl][1] - up[p1][1]);
+        row[2 * ctrl] = sign * (up[p1][1] - up[p0][1]);
+        row[2 * p1] = sign * (up[p0][1] - up[ctrl][1]);
+        let red = reduce_row(&row, weld, cols);
+        let reserve = red.iter().map(|v| v.abs()).sum::<f64>() / 128.0 + 1.0 / 4096.0;
+        ineq_rows.push(red);
+        ineq_lower.push(reserve - dot(&row, up_flat));
+        for (i, j) in [(p0, ctrl), (ctrl, p1)] {
+            for leg in [su, sv] {
+                let mut row = vec![0.0; 2 * base.len()];
+                row[2 * j] = leg[0];
+                row[2 * i] = -leg[0];
+                let value = (up[j][0] - up[i][0]) * leg[0] + (up[j][1] - up[i][1]) * leg[1];
+                let red = reduce_row(&row, weld, cols);
+                let reserve = red.iter().map(|v| v.abs()).sum::<f64>() / 128.0 + 1.0 / 4096.0;
+                ineq_rows.push(red);
+                ineq_lower.push(reserve - value);
+            }
+        }
+    }
+    Some((ineq_rows, ineq_lower))
+}
+
 /// One bounded solve from the original upstream outline.
 ///
 /// Hersch fixed-direction constraints (parallel borders plus the integer
@@ -808,50 +860,15 @@ pub(super) fn fit_with_analysis(
             serde_json::json!({"size_px": size_px}),
         ));
     }
-    // Hersch section 2's quadratic derivatives: the signed curvature is
-    // cross(C-P0,P1-C), linear in X when Y is fixed. The four source-leg
-    // dot products certify forward tangents over the entire interval. One
-    // 26.6 product quantum plus the exact X-rounding reserve makes each
-    // strict sign representable without a curvature threshold.
-    let mut ineq_rows: Vec<Vec<f64>> = Vec::new();
-    let mut ineq_lower: Vec<f64> = Vec::new();
-    for c in &curves_idx {
-        if c.len() != 3 || !c.iter().any(|i| involved.contains(i)) {
-            continue;
-        }
-        let (p0, ctrl, p1) = (c[0], c[1], c[2]);
-        let su = [base[ctrl][0] - base[p0][0], base[ctrl][1] - base[p0][1]];
-        let sv = [base[p1][0] - base[ctrl][0], base[p1][1] - base[ctrl][1]];
-        let source_cross = su[0] * sv[1] - su[1] * sv[0];
-        if source_cross == 0.0 {
-            return Ok(abstain(
-                upstream,
-                "source-degenerate-curvature",
-                serde_json::json!({"size_px": size_px}),
-            ));
-        }
-        let sign = if source_cross > 0.0 { 1.0 } else { -1.0 };
-        let mut row = vec![0.0; 2 * base.len()];
-        row[2 * p0] = sign * (up[ctrl][1] - up[p1][1]);
-        row[2 * ctrl] = sign * (up[p1][1] - up[p0][1]);
-        row[2 * p1] = sign * (up[p0][1] - up[ctrl][1]);
-        let red = reduce_row(&row, &weld, &cols);
-        let reserve = red.iter().map(|v| v.abs()).sum::<f64>() / 128.0 + 1.0 / 4096.0;
-        ineq_rows.push(red);
-        ineq_lower.push(reserve - dot(&row, &up_flat));
-        for (i, j) in [(p0, ctrl), (ctrl, p1)] {
-            for leg in [su, sv] {
-                let mut row = vec![0.0; 2 * base.len()];
-                row[2 * j] = leg[0];
-                row[2 * i] = -leg[0];
-                let value = (up[j][0] - up[i][0]) * leg[0] + (up[j][1] - up[i][1]) * leg[1];
-                let red = reduce_row(&row, &weld, &cols);
-                let reserve = red.iter().map(|v| v.abs()).sum::<f64>() / 128.0 + 1.0 / 4096.0;
-                ineq_rows.push(red);
-                ineq_lower.push(reserve - value);
-            }
-        }
-    }
+    let Some((ineq_rows, ineq_lower)) =
+        quad_inequality_rows(&curves_idx, &base, &up, &up_flat, &weld, &cols, &involved)
+    else {
+        return Ok(abstain(
+            upstream,
+            "source-degenerate-curvature",
+            serde_json::json!({"size_px": size_px}),
+        ));
+    };
     let Some((delta, qp_info)) = qp::convex_qp(
         &mat,
         &rhs,
@@ -1691,5 +1708,172 @@ mod tests {
         assert_eq!(checks[0]["rounded_error"].as_f64().unwrap(), 1e-9);
         assert_eq!(checks[0]["allowance"].as_f64().unwrap(), 0.0);
         assert_eq!(checks[0]["ok"], true);
+    }
+
+    fn quad_base() -> Vec<[f64; 2]> {
+        vec![[0.0, 0.0], [2.0, 1.0], [4.0, 0.0]]
+    }
+
+    fn flat_of(pts: &[[f64; 2]]) -> Vec<f64> {
+        pts.iter().flat_map(|p| [p[0], p[1]]).collect()
+    }
+
+    #[test]
+    fn quad_inequalities_skip_empty_and_uninvolved() {
+        let mut base = quad_base();
+        base.extend([[10.0, 0.0], [12.0, 1.0], [14.0, 0.0]]);
+        let up = base.clone();
+        let up_flat = flat_of(&up);
+        let weld = HashMap::new();
+        let cols = vec![0, 1, 2, 3, 4, 5];
+        let involved: HashSet<usize> = HashSet::from([0]);
+        let (rows, lower) =
+            quad_inequality_rows(&[], &base, &up, &up_flat, &weld, &cols, &involved)
+                .expect("empty curves pass");
+        assert!(rows.is_empty() && lower.is_empty());
+        let (rows, lower) = quad_inequality_rows(
+            &[vec![0, 1, 2, 3], vec![3, 4, 5]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved,
+        )
+        .expect("skipped curves pass");
+        assert!(rows.is_empty() && lower.is_empty());
+    }
+
+    #[test]
+    fn quad_inequalities_reject_degenerate_source() {
+        let base = vec![[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]];
+        let up = base.clone();
+        let up_flat = flat_of(&up);
+        let weld = HashMap::new();
+        let cols = vec![0, 1, 2];
+        let involved: HashSet<usize> = HashSet::from([0, 1, 2]);
+        assert!(quad_inequality_rows(
+            &[vec![0, 1, 2]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn quad_inequalities_match_hand_computed_rows() {
+        let base = quad_base();
+        let up = base.clone();
+        let up_flat = flat_of(&up);
+        let weld = HashMap::new();
+        let cols = vec![0, 1, 2];
+        let involved: HashSet<usize> = HashSet::from([0, 1, 2]);
+        let (rows, lower) = quad_inequality_rows(
+            &[vec![0, 1, 2]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved,
+        )
+        .expect("nondegenerate passes");
+        assert_eq!(
+            rows,
+            vec![
+                vec![-1.0, 0.0, 1.0],
+                vec![-2.0, 2.0, 0.0],
+                vec![-2.0, 2.0, 0.0],
+                vec![0.0, -2.0, 2.0],
+                vec![0.0, -2.0, 2.0],
+            ]
+        );
+        let reserve2 = 65.0 / 4096.0;
+        let reserve4 = 129.0 / 4096.0;
+        assert_eq!(
+            lower,
+            vec![
+                reserve2 - 4.0,
+                reserve4 - 5.0,
+                reserve4 - 3.0,
+                reserve4 - 3.0,
+                reserve4 - 5.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn quad_inequalities_track_horizontal_moves() {
+        let base = quad_base();
+        let weld = HashMap::new();
+        let cols = vec![0, 1, 2];
+        let involved: HashSet<usize> = HashSet::from([0, 1, 2]);
+        let up = vec![[0.0, 0.0], [3.0, 1.0], [4.0, 0.0]];
+        let up_flat = flat_of(&up);
+        let (_, lower) = quad_inequality_rows(
+            &[vec![0, 1, 2]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved,
+        )
+        .expect("moved control passes");
+        let reserve4 = 129.0 / 4096.0;
+        assert_eq!(lower[1], reserve4 - 7.0);
+        let up = vec![[0.0, 0.0], [2.0, 1.0], [5.0, 0.0]];
+        let up_flat = flat_of(&up);
+        let (_, lower) = quad_inequality_rows(
+            &[vec![0, 1, 2]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved,
+        )
+        .expect("moved endpoint passes");
+        let reserve2 = 65.0 / 4096.0;
+        assert_eq!(lower[0], reserve2 - 5.0);
+    }
+
+    #[test]
+    fn quad_inequalities_ignore_coincident_weld() {
+        let plain = quad_base();
+        let plain_flat = flat_of(&plain);
+        let empty_weld = HashMap::new();
+        let cols = vec![0, 1, 2];
+        let involved: HashSet<usize> = HashSet::from([0, 1, 2]);
+        let (plain_rows, plain_lower) = quad_inequality_rows(
+            &[vec![0, 1, 2]],
+            &plain,
+            &plain,
+            &plain_flat,
+            &empty_weld,
+            &cols,
+            &involved,
+        )
+        .expect("plain passes");
+        let base = vec![[0.0, 0.0], [2.0, 1.0], [4.0, 0.0], [0.0, 0.0]];
+        let up = base.clone();
+        let up_flat = flat_of(&up);
+        let weld: HashMap<usize, usize> = HashMap::from([(3, 0)]);
+        let (rows, lower) = quad_inequality_rows(
+            &[vec![3, 1, 2]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved,
+        )
+        .expect("welded passes");
+        assert_eq!(rows, plain_rows);
+        assert_eq!(lower, plain_lower);
     }
 }
