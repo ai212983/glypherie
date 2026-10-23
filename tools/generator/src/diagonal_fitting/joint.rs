@@ -21,6 +21,7 @@
 //! error. Runtime never uses experiments, Python, subprocesses or corpus
 //! corrections.
 
+use super::crossing::{match_borders, Side};
 use super::{
     abstain, achieved_json, achieved_widths, assemble, crossing, geometry, mean_widths, qp,
     reference_meta, validate, FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS,
@@ -237,74 +238,6 @@ fn decide_parity_target(
         return Err("parity-ambiguous");
     }
     crossing::parity_target(axis_src, predicted).ok_or("parity-ambiguous")
-}
-
-#[derive(Clone)]
-struct Side {
-    pair: String,
-    p0: [f64; 2],
-    p1: [f64; 2],
-    i0: usize,
-    i1: usize,
-    t0: f64,
-    t1: f64,
-}
-
-fn reflect(point: [f64; 2], axis: f64) -> [f64; 2] {
-    [2.0 * axis - point[0], point[1]]
-}
-
-/// Segment-to-segment reflection matches under M about the source axis.
-///
-/// The returned second side is re-encoded to the matching orientation, so
-/// corresponding coefficient indices always reflect that orientation.
-fn match_borders(sides: &[Side], axis: f64, epsilon: f64) -> Vec<(Side, Side, f64)> {
-    let mut matches = Vec::new();
-    let mut seen: HashSet<(usize, usize)> = HashSet::new();
-    for (i, s) in sides.iter().enumerate() {
-        let (rp0, rp1) = (reflect(s.p0, axis), reflect(s.p1, axis));
-        let mut best: Option<(f64, usize, bool)> = None;
-        for (j, o) in sides.iter().enumerate() {
-            if i == j || s.pair == o.pair {
-                continue;
-            }
-            for reversed in [false, true] {
-                let (q0, q1) = if reversed { (o.p1, o.p0) } else { (o.p0, o.p1) };
-                let dist = (rp0[0] - q0[0])
-                    .hypot(rp0[1] - q0[1])
-                    .max((rp1[0] - q1[0]).hypot(rp1[1] - q1[1]));
-                if best.is_none_or(|(d, _, _)| dist < d) {
-                    best = Some((dist, j, reversed));
-                }
-            }
-        }
-        let Some((dist, j, reversed)) = best else {
-            continue;
-        };
-        if dist > epsilon {
-            continue;
-        }
-        let key = (i.min(j), i.max(j));
-        if !seen.insert(key) {
-            continue;
-        }
-        let o = &sides[j];
-        let second = if reversed {
-            Side {
-                p0: o.p1,
-                p1: o.p0,
-                i0: o.i1,
-                i1: o.i0,
-                t0: 1.0 - o.t1,
-                t1: 1.0 - o.t0,
-                ..o.clone()
-            }
-        } else {
-            o.clone()
-        };
-        matches.push((s.clone(), second, dist));
-    }
-    matches
 }
 
 /// Hobby (16) rows about the fixed parity axis, source mismatch retained.
@@ -1000,6 +933,87 @@ impl AxisLocus {
 #[cfg(test)]
 mod correspondence_tests {
     use super::*;
+
+    fn vside(pair: &str, x: f64, indices: [usize; 2], interval: [f64; 2]) -> Side {
+        Side {
+            pair: pair.into(),
+            p0: [x, 0.0],
+            p1: [x, 1.0],
+            i0: indices[0],
+            i1: indices[1],
+            t0: interval[0],
+            t1: interval[1],
+        }
+    }
+
+    #[test]
+    fn forward_match_orders_sides_and_keeps_metadata() {
+        let sides = vec![
+            vside("a", -1.0, [0, 1], [0.0, 1.0]),
+            vside("b", 1.0, [2, 3], [0.125, 0.625]),
+        ];
+        let matches = match_borders(&sides, 0.0, 0.25);
+        assert_eq!(matches.len(), 1);
+        let (first, second, dist) = &matches[0];
+        assert_eq!(first.pair, "a");
+        assert_eq!(second.pair, "b");
+        assert_eq!(dist, &0.0);
+        assert_eq!(second.p0, [1.0, 0.0]);
+        assert_eq!(second.p1, [1.0, 1.0]);
+        assert_eq!((second.i0, second.i1), (2, 3));
+        assert_eq!((second.t0, second.t1), (0.125, 0.625));
+    }
+
+    #[test]
+    fn reversed_match_reencodes_points_indices_and_parameters() {
+        let mut flipped = vside("b", 1.0, [2, 3], [0.125, 0.625]);
+        flipped.p0 = [1.0, 1.0];
+        flipped.p1 = [1.0, 0.0];
+        let sides = vec![vside("a", -1.0, [0, 1], [0.0, 1.0]), flipped];
+        let matches = match_borders(&sides, 0.0, 0.25);
+        assert_eq!(matches.len(), 1);
+        let (first, second, dist) = &matches[0];
+        assert_eq!(first.pair, "a");
+        assert_eq!(second.pair, "b");
+        assert_eq!(dist, &0.0);
+        assert_eq!((second.p0, second.p1), ([1.0, 0.0], [1.0, 1.0]));
+        assert_eq!((second.i0, second.i1), (3, 2));
+        assert_eq!((second.t0, second.t1), (0.375, 0.875));
+    }
+
+    #[test]
+    fn mirrored_sides_sharing_pair_id_yield_no_match() {
+        let sides = vec![
+            vside("a", -1.0, [0, 1], [0.0, 1.0]),
+            vside("a", 1.0, [2, 3], [0.0, 1.0]),
+        ];
+        assert!(match_borders(&sides, 0.0, 0.25).is_empty());
+    }
+
+    #[test]
+    fn equal_distance_keeps_first_encounter() {
+        let sides = vec![
+            vside("a", -1.0, [0, 1], [0.0, 1.0]),
+            vside("b", 1.125, [2, 3], [0.0, 1.0]),
+            vside("c", 0.875, [4, 5], [0.0, 1.0]),
+        ];
+        let matches = match_borders(&sides, 0.0, 0.25);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].1.pair, "b");
+        assert_eq!((matches[0].1.i0, matches[0].1.i1), (2, 3));
+        assert_eq!(matches[1].0.pair, "c");
+    }
+
+    #[test]
+    fn offset_equal_to_epsilon_is_accepted() {
+        let sides = vec![
+            vside("a", -1.0, [0, 1], [0.0, 1.0]),
+            vside("b", 1.25, [2, 3], [0.0, 1.0]),
+        ];
+        let matches = match_borders(&sides, 0.0, 0.25);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].2, 0.25);
+    }
 
     #[test]
     fn reflected_portions_keep_their_own_affine_coordinates() {
