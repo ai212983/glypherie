@@ -663,34 +663,17 @@ impl RowSys {
         }
     }
 
-    fn basis(&self, sample: &Sample) -> Vec<f64> {
-        let mut row = vec![0.0; self.points.len()];
-        for &(index, weight) in &sample.terms {
-            row[index] += weight;
-        }
-        row
-    }
-
-    fn point(&self, sample: &Sample) -> [f64; 2] {
-        let mut p = [0.0, 0.0];
-        for &(index, weight) in &sample.terms {
-            p[0] += weight * self.points[index][0];
-            p[1] += weight * self.points[index][1];
-        }
-        p
-    }
-
     /// Outer product of the correspondence basis with a direction, raveled
     /// per-coordinate `(x0, y0, x1, y1, ...)`.
     fn projected(&self, a: &Sample, dir: [f64; 2], b: Option<&Sample>) -> Vec<f64> {
-        let ba = self.basis(a);
+        let ba = a.basis(self.points.len());
         let mut row = vec![0.0; 2 * self.points.len()];
         for (k, w) in ba.iter().enumerate() {
             row[2 * k] += w * dir[0];
             row[2 * k + 1] += w * dir[1];
         }
         if let Some(other) = b {
-            let bb = self.basis(other);
+            let bb = other.basis(self.points.len());
             for (k, w) in bb.iter().enumerate() {
                 row[2 * k] -= w * dir[0];
                 row[2 * k + 1] -= w * dir[1];
@@ -703,8 +686,8 @@ impl RowSys {
     fn edge(&mut self, i: usize, j: usize) -> Result<(), ()> {
         let a = Sample::vertex(i);
         let b = Sample::vertex(j);
-        let pa = self.point(&a);
-        let pb = self.point(&b);
+        let pa = a.point(&self.points);
+        let pb = b.point(&self.points);
         let delta = [pb[0] - pa[0], pb[1] - pa[1]];
         let length = delta[0].hypot(delta[1]);
         if !(length > 0.0) {
@@ -754,8 +737,8 @@ impl RowSys {
         if !(arc.is_finite() && arc > 0.0) {
             return Err(());
         }
-        let pa = self.point(a);
-        let pb = self.point(b);
+        let pa = a.point(&self.points);
+        let pb = b.point(&self.points);
         let chord = [pa[0] - pb[0], pa[1] - pb[1]];
         let distance = chord[0].hypot(chord[1]);
         if !(distance > 0.0) {
