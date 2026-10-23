@@ -228,26 +228,24 @@ function exportRequest({ sizePx, kerning, characters }) {
 
 // Minimal Playdate source-font header check: enough to reject other `.fnt`
 // dialects (BMFont/XML) before deriving coverage from glyph entries.
-export function parseProvidedFnt(text, displayPath) {
-  const fail = (why) => {
-    throw new Error(`${displayPath}: not a Playdate source font (${why})`);
-  };
-  // Source files may use CRLF; normalize before line-anchored matching.
-  const normalized = text.replace(/\r\n?/g, "\n");
+function parseProvidedHeader(normalized, fail) {
   const get = (key) => normalized.match(new RegExp(`^${key}=(.*)$`, "m"))?.[1];
   const width = Number(get("width"));
   const height = Number(get("height"));
   const data = get("data");
   if (get("datalen") == null || data == null) fail("missing datalen/data");
-  if (!Number.isInteger(width) || width < 1 || width > 255) {
-    fail("missing width 1..255");
-  }
-  if (!Number.isInteger(height) || height < 1 || height > 255) {
-    fail("missing height 1..255");
+  for (const [name, value] of [["width", width], ["height", height]]) {
+    if (!Number.isInteger(value) || value < 1 || value > 255) {
+      fail(`missing ${name} 1..255`);
+    }
   }
   if (get("tracking") == null || !/^-?\d+$/.test(get("tracking"))) {
     fail("missing integer tracking");
   }
+  return { width, height };
+}
+
+function providedCharacters(normalized, fail) {
   const codepoints = [];
   for (const line of normalized.split("\n")) {
     // Glyph rows carry one scalar; pair rows carry two and are skipped here.
@@ -263,10 +261,20 @@ export function parseProvidedFnt(text, displayPath) {
     codepoints.push(codepoint);
   }
   if (codepoints.length === 0) fail("no glyph entries");
-  const characters = [...new Set(codepoints)]
+  return [...new Set(codepoints)]
     .sort((a, b) => a - b)
     .map((cp) => String.fromCodePoint(cp))
     .join("");
+}
+
+export function parseProvidedFnt(text, displayPath) {
+  const fail = (why) => {
+    throw new Error(`${displayPath}: not a Playdate source font (${why})`);
+  };
+  // Source files may use CRLF; normalize before line-anchored matching.
+  const normalized = text.replace(/\r\n?/g, "\n");
+  const { width, height } = parseProvidedHeader(normalized, fail);
+  const characters = providedCharacters(normalized, fail);
   return { width, height, characters };
 }
 
