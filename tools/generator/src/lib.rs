@@ -23,6 +23,8 @@ pub mod metadata;
 pub mod mono;
 pub mod mono_spacing;
 #[cfg(feature = "candidate")]
+pub(crate) mod orientation;
+#[cfg(feature = "candidate")]
 pub mod overlap;
 pub mod playdate;
 #[cfg(feature = "candidate")]

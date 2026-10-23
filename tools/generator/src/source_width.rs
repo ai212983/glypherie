@@ -24,13 +24,12 @@
 //! self-intersection, vertex-dominated branches and ambiguous ownership
 //! abstain.
 
-use crate::{fail, probe::FittedCommand, Error};
+use crate::{fail, orientation::filtered_sign as orient, probe::FittedCommand, Error};
 
 /// Guard in normalized units; arithmetic only, never a model gate.
 const GUARD: f64 = 1e-9;
 /// Degree-detection threshold for linear/constant/quadratic cases.
 const DEG: f64 = 1e-12;
-const ERRBOUND_A: f64 = (3.0 + 16.0 * f64::EPSILON) * f64::EPSILON;
 /// Eligibility cap: straight on-curve vertices on the single contour.
 const MAX_VERTS: usize = 64;
 /// Work and size caps keeping the slice bounded.
@@ -502,39 +501,6 @@ impl Frame {
     fn back_y(&self, y: f64) -> f64 {
         y * self.scale + self.min_y
     }
-}
-
-/// Error-filtered orientation sign for widened f32 geometry.
-///
-/// Source: Shewchuk error-filtered predicates
-/// (https://www.cs.cmu.edu/~quake/robust.html); the opposite-sign fast path
-/// and the static error bound are exact filters, and anything below the bound
-/// abstains. Axis-aligned exact zeros and shared points are decided
-/// structurally; other computed zeros abstain.
-fn orient(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64) -> Option<i8> {
-    if (ax == bx && ay == by) || (ax == cx && ay == cy) || (bx == cx && by == cy) {
-        return Some(0);
-    }
-    if (ay == by && ay == cy) || (ax == bx && ax == cx) {
-        return Some(0);
-    }
-    let detleft = (ax - cx) * (by - cy);
-    let detright = (ay - cy) * (bx - cx);
-    let det = detleft - detright;
-    if detleft > 0.0 && detright <= 0.0 {
-        return Some(1);
-    }
-    if detleft < 0.0 && detright >= 0.0 {
-        return Some(-1);
-    }
-    if det == 0.0 {
-        return None;
-    }
-    let bound = ERRBOUND_A * (detleft.abs() + detright.abs());
-    if det.abs() >= bound {
-        return Some(det.signum() as i8);
-    }
-    None
 }
 
 /// Nonzero winding test on straight loops.
