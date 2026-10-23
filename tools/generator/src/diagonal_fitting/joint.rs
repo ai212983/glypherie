@@ -22,8 +22,8 @@
 //! corrections.
 
 use super::{
-    abstain, achieved_json, achieved_widths, assemble, geometry, mean_widths, qp, reference_meta,
-    validate, FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS,
+    abstain, achieved_json, achieved_widths, assemble, crossing, geometry, mean_widths, qp,
+    reference_meta, validate, FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS,
 };
 use crate::{fail, probe::FittedCommand, Error};
 use std::collections::{HashMap, HashSet};
@@ -217,31 +217,26 @@ fn waist_from_slabs(parsed: &geometry::Parsed) -> Option<Waist> {
     })
 }
 
-/// Parity-compatible axis position from geometry, never from pixels.
-///
-/// Returns `None` when the snapped count is below one: centering on a
-/// boundary for a sub-half-pixel span guarantees dropout, so the parity
-/// choice is unsupported rather than defaulted.
-fn parity_target(axis: f64, width: f64) -> Option<f64> {
-    let n = (width + 0.5).floor() as i64;
-    if n < 1 {
-        return None;
+fn decide_parity_target(
+    axis_src: f64,
+    predicted: f64,
+    rel_med: f64,
+    prepped: &[super::PreppedInfo],
+) -> Result<f64, &'static str> {
+    if !(predicted > 0.0) {
+        return Err("no-waist");
     }
-    if n % 2 == 1 {
-        let base = (axis - 0.5).floor() + 0.5;
-        Some(if (axis - base).abs() <= (axis - (base + 1.0)).abs() {
-            base
-        } else {
-            base + 1.0
-        })
-    } else {
-        let base = (axis + 0.5).floor();
-        Some(if (axis - base).abs() <= (axis - (base - 1.0)).abs() {
-            base
-        } else {
-            base - 1.0
-        })
+    let pair_mean = prepped
+        .iter()
+        .map(|info| info.src_widths.iter().sum::<f64>() / info.src_widths.len() as f64)
+        .sum::<f64>()
+        / prepped.len() as f64;
+    if crossing::parity_target(axis_src, pair_mean * (1.0 + rel_med))
+        != crossing::parity_target(axis_src, predicted)
+    {
+        return Err("parity-ambiguous");
     }
+    crossing::parity_target(axis_src, predicted).ok_or("parity-ambiguous")
 }
 
 #[derive(Clone)]
@@ -648,34 +643,16 @@ fn fit_impl<const SELECTING: bool>(
             .collect::<Vec<f64>>(),
     );
     let predicted = waist.width * (1.0 + rel_med);
-    if !(predicted > 0.0) {
-        return Ok(abstain(
-            original_upstream,
-            "no-waist",
-            serde_json::json!({"skipped": skipped_json}),
-        ));
-    }
-    let pair_mean = prepped
-        .iter()
-        .map(|info| info.src_widths.iter().sum::<f64>() / info.src_widths.len() as f64)
-        .sum::<f64>()
-        / prepped.len() as f64;
     let axis_src = locus.mid();
-    if parity_target(locus.mid(), pair_mean * (1.0 + rel_med))
-        != parity_target(locus.mid(), predicted)
-    {
-        return Ok(abstain(
-            original_upstream,
-            "parity-ambiguous",
-            serde_json::json!({"skipped": skipped_json}),
-        ));
-    }
-    let Some(target) = parity_target(axis_src, predicted) else {
-        return Ok(abstain(
-            original_upstream,
-            "parity-ambiguous",
-            serde_json::json!({"skipped": skipped_json}),
-        ));
+    let target = match decide_parity_target(axis_src, predicted, rel_med, &prepped) {
+        Ok(target) => target,
+        Err(reason) => {
+            return Ok(abstain(
+                original_upstream,
+                reason,
+                serde_json::json!({"skipped": skipped_json}),
+            ));
+        }
     };
     let f_k = 2.0 * target;
     let mut sides = Vec::new();
@@ -1054,5 +1031,103 @@ mod correspondence_tests {
         assert!((rows[0].0[4] / rows[0].0[6] - 3.0 / 7.0).abs() < 1e-12);
         // The two portions span 0.5 and 0.4 of their parent edges.
         assert!((rows[1].0[4] / rows[1].0[0] - 0.8).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod parity_decision_tests {
+    use super::super::geometry::Portion;
+    use super::super::PreppedInfo;
+    use super::decide_parity_target;
+
+    fn info_with_widths(src_widths: Vec<f64>) -> PreppedInfo {
+        let blank = Portion {
+            contour: 0,
+            seg: 0,
+            t0: 0.0,
+            t1: 0.0,
+            p0: [0.0, 0.0],
+            p1: [0.0, 0.0],
+            i0: 0,
+            i1: 0,
+            hidden: false,
+            unknown: false,
+        };
+        PreppedInfo {
+            id: String::new(),
+            a: blank.clone(),
+            b: blank,
+            normal: [0.0, 0.0],
+            stations: Vec::new(),
+            src_widths,
+            fit_widths: Vec::new(),
+            arc: 0.0,
+            span_lo: 0.0,
+            span_hi: 0.0,
+            bound: 0.0,
+            prefix: 0.0,
+            peak: 0.0,
+            rounded_peak: None,
+            pairs: Vec::new(),
+            feet: serde_json::Value::Null,
+        }
+    }
+
+    #[test]
+    fn no_waist_rejects_nonpositive_and_nan_prediction() {
+        let empty: Vec<PreppedInfo> = Vec::new();
+        for predicted in [0.0, -1.0, f64::NAN] {
+            assert!(matches!(
+                decide_parity_target(0.0, predicted, 0.0, &empty),
+                Err("no-waist")
+            ));
+        }
+    }
+
+    #[test]
+    fn unequal_groups_average_with_nonzero_rel() {
+        let prepped = [
+            info_with_widths(vec![1.0, 3.0]),
+            info_with_widths(vec![5.0]),
+        ];
+        assert_eq!(decide_parity_target(0.25, 3.85, 0.1, &prepped), Ok(0.0));
+        assert_eq!(decide_parity_target(0.25, 2.8, -0.2, &prepped), Ok(0.5));
+    }
+
+    #[test]
+    fn odd_width_targets_pixel_center_with_lower_tie() {
+        for width in [0.5, 1.0, 3.0] {
+            let prepped = [info_with_widths(vec![width])];
+            assert_eq!(decide_parity_target(0.0, width, 0.0, &prepped), Ok(-0.5));
+            assert_eq!(decide_parity_target(0.25, width, 0.0, &prepped), Ok(0.5));
+        }
+    }
+
+    #[test]
+    fn even_width_targets_boundary() {
+        let prepped = [info_with_widths(vec![2.0])];
+        assert_eq!(decide_parity_target(0.0, 2.0, 0.0, &prepped), Ok(0.0));
+        assert_eq!(decide_parity_target(0.5, 2.0, 0.0, &prepped), Ok(1.0));
+        assert_eq!(decide_parity_target(-0.25, 2.0, 0.0, &prepped), Ok(0.0));
+        let axis = ((1_u64 << 53) - 1) as f64;
+        assert_eq!(decide_parity_target(axis, 2.0, 0.0, &prepped), Ok(axis));
+    }
+
+    #[test]
+    fn width_mismatch_is_ambiguous() {
+        let prepped = [info_with_widths(vec![3.0])];
+        assert!(matches!(
+            decide_parity_target(0.0, 2.0, 0.0, &prepped),
+            Err("parity-ambiguous")
+        ));
+    }
+
+    #[test]
+    fn subhalf_widths_fall_through_to_ambiguous() {
+        let prepped = [info_with_widths(vec![0.25])];
+        assert!(matches!(
+            decide_parity_target(0.0, 0.25, 0.0, &prepped),
+            Err("parity-ambiguous")
+        ));
     }
 }
