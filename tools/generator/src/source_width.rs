@@ -151,7 +151,7 @@ pub fn fit(
         .collect();
     let mut system = System::new(base.len());
     for edge in &edges {
-        system.edge_row(&base, &shift, edge, height);
+        system.edge_row(&shift, edge, height);
     }
     let mut anchor_samples = Vec::new();
     for sample in &pairs.kept[anchor].samples {
@@ -1346,34 +1346,14 @@ impl System {
         }
     }
 
-    fn edge_row(&mut self, base: &[[f64; 2]], shift: &[[f64; 2]], edge: &Edge, height: f64) {
+    fn edge_row(&mut self, shift: &[[f64; 2]], edge: &Edge, height: f64) {
         // Source: edge residuals (1)-(3) with the upstream position target.
         let alpha1 = 1000.0 / (height * height * height);
         let t = edge.t;
         let nrm = edge.n;
         let a = edge.va;
         let b = edge.vb;
-        let ri = vec![(2 * a, nrm[0]), (2 * a + 1, nrm[1])];
-        let rj = vec![(2 * b, nrm[0]), (2 * b + 1, nrm[1])];
-        let _ = base;
         let scale_pos = (alpha1 * edge.len / 4.0).sqrt();
-        let mut row: Vec<(usize, f64)> = ri
-            .iter()
-            .chain(rj.iter())
-            .map(|(k, v)| {
-                if *k / 2 == a {
-                    (*k, v * scale_pos)
-                } else {
-                    (*k, v * scale_pos)
-                }
-            })
-            .collect();
-        // (ri + rj) and (rj - ri) share the same scaled entries here;
-        // expand explicitly below for the mean and difference modes.
-        row.clear();
-        for v in [nrm[0], nrm[1]] {
-            let _ = v;
-        }
         let mut mean = Vec::with_capacity(4);
         mean.push((2 * a, nrm[0] * scale_pos));
         mean.push((2 * a + 1, nrm[1] * scale_pos));
@@ -1400,9 +1380,6 @@ impl System {
             let constant = -r.iter().map(|(k, v)| v * shift[k / 2][k % 2]).sum::<f64>();
             self.rows.push((r, constant));
         }
-        let _ = ri;
-        let _ = rj;
-        let _ = row;
     }
 
     fn match_row(&mut self, row: &SampleRow, other: &SampleRow, height: f64, width_scale: f64) {
@@ -1714,5 +1691,15 @@ mod math_controls {
         let px = width_weight(1., 1.5, [1., 0.], [0., 1.], 16., 0.7);
         let normalized = width_weight(0.1, 0.15, [1., 0.], [0., 1.], 1.6, 0.07);
         assert!((normalized * 0.01 - px).abs() < 1e-12);
+    }
+    #[test]
+    fn edge_residual_zero_at_upstream_shift_positive_at_origin() {
+        let pts = [[0.0, 0.0], [3.0, 4.0], [-1.0, 7.0], [-4.0, 3.0]];
+        let edges = straight_edges(&pts);
+        let shift = [[0.25, -0.5], [0.75, 0.125], [0.0, 0.0], [0.0, 0.0]];
+        let mut system = System::new(4);
+        system.edge_row(&shift, &edges[0], 10.0);
+        assert!(width_cost(&system, &shift) < 1e-24);
+        assert!(width_cost(&system, &[[0.0, 0.0]; 4]) > 0.0);
     }
 }
