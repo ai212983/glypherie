@@ -20,6 +20,7 @@ use crate::{
     stem_fitting::StemFittingStrategy,
     Config, Error, GeneratedFont, Glyph, MissingGlyphs,
 };
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 
 pub use crate::source::PreparedFont;
@@ -362,41 +363,33 @@ fn render_pipeline_in_session(
     }
 }
 
-/// Shared validation/layout/compositing pipeline behind [`render_text`]
-/// and [`render_text_with_renderer`]; `None` and `Some(Baseline)` both
-/// take the approved `generate()` path unchanged. All numerical spacing
-/// decisions (finalized advances, single pair application, tracking and
-/// the tracking floor) run through the [`SpacingEngine`] built below.
-fn render_inner(
-    session: &CaptureSession<'_>,
+fn admit_request(
     request: &TextRenderRequest,
     role: Option<RendererRole>,
     letter_spacing_px: f32,
     strategy: Option<StemFittingStrategy>,
     pipeline: Option<crate::renderer::RenderPipeline>,
-) -> Result<RenderedText, Error> {
-    let font_data = session.data;
+) -> Result<Cow<'_, TextRenderRequest>, Error> {
     if !letter_spacing_px.is_finite() || !(-16.0..=16.0).contains(&letter_spacing_px) {
         return Err(fail("letter_spacing_px must be finite and within -16..=16"));
     }
     // The Mono strategy owns automatic engine selection. Normalize the
     // effective configuration before validation, blank handling or generation
     // so report settings and layout provenance match the actual draw.
-    let mut effective_request;
     let request = if role == Some(RendererRole::Candidate)
         && matches!(
             request.config.hinting,
             crate::Hinting::Auto | crate::Hinting::AutoFallback
         ) {
-        effective_request = request.clone();
-        effective_request.config.hinting = if request.config.output_bits == 1 {
+        let mut owned = request.clone();
+        owned.config.hinting = if request.config.output_bits == 1 {
             strategy.unwrap_or_default().hinting()
         } else {
             crate::Hinting::Auto
         };
-        &effective_request
+        Cow::Owned(owned)
     } else {
-        request
+        Cow::Borrowed(request)
     };
     if !(1..=MAX_CANVAS_DIM).contains(&request.width) {
         return Err(fail("canvas width must be within 1..=4096"));
@@ -511,6 +504,25 @@ fn render_inner(
             }
         }
     }
+    Ok(request)
+}
+
+/// Shared validation/layout/compositing pipeline behind [`render_text`]
+/// and [`render_text_with_renderer`]; `None` and `Some(Baseline)` both
+/// take the approved `generate()` path unchanged. All numerical spacing
+/// decisions (finalized advances, single pair application, tracking and
+/// the tracking floor) run through the [`SpacingEngine`] built below.
+fn render_inner(
+    session: &CaptureSession<'_>,
+    request: &TextRenderRequest,
+    role: Option<RendererRole>,
+    letter_spacing_px: f32,
+    strategy: Option<StemFittingStrategy>,
+    pipeline: Option<crate::renderer::RenderPipeline>,
+) -> Result<RenderedText, Error> {
+    let font_data = session.data;
+    let admitted = admit_request(request, role, letter_spacing_px, strategy, pipeline)?;
+    let request = admitted.as_ref();
     let paragraphs = split_paragraphs(&request.text);
     let repertoire: BTreeSet<char> = request
         .text
@@ -1233,6 +1245,52 @@ mod tests {
             foreground: [0, 0, 0, 255],
             background: [255, 255, 255, 255],
             palette: None,
+        }
+    }
+
+    #[test]
+    fn admit_request_normalizes_effective_hinting() {
+        use crate::stem_fitting::StemFittingStrategy;
+        use crate::Hinting;
+        use RendererRole::*;
+        let cases = [
+            (
+                1,
+                Hinting::Auto,
+                None,
+                Some(Candidate),
+                Hinting::AutoFallback,
+            ),
+            (
+                1,
+                Hinting::AutoFallback,
+                Some(StemFittingStrategy::UpstreamMono),
+                Some(Candidate),
+                Hinting::Auto,
+            ),
+            (
+                3,
+                Hinting::AutoFallback,
+                None,
+                Some(Candidate),
+                Hinting::Auto,
+            ),
+            (
+                1,
+                Hinting::AutoFallback,
+                None,
+                Some(Baseline),
+                Hinting::AutoFallback,
+            ),
+        ];
+        for (bits, hinting, strategy, role, expected) in cases {
+            let mut input = request("A");
+            input.config.output_bits = bits;
+            input.config.hinting = hinting;
+            let before = input.clone();
+            let admitted = super::admit_request(&input, role, 0.0, strategy, None).unwrap();
+            assert_eq!(admitted.config.hinting, expected);
+            assert_eq!(input, before);
         }
     }
 
