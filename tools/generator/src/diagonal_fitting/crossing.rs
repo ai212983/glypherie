@@ -2139,6 +2139,52 @@ fn rounded_joint_checks(
     (true, continuity)
 }
 
+type ClearanceLine = ([f64; 2], [f64; 2]);
+
+struct ClearancePrimitives {
+    fixed_curves: Vec<Vec<[f64; 2]>>,
+    fixed_lines: Vec<ClearanceLine>,
+    moved_lines: Vec<(ClearanceLine, ClearanceLine)>,
+}
+
+fn collect_clearance_primitives(
+    raw: &SourceOutline,
+    quads: &[[usize; 3]],
+    involved: &HashSet<usize>,
+    cand_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+) -> ClearancePrimitives {
+    let mut fixed_curves: Vec<Vec<[f64; 2]>> = Vec::new();
+    for idx in quads {
+        if idx.iter().any(|v| involved.contains(v))
+            && idx.iter().any(|v| cand_all[*v] != up_all[*v])
+        {
+            continue;
+        }
+        fixed_curves.push(vec![cand_all[idx[0]], cand_all[idx[1]], cand_all[idx[2]]]);
+    }
+    let mut fixed_lines: Vec<ClearanceLine> = Vec::new();
+    let mut moved_lines: Vec<(ClearanceLine, ClearanceLine)> = Vec::new();
+    for contour in &raw.contours {
+        for seg in contour {
+            if let GeomSegment::Line { a, b } = *seg {
+                let old = (up_all[a], up_all[b]);
+                let new = (cand_all[a], cand_all[b]);
+                if old == new {
+                    fixed_lines.push(old);
+                } else {
+                    moved_lines.push((old, new));
+                }
+            }
+        }
+    }
+    ClearancePrimitives {
+        fixed_curves,
+        fixed_lines,
+        moved_lines,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn deliver(
     raw: &SourceOutline,
@@ -2265,30 +2311,11 @@ fn deliver(
     // swept moved lines clear every fixed curve.
     let cand_on: Vec<[f64; 2]>;
     {
-        let mut fixed_curves: Vec<Vec<[f64; 2]>> = Vec::new();
-        for idx in &quads {
-            if idx.iter().any(|v| involved.contains(v))
-                && idx.iter().any(|v| cand_all[*v] != up_all[*v])
-            {
-                continue;
-            }
-            fixed_curves.push(vec![cand_all[idx[0]], cand_all[idx[1]], cand_all[idx[2]]]);
-        }
-        let mut fixed_lines: Vec<([f64; 2], [f64; 2])> = Vec::new();
-        let mut moved_lines: Vec<(([f64; 2], [f64; 2]), ([f64; 2], [f64; 2]))> = Vec::new();
-        for contour in &raw.contours {
-            for seg in contour {
-                if let GeomSegment::Line { a, b } = *seg {
-                    let old = (up_all[a], up_all[b]);
-                    let new = (cand_all[a], cand_all[b]);
-                    if old == new {
-                        fixed_lines.push(old);
-                    } else {
-                        moved_lines.push((old, new));
-                    }
-                }
-            }
-        }
+        let ClearancePrimitives {
+            fixed_curves,
+            fixed_lines,
+            moved_lines,
+        } = collect_clearance_primitives(raw, &quads, &involved, &cand_all, up_all);
         // Candidate oncurve shares the raw vertex order.
         cand_on = cand_all[..no].to_vec();
         for info in prepared {
@@ -2879,3 +2906,6 @@ mod hard_check_tests;
 
 #[cfg(test)]
 mod continuity_tests;
+
+#[cfg(test)]
+mod clearance_primitive_tests;
