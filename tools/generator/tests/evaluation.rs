@@ -413,6 +413,15 @@ fn has_invariant(evaluation: &font_generator::evaluation::Evaluation, invariant:
         .any(|failure| failure.invariant == invariant)
 }
 
+fn header_failures(evaluation: &font_generator::evaluation::Evaluation) -> Vec<(&str, &str)> {
+    evaluation
+        .hard_failures
+        .iter()
+        .filter(|failure| failure.codepoint.is_none())
+        .map(|failure| (failure.report.as_str(), failure.invariant.as_str()))
+        .collect()
+}
+
 fn candidate_with_outline(base: &ReferenceReport, commands: Vec<FittedCommand>) -> ReferenceReport {
     let mut candidate = base.clone();
     candidate.records[0].fitted_commands = commands;
@@ -968,4 +977,213 @@ fn quantization_invalid_stops_before_later_checks() {
         ordered,
         vec![BUFFER_INVARIANT, QUANT_INVARIANT, POLICY_INVARIANT]
     );
+}
+
+#[test]
+fn header_report_provenance_is_exact_per_report() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut hinted = source.clone();
+    hinted.hinting_requested = "auto".into();
+    assert_eq!(
+        header_failures(&evaluate(&hinted, &upstream, &base)),
+        [("source", "independent unhinted source required")]
+    );
+    let mut extensions = source.clone();
+    extensions.extensions = "diagonal-01".into();
+    assert_eq!(
+        header_failures(&evaluate(&extensions, &upstream, &base)),
+        [("source", "independent unhinted source required")]
+    );
+    let mut fork = source.clone();
+    fork.fork = true;
+    assert_eq!(
+        header_failures(&evaluate(&fork, &upstream, &base)),
+        [("source", "independent unhinted source required")]
+    );
+    let mut implementation = source.clone();
+    implementation.implementation = "rolled".into();
+    assert_eq!(
+        header_failures(&evaluate(&implementation, &upstream, &base)),
+        [("source", "independent unhinted source required")]
+    );
+    let mut extensions = upstream.clone();
+    extensions.extensions = "diagonal-01".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &extensions, &base)),
+        [("upstream", "independent upstream baseline required")]
+    );
+    let mut fork = upstream.clone();
+    fork.fork = true;
+    assert_eq!(
+        header_failures(&evaluate(&source, &fork, &base)),
+        [("upstream", "independent upstream baseline required")]
+    );
+    let mut implementation = upstream.clone();
+    implementation.implementation = "rolled".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &implementation, &base)),
+        [("upstream", "independent upstream baseline required")]
+    );
+}
+
+#[test]
+fn header_independent_rendering_contract_is_exact() {
+    use font_generator::reference::{AdvancePolicy, RasterPolicy};
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut hinted = source.clone();
+    hinted.advance_policy = AdvancePolicy::Hinted;
+    assert_eq!(
+        header_failures(&evaluate(&hinted, &upstream, &base)),
+        [(
+            "source",
+            "independent rendering requires linear metrics without bearing correction"
+        )]
+    );
+    let mut bearing = upstream.clone();
+    bearing.records[0].side_bearing_deltas_26_6 = Some([0, 0]);
+    assert_eq!(
+        header_failures(&evaluate(&source, &bearing, &base)),
+        [(
+            "upstream",
+            "independent rendering requires linear metrics without bearing correction"
+        )]
+    );
+    let mut coverage = source.clone();
+    coverage.records[0].raster_policy = RasterPolicy::CoverageDropout;
+    assert_eq!(
+        header_failures(&evaluate(&coverage, &upstream, &base)),
+        [(
+            "source",
+            "independent rendering requires coverage raster policy"
+        )]
+    );
+}
+
+#[test]
+fn header_candidate_divergence_pins_exact_report() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut target = base.clone();
+    target.extensions = "mono-width-01".into();
+    target.target = "smooth".into();
+    target.records[0].target = "smooth".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &target)),
+        [
+            (
+                "candidate",
+                "Mono candidate must declare the upstream mono target"
+            ),
+            ("candidate", "render profile or rasterizer policy changed"),
+        ]
+    );
+    let mut size = base.clone();
+    size.size_px = 17.0;
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &size)),
+        [("candidate", "font, size or variation identity changed")]
+    );
+    let mut size = source.clone();
+    size.size_px = 17.0;
+    assert_eq!(
+        header_failures(&evaluate(&size, &upstream, &base)),
+        [("source", "font, size or variation identity changed")]
+    );
+    let mut profile = base.clone();
+    profile.profile = "gray_3bit".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &profile)),
+        [("candidate", "render profile or rasterizer policy changed")]
+    );
+    let mut profile = source.clone();
+    profile.profile = "gray_3bit".into();
+    assert_eq!(
+        header_failures(&evaluate(&profile, &upstream, &base)),
+        [("source", "render profile or rasterizer policy changed")]
+    );
+    let mut metrics = base.clone();
+    metrics.metrics.ascent_26_6 += 64;
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &metrics)),
+        [("candidate", "layout metrics or missing repertoire changed")]
+    );
+    let mut missing = base.clone();
+    missing.missing_codepoints = vec![65];
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &missing)),
+        [("candidate", "layout metrics or missing repertoire changed")]
+    );
+    let mut hinting = base.clone();
+    hinting.hinting_requested = "none".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &hinting)),
+        [("candidate", "requested hinting policy changed")]
+    );
+    let mut advance = base.clone();
+    advance.advance_policy = font_generator::reference::AdvancePolicy::Hinted;
+    advance.extensions = "diagonal-01".into();
+    advance.hinting_requested = "none".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &advance)),
+        [
+            ("candidate", "requested hinting policy changed"),
+            (
+                "candidate",
+                "hinted advance policy requires enabled automatic mono fitting"
+            ),
+        ]
+    );
+}
+
+#[test]
+fn header_simultaneous_divergences_keep_documented_order() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut provenance = source.clone();
+    provenance.extensions = "diagonal-01".into();
+    let mut candidate = base.clone();
+    candidate.size_px = 17.0;
+    candidate.missing_codepoints = vec![65];
+    assert_eq!(
+        header_failures(&evaluate(&provenance, &upstream, &candidate)),
+        [
+            ("source", "independent unhinted source required"),
+            ("candidate", "font, size or variation identity changed"),
+            ("candidate", "layout metrics or missing repertoire changed"),
+        ]
+    );
+}
+
+#[test]
+fn header_rasterizer_identity_fields_fail_individually() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let edits: Vec<(&str, fn(&mut ReferenceReport))> = vec![
+        ("draw_pedantic", |report| report.draw_pedantic = true),
+        ("zeno_version", |report| {
+            report.zeno_version = "rolled".into()
+        }),
+        ("smooth_mode", |report| {
+            report.smooth_mode = Some("smooth".into())
+        }),
+        ("symmetric_rendering", |report| {
+            report.symmetric_rendering = Some(true)
+        }),
+        ("preserve_linear_metrics", |report| {
+            report.preserve_linear_metrics = Some(false)
+        }),
+    ];
+    for (field, edit) in &edits {
+        let mut candidate = base.clone();
+        edit(&mut candidate);
+        assert_eq!(
+            header_failures(&evaluate(&source, &upstream, &candidate)),
+            [("candidate", "render profile or rasterizer policy changed")],
+            "{field} candidate"
+        );
+        let mut changed = source.clone();
+        edit(&mut changed);
+        assert_eq!(
+            header_failures(&evaluate(&changed, &upstream, &base)),
+            [("source", "render profile or rasterizer policy changed")],
+            "{field} source"
+        );
+    }
 }

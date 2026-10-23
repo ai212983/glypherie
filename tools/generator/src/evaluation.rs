@@ -85,23 +85,19 @@ pub struct RasterDiagnostics {
     pub threshold_samples: Vec<ThresholdSample>,
 }
 
-/// Evaluate reports for the same font/axes/size/profile/repertoire. Source must be
-/// unhinted and upstream must be independently captured with extensions disabled.
-/// Gray identity is a hard invariant of the current Mono fitting policies.
-/// Failures are returned as data so a corpus run can finish all cases.
-pub fn evaluate(
+struct CandidateKind {
+    selective_candidate: bool,
+    source_width_candidate: bool,
+    font_hints_candidate: bool,
+    mono_width_candidate: bool,
+}
+
+fn check_report_identity(
     source: &ReferenceReport,
     upstream: &ReferenceReport,
     candidate: &ReferenceReport,
-) -> Evaluation {
-    let mut failures = Vec::new();
-    let mut push = |report: &str, codepoint: Option<u32>, invariant: &str| {
-        failures.push(Failure {
-            report: report.into(),
-            codepoint,
-            invariant: invariant.into(),
-        });
-    };
+    push: &mut impl FnMut(&str, Option<u32>, &str),
+) -> CandidateKind {
     if source.hinting_requested != "none"
         || source.extensions != "none"
         || source.fork
@@ -202,6 +198,37 @@ pub fn evaluate(
             "hinted advance policy requires enabled automatic mono fitting",
         );
     }
+    CandidateKind {
+        selective_candidate,
+        source_width_candidate,
+        font_hints_candidate,
+        mono_width_candidate,
+    }
+}
+
+/// Evaluate reports for the same font/axes/size/profile/repertoire. Source must be
+/// unhinted and upstream must be independently captured with extensions disabled.
+/// Gray identity is a hard invariant of the current Mono fitting policies.
+/// Failures are returned as data so a corpus run can finish all cases.
+pub fn evaluate(
+    source: &ReferenceReport,
+    upstream: &ReferenceReport,
+    candidate: &ReferenceReport,
+) -> Evaluation {
+    let mut failures = Vec::new();
+    let mut push = |report: &str, codepoint: Option<u32>, invariant: &str| {
+        failures.push(Failure {
+            report: report.into(),
+            codepoint,
+            invariant: invariant.into(),
+        });
+    };
+    let CandidateKind {
+        selective_candidate,
+        source_width_candidate,
+        font_hints_candidate,
+        mono_width_candidate,
+    } = check_report_identity(source, upstream, candidate, &mut push);
     let mut indexes = Vec::new();
     for (name, report) in [
         ("source", source),
