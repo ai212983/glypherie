@@ -983,10 +983,6 @@ pub(super) fn g1_row(
 /// contribute zero. The bilinear cross pairs each leg's error with the
 /// OTHER leg (prototype `ein_x * by + ein_y * bx + eout_x * ay +
 /// eout_y * ax`), plus the second-order product.
-/// 26.6 rounding bound on joint-cross perturbation.
-///
-/// Shared smooth-curve helper: only moved coordinates err, at most
-/// 1/128 per axis. Matches the sibling worker helper signature exactly.
 pub(super) fn quant_cross_bound(
     leg_in: [f64; 2],
     leg_out: [f64; 2],
@@ -1028,9 +1024,8 @@ fn scale_to_bound(sol: &[f64], cols: &[(usize, usize)], bound: f64) -> (Vec<f64>
 
 /// Joint cross and legs at one coordinate set.
 ///
-/// Shared smooth-curve helper: cross(J-I, O-J) with the incoming and
-/// outgoing legs at global control indices. Matches the sibling worker
-/// helper signature exactly.
+/// cross(J-I, O-J) with the incoming and outgoing legs at global control
+/// indices.
 pub(super) fn cross_of(
     coords: &[[f64; 2]],
     j: usize,
@@ -3172,5 +3167,37 @@ mod tests {
         let over = [[1.0, 0.0], [2.0, 0.0], [3.0, 0.0]];
         check_hulls_equiv(flat, over, None);
         check_hulls_equiv(flat, over, lift(&[2.0, 0.0]));
+    }
+
+    #[test]
+    fn quant_cross_bound_joint_error_partner_table() {
+        let h = 1.0 / 128.0;
+        let li = [3.0, 4.0];
+        let lo = [5.0, 12.0];
+        let cases: [([(bool, bool); 3], f64, &str); 4] = [
+            (
+                [(false, false), (true, false), (false, false)],
+                16.0 * h,
+                "joint-x-only",
+            ),
+            (
+                [(false, false), (false, true), (false, false)],
+                8.0 * h,
+                "joint-y-only",
+            ),
+            (
+                [(true, false), (false, false), (false, true)],
+                15.0 * h + h * h,
+                "incoming-x-outgoing-y",
+            ),
+            (
+                [(false, true), (false, false), (true, false)],
+                9.0 * h + h * h,
+                "incoming-y-outgoing-x",
+            ),
+        ];
+        for (moved, expected, label) in cases {
+            assert_eq!(quant_cross_bound(li, lo, moved), expected, "{label}");
+        }
     }
 }

@@ -11,7 +11,7 @@
 //! exact upstream fallback; the joint couples (17) relative-width rows with
 //! hard parallel/separation rows about the integer target. Smooth-curve
 //! helpers (weld map, joints, G1 rows, cross bounds, emit, quad-interval
-//! certificate) come from the sibling worker module `super::curve_model`.
+//! certificate) come from the sibling module `super::curve_model`.
 //! Native-owned X abstains outright; upstream Y is always retained, so only
 //! X displacements solve. Any infeasible gate returns the exact upstream
 //! commands with `applied=false`. Only malformed, non-finite or out-of-range
@@ -299,8 +299,8 @@ struct JointCheck {
 
 /// Far endpoint or off-curve control adjacent to the joint, global index.
 ///
-/// Mirrors the sibling worker's leg rule exactly: a line leg resolves to its
-/// non-joint endpoint, a quad leg to its off-curve control.
+/// A line leg resolves to its non-joint endpoint, a quad leg to its off-curve
+/// control.
 fn leg_far(prev: scf::SegRef, seg: scf::SegRef) -> (usize, usize) {
     let iv = match prev {
         scf::SegRef::Line { a, .. } => a,
@@ -311,49 +311,6 @@ fn leg_far(prev: scf::SegRef, seg: scf::SegRef) -> (usize, usize) {
         scf::SegRef::Quad { off, .. } => off,
     };
     (iv, ov)
-}
-
-/// Joint cross and legs at one coordinate set.
-///
-/// Local port of the smooth-curve cross check: cross(J-I, O-J) with the
-/// incoming and outgoing legs. Kept beside the solver-owned rows until the
-/// sibling worker exposes its private cross helper for shared use.
-fn cross_of(coords: &[[f64; 2]], j: usize, iv: usize, ov: usize) -> (f64, [f64; 2], [f64; 2]) {
-    let (j_pt, i_pt, o_pt) = (coords[j], coords[iv], coords[ov]);
-    let li = [j_pt[0] - i_pt[0], j_pt[1] - i_pt[1]];
-    let lo = [o_pt[0] - j_pt[0], o_pt[1] - j_pt[1]];
-    (li[0] * lo[1] - li[1] * lo[0], li, lo)
-}
-
-/// Nearest-26.6 half-quantum error per moved coordinate.
-const ROUND_HALF: f64 = 1.0 / 128.0;
-
-/// 26.6 rounding bound on joint-cross perturbation.
-///
-/// Only moved coordinates err, at most 1/128 per axis; unmoved legs
-/// contribute zero. The bilinear cross gains first-order leg-error terms
-/// plus the second-order product. Each leg's error partners with the OTHER
-/// leg's components (incoming error with the outgoing leg and vice versa):
-/// cross(li + ei, lo + eo) - cross(li, lo) expands to ei x lo + li x eo at
-/// first order. Local port of the smooth-curve bound, kept beside
-/// `cross_of` until shared exposure lands; the sibling worker's copy needs
-/// the same partner correction from its owner.
-fn quant_cross_bound(leg_in: [f64; 2], leg_out: [f64; 2], moved: [(bool, bool); 3]) -> f64 {
-    let err = |m: (bool, bool)| {
-        [
-            if m.0 { ROUND_HALF } else { 0.0 },
-            if m.1 { ROUND_HALF } else { 0.0 },
-        ]
-    };
-    let (ei, ej, eo) = (err(moved[0]), err(moved[1]), err(moved[2]));
-    let ein = [ei[0] + ej[0], ei[1] + ej[1]];
-    let eout = [ej[0] + eo[0], ej[1] + eo[1]];
-    ein[0] * leg_out[1].abs()
-        + ein[1] * leg_out[0].abs()
-        + eout[0] * leg_in[1].abs()
-        + eout[1] * leg_in[0].abs()
-        + ein[0] * eout[1]
-        + ein[1] * eout[0]
 }
 
 /// Weld-aware X-column reduction of a full-coordinate row.
@@ -872,17 +829,17 @@ pub(super) fn fit_with_analysis(
     }
     let mut continuity = Vec::new();
     for jc in &joint_checks {
-        let (raw_cross, li, lo) = cross_of(&raw, jc.j, jc.iv, jc.ov);
-        let (old_cross, old_li, old_lo) = cross_of(&up, jc.j, jc.iv, jc.ov);
-        let (cross, new_li, new_lo) = cross_of(&cand, jc.j, jc.iv, jc.ov);
-        let (source_cross, _, _) = cross_of(&base, jc.j, jc.iv, jc.ov);
+        let (raw_cross, li, lo) = scf::cross_of(&raw, jc.j, jc.iv, jc.ov);
+        let (old_cross, old_li, old_lo) = scf::cross_of(&up, jc.j, jc.iv, jc.ov);
+        let (cross, new_li, new_lo) = scf::cross_of(&cand, jc.j, jc.iv, jc.ov);
+        let (source_cross, _, _) = scf::cross_of(&base, jc.j, jc.iv, jc.ov);
         let target = if jc.smooth { 0.0 } else { old_cross };
         let moved_flags = [
             (raw[jc.iv][0] != up[jc.iv][0], false),
             (raw[jc.j][0] != up[jc.j][0], false),
             (raw[jc.ov][0] != up[jc.ov][0], false),
         ];
-        let allowance = quant_cross_bound(li, lo, moved_flags);
+        let allowance = scf::quant_cross_bound(li, lo, moved_flags);
         let legs_live = new_li[0].hypot(new_li[1]) > 0.0 && new_lo[0].hypot(new_lo[1]) > 0.0;
         let mut ok = legs_live;
         if jc.constrained {
@@ -1010,7 +967,7 @@ mod tests {
         let leg_in = [3.0, 1.0];
         let leg_out = [0.5, 4.0];
         let moved = [(true, false), (false, false), (false, false)];
-        let got = quant_cross_bound(leg_in, leg_out, moved);
-        assert_eq!(got, ROUND_HALF * leg_out[1].abs());
+        let got = scf::quant_cross_bound(leg_in, leg_out, moved);
+        assert_eq!(got, 1.0 / 128.0 * leg_out[1].abs());
     }
 }
