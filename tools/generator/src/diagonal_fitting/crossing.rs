@@ -2185,6 +2185,33 @@ fn collect_clearance_primitives(
     }
 }
 
+fn station_clearance(
+    prepared: &[geometry::PreppedPair],
+    cand_on: &[[f64; 2]],
+    fixed_curves: &[Vec<[f64; 2]>],
+    fixed_lines: &[ClearanceLine],
+) -> Result<(), &'static str> {
+    for info in prepared {
+        for st in &info.stations {
+            let qa = geometry::edge_point(&info.a, st.hit.sa, cand_on);
+            let qb = geometry::edge_point(&info.b, st.hit.sb, cand_on);
+            let center = [(qa[0] + qb[0]) / 2.0, (qa[1] + qb[1]) / 2.0];
+            let radius_st = norm(sub(qb, qa)) / 2.0;
+            for fix in fixed_curves {
+                if !curves::disk_clear(center, radius_st, fix).0 {
+                    return Err("clearance-station-disk-curve");
+                }
+            }
+            for line in fixed_lines {
+                if !seg_open_clear(center, radius_st, *line) {
+                    return Err("clearance-station-disk-line");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn deliver(
     raw: &SourceOutline,
@@ -2318,39 +2345,16 @@ fn deliver(
         } = collect_clearance_primitives(raw, &quads, &involved, &cand_all, up_all);
         // Candidate oncurve shares the raw vertex order.
         cand_on = cand_all[..no].to_vec();
-        for info in prepared {
-            for st in &info.stations {
-                let qa = geometry::edge_point(&info.a, st.hit.sa, &cand_on);
-                let qb = geometry::edge_point(&info.b, st.hit.sb, &cand_on);
-                let center = [(qa[0] + qb[0]) / 2.0, (qa[1] + qb[1]) / 2.0];
-                let radius_st = norm(sub(qb, qa)) / 2.0;
-                for fix in &fixed_curves {
-                    if !curves::disk_clear(center, radius_st, fix).0 {
-                        return Ok(abstain(
-                            upstream,
-                            "clearance-station-disk-curve",
-                            serde_json::json!({
-                                "size_px": size_px,
-                                "skipped": skipped_json(),
-                                "waist": waist_json(),
-                            }),
-                        ));
-                    }
-                }
-                for line in &fixed_lines {
-                    if !seg_open_clear(center, radius_st, *line) {
-                        return Ok(abstain(
-                            upstream,
-                            "clearance-station-disk-line",
-                            serde_json::json!({
-                                "size_px": size_px,
-                                "skipped": skipped_json(),
-                                "waist": waist_json(),
-                            }),
-                        ));
-                    }
-                }
-            }
+        if let Err(reason) = station_clearance(prepared, &cand_on, &fixed_curves, &fixed_lines) {
+            return Ok(abstain(
+                upstream,
+                reason,
+                serde_json::json!({
+                    "size_px": size_px,
+                    "skipped": skipped_json(),
+                    "waist": waist_json(),
+                }),
+            ));
         }
         let olds: Vec<((f64, f64), (f64, f64))> = moved_lines
             .iter()
@@ -2909,3 +2913,6 @@ mod continuity_tests;
 
 #[cfg(test)]
 mod clearance_primitive_tests;
+
+#[cfg(test)]
+mod station_clearance_tests;
