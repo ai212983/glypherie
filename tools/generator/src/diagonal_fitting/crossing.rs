@@ -1732,6 +1732,60 @@ struct JointGate {
     smooth: bool,
 }
 
+fn append_sharp_joint_constraints(
+    gates: &[JointGate],
+    base_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+    reduce: &impl Fn(&[f64]) -> Vec<f64>,
+    cmat: &mut Vec<Vec<f64>>,
+    clower: &mut Vec<f64>,
+) {
+    let nvars = base_all.len();
+    for gate in gates {
+        if gate.smooth {
+            continue;
+        }
+        let (s_cross, _, _) = cross_of(base_all, gate.j, gate.iv, gate.ov);
+        if s_cross != 0.0 {
+            let s = s_cross.signum();
+            let (yi, yj, yo) = (up_all[gate.iv][1], up_all[gate.j][1], up_all[gate.ov][1]);
+            let mut grow = vec![0.0; 2 * nvars];
+            grow[2 * gate.iv] = -(yo - yj) * s;
+            grow[2 * gate.j] = (yo - yi) * s;
+            grow[2 * gate.ov] = -(yj - yi) * s;
+            let here = sub(up_all[gate.j], up_all[gate.iv]);
+            let there = sub(up_all[gate.ov], up_all[gate.j]);
+            let value = s * (here[0] * there[1] - here[1] * there[0]);
+            let red = reduce(&grow);
+            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
+            clower.push(reserve - value);
+            cmat.push(red);
+        }
+        if gate.prev_line {
+            let src_leg = sub(base_all[gate.j], base_all[gate.iv]);
+            let mut leg_row = vec![0.0; 2 * nvars];
+            leg_row[2 * gate.j] = src_leg[0];
+            leg_row[2 * gate.iv] = -src_leg[0];
+            let value = dot(sub(up_all[gate.j], up_all[gate.iv]), src_leg);
+            let red = reduce(&leg_row);
+            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
+            clower.push(reserve - value);
+            cmat.push(red);
+        }
+        if gate.seg_line {
+            let src_leg = sub(base_all[gate.ov], base_all[gate.j]);
+            let mut leg_row = vec![0.0; 2 * nvars];
+            leg_row[2 * gate.ov] = src_leg[0];
+            leg_row[2 * gate.j] = -src_leg[0];
+            let value = dot(sub(up_all[gate.ov], up_all[gate.j]), src_leg);
+            let red = reduce(&leg_row);
+            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
+            clower.push(reserve - value);
+            cmat.push(red);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn finish(
     raw: &SourceOutline,
@@ -1896,7 +1950,6 @@ fn finish(
     let ge: Vec<Vec<f64>> = kept_hard.iter().map(|(r, _)| r.clone()).collect();
     let he: Vec<f64> = kept_hard.iter().map(|(_, t)| *t).collect();
     // Linear curvature/leg inequalities with frozen upstream coefficients.
-    let nvars = base_all.len();
     let (mut cmat, mut clower) =
         match quadratic_constraints(&quads, &involved, &base_all, &up_all, &flat_up, &reduce) {
             Ok(constraints) => constraints,
@@ -1911,49 +1964,7 @@ fn finish(
                 ));
             }
         };
-    for gate in &gates {
-        if gate.smooth {
-            continue;
-        }
-        let (s_cross, _, _) = cross_of(&base_all, gate.j, gate.iv, gate.ov);
-        if s_cross != 0.0 {
-            let s = s_cross.signum();
-            let (yi, yj, yo) = (up_all[gate.iv][1], up_all[gate.j][1], up_all[gate.ov][1]);
-            let mut grow = vec![0.0; 2 * nvars];
-            grow[2 * gate.iv] = -(yo - yj) * s;
-            grow[2 * gate.j] = (yo - yi) * s;
-            grow[2 * gate.ov] = -(yj - yi) * s;
-            let here = sub(up_all[gate.j], up_all[gate.iv]);
-            let there = sub(up_all[gate.ov], up_all[gate.j]);
-            let value = s * (here[0] * there[1] - here[1] * there[0]);
-            let red = reduce(&grow);
-            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
-            clower.push(reserve - value);
-            cmat.push(red);
-        }
-        if gate.prev_line {
-            let src_leg = sub(base_all[gate.j], base_all[gate.iv]);
-            let mut leg_row = vec![0.0; 2 * nvars];
-            leg_row[2 * gate.j] = src_leg[0];
-            leg_row[2 * gate.iv] = -src_leg[0];
-            let value = dot(sub(up_all[gate.j], up_all[gate.iv]), src_leg);
-            let red = reduce(&leg_row);
-            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
-            clower.push(reserve - value);
-            cmat.push(red);
-        }
-        if gate.seg_line {
-            let src_leg = sub(base_all[gate.ov], base_all[gate.j]);
-            let mut leg_row = vec![0.0; 2 * nvars];
-            leg_row[2 * gate.ov] = src_leg[0];
-            leg_row[2 * gate.j] = -src_leg[0];
-            let value = dot(sub(up_all[gate.ov], up_all[gate.j]), src_leg);
-            let red = reduce(&leg_row);
-            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
-            clower.push(reserve - value);
-            cmat.push(red);
-        }
-    }
+    append_sharp_joint_constraints(&gates, &base_all, &up_all, &reduce, &mut cmat, &mut clower);
     if cmat.is_empty() {
         return Ok(abstain(
             upstream,
@@ -2829,3 +2840,6 @@ mod joint_tests;
 
 #[cfg(test)]
 mod quadratic_tests;
+
+#[cfg(test)]
+mod sharp_joint_tests;
