@@ -17,7 +17,7 @@
 
 use super::exact::Exact as BigRational;
 use super::{
-    curves, filtered, geometry, intervals, min_norm_solve,
+    abstain, curves, filtered, geometry, intervals, min_norm_solve,
     qp::{bounded_equalities, QpInfo},
     width_weight, FitResult, Reference, HEADROOM, MAX_COMMANDS,
 };
@@ -1706,15 +1706,6 @@ pub(super) fn emit(upstream: &[FittedCommand], cand: &[[f64; 2]], no: usize) -> 
         }
     }
     out
-}
-
-fn abstain(upstream: &[FittedCommand], reason: &str, diagnostics: serde_json::Value) -> FitResult {
-    FitResult {
-        commands: upstream.to_vec(),
-        applied: false,
-        reason: reason.to_string(),
-        diagnostics,
-    }
 }
 
 fn reference_meta(reference: &Reference) -> serde_json::Value {

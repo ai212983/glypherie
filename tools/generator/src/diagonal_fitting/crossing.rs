@@ -21,7 +21,7 @@
 
 use super::geometry::{self, Segment as GeomSegment};
 use super::qp;
-use super::{curves, FitResult, Reference, HEADROOM, MAX_COMMANDS};
+use super::{abstain, curves, FitResult, Reference, HEADROOM, MAX_COMMANDS};
 use crate::fail;
 use crate::{fitting_source::SourceOutline, probe::FittedCommand, Error};
 use num_rational::BigRational;
@@ -36,15 +36,6 @@ const CROSS_QUANTUM: f64 = 1.0 / 4096.0;
 const EPS_PARITY: f64 = 0.25;
 /// Hobby (16) symmetry-row weight scale.
 const ALPHA6: f64 = 5e5;
-
-fn abstain(upstream: &[FittedCommand], reason: &str, diagnostics: serde_json::Value) -> FitResult {
-    FitResult {
-        commands: upstream.to_vec(),
-        applied: false,
-        reason: reason.to_string(),
-        diagnostics,
-    }
-}
 
 /// Parity-compatible axis position from geometry, never from pixels.
 /// Returns `None` when the snapped count is below one: centering on a

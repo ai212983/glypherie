@@ -20,7 +20,8 @@
 
 use super::curve_model as scf;
 use super::{
-    acute, curves, geometry, qp, width_weight, FitResult, Reference, HEADROOM, MAX_COMMANDS,
+    abstain, acute, curves, geometry, qp, width_weight, FitResult, Reference, HEADROOM,
+    MAX_COMMANDS,
 };
 use crate::{fail, probe::FittedCommand, Error};
 use std::collections::{HashMap, HashSet};
@@ -30,15 +31,6 @@ const GRID_SPREAD: f64 = 0.25;
 
 fn dot(a: &[f64], b: &[f64]) -> f64 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
-}
-
-fn abstain(upstream: &[FittedCommand], reason: &str, diagnostics: serde_json::Value) -> FitResult {
-    FitResult {
-        commands: upstream.to_vec(),
-        applied: false,
-        reason: reason.to_string(),
-        diagnostics,
-    }
 }
 
 /// Integer line-separation target from the coupled normal width.

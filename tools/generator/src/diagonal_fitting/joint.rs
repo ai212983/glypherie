@@ -22,8 +22,8 @@
 //! corrections.
 
 use super::{
-    achieved_json, achieved_widths, assemble, geometry, mean_widths, qp, reference_meta, validate,
-    FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS,
+    abstain, achieved_json, achieved_widths, assemble, geometry, mean_widths, qp, reference_meta,
+    validate, FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS,
 };
 use crate::{fail, probe::FittedCommand, Error};
 use std::collections::{HashMap, HashSet};
@@ -371,15 +371,6 @@ fn symmetry_rows(
         rows.push((diff, (cb - ca) * (1.0f64 / 12.0).sqrt() * factor));
     }
     rows
-}
-
-fn abstain(upstream: &[FittedCommand], reason: &str, diagnostics: serde_json::Value) -> FitResult {
-    FitResult {
-        commands: upstream.to_vec(),
-        applied: false,
-        reason: reason.to_string(),
-        diagnostics,
-    }
 }
 
 fn median(values: &[f64]) -> f64 {

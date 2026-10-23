@@ -13,7 +13,8 @@
 //! validity failure all return the upstream outline unchanged.
 
 use super::{
-    curves, geometry, geometry::Parsed, FitResult, Reference, RowGroup, HEADROOM, MAX_COMMANDS,
+    abstain, curves, geometry, geometry::Parsed, FitResult, Reference, RowGroup, HEADROOM,
+    MAX_COMMANDS,
 };
 use crate::probe::FittedCommand;
 use nalgebra::{DMatrix, DVector};
@@ -521,15 +522,6 @@ fn solve_hard(
         loose[col] = particular[t] + correction[t];
     }
     Some(loose)
-}
-
-fn abstain(upstream: &[FittedCommand], reason: &str, diagnostics: serde_json::Value) -> FitResult {
-    FitResult {
-        commands: upstream.to_vec(),
-        applied: false,
-        reason: reason.to_string(),
-        diagnostics,
-    }
 }
 
 fn caps_json(caps: &[Cap]) -> serde_json::Value {
