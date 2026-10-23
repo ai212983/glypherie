@@ -401,3 +401,308 @@ fn unlike_inputs_and_duplicate_records_cannot_pass_comparability_checks() {
             .any(|failure| failure.invariant == expected));
     }
 }
+
+const OUTLINE_INVARIANT: &str = "outline coordinates or contour command structure invalid";
+const STORED_RASTER_INVARIANT: &str = "stored raster does not reproduce from fitted outline";
+const COVERAGE_CHECKSUM_INVARIANT: &str = "coverage checksum inconsistent";
+
+fn has_invariant(evaluation: &font_generator::evaluation::Evaluation, invariant: &str) -> bool {
+    evaluation
+        .hard_failures
+        .iter()
+        .any(|failure| failure.invariant == invariant)
+}
+
+fn candidate_with_outline(base: &ReferenceReport, commands: Vec<FittedCommand>) -> ReferenceReport {
+    let mut candidate = base.clone();
+    candidate.records[0].fitted_commands = commands;
+    candidate
+}
+
+fn coordinate_outlines(value: f32) -> Vec<(&'static str, Vec<FittedCommand>)> {
+    vec![
+        (
+            "move_x",
+            vec![FittedCommand::MoveTo(value, 0.0), FittedCommand::Close],
+        ),
+        (
+            "move_y",
+            vec![FittedCommand::MoveTo(0.0, value), FittedCommand::Close],
+        ),
+        (
+            "line_x",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::LineTo(value, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "line_y",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::LineTo(0.0, value),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "quad_x1",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::QuadTo(value, 0.0, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "quad_y1",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::QuadTo(0.0, value, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "quad_x",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::QuadTo(0.0, 0.0, value, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "quad_y",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::QuadTo(0.0, 0.0, 0.0, value),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_x1",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(value, 0.0, 0.0, 0.0, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_y1",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(0.0, value, 0.0, 0.0, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_x2",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(0.0, 0.0, value, 0.0, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_y2",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(0.0, 0.0, 0.0, value, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_x",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(0.0, 0.0, 0.0, 0.0, value, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_y",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(0.0, 0.0, 0.0, 0.0, 0.0, value),
+                FittedCommand::Close,
+            ],
+        ),
+    ]
+}
+
+#[test]
+fn outline_grammar_valid_shapes_have_no_outline_failure() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut multi = rectangle(0.0, 0.0, 1.0, 1.0);
+    multi.extend(rectangle(2.0, 2.0, 1.0, 1.0));
+    let cases: Vec<(&str, Vec<FittedCommand>)> = vec![
+        ("empty", vec![]),
+        (
+            "move_close",
+            vec![FittedCommand::MoveTo(0.0, 0.0), FittedCommand::Close],
+        ),
+        ("multi_closed_contours", multi),
+        (
+            "line_within_open",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::LineTo(1.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "quad_within_open",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::QuadTo(1.0, 0.0, 1.0, 1.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_within_open",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(1.0, 0.0, 1.0, 1.0, 0.0, 1.0),
+                FittedCommand::Close,
+            ],
+        ),
+    ];
+    for (name, commands) in cases {
+        let mut candidate = base.clone();
+        replace_outline(&mut candidate, commands);
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, OUTLINE_INVARIANT),
+            "{name} should have no outline failure"
+        );
+        assert!(
+            evaluation.hard_invariants_pass,
+            "{name}: {:?}",
+            evaluation.hard_failures
+        );
+    }
+}
+
+#[test]
+fn outline_grammar_invalid_shapes_fail_exact_invariant_and_skip_raster() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let cases: Vec<(&str, Vec<FittedCommand>)> = vec![
+        ("stray_line", vec![FittedCommand::LineTo(1.0, 0.0)]),
+        (
+            "stray_quad",
+            vec![FittedCommand::QuadTo(1.0, 0.0, 1.0, 1.0)],
+        ),
+        (
+            "stray_curve",
+            vec![FittedCommand::CurveTo(1.0, 0.0, 1.0, 1.0, 0.0, 1.0)],
+        ),
+        ("stray_close", vec![FittedCommand::Close]),
+        (
+            "nested_move",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::LineTo(1.0, 0.0),
+                FittedCommand::MoveTo(2.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "open_ended_path",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::LineTo(1.0, 0.0),
+            ],
+        ),
+        (
+            "double_close",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::Close,
+                FittedCommand::Close,
+            ],
+        ),
+    ];
+    for (name, commands) in cases {
+        let candidate = candidate_with_outline(&base, commands);
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(!evaluation.hard_invariants_pass, "{name}");
+        assert!(
+            has_invariant(&evaluation, OUTLINE_INVARIANT),
+            "{name} missing exact contour invariant"
+        );
+        assert!(
+            !has_invariant(&evaluation, STORED_RASTER_INVARIANT),
+            "{name} must skip stored raster reproduction"
+        );
+    }
+}
+
+#[test]
+fn outline_numeric_boundary_inclusive_for_every_slot() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut checked = 0;
+    for bound in [32768.0_f32, -32768.0_f32] {
+        for (slot, commands) in coordinate_outlines(bound) {
+            let candidate = candidate_with_outline(&base, commands);
+            let evaluation = evaluate(&source, &upstream, &candidate);
+            assert!(
+                !has_invariant(&evaluation, OUTLINE_INVARIANT),
+                "{slot}_{bound} at inclusive boundary should have no outline failure"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 28);
+}
+
+#[test]
+fn outline_numeric_outside_invalid_for_every_slot() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let just_outside = f32::from_bits(32768.0_f32.to_bits() + 1);
+    let just_outside_neg = -just_outside;
+    assert!(just_outside.is_finite() && just_outside > 32768.0);
+    assert!(just_outside_neg.is_finite() && just_outside_neg < -32768.0);
+    let witnesses: Vec<(&str, f32)> = vec![
+        ("next_above", just_outside),
+        ("next_below", just_outside_neg),
+        ("nan", f32::NAN),
+        ("pos_inf", f32::INFINITY),
+        ("neg_inf", f32::NEG_INFINITY),
+    ];
+    let mut checked = 0;
+    for (witness_name, witness) in &witnesses {
+        for (slot, commands) in coordinate_outlines(*witness) {
+            let candidate = candidate_with_outline(&base, commands);
+            let evaluation = evaluate(&source, &upstream, &candidate);
+            assert!(!evaluation.hard_invariants_pass, "{slot}/{witness_name}");
+            assert!(
+                has_invariant(&evaluation, OUTLINE_INVARIANT),
+                "{slot}/{witness_name} missing exact contour invariant"
+            );
+            assert!(
+                !has_invariant(&evaluation, STORED_RASTER_INVARIANT),
+                "{slot}/{witness_name} must skip stored raster reproduction"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 70);
+}
+
+#[test]
+fn outline_invalid_skips_later_raster_after_earlier_checksum() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut candidate = candidate_with_outline(&base, vec![FittedCommand::LineTo(1.0, 0.0)]);
+    candidate.records[0].coverage_sha256 = "0".repeat(64);
+    assert!(!candidate.records[0].pixels.is_empty());
+    candidate.records[0].pixels[0] ^= 1;
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    let ordered: Vec<&str> = evaluation
+        .hard_failures
+        .iter()
+        .map(|failure| failure.invariant.as_str())
+        .collect();
+    assert_eq!(
+        ordered,
+        vec![COVERAGE_CHECKSUM_INVARIANT, OUTLINE_INVARIANT]
+    );
+}

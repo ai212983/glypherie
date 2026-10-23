@@ -409,6 +409,28 @@ fn coordinates(command: &FittedCommand) -> Vec<(f64, f64)> {
     }
 }
 
+fn outline_valid(commands: &[FittedCommand]) -> bool {
+    let mut open = false;
+    let mut invalid = false;
+    for command in commands {
+        invalid |= coordinates(command).iter().any(|&(x, y)| {
+            !x.is_finite() || !y.is_finite() || x.abs() > 32768.0 || y.abs() > 32768.0
+        });
+        match command {
+            FittedCommand::MoveTo(..) => {
+                invalid |= open;
+                open = true;
+            }
+            FittedCommand::Close => {
+                invalid |= !open;
+                open = false;
+            }
+            _ => invalid |= !open,
+        }
+    }
+    !(open || invalid)
+}
+
 fn motion(a: &[FittedCommand], b: &[FittedCommand]) -> Option<Motion> {
     if a.len() != b.len() {
         return None;
@@ -560,25 +582,7 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
             failures.push("feature application accounting inconsistent");
         }
     }
-    let mut open = false;
-    let mut invalid = false;
-    for command in &record.fitted_commands {
-        invalid |= coordinates(command).iter().any(|&(x, y)| {
-            !x.is_finite() || !y.is_finite() || x.abs() > 32768.0 || y.abs() > 32768.0
-        });
-        match command {
-            FittedCommand::MoveTo(..) => {
-                invalid |= open;
-                open = true;
-            }
-            FittedCommand::Close => {
-                invalid |= !open;
-                open = false;
-            }
-            _ => invalid |= !open,
-        }
-    }
-    if open || invalid {
+    if !outline_valid(&record.fitted_commands) {
         failures.push("outline coordinates or contour command structure invalid");
         return failures;
     }
