@@ -5,7 +5,7 @@ use font_generator::{
     reference::{reference, RasterPolicy, ReferenceReport, ReferenceRequest},
     renderer::{Rasterization, RenderPipeline},
     stem_fitting::StemFittingStrategy,
-    Config, Hinting, MonoRasterSettings,
+    Config, Hinting, MonoDropoutMode, MonoRasterSettings,
 };
 
 fn roboto_flex() -> Vec<u8> {
@@ -388,4 +388,124 @@ fn gray_reports_carry_no_diagonal_captures() {
         .records
         .iter()
         .all(|record| record.diagonal_fitting.is_none()));
+}
+
+#[test]
+fn terminal_scan_settings_fail_independently_per_field() {
+    let (source, upstream) = source_and_upstream("s");
+    let base = plain_candidate("s");
+    let evaluation = evaluate(&source, &upstream, &base);
+    assert!(
+        evaluation.hard_invariants_pass,
+        "{:?}",
+        evaluation.hard_failures
+    );
+    let cp = base.records[0].codepoint;
+    let mut identity = base.clone();
+    identity.records[0]
+        .mono_rasterizer
+        .as_mut()
+        .unwrap()
+        .version = "rolled".into();
+    let evaluation = evaluate(&source, &upstream, &identity);
+    assert_eq!(
+        evaluation
+            .hard_failures
+            .iter()
+            .map(|failure| (
+                failure.report.as_str(),
+                failure.codepoint,
+                failure.invariant.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(
+            "candidate",
+            Some(cp),
+            "terminal scan settings or identity inconsistent"
+        )]
+    );
+    let mut missing = base.clone();
+    missing.records[0].mono_raster = None;
+    let evaluation = evaluate(&source, &upstream, &missing);
+    assert_eq!(
+        evaluation
+            .hard_failures
+            .iter()
+            .map(|failure| (
+                failure.report.as_str(),
+                failure.codepoint,
+                failure.invariant.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(
+            "candidate",
+            Some(cp),
+            "terminal scan settings or identity inconsistent"
+        )]
+    );
+    let mut engine = base.clone();
+    engine.records[0].selected_engine = "none".into();
+    let evaluation = evaluate(&source, &upstream, &engine);
+    assert_eq!(
+        evaluation
+            .hard_failures
+            .iter()
+            .map(|failure| (
+                failure.report.as_str(),
+                failure.codepoint,
+                failure.invariant.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "candidate",
+                Some(cp),
+                "terminal scan settings or identity inconsistent"
+            ),
+            (
+                "candidate",
+                Some(cp),
+                "record and report policy inconsistent"
+            ),
+            ("candidate", Some(cp), "selected hinting engine changed")
+        ]
+    );
+    let mut stubs = base.clone();
+    stubs.records[0].mono_raster.as_mut().unwrap().include_stubs = false;
+    let evaluation = evaluate(&source, &upstream, &stubs);
+    assert_eq!(
+        evaluation
+            .hard_failures
+            .iter()
+            .map(|failure| (
+                failure.report.as_str(),
+                failure.codepoint,
+                failure.invariant.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(
+            "candidate",
+            Some(cp),
+            "terminal scan settings or identity inconsistent"
+        )]
+    );
+    let mut dropout = base.clone();
+    dropout.records[0].mono_raster.as_mut().unwrap().dropout = MonoDropoutMode::Off;
+    let evaluation = evaluate(&source, &upstream, &dropout);
+    assert_eq!(
+        evaluation
+            .hard_failures
+            .iter()
+            .map(|failure| (
+                failure.report.as_str(),
+                failure.codepoint,
+                failure.invariant.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(
+            "candidate",
+            Some(cp),
+            "terminal scan settings or identity inconsistent"
+        )]
+    );
 }

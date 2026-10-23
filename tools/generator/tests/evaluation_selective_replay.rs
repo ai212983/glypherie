@@ -523,3 +523,70 @@ fn selective_false_false_ignores_cleared_native_commands() {
     );
     assert_eq!(invariants(&evaluation), Vec::<&str>::new());
 }
+
+#[test]
+fn font_scan_engine_change_fails_render_policy() {
+    let data = font("Roboto");
+    let (source, upstream) = source_and_upstream(&data, "s");
+    let candidate = font_generator::candidate::render_with_rasterization(
+        &data,
+        &ReferenceRequest {
+            profile: "mono_1bit".into(),
+            extensions: "font-hints-01".into(),
+            settings: Config {
+                characters: "s".into(),
+                size_px: 16.0,
+                output_bits: 1,
+                hinting: Hinting::AutoFallback,
+                mono_raster: MonoRasterSettings {
+                    font_instructions: true,
+                    include_stubs: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        },
+        Rasterization::FreeTypeMono,
+    )
+    .unwrap();
+    let index = candidate
+        .records
+        .iter()
+        .position(|record| record.font_scan.is_some())
+        .expect("font scan");
+    let record = &candidate.records[index];
+    assert_eq!(record.raster_policy, RasterPolicy::FreeTypeMono);
+    assert!(record
+        .mono_raster
+        .as_ref()
+        .is_some_and(|raster| raster.font_instructions));
+    assert_eq!(record.selected_engine, "interpreter");
+    assert!(record.selective_fitting.is_none());
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(
+        evaluation.hard_invariants_pass,
+        "{:?}",
+        evaluation.hard_failures
+    );
+    let cp = candidate.records[index].codepoint;
+    let mut changed = candidate.clone();
+    changed.records[index].selected_engine = "auto".into();
+    let evaluation = evaluate(&source, &upstream, &changed);
+    assert!(!evaluation.hard_invariants_pass);
+    assert_eq!(
+        evaluation
+            .hard_failures
+            .iter()
+            .map(|failure| (
+                failure.report.as_str(),
+                failure.codepoint,
+                failure.invariant.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![(
+            "candidate",
+            Some(cp),
+            "font scan state on an incompatible render policy"
+        )]
+    );
+}

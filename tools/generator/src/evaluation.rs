@@ -644,6 +644,75 @@ fn selective_replay_valid(
         || combined.as_ref() != Some(expected))
 }
 
+fn reproduce_raster(record: &ReferenceRecord, config: &Config, failures: &mut Vec<&'static str>) {
+    if record.mono_raster.is_some()
+        && !matches!(
+            record.raster_policy,
+            RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+        )
+    {
+        failures.push("monochrome scan settings on a coverage raster");
+    }
+    if record.font_scan.is_some()
+        && (record.raster_policy != RasterPolicy::FreeTypeMono
+            || !config.mono_raster.font_instructions
+            || (record.selected_engine != "interpreter" && record.selective_fitting.is_none()))
+    {
+        failures.push("font scan state on an incompatible render policy");
+    }
+    let reproduced = match record.raster_policy {
+        RasterPolicy::Coverage => rasterize(&record.fitted_commands, config),
+        RasterPolicy::CoverageDropout if record.output_bits == 1 => {
+            crate::dropout::rasterize(&record.fitted_commands, config)
+        }
+        #[cfg(feature = "candidate")]
+        RasterPolicy::FreeTypeMono if record.output_bits == 1 => {
+            if record.mono_rasterizer != Some(crate::reference::MonoRasterizer::current()) {
+                failures.push("monochrome scanner identity inconsistent");
+            }
+            if record.mono_raster.is_none() {
+                failures.push("monochrome scan settings missing");
+            }
+            crate::mono::rasterize_with_scan_state(
+                &record.fitted_commands,
+                config,
+                record.font_scan.as_ref(),
+            )
+        }
+        #[cfg(feature = "candidate")]
+        RasterPolicy::FreeTypeMonoTerminals if record.output_bits == 1 => {
+            if record.mono_rasterizer != Some(crate::reference::MonoRasterizer::current())
+                || record.mono_raster.is_none()
+                || record.selected_engine != "auto"
+                || !config.mono_raster.include_stubs
+                || config.mono_raster.dropout != crate::MonoDropoutMode::Smart
+            {
+                failures.push("terminal scan settings or identity inconsistent");
+            }
+            let Some(source) = &record.source_commands else {
+                failures.push("terminal source outline missing");
+                return;
+            };
+            crate::candidate::rasterize_terminals(source, &record.fitted_commands, config)
+        }
+        #[cfg(feature = "candidate")]
+        RasterPolicy::CoverageOverlap4xDropout if record.output_bits == 1 => {
+            crate::overlap::rasterize(&record.fitted_commands, config)
+        }
+        _ => {
+            failures.push("unsupported raster policy for this profile or build");
+            return;
+        }
+    };
+    match reproduced {
+        Ok(raster)
+            if raster.pixels == record.pixels
+                && raster.coverage == record.coverage
+                && (raster.left, raster.top, raster.width, raster.height) == placement(record) => {}
+        _ => failures.push("stored raster does not reproduce from fitted outline"),
+    }
+}
+
 fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     let mut failures = metric_failures(record);
     let size = u64::from(record.width) * u64::from(record.height);
@@ -722,74 +791,7 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
             _ => failures.push("width fitting does not reproduce from captured inputs"),
         }
     }
-    if record.mono_raster.is_some()
-        && !matches!(
-            record.raster_policy,
-            RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
-        )
-    {
-        failures.push("monochrome scan settings on a coverage raster");
-    }
-    if record.font_scan.is_some()
-        && (record.raster_policy != RasterPolicy::FreeTypeMono
-            || !config.mono_raster.font_instructions
-            || (record.selected_engine != "interpreter" && record.selective_fitting.is_none()))
-    {
-        failures.push("font scan state on an incompatible render policy");
-    }
-    let reproduced = match record.raster_policy {
-        RasterPolicy::Coverage => rasterize(&record.fitted_commands, &config),
-        RasterPolicy::CoverageDropout if record.output_bits == 1 => {
-            crate::dropout::rasterize(&record.fitted_commands, &config)
-        }
-        #[cfg(feature = "candidate")]
-        RasterPolicy::FreeTypeMono if record.output_bits == 1 => {
-            if record.mono_rasterizer != Some(crate::reference::MonoRasterizer::current()) {
-                failures.push("monochrome scanner identity inconsistent");
-            }
-            if record.mono_raster.is_none() {
-                failures.push("monochrome scan settings missing");
-            }
-            crate::mono::rasterize_with_scan_state(
-                &record.fitted_commands,
-                &config,
-                record.font_scan.as_ref(),
-            )
-        }
-        #[cfg(feature = "candidate")]
-        RasterPolicy::FreeTypeMonoTerminals if record.output_bits == 1 => {
-            if record.mono_rasterizer != Some(crate::reference::MonoRasterizer::current())
-                || record.mono_raster.is_none()
-                || record.selected_engine != "auto"
-                || !config.mono_raster.include_stubs
-                || config.mono_raster.dropout != crate::MonoDropoutMode::Smart
-            {
-                failures.push("terminal scan settings or identity inconsistent");
-            }
-            let Some(source) = &record.source_commands else {
-                failures.push("terminal source outline missing");
-                return failures;
-            };
-            crate::candidate::rasterize_terminals(source, &record.fitted_commands, &config)
-        }
-        #[cfg(feature = "candidate")]
-        RasterPolicy::CoverageOverlap4xDropout if record.output_bits == 1 => {
-            crate::overlap::rasterize(&record.fitted_commands, &config)
-        }
-        _ => {
-            return {
-                failures.push("unsupported raster policy for this profile or build");
-                failures
-            }
-        }
-    };
-    match reproduced {
-        Ok(raster)
-            if raster.pixels == record.pixels
-                && raster.coverage == record.coverage
-                && (raster.left, raster.top, raster.width, raster.height) == placement(record) => {}
-        _ => failures.push("stored raster does not reproduce from fitted outline"),
-    }
+    reproduce_raster(record, &config, &mut failures);
     failures
 }
 
