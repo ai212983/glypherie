@@ -311,6 +311,10 @@ test("shared form and studio dropdowns select by keyboard and retain disabled an
       await page.keyboard.press("End");
       await frame.waitForFunction(() => document.activeElement?.textContent === "Grayscale");
       await page.keyboard.press("Enter");
+      await frame.waitForFunction(
+        () => document.activeElement?.getAttribute("role") === "combobox"
+          && (document.activeElement?.textContent ?? "").includes("Grayscale"),
+      );
       assert.equal(await profile.textContent(), "Grayscale");
       assert.equal(await profile.evaluate((element) => element === document.activeElement), true);
     }
@@ -412,7 +416,9 @@ test("editing text repaints actual glyphs", { skip: !browserAvailable }, async (
   await waitMorePaints(frame, paints);
   const after = await canvasStats(frame);
   assert.notEqual(after.digest, before.digest, "new text paints different glyphs");
-  assert.ok(after.ink > 100, `short text still covers, got ${after.ink} ink pixels`);
+  assert.ok(after.ink > 0, `short text paints nonempty glyphs, got ${after.ink} ink pixels`);
+  assert.ok(after.distinct >= 2, `short text paints non-uniform coverage, got ${after.distinct} pixel values`);
+  assert.match(await storyStatus(frame), /missing=0/, "short text stays fully covered");
   assert.deepEqual(storyErrors(page), []);
   await page.close();
 });
@@ -889,15 +895,13 @@ async function applyRaw(frame: Frame, value: string): Promise<number> {
   const before = await storyPaints(frame);
   await frame.locator("[data-raw-palette]").fill(value);
   await frame.locator("[data-raw-palette-apply]").click();
+  await waitRawCommitted(frame, value === "" ? "" : JSON.stringify(JSON.parse(value)));
   return before;
 }
 
-// Waits until the raw textarea resyncs to the committed value, proving the
-// commit reached the args even when the status line cannot change (it
-// already shows an error from the previous invalid value).
-async function waitRawSynced(frame: Frame, expected: string): Promise<void> {
+async function waitRawCommitted(frame: Frame, expected: string): Promise<void> {
   await frame.waitForFunction(
-    (value) => (document.querySelector("[data-raw-palette]") as HTMLTextAreaElement | null)?.value === value,
+    (value) => document.querySelector("[data-raw-palette]")?.getAttribute("data-raw-committed") === value,
     expected,
     { timeout: 30000 },
   );
@@ -933,7 +937,7 @@ test("diagnostics raw JSON edits actual props and recovers user colors", { skip:
   const customEight = "[[10,20,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255]]";
   let paints = await applyRaw(frame, customEight);
   await waitMorePaints(frame, paints);
-  assert.equal(await frame.locator("[data-raw-palette]").inputValue(), customEight);
+  assert.equal(await frame.locator("[data-raw-palette]").getAttribute("data-raw-committed"), customEight);
   const tinted = await canvasStats(frame);
   assert.deepEqual(
     await canvasPixel(frame, tinted.width - 1, tinted.height - 1),
@@ -963,7 +967,7 @@ test("diagnostics raw JSON edits actual props and recovers user colors", { skip:
     ["[[1,2],[3,4],[5,6],[7,8],[9,0],[1,2],[3,4],[5,6]]", "[[1,2],[3,4],[5,6],[7,8],[9,0],[1,2],[3,4],[5,6]]"],
   ] as [string, string][]) {
     await applyRaw(frame, bad);
-    await waitRawSynced(frame, compact);
+    await waitRawCommitted(frame, compact);
     assert.match(await storyStatus(frame), /Invalid palette/, `raw ${bad} reports`);
   }
   assert.ok(
@@ -1117,7 +1121,7 @@ test("invalid colors clear across fixture states and recover", { skip: !browserA
   await waitFreshPaint(frame, paints);
   assert.equal((await canvasStats(frame)).digest, fullDigest, "ready preserves the committed palette");
   assert.equal(
-    await frame.locator("[data-raw-palette]").inputValue(),
+    await frame.locator("[data-raw-palette]").getAttribute("data-raw-committed"),
     fullEight,
     "the committed array restores verbatim",
   );

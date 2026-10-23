@@ -161,6 +161,19 @@ test("controls resolve to visible theme colors", { skip: !browserAvailable }, as
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, colorScheme: "light" });
   await bootLibrary(page, url);
   await openVariantByName(page, (await cardNames(page))[0]!);
+  const reset = page.getByRole("button", { name: "Reset specimen", exact: true });
+  assert.equal(await reset.isDisabled(), true, "a fresh variant inherits its specimen, so reset starts disabled");
+  assert.equal(
+    await reset.evaluate((element) => getComputedStyle(element).backgroundColor),
+    "rgba(0, 0, 0, 0)",
+    "disabled reset stays transparent by design",
+  );
+  await page.locator("[data-text]").fill("Custom contrast probe");
+  assert.equal(await reset.isDisabled(), false, "editing the specimen enables reset");
+  await page.waitForFunction(() => {
+    const style = getComputedStyle(document.querySelector("[data-reset]")!);
+    return style.opacity === "1" && style.backgroundColor !== "rgba(0, 0, 0, 0)";
+  });
   const styles = await page.evaluate(() => {
     const css = (selector: string): { background: string; color: string; border: string } => {
       const element = document.querySelector(selector);
@@ -337,7 +350,7 @@ test("preview font switching renders the newly selected font", { skip: !browserA
   assert.equal(await hashPath(page), `/font/${flexId}/`);
 });
 
-test("specimen and fitting dropdowns preserve edits, keyboard selection and profile state", { skip: !browserAvailable }, async (t) => {
+test("specimen dropdown and fitting switches preserve edits, keyboard selection and profile state", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
   const url = await servePrefix(t, output);
   const browser = await launch(t);
@@ -366,32 +379,37 @@ test("specimen and fitting dropdowns preserve edits, keyboard selection and prof
   assert.equal(await preset.textContent(), "Pangram");
   await text.fill("My custom specimen");
 
-  const fitting = page.getByRole("combobox", { name: "Fitting", exact: true });
-  await fitting.click();
-  await page.getByRole("option", { name: "Automatic", exact: true }).click();
-  await fitting.press("Space");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "option");
-  await page.keyboard.press("Home");
-  await page.waitForFunction(() => document.activeElement?.textContent === "Font hints first");
-  await page.keyboard.press("Enter");
-  assert.equal(await fitting.textContent(), "Font hints first");
-  await fitting.click();
-  await page.getByRole("option", { name: "Automatic", exact: true }).click();
+  assert.equal(await page.getByRole("combobox", { name: "Fitting", exact: true }).count(), 0, "fitting uses switches, without a combobox");
+  const hints = page.getByRole("switch", { name: "Use font hints", exact: true });
+  const diagonals = page.getByRole("switch", { name: "Fit diagonal strokes", exact: true });
+  assert.equal(await hints.count(), 1, "the hinted mono font offers the hints switch");
+  assert.equal(await diagonals.count(), 1, "the mono font offers the diagonal switch");
+  assert.equal(await hints.isChecked(), true);
+  assert.equal(await diagonals.isChecked(), false);
+  await hints.focus();
+  await page.keyboard.press("Space");
+  await page.waitForFunction(() => document.querySelector("#use-font-hints")?.getAttribute("aria-checked") === "false");
+  assert.equal(await hints.isChecked(), false, "space toggles the hints switch");
+  await diagonals.click();
+  await page.waitForFunction(() => document.querySelector("#fit-diagonal-strokes")?.getAttribute("aria-checked") === "true");
+  assert.equal(await diagonals.isChecked(), true);
   const editorUrl = page.url();
   await createPalettePreset(page, url, { name: "Fitting gray", bits: 3 });
   await page.goto(editorUrl, { waitUntil: "networkidle" });
   await page.waitForFunction(canvasRendered, null, { timeout: 20000 });
   await selectPalettePreset(page, "Fitting gray");
-  assert.equal(await fitting.count(), 0, "grayscale fitting is content, without a combobox");
-  assert.equal(await page.getByRole("group", { name: "Fitting", exact: true }).textContent(), "Automatic");
+  assert.equal(await hints.count(), 0, "grayscale fitting hides the hints switch");
+  assert.equal(await diagonals.count(), 0, "grayscale fitting hides the diagonal switch");
   await selectPalettePreset(page, "Monochrome");
-  assert.equal(await fitting.isEnabled(), true);
-  assert.equal(await fitting.textContent(), "Automatic", "Mono retains its fitting choice across profile changes");
+  await hints.waitFor();
+  assert.equal(await hints.isChecked(), false, "Mono retains its hints choice across profile changes");
+  assert.equal(await diagonals.isChecked(), true, "Mono retains its diagonal choice across profile changes");
   assert.equal(await page.locator("select:visible").count(), 0, "all app dropdowns use custom triggers");
   await page.waitForFunction(() => document.querySelector("[data-save-status]")?.textContent === "Saved");
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForFunction(canvasRendered);
-  assert.equal(await fitting.textContent(), "Automatic");
+  assert.equal(await page.getByRole("switch", { name: "Use font hints", exact: true }).isChecked(), false);
+  assert.equal(await page.getByRole("switch", { name: "Fit diagonal strokes", exact: true }).isChecked(), true);
   assert.equal(await text.inputValue(), "My custom specimen");
   assert.deepEqual(errors, []);
 });

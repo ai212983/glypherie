@@ -466,8 +466,23 @@ test("palette depth edits settle variant autosave without revision drift", { ski
   assert.deepEqual(await option.locator(".palette-choice-swatches > span").evaluateAll((swatches) =>
     swatches.map((swatch) => getComputedStyle(swatch).backgroundColor)),
   ["rgb(255, 255, 255)", "rgb(170, 170, 170)", "rgb(85, 85, 85)", "rgb(0, 0, 0)"]);
+  await editor.waitForFunction(
+    () => document.activeElement?.getAttribute("role") === "option",
+    null,
+    { timeout: 20000 },
+  );
   await editor.keyboard.press("Home");
+  await editor.waitForFunction(
+    () => (document.activeElement?.textContent ?? "").startsWith("Monochrome"),
+    null,
+    { timeout: 20000 },
+  );
   await editor.keyboard.press("l");
+  await editor.waitForFunction(
+    () => (document.activeElement?.textContent ?? "").startsWith("Live gray"),
+    null,
+    { timeout: 20000 },
+  );
   await editor.keyboard.press("Enter");
   assert.match(await picker.innerText(), /Live gray/, "palette names remain searchable by keyboard");
   assert.match(
@@ -1057,8 +1072,11 @@ test("bit depth selector preserves curves, selection, and preset ownership", { s
   assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 390, "selector fits a narrow viewport");
   const mobileWidths = await pills.getByRole("radio").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().width));
   assert.ok(Math.max(...mobileWidths) - Math.min(...mobileWidths) < 1, "grid columns stay equal at mobile width");
-  const icon = selector.locator("img");
-  assert.deepEqual(await icon.evaluate((image: HTMLImageElement) => [image.complete, image.naturalWidth, image.naturalHeight, image.getBoundingClientRect().width, image.getBoundingClientRect().height]), [true, 11, 11, 11.25, 11.25]);
+  const icon = selector.getByRole("heading", { name: "Bit-depth & gray levels", exact: true }).locator('span[aria-hidden="true"]');
+  assert.deepEqual(await icon.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return [getComputedStyle(element).maskImage.includes("bit-depth"), bounds.width, bounds.height];
+  }), [true, 11.25, 11.25]);
   await page.locator('[data-preset-row="0"]').click();
   assert.equal(await depth(1).getAttribute("aria-checked"), "true");
   assert.equal(await depth(2).isDisabled(), true);
