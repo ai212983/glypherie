@@ -558,6 +558,23 @@ fn metric_failures(record: &ReferenceRecord) -> Vec<&'static str> {
     failures
 }
 
+fn quantization_config(record: &ReferenceRecord) -> Option<Config> {
+    if !matches!(record.output_bits, 1 | 2 | 3 | 4 | 8)
+        || record.mono_threshold == 0
+        || !record.gray_gamma.is_finite()
+        || record.gray_gamma <= 0.0
+    {
+        return None;
+    }
+    Some(Config {
+        output_bits: record.output_bits,
+        mono_threshold: record.mono_threshold,
+        gray_gamma: record.gray_gamma,
+        mono_raster: record.mono_raster.unwrap_or_default(),
+        ..Config::default()
+    })
+}
+
 fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     let mut failures = metric_failures(record);
     let size = u64::from(record.width) * u64::from(record.height);
@@ -567,14 +584,10 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     {
         failures.push("bitmap dimensions or buffer lengths invalid");
     }
-    if !matches!(record.output_bits, 1 | 2 | 3 | 4 | 8)
-        || record.mono_threshold == 0
-        || !record.gray_gamma.is_finite()
-        || record.gray_gamma <= 0.0
-    {
+    let Some(config) = quantization_config(record) else {
         failures.push("raster quantization policy invalid");
         return failures;
-    }
+    };
     let levels = (1_u16 << record.output_bits) - 1;
     if record.pixels.iter().any(|&p| u16::from(p) > levels) {
         failures.push("pixel level outside configured range");
@@ -591,13 +604,6 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
         failures.push("outline coordinates or contour command structure invalid");
         return failures;
     }
-    let config = Config {
-        output_bits: record.output_bits,
-        mono_threshold: record.mono_threshold,
-        gray_gamma: record.gray_gamma,
-        mono_raster: record.mono_raster.unwrap_or_default(),
-        ..Config::default()
-    };
     if record.source_commands.is_some()
         && record.raster_policy != RasterPolicy::FreeTypeMonoTerminals
         && !(record.raster_policy == RasterPolicy::FreeTypeMono

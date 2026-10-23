@@ -852,3 +852,120 @@ fn fitted_metric_failures_continue_to_later_checks_in_order() {
         ]
     );
 }
+
+const QUANT_INVARIANT: &str = "raster quantization policy invalid";
+const BUFFER_INVARIANT: &str = "bitmap dimensions or buffer lengths invalid";
+const PIXEL_LEVEL_INVARIANT: &str = "pixel level outside configured range";
+const POLICY_INVARIANT: &str = "glyph render policy changed";
+
+#[test]
+fn quantization_output_bits_domain() {
+    let (source, upstream, base) = reports("mono_1bit");
+    for bits in [1, 2, 3, 4, 8] {
+        let mut candidate = base.clone();
+        candidate.records[0].output_bits = bits;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, QUANT_INVARIANT),
+            "{bits} valid bits should have no quant failure"
+        );
+    }
+    for bits in [0, 5, 16, 255] {
+        let mut candidate = base.clone();
+        candidate.records[0].output_bits = bits;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            has_invariant(&evaluation, QUANT_INVARIANT),
+            "{bits} missing quant failure"
+        );
+    }
+}
+
+#[test]
+fn quantization_threshold_domain() {
+    let (source, upstream, base) = reports("mono_1bit");
+    for threshold in [1, 255] {
+        let mut candidate = base.clone();
+        candidate.records[0].mono_threshold = threshold;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, QUANT_INVARIANT),
+            "{threshold} nonzero threshold should have no quant failure"
+        );
+    }
+    let mut candidate = base.clone();
+    candidate.records[0].mono_threshold = 0;
+    assert!(has_invariant(
+        &evaluate(&source, &upstream, &candidate),
+        QUANT_INVARIANT
+    ));
+}
+
+#[test]
+fn quantization_gamma_domain() {
+    let (source, upstream, base) = reports("mono_1bit");
+    for gamma in [0.5, 1e-30, f32::MIN_POSITIVE] {
+        let mut candidate = base.clone();
+        candidate.records[0].gray_gamma = gamma;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, QUANT_INVARIANT),
+            "{gamma} finite positive gamma should have no quant failure"
+        );
+    }
+    for gamma in [0.0, -0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let mut candidate = base.clone();
+        candidate.records[0].gray_gamma = gamma;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            has_invariant(&evaluation, QUANT_INVARIANT),
+            "{gamma} missing quant failure"
+        );
+    }
+}
+
+#[test]
+fn quantization_invalid_stops_before_later_checks() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut stopped = base.clone();
+    assert!(!stopped.records[0].pixels.is_empty());
+    stopped.records[0].output_bits = 0;
+    stopped.records[0].pixels[0] = 200;
+    stopped.records[0].coverage_sha256 = "0".repeat(64);
+    stopped.records[0].fitted_commands = vec![FittedCommand::LineTo(1.0, 0.0)];
+    let evaluation = evaluate(&source, &upstream, &stopped);
+    assert!(has_invariant(&evaluation, QUANT_INVARIANT));
+    for unexpected in [
+        PIXEL_LEVEL_INVARIANT,
+        COVERAGE_CHECKSUM_INVARIANT,
+        OUTLINE_INVARIANT,
+        STORED_RASTER_INVARIANT,
+    ] {
+        assert!(
+            !has_invariant(&evaluation, unexpected),
+            "quant policy must stop before {unexpected}"
+        );
+    }
+    let ordered: Vec<&str> = evaluation
+        .hard_failures
+        .iter()
+        .map(|failure| failure.invariant.as_str())
+        .collect();
+    assert_eq!(ordered, vec![QUANT_INVARIANT, POLICY_INVARIANT]);
+    let mut buffered = base.clone();
+    buffered.records[0].pixels.pop();
+    buffered.records[0].mono_threshold = 0;
+    buffered.records[0].coverage_sha256 = "0".repeat(64);
+    buffered.records[0].fitted_commands = vec![FittedCommand::LineTo(1.0, 0.0)];
+    let evaluation = evaluate(&source, &upstream, &buffered);
+    assert!(!evaluation.hard_invariants_pass);
+    let ordered: Vec<&str> = evaluation
+        .hard_failures
+        .iter()
+        .map(|failure| failure.invariant.as_str())
+        .collect();
+    assert_eq!(
+        ordered,
+        vec![BUFFER_INVARIANT, QUANT_INVARIANT, POLICY_INVARIANT]
+    );
+}
