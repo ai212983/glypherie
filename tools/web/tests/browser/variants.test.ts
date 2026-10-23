@@ -543,8 +543,8 @@ test("saved variant page uses the studio layout with every control reachable", {
   assert.equal(await previewGroup.locator("[data-text]").count(), 1, "sample controls belong to the preview");
   assert.equal(await previewGroup.locator("[data-variant-paper] .interactive-canvas").count(), 1,
     "the rendered specimen shares the preview card with its controls");
-  assert.equal(await mainControls.locator(':scope > [data-slot="card"]').count(), 4,
-    "the main panel has three full-width editing cards and the License card");
+  assert.equal(await mainControls.locator(':scope > [data-slot="card"]').count(), 5,
+    "the main panel has Name, Preview, Rendering & spacing, Export (Playdate) and License cards");
   assert.equal(await mainControls.getByRole("heading", { name: "License", exact: true }).count(), 1);
   for (const heading of ["Variants", "Font", "Axes"]) {
     assert.equal(
