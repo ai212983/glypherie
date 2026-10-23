@@ -537,7 +537,7 @@ fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
     }
 }
 
-fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
+fn metric_failures(record: &ReferenceRecord) -> Vec<&'static str> {
     let mut failures = Vec::new();
     // Each pinned phantom-point rounding residual is at most half a pixel;
     // the inherited positive-bearing guard can add at most one more pixel.
@@ -555,6 +555,11 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     {
         failures.push("nonfinite fitted metrics");
     }
+    failures
+}
+
+fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
+    let mut failures = metric_failures(record);
     let size = u64::from(record.width) * u64::from(record.height);
     if size > 4_194_304
         || size != record.pixels.len() as u64

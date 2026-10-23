@@ -706,3 +706,149 @@ fn outline_invalid_skips_later_raster_after_earlier_checksum() {
         vec![COVERAGE_CHECKSUM_INVARIANT, OUTLINE_INVARIANT]
     );
 }
+
+const SIDEBEARING_INVARIANT: &str = "invalid monochrome side bearing deltas";
+const NONFINITE_INVARIANT: &str = "nonfinite fitted metrics";
+
+#[test]
+fn fitted_side_bearing_delta_magnitudes() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let valid: Vec<Option<[i32; 2]>> = vec![
+        None,
+        Some([96, 0]),
+        Some([0, 96]),
+        Some([96, 96]),
+        Some([-96, -96]),
+        Some([96, -96]),
+        Some([-96, 96]),
+    ];
+    for deltas in valid {
+        let mut candidate = base.clone();
+        candidate.records[0].side_bearing_deltas_26_6 = deltas;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, SIDEBEARING_INVARIANT),
+            "{deltas:?} within guard should have no side bearing failure"
+        );
+    }
+    let invalid: Vec<[i32; 2]> = vec![
+        [97, 0],
+        [0, 97],
+        [-97, 0],
+        [0, -97],
+        [97, 97],
+        [-97, -97],
+        [i32::MIN, 0],
+        [0, i32::MIN],
+    ];
+    for deltas in invalid {
+        let mut candidate = base.clone();
+        candidate.records[0].side_bearing_deltas_26_6 = Some(deltas);
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(!evaluation.hard_invariants_pass, "{deltas:?}");
+        assert!(
+            has_invariant(&evaluation, SIDEBEARING_INVARIANT),
+            "{deltas:?} missing side bearing failure"
+        );
+    }
+}
+
+#[test]
+fn fitted_side_bearing_deltas_require_mono_target_and_auto_engine() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut control = base.clone();
+    control.records[0].side_bearing_deltas_26_6 = Some([0, 0]);
+    assert!(!has_invariant(
+        &evaluate(&source, &upstream, &control),
+        SIDEBEARING_INVARIANT
+    ));
+    let mut target = base.clone();
+    target.records[0].side_bearing_deltas_26_6 = Some([0, 0]);
+    target.records[0].target = "smooth".into();
+    assert!(has_invariant(
+        &evaluate(&source, &upstream, &target),
+        SIDEBEARING_INVARIANT
+    ));
+    let mut engine = base.clone();
+    engine.records[0].side_bearing_deltas_26_6 = Some([0, 0]);
+    engine.records[0].selected_engine = "interpreter".into();
+    assert!(has_invariant(
+        &evaluate(&source, &upstream, &engine),
+        SIDEBEARING_INVARIANT
+    ));
+}
+
+#[test]
+fn fitted_hinted_metrics_finite_domain() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let valid: Vec<(Option<f32>, Option<f32>)> = vec![(None, None), (Some(8.0), Some(1.5))];
+    for (width, lsb) in valid {
+        let mut candidate = base.clone();
+        candidate.records[0].hinted_advance_width = width;
+        candidate.records[0].hinted_lsb = lsb;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, NONFINITE_INVARIANT),
+            "{width:?}/{lsb:?} should have no fitted metric failure"
+        );
+    }
+    let invalid: Vec<(Option<f32>, Option<f32>)> = vec![
+        (Some(f32::NAN), None),
+        (Some(f32::INFINITY), None),
+        (Some(f32::NEG_INFINITY), None),
+        (None, Some(f32::NAN)),
+        (None, Some(f32::INFINITY)),
+        (None, Some(f32::NEG_INFINITY)),
+    ];
+    for (width, lsb) in invalid {
+        let mut candidate = base.clone();
+        candidate.records[0].hinted_advance_width = width;
+        candidate.records[0].hinted_lsb = lsb;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(!evaluation.hard_invariants_pass, "{width:?}/{lsb:?}");
+        assert!(
+            has_invariant(&evaluation, NONFINITE_INVARIANT),
+            "{width:?}/{lsb:?} missing fitted metric failure"
+        );
+    }
+    let mut both = base.clone();
+    both.records[0].hinted_advance_width = Some(f32::NAN);
+    both.records[0].hinted_lsb = Some(f32::INFINITY);
+    let evaluation = evaluate(&source, &upstream, &both);
+    assert!(has_invariant(&evaluation, NONFINITE_INVARIANT));
+    assert_eq!(
+        evaluation
+            .hard_failures
+            .iter()
+            .filter(|failure| failure.invariant == NONFINITE_INVARIANT)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn fitted_metric_failures_continue_to_later_checks_in_order() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut candidate = base.clone();
+    candidate.records[0].side_bearing_deltas_26_6 = Some([97, 0]);
+    candidate.records[0].hinted_advance_width = Some(f32::NAN);
+    candidate.records[0].coverage_sha256 = "0".repeat(64);
+    assert!(!candidate.records[0].pixels.is_empty());
+    candidate.records[0].pixels[0] ^= 1;
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    let ordered: Vec<&str> = evaluation
+        .hard_failures
+        .iter()
+        .map(|failure| failure.invariant.as_str())
+        .collect();
+    assert_eq!(
+        ordered,
+        vec![
+            SIDEBEARING_INVARIANT,
+            NONFINITE_INVARIANT,
+            COVERAGE_CHECKSUM_INVARIANT,
+            STORED_RASTER_INVARIANT
+        ]
+    );
+}
