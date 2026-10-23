@@ -21,7 +21,9 @@
 
 use super::geometry::{self, Segment as GeomSegment};
 use super::qp;
-use super::{curves, FitResult, Reference, HEADROOM, MAX_COMMANDS};
+use super::{
+    abstain, basis_row, curves, width_weight, FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS,
+};
 use crate::fail;
 use crate::{fitting_source::SourceOutline, probe::FittedCommand, Error};
 use num_rational::BigRational;
@@ -36,15 +38,6 @@ const CROSS_QUANTUM: f64 = 1.0 / 4096.0;
 const EPS_PARITY: f64 = 0.25;
 /// Hobby (16) symmetry-row weight scale.
 const ALPHA6: f64 = 5e5;
-
-fn abstain(upstream: &[FittedCommand], reason: &str, diagnostics: serde_json::Value) -> FitResult {
-    FitResult {
-        commands: upstream.to_vec(),
-        applied: false,
-        reason: reason.to_string(),
-        diagnostics,
-    }
-}
 
 /// Parity-compatible axis position from geometry, never from pixels.
 /// Returns `None` when the snapped count is below one: centering on a
@@ -653,35 +646,6 @@ pub(super) fn quant_cross_bound(
     ein_x * by + ein_y * bx + eout_x * ay + eout_y * ax + ein_x * eout_y + ein_y * eout_x
 }
 
-/// Supplied fixed affine correspondence to outline controls (Hobby (31)).
-#[derive(Clone, Debug)]
-struct Sample {
-    terms: Vec<(usize, f64)>,
-}
-
-impl Sample {
-    fn vertex(index: usize) -> Self {
-        Sample {
-            terms: vec![(index, 1.0)],
-        }
-    }
-
-    fn affine(i0: usize, t0: f64, i1: usize, t1: f64) -> Self {
-        Sample {
-            terms: vec![(i0, t0), (i1, t1)],
-        }
-    }
-}
-
-/// Hobby (17) angular/width coupling weight; the printed 9 is radians.
-fn width_weight(w1: f64, w2: f64, t1: [f64; 2], t2: [f64; 2], height: f64) -> f64 {
-    let cos = ((t1[0] * t2[0] + t1[1] * t2[1]) / (t1[0].hypot(t1[1]) * t2[0].hypot(t2[1])))
-        .clamp(-1.0, 1.0);
-    let angle = cos.acos();
-    let dw = (w1 - w2) / 0.7;
-    500.0 / (height * height) * (-(dw * dw) - (angle / 9.0).powi(2)).exp()
-}
-
 /// Linear weighted residuals in displacements at nominal scale.
 struct RowSys {
     points: Vec<[f64; 2]>,
@@ -701,34 +665,17 @@ impl RowSys {
         }
     }
 
-    fn basis(&self, sample: &Sample) -> Vec<f64> {
-        let mut row = vec![0.0; self.points.len()];
-        for &(index, weight) in &sample.terms {
-            row[index] += weight;
-        }
-        row
-    }
-
-    fn point(&self, sample: &Sample) -> [f64; 2] {
-        let mut p = [0.0, 0.0];
-        for &(index, weight) in &sample.terms {
-            p[0] += weight * self.points[index][0];
-            p[1] += weight * self.points[index][1];
-        }
-        p
-    }
-
     /// Outer product of the correspondence basis with a direction, raveled
     /// per-coordinate `(x0, y0, x1, y1, ...)`.
     fn projected(&self, a: &Sample, dir: [f64; 2], b: Option<&Sample>) -> Vec<f64> {
-        let ba = self.basis(a);
+        let ba = basis_row(&a.terms, self.points.len());
         let mut row = vec![0.0; 2 * self.points.len()];
         for (k, w) in ba.iter().enumerate() {
             row[2 * k] += w * dir[0];
             row[2 * k + 1] += w * dir[1];
         }
         if let Some(other) = b {
-            let bb = self.basis(other);
+            let bb = basis_row(&other.terms, self.points.len());
             for (k, w) in bb.iter().enumerate() {
                 row[2 * k] -= w * dir[0];
                 row[2 * k + 1] -= w * dir[1];
@@ -741,8 +688,8 @@ impl RowSys {
     fn edge(&mut self, i: usize, j: usize) -> Result<(), ()> {
         let a = Sample::vertex(i);
         let b = Sample::vertex(j);
-        let pa = self.point(&a);
-        let pb = self.point(&b);
+        let pa = a.point(&self.points);
+        let pb = b.point(&self.points);
         let delta = [pb[0] - pa[0], pb[1] - pa[1]];
         let length = delta[0].hypot(delta[1]);
         if !(length > 0.0) {
@@ -792,8 +739,8 @@ impl RowSys {
         if !(arc.is_finite() && arc > 0.0) {
             return Err(());
         }
-        let pa = self.point(a);
-        let pb = self.point(b);
+        let pa = a.point(&self.points);
+        let pb = b.point(&self.points);
         let chord = [pa[0] - pb[0], pa[1] - pb[1]];
         let distance = chord[0].hypot(chord[1]);
         if !(distance > 0.0) {
@@ -940,6 +887,86 @@ fn symmetry_rows(
         rows.push((diff_row, diff_c));
     }
     rows
+}
+
+fn shape_objective_rows(
+    raw: &SourceOutline,
+    no: usize,
+    involved: &HashSet<usize>,
+    base_all: &[[f64; 2]],
+    size_px: f64,
+) -> (RowSys, Vec<(Vec<f64>, f64)>) {
+    let mut system = RowSys::new(base_all.to_vec(), size_px);
+    for contour in &raw.contours {
+        for seg in contour {
+            match *seg {
+                GeomSegment::Quad { c, a, b } => {
+                    let idx = [a, no + c, b];
+                    if idx.iter().any(|v| involved.contains(v)) {
+                        system.quad_shape(idx);
+                    }
+                }
+                GeomSegment::Line { a, b } => {
+                    if involved.contains(&a) || involved.contains(&b) {
+                        let _ = system.edge(a, b);
+                    }
+                }
+                GeomSegment::Cubic { .. } => {}
+            }
+        }
+    }
+    let mut plain: Vec<(Vec<f64>, f64)> = Vec::new();
+    for (_, row, _) in &system.rows {
+        plain.push((row.clone(), 0.0));
+    }
+    (system, plain)
+}
+
+fn width_objective_rows(
+    system: &RowSys,
+    prepared: &[geometry::PreppedPair],
+    anchors: &[AnchorV],
+    size_px: f64,
+) -> Vec<(Vec<f64>, f64)> {
+    let mut soft: Vec<(Vec<f64>, f64)> = Vec::new();
+    for info in prepared {
+        let mut station_pairs: Vec<(Vec<f64>, f64, [f64; 2])> = Vec::new();
+        let mut usable = true;
+        for st in &info.stations {
+            let ta = info.a.t0 + (info.a.t1 - info.a.t0) * st.hit.sa;
+            let tb = info.b.t0 + (info.b.t1 - info.b.t0) * st.hit.sb;
+            match system.pair(
+                &Sample::affine(info.a.i0, 1.0 - ta, info.a.i1, ta),
+                &Sample::affine(info.b.i0, 1.0 - tb, info.b.i1, tb),
+                info.arc,
+                st.hit.center,
+            ) {
+                Ok(triple) => station_pairs.push(triple),
+                Err(()) => {
+                    usable = false;
+                    break;
+                }
+            }
+        }
+        if !usable {
+            continue;
+        }
+        for (error, width, tangent) in &station_pairs {
+            for anchor in anchors {
+                let mut directed = *tangent;
+                if dot(directed, anchor.tangent) < 0.0 {
+                    directed = [-directed[0], -directed[1]];
+                }
+                let psi = width_weight(*width, anchor.width, directed, anchor.tangent, size_px);
+                let scale = (info.arc * anchor.length * psi).sqrt();
+                soft.push((
+                    error.iter().map(|x| x * scale).collect(),
+                    anchor.rel * scale,
+                ));
+            }
+        }
+    }
+    soft
 }
 
 fn dotv(a: &[f64], b: &[f64]) -> f64 {
@@ -1386,6 +1413,263 @@ fn fit_impl<const SELECTING: bool>(
     )
 }
 
+struct ControlOwnership {
+    weld: HashMap<usize, usize>,
+    quads: Vec<[usize; 3]>,
+    involved: HashSet<usize>,
+    cols: Vec<usize>,
+}
+
+enum OwnershipAbort {
+    WeldMismatch,
+    NoFreeControls,
+}
+
+fn compatible_welds(
+    raw: &SourceOutline,
+    fitted: &geometry::Parsed,
+    base_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+) -> Result<HashMap<usize, usize>, OwnershipAbort> {
+    // Weld aliases must agree between raw and upstream encodings.
+    let weld = weld_map(&raw.contours, base_all);
+    let up_weld = weld_map(&fitted.contours, up_all);
+    if weld != up_weld {
+        return Err(OwnershipAbort::WeldMismatch);
+    }
+    for (dup, canon) in &weld {
+        if up_all[*dup] != up_all[*canon] {
+            return Err(OwnershipAbort::WeldMismatch);
+        }
+    }
+    Ok(weld)
+}
+
+fn quadratic_indices(raw: &SourceOutline) -> Vec<[usize; 3]> {
+    let no = raw.oncurve.len();
+    let mut quads: Vec<[usize; 3]> = Vec::new();
+    for contour in &raw.contours {
+        for seg in contour {
+            if let GeomSegment::Quad { c, a, b } = *seg {
+                quads.push([a, no + c, b]);
+            }
+        }
+    }
+    quads
+}
+
+fn involved_closure(
+    prepared: &[geometry::PreppedPair],
+    quads: &[[usize; 3]],
+    weld: &HashMap<usize, usize>,
+) -> HashSet<usize> {
+    let mut involved: HashSet<usize> = HashSet::new();
+    for info in prepared {
+        for side in [&info.a, &info.b] {
+            involved.insert(side.i0);
+            involved.insert(side.i1);
+        }
+    }
+    loop {
+        let mut grown = involved.clone();
+        for idx in quads {
+            if idx.iter().any(|v| involved.contains(v)) {
+                grown.extend(idx.iter().copied());
+            }
+        }
+        for v in involved.iter() {
+            grown.insert(*weld.get(v).unwrap_or(v));
+        }
+        if grown == involved {
+            break;
+        }
+        involved = grown;
+    }
+    involved
+}
+
+fn upright_controls(
+    raw: &SourceOutline,
+    base_all: &[[f64; 2]],
+    weld: &HashMap<usize, usize>,
+) -> HashSet<usize> {
+    let mut upright: HashSet<usize> = HashSet::new();
+    for contour in &raw.contours {
+        for seg in contour {
+            if let GeomSegment::Line { a, b } = *seg {
+                if base_all[a][0] == base_all[b][0] && base_all[a][1] != base_all[b][1] {
+                    upright.insert(a);
+                    upright.insert(b);
+                }
+            }
+        }
+    }
+    for v in upright.clone() {
+        if let Some(canon) = weld.get(&v) {
+            upright.insert(*canon);
+        }
+    }
+    upright
+}
+
+impl ControlOwnership {
+    fn prepare(
+        raw: &SourceOutline,
+        fitted: &geometry::Parsed,
+        base_all: &[[f64; 2]],
+        up_all: &[[f64; 2]],
+        prepared: &[geometry::PreppedPair],
+    ) -> Result<ControlOwnership, OwnershipAbort> {
+        let weld = compatible_welds(raw, fitted, base_all, up_all)?;
+        let quads = quadratic_indices(raw);
+        let involved = involved_closure(prepared, &quads, &weld);
+        let upright = upright_controls(raw, base_all, &weld);
+        let mut cols: Vec<usize> = involved
+            .iter()
+            .filter(|v| !upright.contains(v) && !weld.contains_key(v))
+            .copied()
+            .collect();
+        cols.sort();
+        if cols.is_empty() {
+            return Err(OwnershipAbort::NoFreeControls);
+        }
+        Ok(ControlOwnership {
+            weld,
+            quads,
+            involved,
+            cols,
+        })
+    }
+}
+
+enum JointAbort {
+    DegenerateJoint,
+    DegenerateLeg,
+}
+
+enum HardRowAbort {
+    FixedIncompatible,
+}
+
+fn collect_joint_constraints(
+    joint_iter: impl IntoIterator<Item = (usize, Vec<JointOcc>)>,
+    up_all: &[[f64; 2]],
+    involved: &HashSet<usize>,
+    size_px: f64,
+) -> Result<(Vec<(Vec<f64>, f64)>, Vec<JointGate>), JointAbort> {
+    // Hard G1 rows: source-smooth joints only.
+    let mut hard_full: Vec<(Vec<f64>, f64)> = Vec::new();
+    let mut gates: Vec<JointGate> = Vec::new();
+    for (j, occs) in joint_iter {
+        for occ in occs {
+            if ![j, occ.prev_iv, occ.seg_ov]
+                .iter()
+                .any(|v| involved.contains(v))
+            {
+                continue;
+            }
+            if occ.degenerate {
+                return Err(JointAbort::DegenerateJoint);
+            }
+            if occ.smooth {
+                match g1_row(
+                    up_all,
+                    j,
+                    occ.prev_kind,
+                    occ.prev_iv,
+                    occ.seg_kind,
+                    occ.seg_ov,
+                    size_px,
+                    true,
+                ) {
+                    Some((row, constant)) => hard_full.push((row, -constant)),
+                    None => return Err(JointAbort::DegenerateLeg),
+                }
+            }
+            gates.push(JointGate {
+                j,
+                iv: occ.prev_iv,
+                ov: occ.seg_ov,
+                prev_line: occ.prev_kind == "line",
+                seg_line: occ.seg_kind == "line",
+                smooth: occ.smooth,
+            });
+        }
+    }
+    Ok((hard_full, gates))
+}
+
+fn reduce_joint_rows(
+    hard_full: &[(Vec<f64>, f64)],
+    reduce: &impl Fn(&[f64]) -> Vec<f64>,
+) -> Result<Vec<(Vec<f64>, f64)>, HardRowAbort> {
+    let mut kept_hard: Vec<(Vec<f64>, f64)> = Vec::new();
+    for (row, target_h) in hard_full {
+        let red = reduce(row);
+        if red.iter().any(|x| *x != 0.0) {
+            kept_hard.push((red, *target_h));
+        } else if target_h.abs() > 1e-9 {
+            return Err(HardRowAbort::FixedIncompatible);
+        }
+    }
+    Ok(kept_hard)
+}
+
+enum QuadraticAbort {
+    DegenerateCurvature,
+}
+
+fn quadratic_constraints(
+    quads: &[[usize; 3]],
+    involved: &HashSet<usize>,
+    base_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+    flat_up: &[f64],
+    reduce: &impl Fn(&[f64]) -> Vec<f64>,
+) -> Result<(Vec<Vec<f64>>, Vec<f64>), QuadraticAbort> {
+    let nvars = base_all.len();
+    let mut cmat: Vec<Vec<f64>> = Vec::new();
+    let mut clower: Vec<f64> = Vec::new();
+    for idx in quads {
+        if !idx.iter().any(|v| involved.contains(v)) {
+            continue;
+        }
+        let (p0, ctrl, p1) = (idx[0], idx[1], idx[2]);
+        let su = sub(base_all[ctrl], base_all[p0]);
+        let sv = sub(base_all[p1], base_all[ctrl]);
+        let source_cross = cross2(su, sv);
+        if source_cross == 0.0 {
+            return Err(QuadraticAbort::DegenerateCurvature);
+        }
+        let sign = if source_cross > 0.0 { 1.0 } else { -1.0 };
+        let mut row = vec![0.0; 2 * nvars];
+        row[2 * p0] = up_all[ctrl][1] - up_all[p1][1];
+        row[2 * ctrl] = up_all[p1][1] - up_all[p0][1];
+        row[2 * p1] = up_all[p0][1] - up_all[ctrl][1];
+        for x in row.iter_mut() {
+            *x *= sign;
+        }
+        let red = reduce(&row);
+        let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
+        clower.push(reserve - dotv(&row, flat_up));
+        cmat.push(red);
+        for (i, j) in [(p0, ctrl), (ctrl, p1)] {
+            for leg in [su, sv] {
+                let mut leg_row = vec![0.0; 2 * nvars];
+                leg_row[2 * j] = leg[0];
+                leg_row[2 * i] = -leg[0];
+                let value = dot(sub(up_all[j], up_all[i]), leg);
+                let leg_red = reduce(&leg_row);
+                let leg_reserve =
+                    leg_red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
+                clower.push(leg_reserve - value);
+                cmat.push(leg_red);
+            }
+        }
+    }
+    Ok((cmat, clower))
+}
+
 struct JointGate {
     j: usize,
     iv: usize,
@@ -1393,6 +1677,60 @@ struct JointGate {
     prev_line: bool,
     seg_line: bool,
     smooth: bool,
+}
+
+fn append_sharp_joint_constraints(
+    gates: &[JointGate],
+    base_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+    reduce: &impl Fn(&[f64]) -> Vec<f64>,
+    cmat: &mut Vec<Vec<f64>>,
+    clower: &mut Vec<f64>,
+) {
+    let nvars = base_all.len();
+    for gate in gates {
+        if gate.smooth {
+            continue;
+        }
+        let (s_cross, _, _) = cross_of(base_all, gate.j, gate.iv, gate.ov);
+        if s_cross != 0.0 {
+            let s = s_cross.signum();
+            let (yi, yj, yo) = (up_all[gate.iv][1], up_all[gate.j][1], up_all[gate.ov][1]);
+            let mut grow = vec![0.0; 2 * nvars];
+            grow[2 * gate.iv] = -(yo - yj) * s;
+            grow[2 * gate.j] = (yo - yi) * s;
+            grow[2 * gate.ov] = -(yj - yi) * s;
+            let here = sub(up_all[gate.j], up_all[gate.iv]);
+            let there = sub(up_all[gate.ov], up_all[gate.j]);
+            let value = s * (here[0] * there[1] - here[1] * there[0]);
+            let red = reduce(&grow);
+            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
+            clower.push(reserve - value);
+            cmat.push(red);
+        }
+        if gate.prev_line {
+            let src_leg = sub(base_all[gate.j], base_all[gate.iv]);
+            let mut leg_row = vec![0.0; 2 * nvars];
+            leg_row[2 * gate.j] = src_leg[0];
+            leg_row[2 * gate.iv] = -src_leg[0];
+            let value = dot(sub(up_all[gate.j], up_all[gate.iv]), src_leg);
+            let red = reduce(&leg_row);
+            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
+            clower.push(reserve - value);
+            cmat.push(red);
+        }
+        if gate.seg_line {
+            let src_leg = sub(base_all[gate.ov], base_all[gate.j]);
+            let mut leg_row = vec![0.0; 2 * nvars];
+            leg_row[2 * gate.ov] = src_leg[0];
+            leg_row[2 * gate.j] = -src_leg[0];
+            let value = dot(sub(up_all[gate.ov], up_all[gate.j]), src_leg);
+            let red = reduce(&leg_row);
+            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
+            clower.push(reserve - value);
+            cmat.push(red);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1441,22 +1779,14 @@ fn finish(
         .flat_map(|(u, b)| [u[0] - b[0], u[1] - b[1]])
         .collect();
     let flat_up = ravel(&up_all);
-    // Weld aliases must agree between raw and upstream encodings.
-    let weld = weld_map(&raw.contours, &base_all);
-    let up_weld = weld_map(&fitted.contours, &up_all);
-    if weld != up_weld {
-        return Ok(abstain(
-            upstream,
-            "weld-mismatch",
-            serde_json::json!({
-                "size_px": size_px,
-                "skipped": skipped_json(),
-                "waist": waist_json(),
-            }),
-        ));
-    }
-    for (dup, canon) in &weld {
-        if up_all[*dup] != up_all[*canon] {
+    let ControlOwnership {
+        weld,
+        quads,
+        involved,
+        cols,
+    } = match ControlOwnership::prepare(raw, fitted, &base_all, &up_all, prepared) {
+        Ok(ownership) => ownership,
+        Err(OwnershipAbort::WeldMismatch) => {
             return Ok(abstain(
                 upstream,
                 "weld-mismatch",
@@ -1467,138 +1797,24 @@ fn finish(
                 }),
             ));
         }
-    }
-    // Involved set grows through curves and weld aliases.
-    let mut involved: HashSet<usize> = HashSet::new();
-    for info in prepared {
-        for side in [&info.a, &info.b] {
-            involved.insert(side.i0);
-            involved.insert(side.i1);
+        Err(OwnershipAbort::NoFreeControls) => {
+            return Ok(abstain(
+                upstream,
+                "no-free-controls",
+                serde_json::json!({
+                    "size_px": size_px,
+                    "skipped": skipped_json(),
+                    "waist": waist_json(),
+                }),
+            ));
         }
-    }
-    let mut quads: Vec<[usize; 3]> = Vec::new();
-    for contour in &raw.contours {
-        for seg in contour {
-            if let GeomSegment::Quad { c, a, b } = *seg {
-                quads.push([a, no + c, b]);
-            }
-        }
-    }
-    loop {
-        let mut grown = involved.clone();
-        for idx in &quads {
-            if idx.iter().any(|v| involved.contains(v)) {
-                grown.extend(idx.iter().copied());
-            }
-        }
-        for v in involved.iter() {
-            grown.insert(*weld.get(v).unwrap_or(v));
-        }
-        if grown == involved {
-            break;
-        }
-        involved = grown;
-    }
-    // Native verticals stay pinned; Y never moves in this solve.
-    let mut upright: HashSet<usize> = HashSet::new();
-    for contour in &raw.contours {
-        for seg in contour {
-            if let GeomSegment::Line { a, b } = *seg {
-                if base_all[a][0] == base_all[b][0] && base_all[a][1] != base_all[b][1] {
-                    upright.insert(a);
-                    upright.insert(b);
-                }
-            }
-        }
-    }
-    for v in upright.clone() {
-        if let Some(canon) = weld.get(&v) {
-            upright.insert(*canon);
-        }
-    }
-    let mut cols: Vec<usize> = involved
-        .iter()
-        .filter(|v| !upright.contains(v) && !weld.contains_key(v))
-        .copied()
-        .collect();
-    cols.sort();
-    if cols.is_empty() {
-        return Ok(abstain(
-            upstream,
-            "no-free-controls",
-            serde_json::json!({
-                "size_px": size_px,
-                "skipped": skipped_json(),
-                "waist": waist_json(),
-            }),
-        ));
-    }
-    // Shape rows from raw geometry with the upstream gap substituted.
-    let mut system = RowSys::new(base_all.clone(), size_px);
-    for contour in &raw.contours {
-        for seg in contour {
-            match *seg {
-                GeomSegment::Quad { c, a, b } => {
-                    let idx = [a, no + c, b];
-                    if idx.iter().any(|v| involved.contains(v)) {
-                        system.quad_shape(idx);
-                    }
-                }
-                GeomSegment::Line { a, b } => {
-                    if involved.contains(&a) || involved.contains(&b) {
-                        let _ = system.edge(a, b);
-                    }
-                }
-                GeomSegment::Cubic { .. } => {}
-            }
-        }
-    }
+    };
+    let (system, plain) = shape_objective_rows(raw, no, &involved, &base_all, size_px);
     // Shape rows keep the upstream gap unsubstituted: like the prototype
     // `soft_plain` block, their target is `-c`, so they regularize the
     // displacement itself. Only width and symmetry rows (the `soft_gap`
     // block) substitute the upstream gap into their constants.
-    let mut plain: Vec<(Vec<f64>, f64)> = Vec::new();
-    for (_, row, _) in &system.rows {
-        plain.push((row.clone(), 0.0));
-    }
-    let mut soft: Vec<(Vec<f64>, f64)> = Vec::new();
-    for info in prepared {
-        let mut station_pairs: Vec<(Vec<f64>, f64, [f64; 2])> = Vec::new();
-        let mut usable = true;
-        for st in &info.stations {
-            let ta = info.a.t0 + (info.a.t1 - info.a.t0) * st.hit.sa;
-            let tb = info.b.t0 + (info.b.t1 - info.b.t0) * st.hit.sb;
-            match system.pair(
-                &Sample::affine(info.a.i0, 1.0 - ta, info.a.i1, ta),
-                &Sample::affine(info.b.i0, 1.0 - tb, info.b.i1, tb),
-                info.arc,
-                st.hit.center,
-            ) {
-                Ok(triple) => station_pairs.push(triple),
-                Err(()) => {
-                    usable = false;
-                    break;
-                }
-            }
-        }
-        if !usable {
-            continue;
-        }
-        for (error, width, tangent) in &station_pairs {
-            for anchor in anchors {
-                let mut directed = *tangent;
-                if dot(directed, anchor.tangent) < 0.0 {
-                    directed = [-directed[0], -directed[1]];
-                }
-                let psi = width_weight(*width, anchor.width, directed, anchor.tangent, size_px);
-                let scale = (info.arc * anchor.length * psi).sqrt();
-                soft.push((
-                    error.iter().map(|x| x * scale).collect(),
-                    anchor.rel * scale,
-                ));
-            }
-        }
-    }
+    let mut soft = width_objective_rows(&system, prepared, anchors, size_px);
     let sym = symmetry_rows(&system, &base_flat, matches, waist.mid, 2.0 * target);
     if sym.is_empty() {
         return Ok(abstain(
@@ -1638,18 +1854,10 @@ fn finish(
                 .map(|(row, constant)| -dotv(row, &gaps_flat) - constant),
         )
         .collect();
-    // Hard G1 rows: source-smooth joints only.
-    let mut hard_full: Vec<(Vec<f64>, f64)> = Vec::new();
-    let mut gates: Vec<JointGate> = Vec::new();
-    for (j, occs) in joints(raw, &base_all) {
-        for occ in occs {
-            if ![j, occ.prev_iv, occ.seg_ov]
-                .iter()
-                .any(|v| involved.contains(v))
-            {
-                continue;
-            }
-            if occ.degenerate {
+    let (hard_full, gates) =
+        match collect_joint_constraints(joints(raw, &base_all), &up_all, &involved, size_px) {
+            Ok(collected) => collected,
+            Err(JointAbort::DegenerateJoint) => {
                 return Ok(abstain(
                     upstream,
                     "degenerate-joint",
@@ -1660,47 +1868,21 @@ fn finish(
                     }),
                 ));
             }
-            if occ.smooth {
-                match g1_row(
-                    &up_all,
-                    j,
-                    occ.prev_kind,
-                    occ.prev_iv,
-                    occ.seg_kind,
-                    occ.seg_ov,
-                    size_px,
-                    true,
-                ) {
-                    Some((row, constant)) => hard_full.push((row, -constant)),
-                    None => {
-                        return Ok(abstain(
-                            upstream,
-                            "degenerate-leg",
-                            serde_json::json!({
-                                "size_px": size_px,
-                                "skipped": skipped_json(),
-                                "waist": waist_json(),
-                            }),
-                        ));
-                    }
-                }
+            Err(JointAbort::DegenerateLeg) => {
+                return Ok(abstain(
+                    upstream,
+                    "degenerate-leg",
+                    serde_json::json!({
+                        "size_px": size_px,
+                        "skipped": skipped_json(),
+                        "waist": waist_json(),
+                    }),
+                ));
             }
-            gates.push(JointGate {
-                j,
-                iv: occ.prev_iv,
-                ov: occ.seg_ov,
-                prev_line: occ.prev_kind == "line",
-                seg_line: occ.seg_kind == "line",
-                smooth: occ.smooth,
-            });
-        }
-    }
-    let mut kept_hard: Vec<(Vec<f64>, f64)> = Vec::new();
-    for (row, target_h) in &hard_full {
-        let red = reduce(row);
-        if red.iter().any(|x| *x != 0.0) {
-            kept_hard.push((red, *target_h));
-        } else if target_h.abs() > 1e-9 {
+        };
+    let kept_hard = match reduce_joint_rows(&hard_full, &reduce) {
+        Ok(kept) => kept,
+        Err(HardRowAbort::FixedIncompatible) => {
             return Ok(abstain(
                 upstream,
                 "fixed-constraints-incompatible",
@@ -1711,100 +1893,25 @@ fn finish(
                 }),
             ));
         }
-    }
+    };
     let ge: Vec<Vec<f64>> = kept_hard.iter().map(|(r, _)| r.clone()).collect();
     let he: Vec<f64> = kept_hard.iter().map(|(_, t)| *t).collect();
     // Linear curvature/leg inequalities with frozen upstream coefficients.
-    let nvars = base_all.len();
-    let mut cmat: Vec<Vec<f64>> = Vec::new();
-    let mut clower: Vec<f64> = Vec::new();
-    for idx in &quads {
-        if !idx.iter().any(|v| involved.contains(v)) {
-            continue;
-        }
-        let (p0, ctrl, p1) = (idx[0], idx[1], idx[2]);
-        let su = sub(base_all[ctrl], base_all[p0]);
-        let sv = sub(base_all[p1], base_all[ctrl]);
-        let source_cross = cross2(su, sv);
-        if source_cross == 0.0 {
-            return Ok(abstain(
-                upstream,
-                "source-degenerate-curvature",
-                serde_json::json!({
-                    "size_px": size_px,
-                    "raw_crosses": raw_crosses,
-                }),
-            ));
-        }
-        let sign = if source_cross > 0.0 { 1.0 } else { -1.0 };
-        let mut row = vec![0.0; 2 * nvars];
-        row[2 * p0] = up_all[ctrl][1] - up_all[p1][1];
-        row[2 * ctrl] = up_all[p1][1] - up_all[p0][1];
-        row[2 * p1] = up_all[p0][1] - up_all[ctrl][1];
-        for x in row.iter_mut() {
-            *x *= sign;
-        }
-        let red = reduce(&row);
-        let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
-        clower.push(reserve - dotv(&row, &flat_up));
-        cmat.push(red);
-        for (i, j) in [(p0, ctrl), (ctrl, p1)] {
-            for leg in [su, sv] {
-                let mut leg_row = vec![0.0; 2 * nvars];
-                leg_row[2 * j] = leg[0];
-                leg_row[2 * i] = -leg[0];
-                let value = dot(sub(up_all[j], up_all[i]), leg);
-                let leg_red = reduce(&leg_row);
-                let leg_reserve =
-                    leg_red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
-                clower.push(leg_reserve - value);
-                cmat.push(leg_red);
+    let (mut cmat, mut clower) =
+        match quadratic_constraints(&quads, &involved, &base_all, &up_all, &flat_up, &reduce) {
+            Ok(constraints) => constraints,
+            Err(QuadraticAbort::DegenerateCurvature) => {
+                return Ok(abstain(
+                    upstream,
+                    "source-degenerate-curvature",
+                    serde_json::json!({
+                        "size_px": size_px,
+                        "raw_crosses": raw_crosses,
+                    }),
+                ));
             }
-        }
-    }
-    for gate in &gates {
-        if gate.smooth {
-            continue;
-        }
-        let (s_cross, _, _) = cross_of(&base_all, gate.j, gate.iv, gate.ov);
-        if s_cross != 0.0 {
-            let s = s_cross.signum();
-            let (yi, yj, yo) = (up_all[gate.iv][1], up_all[gate.j][1], up_all[gate.ov][1]);
-            let mut grow = vec![0.0; 2 * nvars];
-            grow[2 * gate.iv] = -(yo - yj) * s;
-            grow[2 * gate.j] = (yo - yi) * s;
-            grow[2 * gate.ov] = -(yj - yi) * s;
-            let here = sub(up_all[gate.j], up_all[gate.iv]);
-            let there = sub(up_all[gate.ov], up_all[gate.j]);
-            let value = s * (here[0] * there[1] - here[1] * there[0]);
-            let red = reduce(&grow);
-            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
-            clower.push(reserve - value);
-            cmat.push(red);
-        }
-        if gate.prev_line {
-            let src_leg = sub(base_all[gate.j], base_all[gate.iv]);
-            let mut leg_row = vec![0.0; 2 * nvars];
-            leg_row[2 * gate.j] = src_leg[0];
-            leg_row[2 * gate.iv] = -src_leg[0];
-            let value = dot(sub(up_all[gate.j], up_all[gate.iv]), src_leg);
-            let red = reduce(&leg_row);
-            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
-            clower.push(reserve - value);
-            cmat.push(red);
-        }
-        if gate.seg_line {
-            let src_leg = sub(base_all[gate.ov], base_all[gate.j]);
-            let mut leg_row = vec![0.0; 2 * nvars];
-            leg_row[2 * gate.ov] = src_leg[0];
-            leg_row[2 * gate.j] = -src_leg[0];
-            let value = dot(sub(up_all[gate.ov], up_all[gate.j]), src_leg);
-            let red = reduce(&leg_row);
-            let reserve = red.iter().map(|x| x.abs()).sum::<f64>() * RESERVE_26_6 + CROSS_QUANTUM;
-            clower.push(reserve - value);
-            cmat.push(red);
-        }
-    }
+        };
+    append_sharp_joint_constraints(&gates, &base_all, &up_all, &reduce, &mut cmat, &mut clower);
     if cmat.is_empty() {
         return Ok(abstain(
             upstream,
@@ -1878,6 +1985,178 @@ fn finish(
         quads,
         involved,
     )
+}
+
+fn rounded_hard_checks(
+    cols: &[usize],
+    kept_hard: &[(Vec<f64>, f64)],
+    raw_new: &[[f64; 2]],
+    cand_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+) -> (bool, Vec<serde_json::Value>) {
+    // Rounded hard-constraint check with per-coordinate allowance.
+    let col_x: Vec<usize> = cols.iter().map(|v| 2 * v).collect();
+    let flat = |pts: &[[f64; 2]]| -> Vec<f64> { ravel(pts) };
+    let raw_flat = flat(raw_new);
+    let cand_flat = flat(cand_all);
+    let up_flat = flat(up_all);
+    let d_raw: Vec<f64> = raw_flat
+        .iter()
+        .zip(up_flat.iter())
+        .map(|(a, b)| a - b)
+        .collect();
+    let d_cand: Vec<f64> = cand_flat
+        .iter()
+        .zip(up_flat.iter())
+        .map(|(a, b)| a - b)
+        .collect();
+    let mut hard_checks: Vec<serde_json::Value> = Vec::new();
+    for (red, target_h) in kept_hard {
+        // Reduced rows act on the free X columns only.
+        let d_raw_red: Vec<f64> = col_x.iter().map(|c| d_raw[*c]).collect();
+        let d_cand_red: Vec<f64> = col_x.iter().map(|c| d_cand[*c]).collect();
+        let raw_error = (dotv(red, &d_raw_red) - target_h).abs();
+        let error = (dotv(red, &d_cand_red) - target_h).abs();
+        let mut allowance = 0.0;
+        for (k, v) in cols.iter().enumerate() {
+            if raw_new[*v][0] != up_all[*v][0] {
+                allowance += red[k].abs() * RESERVE_26_6;
+            }
+        }
+        let norm_red = red.iter().map(|x| x * x).sum::<f64>().sqrt();
+        let ok = raw_error <= 1e-7 * (1.0 + target_h.abs()) * (1.0 + norm_red)
+            && error <= allowance + 1e-9;
+        hard_checks.push(serde_json::json!({
+            "raw_error": raw_error,
+            "rounded_error": error,
+            "allowance": allowance,
+            "ok": ok,
+        }));
+        if !ok {
+            return (false, hard_checks);
+        }
+    }
+    (true, hard_checks)
+}
+
+fn rounded_joint_checks(
+    gates: &[JointGate],
+    raw_new: &[[f64; 2]],
+    cand_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+    base_all: &[[f64; 2]],
+) -> (bool, Vec<serde_json::Value>) {
+    // Joint continuity with the 26.6 perturbation bound.
+    let mut continuity: Vec<serde_json::Value> = Vec::new();
+    for gate in gates {
+        let (raw_cross, _, _) = cross_of(raw_new, gate.j, gate.iv, gate.ov);
+        let (old_cross, li_u, lo_u) = cross_of(up_all, gate.j, gate.iv, gate.ov);
+        let (cross, li_c, lo_c) = cross_of(cand_all, gate.j, gate.iv, gate.ov);
+        let (source_cross, _, _) = cross_of(base_all, gate.j, gate.iv, gate.ov);
+        let target_cross = if gate.smooth { 0.0 } else { old_cross };
+        let moved = [
+            (raw_new[gate.iv] != up_all[gate.iv], false),
+            (raw_new[gate.j] != up_all[gate.j], false),
+            (raw_new[gate.ov] != up_all[gate.ov], false),
+        ];
+        let allowance = quant_cross_bound(li_u, lo_u, moved);
+        let mut ok = norm(li_c) > 0.0 && norm(lo_c) > 0.0;
+        if gate.smooth {
+            ok &= (raw_cross - target_cross).abs() <= 1e-8 * (1.0 + target_cross.abs());
+            ok &= (cross - target_cross).abs() <= allowance + 1e-9;
+            ok &= dot(li_c, lo_c) > 0.0;
+        } else if source_cross != 0.0 {
+            ok &= cross * source_cross > 0.0;
+        } else {
+            ok = false;
+        }
+        continuity.push(serde_json::json!({
+            "joint": gate.j,
+            "smooth": gate.smooth,
+            "cross_src": source_cross,
+            "cross_up": old_cross,
+            "cross_cand": cross,
+            "allowed": allowance,
+            "ok": ok,
+        }));
+        if !ok {
+            return (false, continuity);
+        }
+    }
+    (true, continuity)
+}
+
+type ClearanceLine = ([f64; 2], [f64; 2]);
+
+struct ClearancePrimitives {
+    fixed_curves: Vec<Vec<[f64; 2]>>,
+    fixed_lines: Vec<ClearanceLine>,
+    moved_lines: Vec<(ClearanceLine, ClearanceLine)>,
+}
+
+fn collect_clearance_primitives(
+    raw: &SourceOutline,
+    quads: &[[usize; 3]],
+    involved: &HashSet<usize>,
+    cand_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+) -> ClearancePrimitives {
+    let mut fixed_curves: Vec<Vec<[f64; 2]>> = Vec::new();
+    for idx in quads {
+        if idx.iter().any(|v| involved.contains(v))
+            && idx.iter().any(|v| cand_all[*v] != up_all[*v])
+        {
+            continue;
+        }
+        fixed_curves.push(vec![cand_all[idx[0]], cand_all[idx[1]], cand_all[idx[2]]]);
+    }
+    let mut fixed_lines: Vec<ClearanceLine> = Vec::new();
+    let mut moved_lines: Vec<(ClearanceLine, ClearanceLine)> = Vec::new();
+    for contour in &raw.contours {
+        for seg in contour {
+            if let GeomSegment::Line { a, b } = *seg {
+                let old = (up_all[a], up_all[b]);
+                let new = (cand_all[a], cand_all[b]);
+                if old == new {
+                    fixed_lines.push(old);
+                } else {
+                    moved_lines.push((old, new));
+                }
+            }
+        }
+    }
+    ClearancePrimitives {
+        fixed_curves,
+        fixed_lines,
+        moved_lines,
+    }
+}
+
+fn station_clearance(
+    prepared: &[geometry::PreppedPair],
+    cand_on: &[[f64; 2]],
+    fixed_curves: &[Vec<[f64; 2]>],
+    fixed_lines: &[ClearanceLine],
+) -> Result<(), &'static str> {
+    for info in prepared {
+        for st in &info.stations {
+            let qa = geometry::edge_point(&info.a, st.hit.sa, cand_on);
+            let qb = geometry::edge_point(&info.b, st.hit.sb, cand_on);
+            let center = [(qa[0] + qb[0]) / 2.0, (qa[1] + qb[1]) / 2.0];
+            let radius_st = norm(sub(qb, qa)) / 2.0;
+            for fix in fixed_curves {
+                if !curves::disk_clear(center, radius_st, fix).0 {
+                    return Err("clearance-station-disk-curve");
+                }
+            }
+            for line in fixed_lines {
+                if !seg_open_clear(center, radius_st, *line) {
+                    return Err("clearance-station-disk-line");
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1954,102 +2233,33 @@ fn deliver(
             }),
         ));
     }
-    // Rounded hard-constraint check with per-coordinate allowance.
-    let col_x: Vec<usize> = cols.iter().map(|v| 2 * v).collect();
-    let flat = |pts: &[[f64; 2]]| -> Vec<f64> { ravel(pts) };
-    let raw_flat = flat(&raw_new);
-    let cand_flat = flat(&cand_all);
-    let up_flat = flat(up_all);
-    let d_raw: Vec<f64> = raw_flat
-        .iter()
-        .zip(up_flat.iter())
-        .map(|(a, b)| a - b)
-        .collect();
-    let d_cand: Vec<f64> = cand_flat
-        .iter()
-        .zip(up_flat.iter())
-        .map(|(a, b)| a - b)
-        .collect();
-    let mut hard_checks: Vec<serde_json::Value> = Vec::new();
-    for (red, target_h) in &kept_hard {
-        // Reduced rows act on the free X columns only.
-        let d_raw_red: Vec<f64> = col_x.iter().map(|c| d_raw[*c]).collect();
-        let d_cand_red: Vec<f64> = col_x.iter().map(|c| d_cand[*c]).collect();
-        let raw_error = (dotv(red, &d_raw_red) - target_h).abs();
-        let error = (dotv(red, &d_cand_red) - target_h).abs();
-        let mut allowance = 0.0;
-        for (k, v) in cols.iter().enumerate() {
-            if raw_new[*v][0] != up_all[*v][0] {
-                allowance += red[k].abs() * RESERVE_26_6;
-            }
-        }
-        let norm_red = red.iter().map(|x| x * x).sum::<f64>().sqrt();
-        let ok = raw_error <= 1e-7 * (1.0 + target_h.abs()) * (1.0 + norm_red)
-            && error <= allowance + 1e-9;
-        hard_checks.push(serde_json::json!({
-            "raw_error": raw_error,
-            "rounded_error": error,
-            "allowance": allowance,
-            "ok": ok,
-        }));
-        if !ok {
-            return Ok(abstain(
-                upstream,
-                "rounded-hard-constraint",
-                serde_json::json!({
-                    "size_px": size_px,
-                    "skipped": skipped_json(),
-                    "waist": waist_json(),
-                    "hard_checks": hard_checks,
-                }),
-            ));
-        }
+    let (hard_ok, hard_checks) =
+        rounded_hard_checks(&cols, &kept_hard, &raw_new, &cand_all, up_all);
+    if !hard_ok {
+        return Ok(abstain(
+            upstream,
+            "rounded-hard-constraint",
+            serde_json::json!({
+                "size_px": size_px,
+                "skipped": skipped_json(),
+                "waist": waist_json(),
+                "hard_checks": hard_checks,
+            }),
+        ));
     }
-    // Joint continuity with the 26.6 perturbation bound.
-    let mut continuity: Vec<serde_json::Value> = Vec::new();
-    for gate in &gates {
-        let (raw_cross, _, _) = cross_of(&raw_new, gate.j, gate.iv, gate.ov);
-        let (old_cross, li_u, lo_u) = cross_of(up_all, gate.j, gate.iv, gate.ov);
-        let (cross, li_c, lo_c) = cross_of(&cand_all, gate.j, gate.iv, gate.ov);
-        let (source_cross, _, _) = cross_of(base_all, gate.j, gate.iv, gate.ov);
-        let target_cross = if gate.smooth { 0.0 } else { old_cross };
-        let moved = [
-            (raw_new[gate.iv] != up_all[gate.iv], false),
-            (raw_new[gate.j] != up_all[gate.j], false),
-            (raw_new[gate.ov] != up_all[gate.ov], false),
-        ];
-        let allowance = quant_cross_bound(li_u, lo_u, moved);
-        let mut ok = norm(li_c) > 0.0 && norm(lo_c) > 0.0;
-        if gate.smooth {
-            ok &= (raw_cross - target_cross).abs() <= 1e-8 * (1.0 + target_cross.abs());
-            ok &= (cross - target_cross).abs() <= allowance + 1e-9;
-            ok &= dot(li_c, lo_c) > 0.0;
-        } else if source_cross != 0.0 {
-            ok &= cross * source_cross > 0.0;
-        } else {
-            ok = false;
-        }
-        continuity.push(serde_json::json!({
-            "joint": gate.j,
-            "smooth": gate.smooth,
-            "cross_src": source_cross,
-            "cross_up": old_cross,
-            "cross_cand": cross,
-            "allowed": allowance,
-            "ok": ok,
-        }));
-        if !ok {
-            return Ok(abstain(
-                upstream,
-                "joint-continuity",
-                serde_json::json!({
-                    "size_px": size_px,
-                    "skipped": skipped_json(),
-                    "waist": waist_json(),
-                    "continuity": continuity,
-                }),
-            ));
-        }
+    let (joints_ok, continuity) =
+        rounded_joint_checks(&gates, &raw_new, &cand_all, up_all, base_all);
+    if !joints_ok {
+        return Ok(abstain(
+            upstream,
+            "joint-continuity",
+            serde_json::json!({
+                "size_px": size_px,
+                "skipped": skipped_json(),
+                "waist": waist_json(),
+                "continuity": continuity,
+            }),
+        ));
     }
     // Source curvature and forward tangent over whole intervals.
     for idx in &quads {
@@ -2075,65 +2285,23 @@ fn deliver(
     // swept moved lines clear every fixed curve.
     let cand_on: Vec<[f64; 2]>;
     {
-        let mut fixed_curves: Vec<Vec<[f64; 2]>> = Vec::new();
-        for idx in &quads {
-            if idx.iter().any(|v| involved.contains(v))
-                && idx.iter().any(|v| cand_all[*v] != up_all[*v])
-            {
-                continue;
-            }
-            fixed_curves.push(vec![cand_all[idx[0]], cand_all[idx[1]], cand_all[idx[2]]]);
-        }
-        let mut fixed_lines: Vec<([f64; 2], [f64; 2])> = Vec::new();
-        let mut moved_lines: Vec<(([f64; 2], [f64; 2]), ([f64; 2], [f64; 2]))> = Vec::new();
-        for contour in &raw.contours {
-            for seg in contour {
-                if let GeomSegment::Line { a, b } = *seg {
-                    let old = (up_all[a], up_all[b]);
-                    let new = (cand_all[a], cand_all[b]);
-                    if old == new {
-                        fixed_lines.push(old);
-                    } else {
-                        moved_lines.push((old, new));
-                    }
-                }
-            }
-        }
+        let ClearancePrimitives {
+            fixed_curves,
+            fixed_lines,
+            moved_lines,
+        } = collect_clearance_primitives(raw, &quads, &involved, &cand_all, up_all);
         // Candidate oncurve shares the raw vertex order.
         cand_on = cand_all[..no].to_vec();
-        for info in prepared {
-            for st in &info.stations {
-                let qa = geometry::edge_point(&info.a, st.hit.sa, &cand_on);
-                let qb = geometry::edge_point(&info.b, st.hit.sb, &cand_on);
-                let center = [(qa[0] + qb[0]) / 2.0, (qa[1] + qb[1]) / 2.0];
-                let radius_st = norm(sub(qb, qa)) / 2.0;
-                for fix in &fixed_curves {
-                    if !curves::disk_clear(center, radius_st, fix).0 {
-                        return Ok(abstain(
-                            upstream,
-                            "clearance-station-disk-curve",
-                            serde_json::json!({
-                                "size_px": size_px,
-                                "skipped": skipped_json(),
-                                "waist": waist_json(),
-                            }),
-                        ));
-                    }
-                }
-                for line in &fixed_lines {
-                    if !seg_open_clear(center, radius_st, *line) {
-                        return Ok(abstain(
-                            upstream,
-                            "clearance-station-disk-line",
-                            serde_json::json!({
-                                "size_px": size_px,
-                                "skipped": skipped_json(),
-                                "waist": waist_json(),
-                            }),
-                        ));
-                    }
-                }
-            }
+        if let Err(reason) = station_clearance(prepared, &cand_on, &fixed_curves, &fixed_lines) {
+            return Ok(abstain(
+                upstream,
+                reason,
+                serde_json::json!({
+                    "size_px": size_px,
+                    "skipped": skipped_json(),
+                    "waist": waist_json(),
+                }),
+            ));
         }
         let olds: Vec<((f64, f64), (f64, f64))> = moved_lines
             .iter()
@@ -2392,3 +2560,306 @@ fn deliver(
         }),
     })
 }
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+    use geometry::{Portion, PreppedPair};
+
+    fn prep(a0: usize, a1: usize, b0: usize, b1: usize, pts: &[[f64; 2]]) -> PreppedPair {
+        let side = |i0: usize, i1: usize| Portion {
+            contour: 0,
+            seg: 0,
+            t0: 0.0,
+            t1: 1.0,
+            p0: pts[i0],
+            p1: pts[i1],
+            i0,
+            i1,
+            hidden: false,
+            unknown: false,
+        };
+        PreppedPair {
+            id: String::from("t"),
+            a: side(a0, a1),
+            b: side(b0, b1),
+            normal: [0.0, 1.0],
+            stations: Vec::new(),
+            src_widths: Vec::new(),
+            fit_widths: Vec::new(),
+            arc: 0.0,
+            span_lo: 0.0,
+            span_hi: 0.0,
+        }
+    }
+
+    fn parsed(
+        oncurve: Vec<[f64; 2]>,
+        offcurve: Vec<[f64; 2]>,
+        contours: Vec<Vec<GeomSegment>>,
+    ) -> SourceOutline {
+        SourceOutline {
+            oncurve,
+            offcurve,
+            contours,
+        }
+    }
+
+    fn sorted(set: &HashSet<usize>) -> Vec<usize> {
+        let mut out: Vec<usize> = set.iter().copied().collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn transitive_quad_closure_through_alias_needs_fixpoint() {
+        let pts: Vec<[f64; 2]> = vec![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [2.0, 0.0],
+            [3.0, 0.0],
+            [2.0, 0.0],
+            [9.0, 9.0],
+            [10.0, 10.0],
+        ];
+        let raw = parsed(
+            pts.clone(),
+            vec![[1.5, 1.0], [2.5, 1.0], [9.5, 10.0]],
+            vec![
+                vec![
+                    GeomSegment::Quad { c: 1, a: 2, b: 3 },
+                    GeomSegment::Line { a: 3, b: 0 },
+                    GeomSegment::Line { a: 0, b: 1 },
+                    GeomSegment::Quad { c: 0, a: 1, b: 4 },
+                    GeomSegment::Line { a: 4, b: 2 },
+                ],
+                vec![
+                    GeomSegment::Quad { c: 2, a: 5, b: 6 },
+                    GeomSegment::Line { a: 6, b: 5 },
+                ],
+            ],
+        );
+        let base: Vec<[f64; 2]> = raw.oncurve.clone();
+        let weld = weld_map(&raw.contours, &base);
+        assert_eq!(weld, HashMap::from([(4, 2)]));
+        let quads = quadratic_indices(&raw);
+        assert_eq!(quads, vec![[2, 8, 3], [1, 7, 4], [5, 9, 6]]);
+        let prepared = vec![prep(0, 1, 0, 1, &pts)];
+        assert_eq!(
+            sorted(&involved_closure(&prepared, &quads, &weld)),
+            vec![0, 1, 2, 3, 4, 7, 8]
+        );
+    }
+
+    #[test]
+    fn alias_expansion_runs_dup_to_canon_only() {
+        let pts: Vec<[f64; 2]> = vec![
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [2.0, 0.0],
+            [3.0, 0.0],
+            [2.0, 0.0],
+            [5.0, 0.0],
+        ];
+        let weld: HashMap<usize, usize> = HashMap::from([(4, 2)]);
+        let no_quads: Vec<[usize; 3]> = Vec::new();
+        let canon_seed = involved_closure(&[prep(2, 3, 2, 3, &pts)], &no_quads, &weld);
+        assert_eq!(sorted(&canon_seed), vec![2, 3]);
+        let chain: Vec<[usize; 3]> = vec![[4, 6, 5]];
+        let dup_seed = involved_closure(&[prep(5, 3, 5, 3, &pts)], &chain, &weld);
+        assert_eq!(sorted(&dup_seed), vec![2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn free_columns_keep_canonical_drop_aliases_sorted() {
+        let raw = parsed(
+            vec![
+                [0.0, 0.0],
+                [1.0, 0.0],
+                [2.0, 0.0],
+                [3.0, 1.0],
+                [2.0, 0.0],
+                [5.0, 0.0],
+            ],
+            Vec::new(),
+            vec![vec![
+                GeomSegment::Line { a: 2, b: 3 },
+                GeomSegment::Line { a: 3, b: 5 },
+                GeomSegment::Line { a: 5, b: 4 },
+                GeomSegment::Line { a: 4, b: 2 },
+            ]],
+        );
+        let base_all: Vec<[f64; 2]> = raw.oncurve.clone();
+        let ownership = ControlOwnership::prepare(
+            &raw,
+            &raw,
+            &base_all,
+            &base_all,
+            &[prep(2, 5, 3, 4, &base_all)],
+        )
+        .ok()
+        .expect("aliased columns must prepare");
+        assert_eq!(ownership.weld, HashMap::from([(4, 2)]));
+        assert_eq!(sorted(&ownership.involved), vec![2, 3, 4, 5]);
+        assert_eq!(ownership.cols, vec![2, 3, 5]);
+    }
+
+    #[test]
+    fn upright_pins_endpoints_canon_alias_and_skips_near_misses() {
+        let raw = parsed(
+            vec![
+                [2.0, 0.0],
+                [9.0, 9.0],
+                [9.0, 9.0],
+                [2.0, 0.0],
+                [2.0, 3.0],
+                [9.0, 9.0],
+                [3.0, 0.0],
+                [3.5, 2.0],
+                [4.0, 0.0],
+                [4.0 + 1e-9, 2.0],
+                [5.0, 5.0],
+                [5.0, 5.0],
+            ],
+            Vec::new(),
+            vec![
+                vec![
+                    GeomSegment::Line { a: 0, b: 1 },
+                    GeomSegment::Line { a: 1, b: 4 },
+                    GeomSegment::Line { a: 4, b: 3 },
+                    GeomSegment::Line { a: 3, b: 0 },
+                ],
+                vec![GeomSegment::Line { a: 6, b: 7 }],
+                vec![GeomSegment::Line { a: 8, b: 9 }],
+                vec![GeomSegment::Line { a: 10, b: 11 }],
+            ],
+        );
+        let base: Vec<[f64; 2]> = raw.oncurve.clone();
+        let weld = weld_map(&raw.contours, &base);
+        assert_eq!(weld, HashMap::from([(3, 0)]));
+        assert_eq!(sorted(&upright_controls(&raw, &base, &weld)), vec![0, 3, 4]);
+    }
+
+    #[test]
+    fn slanted_raw_beats_vertical_fitted() {
+        let raw = parsed(
+            vec![[0.0, 0.0], [0.0, 2.0], [3.0, 0.0], [3.5, 2.0]],
+            Vec::new(),
+            vec![vec![GeomSegment::Line { a: 2, b: 3 }]],
+        );
+        let fitted = parsed(
+            vec![[0.0, 0.0], [0.0, 2.0], [3.0, 0.0], [3.0, 2.0]],
+            Vec::new(),
+            vec![vec![GeomSegment::Line { a: 2, b: 3 }]],
+        );
+        let base_all: Vec<[f64; 2]> = raw.oncurve.clone();
+        let up_all: Vec<[f64; 2]> = fitted.oncurve.clone();
+        let ownership = ControlOwnership::prepare(
+            &raw,
+            &fitted,
+            &base_all,
+            &up_all,
+            &[prep(2, 3, 2, 3, &base_all)],
+        )
+        .ok()
+        .expect("slanted raw must prepare");
+        assert_eq!(ownership.weld, HashMap::new());
+        assert_eq!(ownership.quads, Vec::<[usize; 3]>::new());
+        assert_eq!(sorted(&ownership.involved), vec![2, 3]);
+        assert_eq!(ownership.cols, vec![2, 3]);
+    }
+
+    #[test]
+    fn weld_mismatch_orders_before_no_free_controls() {
+        let base: Vec<[f64; 2]> = vec![[0.0, 0.0], [0.0, 2.0], [0.0, 0.0]];
+        let closed = vec![
+            GeomSegment::Line { a: 0, b: 1 },
+            GeomSegment::Line { a: 1, b: 2 },
+            GeomSegment::Line { a: 2, b: 0 },
+        ];
+        let raw = parsed(base.clone(), Vec::new(), vec![closed.clone()]);
+        let fitted = parsed(base.clone(), Vec::new(), vec![closed]);
+        assert_eq!(
+            compatible_welds(&raw, &fitted, &base, &base).ok(),
+            Some(HashMap::from([(2, 0)]))
+        );
+        let open = vec![
+            GeomSegment::Line { a: 0, b: 1 },
+            GeomSegment::Line { a: 1, b: 2 },
+        ];
+        let open_fitted = parsed(base.clone(), Vec::new(), vec![open.clone()]);
+        assert!(matches!(
+            compatible_welds(&raw, &open_fitted, &base, &base),
+            Err(OwnershipAbort::WeldMismatch)
+        ));
+        let open_raw = parsed(base.clone(), Vec::new(), vec![open]);
+        assert!(matches!(
+            compatible_welds(&open_raw, &fitted, &base, &base),
+            Err(OwnershipAbort::WeldMismatch)
+        ));
+        assert!(matches!(
+            ControlOwnership::prepare(&raw, &open_fitted, &base, &base, &[prep(0, 1, 0, 1, &base)]),
+            Err(OwnershipAbort::WeldMismatch)
+        ));
+        let pinned = parsed(
+            vec![[0.0, 0.0], [0.0, 2.0]],
+            Vec::new(),
+            vec![vec![GeomSegment::Line { a: 0, b: 1 }]],
+        );
+        let pinned_base: Vec<[f64; 2]> = pinned.oncurve.clone();
+        assert!(matches!(
+            ControlOwnership::prepare(
+                &pinned,
+                &pinned,
+                &pinned_base,
+                &pinned_base,
+                &[prep(0, 1, 0, 1, &pinned_base)]
+            ),
+            Err(OwnershipAbort::NoFreeControls)
+        ));
+        let mixed = parsed(
+            vec![[0.0, 0.0], [0.0, 2.0], [5.0, 0.0], [6.0, 3.0]],
+            Vec::new(),
+            vec![vec![
+                GeomSegment::Line { a: 0, b: 1 },
+                GeomSegment::Line { a: 2, b: 3 },
+            ]],
+        );
+        let mixed_base: Vec<[f64; 2]> = mixed.oncurve.clone();
+        let ownership = ControlOwnership::prepare(
+            &mixed,
+            &mixed,
+            &mixed_base,
+            &mixed_base,
+            &[prep(0, 1, 2, 3, &mixed_base)],
+        )
+        .ok()
+        .expect("mixed ownership must prepare");
+        assert_eq!(sorted(&ownership.involved), vec![0, 1, 2, 3]);
+        assert_eq!(ownership.cols, vec![2, 3]);
+    }
+}
+
+#[cfg(test)]
+mod objective_tests;
+
+#[cfg(test)]
+mod joint_tests;
+
+#[cfg(test)]
+mod quadratic_tests;
+
+#[cfg(test)]
+mod sharp_joint_tests;
+
+#[cfg(test)]
+mod hard_check_tests;
+
+#[cfg(test)]
+mod continuity_tests;
+
+#[cfg(test)]
+mod clearance_primitive_tests;
+
+#[cfg(test)]
+mod station_clearance_tests;

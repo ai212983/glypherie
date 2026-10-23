@@ -41,18 +41,8 @@ function DevHmrStatus(): React.JSX.Element {
   );
 }
 
-export function SiteFooter(): React.JSX.Element {
+function BuildDetails({ info }: { info: typeof __APP_BUILD__ }): React.JSX.Element {
   const [copyStatus, setCopyStatus] = React.useState("");
-  const [online, setOnline] = React.useState(navigator.onLine);
-  React.useEffect(() => {
-    const changed = (): void => setOnline(navigator.onLine);
-    window.addEventListener("online", changed);
-    window.addEventListener("offline", changed);
-    return () => {
-      window.removeEventListener("online", changed);
-      window.removeEventListener("offline", changed);
-    };
-  }, []);
   const detailsRef = React.useRef<HTMLDetailsElement>(null);
   React.useEffect(() => {
     const dismissOutside = (event: PointerEvent): void => {
@@ -64,7 +54,6 @@ export function SiteFooter(): React.JSX.Element {
     document.addEventListener("pointerdown", dismissOutside, true);
     return () => document.removeEventListener("pointerdown", dismissOutside, true);
   }, []);
-  const info = __APP_BUILD__;
   const fullInfo = [
     `Glypherie ${info.version}`, `Build ${info.build} UTC`,
     `${info.devServer ? "Started" : "Built"}: ${info.builtAt}`,
@@ -78,7 +67,7 @@ export function SiteFooter(): React.JSX.Element {
       setCopyStatus("Copied.");
     } catch { setCopyStatus("Could not copy build info."); }
   };
-  const details = (
+  return (
     <details ref={detailsRef} className="site-footer__details" onKeyDown={(event) => {
       if (event.key === "Escape") {
         event.currentTarget.open = false;
@@ -103,6 +92,20 @@ export function SiteFooter(): React.JSX.Element {
       </div>
     </details>
   );
+}
+
+export function SiteFooter(): React.JSX.Element {
+  const [online, setOnline] = React.useState(navigator.onLine);
+  React.useEffect(() => {
+    const changed = (): void => setOnline(navigator.onLine);
+    window.addEventListener("online", changed);
+    window.addEventListener("offline", changed);
+    return () => {
+      window.removeEventListener("online", changed);
+      window.removeEventListener("offline", changed);
+    };
+  }, []);
+  const info = __APP_BUILD__;
   return (
     <footer className="site-footer" data-site-footer>
       <div className="site-footer__identity">
@@ -113,8 +116,8 @@ export function SiteFooter(): React.JSX.Element {
               className="site-footer__connection bg-red-500" />
           </TooltipHint>
         )}
-        {import.meta.env.PROD ? <PwaStatus version={info.version} online={online}>{details}</PwaStatus> : (
-          <><span data-app-version>{info.version}</span>{details}</>
+        {import.meta.env.PROD ? <PwaStatus version={info.version} online={online}><BuildDetails info={info} /></PwaStatus> : (
+          <><span data-app-version>{info.version}</span><BuildDetails info={info} /></>
         )}
       </div>
       {import.meta.env.DEV && <DevHmrStatus />}

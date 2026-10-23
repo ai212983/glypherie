@@ -13,6 +13,8 @@ test("footer stays visible across pages, exposes build details and fits small sc
   const footer = page.getByRole("contentinfo");
   assert.equal(await footer.getByRole("img", { name: "Online", exact: true }).count(), 0);
   assert.equal(await footer.locator("[data-connection]").count(), 0, "production hides the online indicator");
+  assert.equal(await footer.locator(".site-footer__development").count(), 0, "production renders no dev HMR UI");
+  assert.equal(await footer.locator("[data-hmr-status]").count(), 0);
   assert.match(await footer.locator("[data-app-version]").innerText(), /^0\.1\.0(?:-dev)?$/);
   await context.setOffline(true);
   const offline = footer.getByRole("img", { name: "Offline", exact: true });
@@ -49,9 +51,51 @@ test("footer stays visible across pages, exposes build details and fits small sc
   await footer.getByRole("button", { name: "Copy build info" }).click();
   await footer.getByRole("status").filter({ hasText: "Copied." }).waitFor();
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), /Glypherie 0\.1\.0.*\nBuild \d{6}-\d{4} UTC/);
+  const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
+  const shown = await footer.locator(".site-footer__info").evaluate((info) => {
+    const labels = [...info.querySelectorAll("dt")];
+    const at = (label: string): string | null => {
+      const dt = labels.find((candidate) => candidate.textContent === label);
+      return dt?.nextElementSibling?.textContent ?? null;
+    };
+    return { commit: at("Commit"), renderer: at("Renderer") };
+  });
+  const commitFull = /Commit: (.+)/.exec(clipboardText)?.[1] ?? "";
+  if (commitFull === "unavailable") {
+    assert.equal(shown.commit, "Unavailable");
+  } else {
+    assert.equal(shown.commit?.length, 12);
+    assert.ok(commitFull.startsWith(shown.commit ?? ""));
+  }
+  const rendererFull = /Renderer SHA-256: (.+)/.exec(clipboardText)?.[1] ?? "";
+  if (rendererFull === "unavailable") {
+    assert.equal(shown.renderer, "Unavailable");
+  } else {
+    assert.equal(rendererFull.length, 64);
+    assert.equal(shown.renderer?.length, 12);
+    assert.ok(rendererFull.startsWith(shown.renderer ?? ""));
+  }
   assert.equal(await footer.locator(".site-footer__info").isVisible(), true, "inside interactions keep build info open");
   await page.locator("#main").click({ position: { x: 5, y: 5 } });
   await footer.locator(".site-footer__info").waitFor({ state: "hidden" });
+  await footer.locator("summary").click();
+  await footer.locator(".site-footer__info").waitFor({ state: "visible" });
+  await page.evaluate(() => {
+    const stopper = (event: Event): void => event.stopPropagation();
+    (window as unknown as { __captureProbe?: (event: Event) => void }).__captureProbe = stopper;
+    document.querySelector("#main")?.addEventListener("pointerdown", stopper);
+  });
+  try {
+    await page.locator("#main").click({ position: { x: 5, y: 5 } });
+    await footer.locator(".site-footer__info").waitFor({ state: "hidden" });
+  } finally {
+    await page.evaluate(() => {
+      const holder = window as unknown as { __captureProbe?: (event: Event) => void };
+      const probe = holder.__captureProbe;
+      if (probe) document.querySelector("#main")?.removeEventListener("pointerdown", probe);
+      delete holder.__captureProbe;
+    });
+  }
   await footer.locator("summary").click();
   await page.keyboard.press("Escape");
   await footer.locator(".site-footer__info").waitFor({ state: "hidden" });

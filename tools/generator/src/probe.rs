@@ -11,7 +11,7 @@ use zeno::{Command, Format, Mask, Point};
 
 const LOCK: &str = include_str!("../Cargo.lock");
 
-pub fn lock_version(name: &str) -> String {
+fn lock_field(name: &str, prefix: &str) -> String {
     let package = format!("name = \"{name}\"");
     let mut want = false;
     for line in LOCK.lines() {
@@ -20,9 +20,9 @@ pub fn lock_version(name: &str) -> String {
             want = true;
             continue;
         }
-        if want && line.starts_with("version = \"") {
+        if want && line.starts_with(prefix) {
             return line
-                .trim_start_matches("version = \"")
+                .trim_start_matches(prefix)
                 .trim_end_matches('"')
                 .to_string();
         }
@@ -31,6 +31,10 @@ pub fn lock_version(name: &str) -> String {
         }
     }
     String::from("unknown")
+}
+
+pub fn lock_version(name: &str) -> String {
+    lock_field(name, "version = \"")
 }
 
 pub fn skrifa_version() -> String {
@@ -46,25 +50,7 @@ pub fn lock_sha256() -> String {
 }
 
 pub fn lock_package_checksum(name: &str) -> String {
-    let package = format!("name = \"{name}\"");
-    let mut want = false;
-    for line in LOCK.lines() {
-        let line = line.trim();
-        if line == package {
-            want = true;
-            continue;
-        }
-        if want && line.starts_with("checksum = \"") {
-            return line
-                .trim_start_matches("checksum = \"")
-                .trim_end_matches('"')
-                .to_string();
-        }
-        if line == "[[package]]" {
-            want = false;
-        }
-    }
-    String::from("unknown")
+    lock_field(name, "checksum = \"")
 }
 
 pub fn skrifa_checksum() -> String {

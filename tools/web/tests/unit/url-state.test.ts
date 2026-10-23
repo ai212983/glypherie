@@ -6,6 +6,7 @@ import {
   encodeUrlSnapshot,
   parseLegacyState,
   parseUrlSnapshot,
+  previewVariantSettings,
   type FamilyMeta,
   type FamilySnapshot,
   type GlobalDefaults,
@@ -243,4 +244,34 @@ test("historical URLs resolve to current controls", () => {
   const encoded = encodeUrlSnapshot(parsed, input);
   for (const key of ["zoom", "dropout", "stubs", "scanfont"]) assert.equal(encoded.get(key), null);
   assert.equal(encoded.get("utm"), "keep");
+});
+
+test("preview snapshot maps to native variant settings with role fallback", () => {
+  const value = snapshot();
+  const beta = familyOf(value, "beta");
+  const mapped = previewVariantSettings(beta, value, "baseline");
+  assert.equal(mapped.sizePx, 19);
+  assert.deepEqual(mapped.axes, {});
+  assert.equal(mapped.profile, "gray_3bit");
+  assert.equal(mapped.paletteId, 0);
+  assert.equal(mapped.diagonalFitting, false);
+  assert.strictEqual(mapped.monoRaster, value.monoRaster);
+  value.rasterization = undefined;
+  assert.equal(previewVariantSettings(beta, value, "baseline").renderer, "baseline");
+  assert.equal(previewVariantSettings(beta, value, "reference").renderer, "reference");
+  value.rasterization = "coverage";
+  assert.equal(previewVariantSettings(beta, value, "baseline").renderer, "candidate");
+  const alpha = familyOf(value, "alpha");
+  const alphaMapped = previewVariantSettings(alpha, value, "candidate");
+  alphaMapped.axes.wght = 1;
+  assert.equal(alpha.axes.wght, 700);
+  value.paletteId = 3;
+  value.diagonalFitting = true;
+  const explicit = previewVariantSettings(beta, value, "baseline");
+  assert.equal(explicit.paletteId, 3);
+  assert.equal(explicit.diagonalFitting, true);
+  delete value.paletteId;
+  const omitted = previewVariantSettings(beta, value, "baseline");
+  assert.equal(omitted.paletteId, 0);
+  assert.equal(omitted.diagonalFitting, true);
 });

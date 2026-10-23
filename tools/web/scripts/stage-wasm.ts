@@ -47,21 +47,43 @@ async function exists(file: string): Promise<boolean> {
   }
 }
 
+async function readDest(file: string): Promise<Buffer | null> {
+  try {
+    return await fs.readFile(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function stageBytes(dest: string, data: Buffer): Promise<void> {
+  const current = await readDest(dest);
+  if (current !== null && current.equals(data)) return;
+  const temp = `${dest}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await fs.writeFile(temp, data);
+    await fs.rename(temp, dest);
+  } catch (error) {
+    await fs.rm(temp, { force: true }).catch(() => {});
+    throw error;
+  }
+}
+
 const js: string = path.join(previewDir, "font_wasm.js");
 const dts: string = path.join(previewDir, "font_wasm.d.ts");
 const bin: string = path.join(previewDir, "font_wasm_bg.wasm");
 await fs.mkdir(outDir, { recursive: true });
 if (await exists(js) && await exists(bin)) {
-  await fs.copyFile(js, path.join(outDir, "font_wasm.js"));
-  await fs.copyFile(bin, path.join(outDir, "font_wasm_bg.wasm"));
-  if (await exists(dts)) await fs.copyFile(dts, path.join(outDir, "font_wasm.d.ts"));
-  else await fs.writeFile(path.join(outDir, "font_wasm.d.ts"), STUB_DTS);
-  await fs.writeFile(path.join(outDir, "staged.json"), JSON.stringify({ available: true }));
+  await stageBytes(path.join(outDir, "font_wasm.js"), await fs.readFile(js));
+  await stageBytes(path.join(outDir, "font_wasm_bg.wasm"), await fs.readFile(bin));
+  if (await exists(dts)) await stageBytes(path.join(outDir, "font_wasm.d.ts"), await fs.readFile(dts));
+  else await stageBytes(path.join(outDir, "font_wasm.d.ts"), Buffer.from(STUB_DTS));
+  await stageBytes(path.join(outDir, "staged.json"), Buffer.from(JSON.stringify({ available: true })));
 } else if (allowMissing) {
-  await fs.writeFile(path.join(outDir, "font_wasm.js"), STUB_JS);
-  await fs.writeFile(path.join(outDir, "font_wasm_bg.wasm"), EMPTY_WASM);
-  await fs.writeFile(path.join(outDir, "font_wasm.d.ts"), STUB_DTS);
-  await fs.writeFile(path.join(outDir, "staged.json"), JSON.stringify({ available: false }));
+  await stageBytes(path.join(outDir, "font_wasm.js"), Buffer.from(STUB_JS));
+  await stageBytes(path.join(outDir, "font_wasm_bg.wasm"), EMPTY_WASM);
+  await stageBytes(path.join(outDir, "font_wasm.d.ts"), Buffer.from(STUB_DTS));
+  await stageBytes(path.join(outDir, "staged.json"), Buffer.from(JSON.stringify({ available: false })));
   console.warn(`stage-wasm: preview renderer missing in ${previewDir}; dev-degraded stubs written.`);
 } else {
   throw new Error(

@@ -21,13 +21,13 @@ jobs:
           targets: wasm32-unknown-unknown
       - name: Install pinned wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --locked --version 0.2.129
-      - uses: jdx/mise-action@v4
+      - uses: actions/setup-node@v4
         with:
-          install_args: --locked
+          node-version-file: .node-version
       - run: npm ci --ignore-scripts
         working-directory: tools/web
       - name: Build preview WASM renderer
-        run: just wasm-build-preview
+        run: WASM_SIMD128=1 tools/wasm/build.sh web preview
       - name: Build browser app
         run: npm run build
         working-directory: tools/web

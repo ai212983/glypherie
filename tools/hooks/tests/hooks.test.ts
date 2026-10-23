@@ -9,13 +9,12 @@ import test from "node:test";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
 test("installed hooks reject bad formatting, spelling and messages without staging changes", (t) => {
-  const repo = mkdtempSync(path.join(tmpdir(), "font-generator-hooks-"));
+  const repo = mkdtempSync(path.join(tmpdir(), "font generator hooks-"));
   t.after(() => rmSync(repo, { recursive: true, force: true }));
   const run = (command: string, args: string[], ok = true) => {
     const result = spawnSync(command, args, {
       cwd: repo,
       encoding: "utf8",
-      env: { ...process.env, MISE_TRUSTED_CONFIG_PATHS: repo },
     });
     if (result.error) throw result.error;
     if (ok) assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -24,12 +23,11 @@ test("installed hooks reject bad formatting, spelling and messages without stagi
   run("git", ["init", "--quiet"]);
   run("git", ["config", "user.name", "Hook Test"]);
   run("git", ["config", "user.email", "hooks@example.invalid"]);
-  for (const file of ["lefthook.yml", "mise.toml", "mise.lock", "dprint.json", "cspell.json", "commitlint.config.ts", "commit-scopes.json"]) {
+  for (const file of ["lefthook.yml", "package.json", "dprint.json", "cspell.json", "commitlint.config.ts", "commit-scopes.json"]) {
     copyFileSync(path.join(root, file), path.join(repo, file));
   }
-  symlinkSync(path.join(root, "node_modules"), path.join(repo, "node_modules"), "dir");
-  symlinkSync(path.join(root, ".mise"), path.join(repo, ".mise"), "dir");
-  run("lefthook", ["install"]);
+  symlinkSync(path.join(root, "node_modules"), path.join(repo, "node_modules"), "junction");
+  run(process.execPath, [path.join(root, "node_modules/lefthook/bin/index.js"), "install"]);
   const commit = (message: string) => run("git", ["commit", "--quiet", "-m", message], false);
   const unchangedAfterFailure = (message: string, diagnostic: string) => {
     const index = run("git", ["ls-files", "--stage", "-z"]).stdout;
@@ -44,7 +42,7 @@ test("installed hooks reject bad formatting, spelling and messages without stagi
   run("git", ["add", "file with spaces.json"]);
   unchangedAfterFailure("test(hooks): validate hooks", "formatting");
   assert.equal(readFileSync(json, "utf8"), '{"value":1}\n');
-  run("dprint", ["fmt", "file with spaces.json"]);
+  run(process.execPath, [path.join(root, "node_modules/dprint/bin.cjs"), "fmt", "file with spaces.json"]);
   run("git", ["add", "file with spaces.json"]);
   unchangedAfterFailure("a malformed commit", "type-empty");
   unchangedAfterFailure("test(unknown): validate hooks", "scope-enum");

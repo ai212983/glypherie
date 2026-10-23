@@ -15,11 +15,17 @@
 //! `super::qp` active set; the moving-curve topology gate is the
 //! maintained `super::curves::compare_substituted`.
 
+#[cfg(test)]
+use super::curves::poly_edges;
+use super::curves::{
+    boxes_strictly_separate as boxes_separate_f, convex_hull, hull_bbox as rat_box,
+    hulls_meet_only_at, piece_chains, piece_hulls, strictly_disjoint, strictly_disjoint_exact,
+};
 use super::exact::Exact as BigRational;
 use super::{
-    curves, filtered, geometry, intervals, min_norm_solve,
+    abstain, acute, basis_row, curves, filtered, geometry, intervals, min_norm_solve,
     qp::{bounded_equalities, QpInfo},
-    width_weight, FitResult, Reference, HEADROOM, MAX_COMMANDS,
+    reference_meta, width_weight, FitResult, Reference, HEADROOM, MAX_COMMANDS,
 };
 use crate::{fail, probe::FittedCommand, Error};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -87,14 +93,7 @@ fn cross_rat(o: &Rat, a: &Rat, b: &Rat) -> BigRational {
     (&a.0 - &o.0) * (&b.1 - &o.1) - (&a.1 - &o.1) * (&b.0 - &o.0)
 }
 
-/// Filter-first cross sign: decisive interval sign, else exact.
-fn cross_sign_rat(o: &Rat, a: &Rat, b: &Rat) -> i8 {
-    if let Some(s) = filtered::orient_sign((&o.0, &o.1), (&a.0, &a.1), (&b.0, &b.1)) {
-        return s;
-    }
-    cross_sign_rat_exact(o, a, b)
-}
-
+#[cfg(test)]
 /// Exact cross sign with no filtering: test reference.
 fn cross_sign_rat_exact(o: &Rat, a: &Rat, b: &Rat) -> i8 {
     let v = cross_rat(o, a, b);
@@ -107,131 +106,8 @@ fn cross_sign_rat_exact(o: &Rat, a: &Rat, b: &Rat) -> i8 {
     }
 }
 
-fn midpoint_rat(a: &Rat, b: &Rat) -> Rat {
-    let two = BigRational::integer(2);
-    ((&a.0 + &b.0) / &two, (&a.1 + &b.1) / &two)
-}
-
-/// Monotone-chain hull over exact rationals; collinear interiors drop.
-fn convex_hull(points: &[Rat]) -> Vec<Rat> {
-    let mut pts: Vec<Rat> = points.to_vec();
-    pts.sort();
-    pts.dedup();
-    if pts.len() <= 2 {
-        return pts;
-    }
-    let mut lower: Vec<Rat> = Vec::new();
-    for p in &pts {
-        while lower.len() >= 2
-            && cross_sign_rat(&lower[lower.len() - 2], &lower[lower.len() - 1], p) <= 0
-        {
-            lower.pop();
-        }
-        lower.push(p.clone());
-    }
-    let mut upper: Vec<Rat> = Vec::new();
-    for p in pts.iter().rev() {
-        while upper.len() >= 2
-            && cross_sign_rat(&upper[upper.len() - 2], &upper[upper.len() - 1], p) <= 0
-        {
-            upper.pop();
-        }
-        upper.push(p.clone());
-    }
-    lower.pop();
-    upper.pop();
-    lower.extend(upper);
-    lower
-}
-
-fn poly_edges(poly: &[Rat]) -> Vec<(Rat, Rat)> {
-    if poly.len() < 2 {
-        return Vec::new();
-    }
-    (0..poly.len())
-        .map(|i| (poly[i].clone(), poly[(i + 1) % poly.len()].clone()))
-        .collect()
-}
-
-/// True only with a strict separating-axis gap; touch fails closed.
-/// Filter-first: a proven interval gap returns at once, else the exact
-/// narrow phase below runs unchanged.
-fn strictly_disjoint(poly_p: &[Rat], poly_q: &[Rat]) -> bool {
-    if let Some(verdict) = filtered::polys_strictly_disjoint(poly_p, poly_q) {
-        return verdict;
-    }
-    strictly_disjoint_exact(poly_p, poly_q)
-}
-
-/// Exact narrow phase; the certified filter's fallback.
-fn strictly_disjoint_exact(poly_p: &[Rat], poly_q: &[Rat]) -> bool {
-    let mut axes: Vec<Rat> = Vec::new();
-    for poly in [poly_p, poly_q] {
-        for (a, b) in poly_edges(poly) {
-            let n = (&a.1 - &b.1, &b.0 - &a.0);
-            if n.0.is_zero() && n.1.is_zero() {
-                continue;
-            }
-            axes.push(n);
-        }
-    }
-    if axes.is_empty() {
-        return false;
-    }
-    let proj = |p: &Rat, n: &Rat| &p.0 * &n.0 + &p.1 * &n.1;
-    for n in &axes {
-        let mut ps: Vec<BigRational> = poly_p.iter().map(|p| proj(p, n)).collect();
-        let mut qs: Vec<BigRational> = poly_q.iter().map(|p| proj(p, n)).collect();
-        ps.sort();
-        qs.sort();
-        if ps.last().unwrap() < qs.first().unwrap() || qs.last().unwrap() < ps.first().unwrap() {
-            return true;
-        }
-    }
-    false
-}
-
-/// One exact de Casteljau step at t=1/2.
-fn subdivide(ctrls: &[Rat]) -> (Vec<Rat>, Vec<Rat>) {
-    let mut level: Vec<Rat> = ctrls.to_vec();
-    let mut left = vec![level[0].clone()];
-    let mut right = vec![level[level.len() - 1].clone()];
-    while level.len() > 1 {
-        level = level
-            .windows(2)
-            .map(|w| midpoint_rat(&w[0], &w[1]))
-            .collect();
-        left.push(level[0].clone());
-        right.push(level[level.len() - 1].clone());
-    }
-    right.reverse();
-    (left, right)
-}
-
-/// Exact dyadic control chains of the 2**depth sub-pieces.
-fn piece_chains(ctrls: &[Rat], depth: usize) -> Vec<Vec<Rat>> {
-    let mut pieces = vec![ctrls.to_vec()];
-    for _ in 0..depth {
-        let mut halves = Vec::with_capacity(2 * pieces.len());
-        for piece in &pieces {
-            let (left, right) = subdivide(piece);
-            halves.push(left);
-            halves.push(right);
-        }
-        pieces = halves;
-    }
-    pieces
-}
-
-/// Control hulls of the 2**depth dyadic sub-pieces.
-fn piece_hulls(ctrls: &[Rat], depth: usize) -> Vec<Vec<Rat>> {
-    piece_chains(ctrls, depth)
-        .iter()
-        .map(|piece| convex_hull(piece))
-        .collect()
-}
-
-/// Exact on-segment test with no filtering (fallback and reference).
+#[cfg(test)]
+/// Exact on-segment test with no filtering: test reference.
 fn on_segment(a: &Rat, b: &Rat, p: &Rat) -> bool {
     use std::cmp::{max, min};
     cross_sign_rat_exact(a, b, p) == 0
@@ -241,6 +117,7 @@ fn on_segment(a: &Rat, b: &Rat, p: &Rat) -> bool {
         && &p.1 <= max(&a.1, &b.1)
 }
 
+#[cfg(test)]
 /// Exact segment-aware outside test via fan triangulation.
 fn strictly_outside(pt: &Rat, poly: &[Rat]) -> bool {
     if poly.is_empty() {
@@ -271,17 +148,8 @@ fn strictly_outside(pt: &Rat, poly: &[Rat]) -> bool {
     true
 }
 
-/// Exact certificate that convex hulls intersect at most at `shared`.
-/// Filter-first: a proven interval verdict returns at once, else the
-/// exact narrow phase below runs unchanged.
-fn hulls_meet_only_at(poly_p: &[Rat], poly_q: &[Rat], shared: &Rat) -> bool {
-    if let Some(v) = filtered::hulls_meet_only_at(poly_p, poly_q, shared) {
-        return v;
-    }
-    hulls_meet_only_at_exact(poly_p, poly_q, shared)
-}
-
-/// Exact narrow phase with no filtering: fallback and test reference.
+#[cfg(test)]
+/// Exact narrow phase with no filtering: test reference.
 fn hulls_meet_only_at_exact(poly_p: &[Rat], poly_q: &[Rat], shared: &Rat) -> bool {
     let orient = |a: &Rat, b: &Rat, c: &Rat| -> i8 { cross_sign_rat_exact(a, b, c) };
     for (a, b) in poly_edges(poly_p) {
@@ -983,10 +851,6 @@ pub(super) fn g1_row(
 /// contribute zero. The bilinear cross pairs each leg's error with the
 /// OTHER leg (prototype `ein_x * by + ein_y * bx + eout_x * ay +
 /// eout_y * ax`), plus the second-order product.
-/// 26.6 rounding bound on joint-cross perturbation.
-///
-/// Shared smooth-curve helper: only moved coordinates err, at most
-/// 1/128 per axis. Matches the sibling worker helper signature exactly.
 pub(super) fn quant_cross_bound(
     leg_in: [f64; 2],
     leg_out: [f64; 2],
@@ -1028,9 +892,8 @@ fn scale_to_bound(sol: &[f64], cols: &[(usize, usize)], bound: f64) -> (Vec<f64>
 
 /// Joint cross and legs at one coordinate set.
 ///
-/// Shared smooth-curve helper: cross(J-I, O-J) with the incoming and
-/// outgoing legs at global control indices. Matches the sibling worker
-/// helper signature exactly.
+/// cross(J-I, O-J) with the incoming and outgoing legs at global control
+/// indices.
 pub(super) fn cross_of(
     coords: &[[f64; 2]],
     j: usize,
@@ -1135,14 +998,6 @@ enum RowKind {
     Shape,
     Joint,
     Ink,
-}
-
-fn basis_row(weights: &[(usize, f64)], n: usize) -> Vec<f64> {
-    let mut row = vec![0.0; n];
-    for &(i, w) in weights {
-        row[i] += w;
-    }
-    row
 }
 
 fn projected_row(basis: &[f64], dir: [f64; 2], other: Option<&[f64]>, n: usize) -> Vec<f64> {
@@ -1409,7 +1264,7 @@ fn meet_cached(
             if let Some(v) = filtered::hulls_meet_only_at_h(&bx, &by, shared) {
                 return v;
             }
-            return hulls_meet_only_at_exact(hp, hq, shared);
+            return curves::hulls_meet_only_at_exact(hp, hq, shared);
         }
     }
     hulls_meet_only_at(hp, hq, shared)
@@ -1637,35 +1492,6 @@ fn boxes_separate(a: (f64, f64, f64, f64), b: (f64, f64, f64, f64)) -> bool {
     a.2 < b.0 || b.2 < a.0 || a.3 < b.1 || b.3 < a.1
 }
 
-fn boxes_separate_f(
-    a: &(BigRational, BigRational, BigRational, BigRational),
-    b: &(BigRational, BigRational, BigRational, BigRational),
-) -> bool {
-    a.2 < b.0 || b.2 < a.0 || a.3 < b.1 || b.3 < a.1
-}
-
-fn rat_box(hull: &[Rat]) -> (BigRational, BigRational, BigRational, BigRational) {
-    let mut lo_x = hull[0].0.clone();
-    let mut hi_x = hull[0].0.clone();
-    let mut lo_y = hull[0].1.clone();
-    let mut hi_y = hull[0].1.clone();
-    for p in &hull[1..] {
-        if p.0 < lo_x {
-            lo_x = p.0.clone();
-        }
-        if p.0 > hi_x {
-            hi_x = p.0.clone();
-        }
-        if p.1 < lo_y {
-            lo_y = p.1.clone();
-        }
-        if p.1 > hi_y {
-            hi_y = p.1.clone();
-        }
-    }
-    (lo_x, lo_y, hi_x, hi_y)
-}
-
 /// Rebuild commands, preserving ops/order; float storage refreshes bits.
 pub(super) fn emit(upstream: &[FittedCommand], cand: &[[f64; 2]], no: usize) -> Vec<FittedCommand> {
     let mut on_iter = cand.iter().take(no);
@@ -1713,23 +1539,6 @@ pub(super) fn emit(upstream: &[FittedCommand], cand: &[[f64; 2]], no: usize) -> 
     out
 }
 
-fn abstain(upstream: &[FittedCommand], reason: &str, diagnostics: serde_json::Value) -> FitResult {
-    FitResult {
-        commands: upstream.to_vec(),
-        applied: false,
-        reason: reason.to_string(),
-        diagnostics,
-    }
-}
-
-fn reference_meta(reference: &Reference) -> serde_json::Value {
-    serde_json::json!({
-        "n_anchors": reference.n_anchors,
-        "rel_min": reference.rel_min,
-        "rel_max": reference.rel_max,
-    })
-}
-
 fn qp_json(info: &QpInfo) -> serde_json::Value {
     serde_json::json!({
         "iterations": info.iterations,
@@ -1766,14 +1575,6 @@ struct SolveCtx {
     base: Vec<[f64; 2]>,
     upstream: Vec<[f64; 2]>,
     no: usize,
-}
-
-fn acute(tangent: [f64; 2], other: [f64; 2]) -> [f64; 2] {
-    if tangent[0] * other[0] + tangent[1] * other[1] < 0.0 {
-        [-tangent[0], -tangent[1]]
-    } else {
-        tangent
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3172,5 +2973,37 @@ mod tests {
         let over = [[1.0, 0.0], [2.0, 0.0], [3.0, 0.0]];
         check_hulls_equiv(flat, over, None);
         check_hulls_equiv(flat, over, lift(&[2.0, 0.0]));
+    }
+
+    #[test]
+    fn quant_cross_bound_joint_error_partner_table() {
+        let h = 1.0 / 128.0;
+        let li = [3.0, 4.0];
+        let lo = [5.0, 12.0];
+        let cases: [([(bool, bool); 3], f64, &str); 4] = [
+            (
+                [(false, false), (true, false), (false, false)],
+                16.0 * h,
+                "joint-x-only",
+            ),
+            (
+                [(false, false), (false, true), (false, false)],
+                8.0 * h,
+                "joint-y-only",
+            ),
+            (
+                [(true, false), (false, false), (false, true)],
+                15.0 * h + h * h,
+                "incoming-x-outgoing-y",
+            ),
+            (
+                [(false, true), (false, false), (true, false)],
+                9.0 * h + h * h,
+                "incoming-y-outgoing-x",
+            ),
+        ];
+        for (moved, expected, label) in cases {
+            assert_eq!(quant_cross_bound(li, lo, moved), expected, "{label}");
+        }
     }
 }

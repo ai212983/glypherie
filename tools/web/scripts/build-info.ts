@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readlinkSync } from "node:fs";
 import path from "node:path";
 
-const inputs = ["tools/web", "tools/wasm", "tools/generator", "fonts", "justfile", ".mise.toml"];
+const inputs = ["tools/web", "tools/wasm", "tools/generator", "fonts", "justfile", ".node-version"];
 
 export function createBuildInfo(root: string, version: string, devServer: boolean, now = new Date()) {
   const git = (...args: string[]): string => execFileSync("git", args, {

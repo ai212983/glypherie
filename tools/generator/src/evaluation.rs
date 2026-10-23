@@ -20,7 +20,7 @@ use crate::{
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Serialize)]
 pub struct Failure {
@@ -85,23 +85,19 @@ pub struct RasterDiagnostics {
     pub threshold_samples: Vec<ThresholdSample>,
 }
 
-/// Evaluate reports for the same font/axes/size/profile/repertoire. Source must be
-/// unhinted and upstream must be independently captured with extensions disabled.
-/// Gray identity is a hard invariant of the current Mono fitting policies.
-/// Failures are returned as data so a corpus run can finish all cases.
-pub fn evaluate(
+struct CandidateKind {
+    selective_candidate: bool,
+    source_width_candidate: bool,
+    font_hints_candidate: bool,
+    mono_width_candidate: bool,
+}
+
+fn check_report_identity(
     source: &ReferenceReport,
     upstream: &ReferenceReport,
     candidate: &ReferenceReport,
-) -> Evaluation {
-    let mut failures = Vec::new();
-    let mut push = |report: &str, codepoint: Option<u32>, invariant: &str| {
-        failures.push(Failure {
-            report: report.into(),
-            codepoint,
-            invariant: invariant.into(),
-        });
-    };
+    push: &mut impl FnMut(&str, Option<u32>, &str),
+) -> CandidateKind {
     if source.hinting_requested != "none"
         || source.extensions != "none"
         || source.fork
@@ -202,6 +198,37 @@ pub fn evaluate(
             "hinted advance policy requires enabled automatic mono fitting",
         );
     }
+    CandidateKind {
+        selective_candidate,
+        source_width_candidate,
+        font_hints_candidate,
+        mono_width_candidate,
+    }
+}
+
+/// Evaluate reports for the same font/axes/size/profile/repertoire. Source must be
+/// unhinted and upstream must be independently captured with extensions disabled.
+/// Gray identity is a hard invariant of the current Mono fitting policies.
+/// Failures are returned as data so a corpus run can finish all cases.
+pub fn evaluate(
+    source: &ReferenceReport,
+    upstream: &ReferenceReport,
+    candidate: &ReferenceReport,
+) -> Evaluation {
+    let mut failures = Vec::new();
+    let mut push = |report: &str, codepoint: Option<u32>, invariant: &str| {
+        failures.push(Failure {
+            report: report.into(),
+            codepoint,
+            invariant: invariant.into(),
+        });
+    };
+    let CandidateKind {
+        selective_candidate,
+        source_width_candidate,
+        font_hints_candidate,
+        mono_width_candidate,
+    } = check_report_identity(source, upstream, candidate, &mut push);
     let mut indexes = Vec::new();
     for (name, report) in [
         ("source", source),
@@ -372,19 +399,7 @@ pub fn evaluate(
                 "mono-only iteration changed gray output",
             );
         }
-        let source_to_candidate = motion(&raw.fitted_commands, &fitted.fitted_commands);
-        glyphs.push(GlyphDiagnostics {
-            codepoint,
-            source: diagnostics(raw),
-            upstream: diagnostics(baseline),
-            candidate: diagnostics(fitted),
-            source_to_upstream: motion(&raw.fitted_commands, &baseline.fitted_commands),
-            source_command_correspondence: source_to_candidate.is_some(),
-            source_to_candidate,
-            upstream_to_candidate: motion(&baseline.fitted_commands, &fitted.fitted_commands),
-            candidate_outline_changed: fitted.fitted_commands != baseline.fitted_commands,
-            candidate_diagonal_pairs: fitted.diagonal_pairs,
-        });
+        glyphs.push(glyph_diagnostics(codepoint, raw, baseline, fitted));
     }
     Evaluation {
         schema_version: 1,
@@ -392,6 +407,27 @@ pub fn evaluate(
         hard_failures: failures,
         glyphs,
         limits: "Mechanical invariants and descriptive diagnostics only. Coordinate correspondence is not a shape-distance metric; topology cannot distinguish intentional components/counters/serifs from defects; threshold samples describe hypothetical AA conversion (not center-fill output), not robustness proof. No ink-count preference or optical acceptance score. Designer intent and optical weight still require assessment in the web preview.",
+    }
+}
+
+fn glyph_diagnostics(
+    codepoint: u32,
+    source: &ReferenceRecord,
+    upstream: &ReferenceRecord,
+    candidate: &ReferenceRecord,
+) -> GlyphDiagnostics {
+    let source_to_candidate = motion(&source.fitted_commands, &candidate.fitted_commands);
+    GlyphDiagnostics {
+        codepoint,
+        source: diagnostics(source),
+        upstream: diagnostics(upstream),
+        candidate: diagnostics(candidate),
+        source_to_upstream: motion(&source.fitted_commands, &upstream.fitted_commands),
+        source_command_correspondence: source_to_candidate.is_some(),
+        source_to_candidate,
+        upstream_to_candidate: motion(&upstream.fitted_commands, &candidate.fitted_commands),
+        candidate_outline_changed: candidate.fitted_commands != upstream.fitted_commands,
+        candidate_diagonal_pairs: candidate.diagonal_pairs,
     }
 }
 
@@ -407,6 +443,28 @@ fn coordinates(command: &FittedCommand) -> Vec<(f64, f64)> {
         FittedCommand::CurveTo(a, b, c, d, x, y) => vec![point(a, b), point(c, d), point(x, y)],
         FittedCommand::Close => vec![],
     }
+}
+
+fn outline_valid(commands: &[FittedCommand]) -> bool {
+    let mut open = false;
+    let mut invalid = false;
+    for command in commands {
+        invalid |= coordinates(command).iter().any(|&(x, y)| {
+            !x.is_finite() || !y.is_finite() || x.abs() > 32768.0 || y.abs() > 32768.0
+        });
+        match command {
+            FittedCommand::MoveTo(..) => {
+                invalid |= open;
+                open = true;
+            }
+            FittedCommand::Close => {
+                invalid |= !open;
+                open = false;
+            }
+            _ => invalid |= !open,
+        }
+    }
+    !(open || invalid)
 }
 
 fn motion(a: &[FittedCommand], b: &[FittedCommand]) -> Option<Motion> {
@@ -441,7 +499,81 @@ fn motion(a: &[FittedCommand], b: &[FittedCommand]) -> Option<Motion> {
     })
 }
 
-fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
+#[cfg(feature = "candidate")]
+enum DiagonalReplay {
+    Consistent,
+    Flaw(&'static str),
+    Abort(&'static str),
+}
+
+#[cfg(feature = "candidate")]
+fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
+    let Some(diagonal) = &record.diagonal_fitting else {
+        return DiagonalReplay::Consistent;
+    };
+    // Independent replay from captured inputs: the stored reference
+    // must deserialize and the re-fit must reproduce the applied
+    // reason and exact commands.
+    if !matches!(
+        record.raster_policy,
+        RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+    ) || diagonal.upstream_commands.is_empty()
+        || diagonal.reason.is_empty()
+    {
+        return DiagonalReplay::Flaw("diagonal capture inconsistent");
+    }
+    let Some(source) = &record.source_commands else {
+        return DiagonalReplay::Abort("diagonal source outline missing");
+    };
+    let reference: crate::diagonal_fitting::Reference =
+        match serde_json::from_value(diagonal.reference.clone()) {
+            Ok(reference) => reference,
+            Err(_) => {
+                return DiagonalReplay::Abort("diagonal reference does not deserialize");
+            }
+        };
+    let replay = if diagonal.model == "diagonal-shape-04" {
+        let raw: Option<crate::fitting_source::SourceOutline> = match diagonal
+            .raw_source
+            .clone()
+            .map(serde_json::from_value)
+            .transpose()
+        {
+            Ok(raw) => raw,
+            Err(_) => {
+                return DiagonalReplay::Abort("diagonal raw source does not deserialize");
+            }
+        };
+        crate::diagonal_fitting::approved::fit(
+            raw.as_ref(),
+            source,
+            &diagonal.upstream_commands,
+            diagonal.size_px,
+            &reference,
+            diagonal.native_axes,
+        )
+    } else {
+        crate::diagonal_fitting::fit(
+            source,
+            &diagonal.upstream_commands,
+            diagonal.size_px,
+            &reference,
+            diagonal.native_axes,
+        )
+    };
+    match replay {
+        Ok(fit)
+            if fit.applied
+                && fit.reason == diagonal.reason
+                && fit.commands == record.fitted_commands =>
+        {
+            DiagonalReplay::Consistent
+        }
+        _ => DiagonalReplay::Flaw("diagonal fitting does not reproduce from captured inputs"),
+    }
+}
+
+fn metric_failures(record: &ReferenceRecord) -> Vec<&'static str> {
     let mut failures = Vec::new();
     // Each pinned phantom-point rounding residual is at most half a pixel;
     // the inherited positive-bearing guard can add at most one more pixel.
@@ -459,6 +591,139 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     {
         failures.push("nonfinite fitted metrics");
     }
+    failures
+}
+
+fn quantization_config(record: &ReferenceRecord) -> Option<Config> {
+    if !matches!(record.output_bits, 1 | 2 | 3 | 4 | 8)
+        || record.mono_threshold == 0
+        || !record.gray_gamma.is_finite()
+        || record.gray_gamma <= 0.0
+    {
+        return None;
+    }
+    Some(Config {
+        output_bits: record.output_bits,
+        mono_threshold: record.mono_threshold,
+        gray_gamma: record.gray_gamma,
+        mono_raster: record.mono_raster.unwrap_or_default(),
+        ..Config::default()
+    })
+}
+
+#[cfg(feature = "candidate")]
+fn selective_replay_valid(
+    record: &ReferenceRecord,
+    selective: &crate::reference::SelectiveFittingCapture,
+) -> bool {
+    let axes = selective.native_axes;
+    let engine = match axes {
+        [false, true] => "auto_x_native_y",
+        [true, false] => "native_x_auto_y",
+        [false, false] => "auto_with_native_scan",
+        _ => "invalid",
+    };
+    let valid_source = record.source_commands.as_ref().is_some_and(|source| {
+        axes == [false; 2]
+            || crate::selective_fitting::unowned_unchanged(source, &selective.native_commands, axes)
+    });
+    let combined = if axes == [false; 2] {
+        Some(selective.automatic_commands.clone())
+    } else {
+        crate::selective_fitting::combine(
+            &selective.native_commands,
+            &selective.automatic_commands,
+            axes,
+        )
+    };
+    // Post-diagonal records reproduce the pre-diagonal outline.
+    let expected = record
+        .diagonal_fitting
+        .as_ref()
+        .map(|diagonal| &diagonal.upstream_commands)
+        .unwrap_or(&record.fitted_commands);
+    !(record.selected_engine != engine
+        || engine == "invalid"
+        || !valid_source
+        || record.raster_policy != RasterPolicy::FreeTypeMono
+        || record
+            .font_scan
+            .as_ref()
+            .is_some_and(|s| s.hinting_axes != axes)
+        || combined.as_ref() != Some(expected))
+}
+
+fn reproduce_raster(record: &ReferenceRecord, config: &Config, failures: &mut Vec<&'static str>) {
+    if record.mono_raster.is_some()
+        && !matches!(
+            record.raster_policy,
+            RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+        )
+    {
+        failures.push("monochrome scan settings on a coverage raster");
+    }
+    if record.font_scan.is_some()
+        && (record.raster_policy != RasterPolicy::FreeTypeMono
+            || !config.mono_raster.font_instructions
+            || (record.selected_engine != "interpreter" && record.selective_fitting.is_none()))
+    {
+        failures.push("font scan state on an incompatible render policy");
+    }
+    let reproduced = match record.raster_policy {
+        RasterPolicy::Coverage => rasterize(&record.fitted_commands, config),
+        RasterPolicy::CoverageDropout if record.output_bits == 1 => {
+            crate::dropout::rasterize(&record.fitted_commands, config)
+        }
+        #[cfg(feature = "candidate")]
+        RasterPolicy::FreeTypeMono if record.output_bits == 1 => {
+            if record.mono_rasterizer != Some(crate::reference::MonoRasterizer::current()) {
+                failures.push("monochrome scanner identity inconsistent");
+            }
+            if record.mono_raster.is_none() {
+                failures.push("monochrome scan settings missing");
+            }
+            crate::mono::rasterize_with_scan_state(
+                &record.fitted_commands,
+                config,
+                record.font_scan.as_ref(),
+            )
+        }
+        #[cfg(feature = "candidate")]
+        RasterPolicy::FreeTypeMonoTerminals if record.output_bits == 1 => {
+            if record.mono_rasterizer != Some(crate::reference::MonoRasterizer::current())
+                || record.mono_raster.is_none()
+                || record.selected_engine != "auto"
+                || !config.mono_raster.include_stubs
+                || config.mono_raster.dropout != crate::MonoDropoutMode::Smart
+            {
+                failures.push("terminal scan settings or identity inconsistent");
+            }
+            let Some(source) = &record.source_commands else {
+                failures.push("terminal source outline missing");
+                return;
+            };
+            crate::candidate::rasterize_terminals(source, &record.fitted_commands, config)
+        }
+        #[cfg(feature = "candidate")]
+        RasterPolicy::CoverageOverlap4xDropout if record.output_bits == 1 => {
+            crate::overlap::rasterize(&record.fitted_commands, config)
+        }
+        _ => {
+            failures.push("unsupported raster policy for this profile or build");
+            return;
+        }
+    };
+    match reproduced {
+        Ok(raster)
+            if raster.pixels == record.pixels
+                && raster.coverage == record.coverage
+                && (raster.left, raster.top, raster.width, raster.height) == placement(record) => {}
+        _ => failures.push("stored raster does not reproduce from fitted outline"),
+    }
+}
+
+fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
+    let mut failures = metric_failures(record);
     let size = u64::from(record.width) * u64::from(record.height);
     if size > 4_194_304
         || size != record.pixels.len() as u64
@@ -466,14 +731,10 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
     {
         failures.push("bitmap dimensions or buffer lengths invalid");
     }
-    if !matches!(record.output_bits, 1 | 2 | 3 | 4 | 8)
-        || record.mono_threshold == 0
-        || !record.gray_gamma.is_finite()
-        || record.gray_gamma <= 0.0
-    {
+    let Some(config) = quantization_config(record) else {
         failures.push("raster quantization policy invalid");
         return failures;
-    }
+    };
     let levels = (1_u16 << record.output_bits) - 1;
     if record.pixels.iter().any(|&p| u16::from(p) > levels) {
         failures.push("pixel level outside configured range");
@@ -486,35 +747,10 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
             failures.push("feature application accounting inconsistent");
         }
     }
-    let mut open = false;
-    let mut invalid = false;
-    for command in &record.fitted_commands {
-        invalid |= coordinates(command).iter().any(|&(x, y)| {
-            !x.is_finite() || !y.is_finite() || x.abs() > 32768.0 || y.abs() > 32768.0
-        });
-        match command {
-            FittedCommand::MoveTo(..) => {
-                invalid |= open;
-                open = true;
-            }
-            FittedCommand::Close => {
-                invalid |= !open;
-                open = false;
-            }
-            _ => invalid |= !open,
-        }
-    }
-    if open || invalid {
+    if !outline_valid(&record.fitted_commands) {
         failures.push("outline coordinates or contour command structure invalid");
         return failures;
     }
-    let config = Config {
-        output_bits: record.output_bits,
-        mono_threshold: record.mono_threshold,
-        gray_gamma: record.gray_gamma,
-        mono_raster: record.mono_raster.unwrap_or_default(),
-        ..Config::default()
-    };
     if record.source_commands.is_some()
         && record.raster_policy != RasterPolicy::FreeTypeMonoTerminals
         && !(record.raster_policy == RasterPolicy::FreeTypeMono
@@ -525,112 +761,17 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
         failures.push("source outline on an incompatible raster policy");
     }
     #[cfg(feature = "candidate")]
-    if let Some(diagonal) = &record.diagonal_fitting {
-        // Independent replay from captured inputs: the stored reference
-        // must deserialize and the re-fit must reproduce the applied
-        // reason and exact commands. Older width/selective captures stay
-        // valid against the pre-diagonal outline below.
-        if !matches!(
-            record.raster_policy,
-            RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
-        ) || diagonal.upstream_commands.is_empty()
-            || diagonal.reason.is_empty()
-        {
-            failures.push("diagonal capture inconsistent");
-        } else {
-            let Some(source) = &record.source_commands else {
-                failures.push("diagonal source outline missing");
-                return failures;
-            };
-            let reference: crate::diagonal_fitting::Reference =
-                match serde_json::from_value(diagonal.reference.clone()) {
-                    Ok(reference) => reference,
-                    Err(_) => {
-                        failures.push("diagonal reference does not deserialize");
-                        return failures;
-                    }
-                };
-            let replay = if diagonal.model == "diagonal-shape-04" {
-                let raw: Option<crate::fitting_source::SourceOutline> = match diagonal
-                    .raw_source
-                    .clone()
-                    .map(serde_json::from_value)
-                    .transpose()
-                {
-                    Ok(raw) => raw,
-                    Err(_) => {
-                        failures.push("diagonal raw source does not deserialize");
-                        return failures;
-                    }
-                };
-                crate::diagonal_fitting::approved::fit(
-                    raw.as_ref(),
-                    source,
-                    &diagonal.upstream_commands,
-                    diagonal.size_px,
-                    &reference,
-                    diagonal.native_axes,
-                )
-            } else {
-                crate::diagonal_fitting::fit(
-                    source,
-                    &diagonal.upstream_commands,
-                    diagonal.size_px,
-                    &reference,
-                    diagonal.native_axes,
-                )
-            };
-            match replay {
-                Ok(fit)
-                    if fit.applied
-                        && fit.reason == diagonal.reason
-                        && fit.commands == record.fitted_commands => {}
-                _ => failures.push("diagonal fitting does not reproduce from captured inputs"),
-            }
+    match validate_diagonal_replay(record) {
+        DiagonalReplay::Consistent => {}
+        DiagonalReplay::Flaw(failure) => failures.push(failure),
+        DiagonalReplay::Abort(failure) => {
+            failures.push(failure);
+            return failures;
         }
     }
     #[cfg(feature = "candidate")]
     if let Some(selective) = &record.selective_fitting {
-        let axes = selective.native_axes;
-        let engine = match axes {
-            [false, true] => "auto_x_native_y",
-            [true, false] => "native_x_auto_y",
-            [false, false] => "auto_with_native_scan",
-            _ => "invalid",
-        };
-        let valid_source = record.source_commands.as_ref().is_some_and(|source| {
-            axes == [false; 2]
-                || crate::selective_fitting::unowned_unchanged(
-                    source,
-                    &selective.native_commands,
-                    axes,
-                )
-        });
-        let combined = if axes == [false; 2] {
-            Some(selective.automatic_commands.clone())
-        } else {
-            crate::selective_fitting::combine(
-                &selective.native_commands,
-                &selective.automatic_commands,
-                axes,
-            )
-        };
-        // Post-diagonal records reproduce the pre-diagonal outline.
-        let expected = record
-            .diagonal_fitting
-            .as_ref()
-            .map(|diagonal| &diagonal.upstream_commands)
-            .unwrap_or(&record.fitted_commands);
-        if record.selected_engine != engine
-            || engine == "invalid"
-            || !valid_source
-            || record.raster_policy != RasterPolicy::FreeTypeMono
-            || record
-                .font_scan
-                .as_ref()
-                .is_some_and(|s| s.hinting_axes != axes)
-            || combined.as_ref() != Some(expected)
-        {
+        if !selective_replay_valid(record, selective) {
             failures.push("selective fitting does not reproduce from captured inputs");
         }
     }
@@ -659,74 +800,7 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
             _ => failures.push("width fitting does not reproduce from captured inputs"),
         }
     }
-    if record.mono_raster.is_some()
-        && !matches!(
-            record.raster_policy,
-            RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
-        )
-    {
-        failures.push("monochrome scan settings on a coverage raster");
-    }
-    if record.font_scan.is_some()
-        && (record.raster_policy != RasterPolicy::FreeTypeMono
-            || !config.mono_raster.font_instructions
-            || (record.selected_engine != "interpreter" && record.selective_fitting.is_none()))
-    {
-        failures.push("font scan state on an incompatible render policy");
-    }
-    let reproduced = match record.raster_policy {
-        RasterPolicy::Coverage => rasterize(&record.fitted_commands, &config),
-        RasterPolicy::CoverageDropout if record.output_bits == 1 => {
-            crate::dropout::rasterize(&record.fitted_commands, &config)
-        }
-        #[cfg(feature = "candidate")]
-        RasterPolicy::FreeTypeMono if record.output_bits == 1 => {
-            if record.mono_rasterizer != Some(crate::reference::MonoRasterizer::current()) {
-                failures.push("monochrome scanner identity inconsistent");
-            }
-            if record.mono_raster.is_none() {
-                failures.push("monochrome scan settings missing");
-            }
-            crate::mono::rasterize_with_scan_state(
-                &record.fitted_commands,
-                &config,
-                record.font_scan.as_ref(),
-            )
-        }
-        #[cfg(feature = "candidate")]
-        RasterPolicy::FreeTypeMonoTerminals if record.output_bits == 1 => {
-            if record.mono_rasterizer != Some(crate::reference::MonoRasterizer::current())
-                || record.mono_raster.is_none()
-                || record.selected_engine != "auto"
-                || !config.mono_raster.include_stubs
-                || config.mono_raster.dropout != crate::MonoDropoutMode::Smart
-            {
-                failures.push("terminal scan settings or identity inconsistent");
-            }
-            let Some(source) = &record.source_commands else {
-                failures.push("terminal source outline missing");
-                return failures;
-            };
-            crate::candidate::rasterize_terminals(source, &record.fitted_commands, &config)
-        }
-        #[cfg(feature = "candidate")]
-        RasterPolicy::CoverageOverlap4xDropout if record.output_bits == 1 => {
-            crate::overlap::rasterize(&record.fitted_commands, &config)
-        }
-        _ => {
-            return {
-                failures.push("unsupported raster policy for this profile or build");
-                failures
-            }
-        }
-    };
-    match reproduced {
-        Ok(raster)
-            if raster.pixels == record.pixels
-                && raster.coverage == record.coverage
-                && (raster.left, raster.top, raster.width, raster.height) == placement(record) => {}
-        _ => failures.push("stored raster does not reproduce from fitted outline"),
-    }
+    reproduce_raster(record, &config, &mut failures);
     failures
 }
 
@@ -772,48 +846,15 @@ fn diagnostics(record: &ReferenceRecord) -> RasterDiagnostics {
 }
 
 fn topology(bitmap: &[bool], width: usize, height: usize) -> Topology {
-    // Complementary adjacency avoids calling a diagonal ink contact both a bridge
-    // and a background crossing. Enclosed background is measured against the
-    // actual bitmap boundary, equivalent to a surrounding white frame.
-    let mut seen = vec![false; bitmap.len()];
-    let mut ink = 0;
-    let mut holes = 0;
-    for start in 0..bitmap.len() {
-        if seen[start] {
-            continue;
-        }
-        let foreground = bitmap[start];
-        let mut boundary = false;
-        let mut queue = VecDeque::from([start]);
-        seen[start] = true;
-        while let Some(index) = queue.pop_front() {
-            let (x, y) = (index % width, index / width);
-            boundary |= x == 0 || y == 0 || x + 1 == width || y + 1 == height;
-            for dy in -1_isize..=1 {
-                for dx in -1_isize..=1 {
-                    if (dx == 0 && dy == 0) || (!foreground && dx != 0 && dy != 0) {
-                        continue;
-                    }
-                    let (nx, ny) = (x as isize + dx, y as isize + dy);
-                    if nx < 0 || ny < 0 || nx as usize >= width || ny as usize >= height {
-                        continue;
-                    }
-                    let next = ny as usize * width + nx as usize;
-                    if !seen[next] && bitmap[next] == foreground {
-                        seen[next] = true;
-                        queue.push_back(next);
-                    }
-                }
-            }
-        }
-        if foreground {
-            ink += 1;
-        } else if !boundary {
-            holes += 1;
-        }
-    }
+    let counts = crate::bitmap_topology::Bitmap::new(width, height, bitmap)
+        .expect("valid bitmap dimensions")
+        .counts();
     Topology {
-        ink_components_8: ink,
-        enclosed_background_components_4: holes,
+        ink_components_8: counts[0],
+        enclosed_background_components_4: counts[1],
     }
 }
+
+#[cfg(test)]
+#[path = "evaluation/topology_tests.rs"]
+mod topology_tests;

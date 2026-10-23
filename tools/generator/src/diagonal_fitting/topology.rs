@@ -158,9 +158,261 @@ fn crossing(p: &Pt, r: &(Exact, Exact), q: &Pt, s: &(Exact, Exact)) -> Pt {
     Pt(&p.0 + &t * &r.0, &p.1 + &t * &r.1)
 }
 
-/// Public entry: canonical topology signature, or `None` fail-closed.
-pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
-    // Exact finite transport; last point may repeat first (dropped below).
+/// Exact arrangement with assigned vertex and face incidence.
+struct Arrangement {
+    atomics: Vec<Atomic>,
+    incident: Vec<Vec<usize>>,
+    members: Vec<Vec<usize>>,
+    contours: Vec<usize>,
+}
+
+impl Arrangement {
+    fn build(loops: &[Vec<[f64; 2]>]) -> Option<Self> {
+        let inputs = lift_inputs(loops)?;
+        let mut splits = split_inputs(&inputs);
+        let mut atomics = assemble_atomics(&inputs, &mut splits)?;
+        // Contour order matches the reference (sorted input labels).
+        let mut contour_set = BTreeSet::new();
+        for s in inputs.iter() {
+            contour_set.insert(s.contour);
+        }
+        let contours: Vec<usize> = contour_set.into_iter().collect();
+        let incident = index_vertices(&mut atomics);
+        let (cycles, he_cycle) = trace_cycles(&atomics, incident.len())?;
+        let members = group_faces(&mut atomics, &cycles, &he_cycle);
+        Some(Self {
+            atomics,
+            incident,
+            members,
+            contours,
+        })
+    }
+
+    fn atomics(&self) -> &[Atomic] {
+        &self.atomics
+    }
+
+    fn incident(&self) -> &[Vec<usize>] {
+        &self.incident
+    }
+
+    fn members(&self) -> &[Vec<usize>] {
+        &self.members
+    }
+
+    fn contours(&self) -> &[usize] {
+        &self.contours
+    }
+
+    fn nverts(&self) -> usize {
+        self.incident.len()
+    }
+
+    fn nhe(&self) -> usize {
+        2 * self.atomics.len()
+    }
+
+    fn nfaces(&self) -> usize {
+        self.members.len()
+    }
+
+    /// Returns (left face, right face) in the half-edge's direction.
+    fn half_edge_faces(&self, he: usize) -> (usize, usize) {
+        let e = &self.atomics[he / 2];
+        if he % 2 == 0 {
+            (e.f1, e.f2)
+        } else {
+            (e.f2, e.f1)
+        }
+    }
+}
+
+/// Validated per-contour windings and their per-face totals.
+struct WindingAnalysis {
+    wind: Vec<Vec<i64>>,
+    global: Vec<i64>,
+}
+
+impl WindingAnalysis {
+    fn build(arrangement: &Arrangement) -> Option<Self> {
+        let contours = arrangement.contours();
+        let ncont = contours.len();
+        let cindex: BTreeMap<usize, usize> =
+            contours.iter().enumerate().map(|(i, &c)| (c, i)).collect();
+        let jump = Self::jumps(arrangement, &cindex);
+        let wind = Self::propagate(arrangement, ncont, &jump)?;
+        Self::validate_consistency(arrangement, ncont, &jump, &wind)?;
+        let mut global = vec![0i64; arrangement.nfaces()];
+        for f in 0..arrangement.nfaces() {
+            global[f] = wind[f].iter().sum();
+        }
+        Some(Self { wind, global })
+    }
+
+    /// Directed jump of each half-edge: cover net, negated for twins.
+    fn jumps(arrangement: &Arrangement, cindex: &BTreeMap<usize, usize>) -> Vec<Vec<(usize, i64)>> {
+        let atomics = arrangement.atomics();
+        let mut jump: Vec<Vec<(usize, i64)>> = vec![Vec::new(); arrangement.nhe()];
+        for e in 0..atomics.len() {
+            for (label, net) in atomics[e].cover.iter() {
+                jump[2 * e].push((cindex[label], *net));
+                jump[2 * e + 1].push((cindex[label], -*net));
+            }
+        }
+        jump
+    }
+
+    /// Per-contour windings from the unbounded face: W[left] equals
+    /// W[right] plus the half-edge jump; spikes cancel in the sum.
+    fn propagate(
+        arrangement: &Arrangement,
+        ncont: usize,
+        jump: &[Vec<(usize, i64)>],
+    ) -> Option<Vec<Vec<i64>>> {
+        let mut wind = vec![vec![0i64; ncont]; arrangement.nfaces()];
+        let mut known = vec![false; arrangement.nfaces()];
+        let mut queue = VecDeque::new();
+        known[0] = true;
+        queue.push_back(0usize);
+        while let Some(cur) = queue.pop_front() {
+            for &he in arrangement.members()[cur].iter() {
+                let (left, right) = arrangement.half_edge_faces(he);
+                let (nxt, sign) = if left == cur && !known[right] {
+                    (right, -1i64)
+                } else if right == cur && !known[left] {
+                    (left, 1i64)
+                } else {
+                    continue;
+                };
+                wind[nxt] = wind[cur].clone();
+                for &(c, net) in jump[he].iter() {
+                    wind[nxt][c] += sign * net;
+                }
+                known[nxt] = true;
+                queue.push_back(nxt);
+            }
+        }
+        if known.iter().any(|&k| !k) {
+            return None; // Disconnected face graph fails closed.
+        }
+        Some(wind)
+    }
+
+    fn validate_consistency(
+        arrangement: &Arrangement,
+        ncont: usize,
+        jump: &[Vec<(usize, i64)>],
+        wind: &[Vec<i64>],
+    ) -> Option<()> {
+        for he in 0..arrangement.nhe() {
+            let (left, right) = arrangement.half_edge_faces(he);
+            let mut delta = vec![0i64; ncont];
+            for &(c, net) in jump[he].iter() {
+                delta[c] += net;
+            }
+            for c in 0..ncont {
+                if wind[left][c] - wind[right][c] != delta[c] {
+                    return None; // Inconsistent winding fails closed.
+                }
+            }
+        }
+        Some(())
+    }
+
+    fn windings(&self) -> &[Vec<i64>] {
+        &self.wind
+    }
+
+    fn totals(&self) -> &[i64] {
+        &self.global
+    }
+}
+
+struct FaceRegions {
+    filled: Vec<i32>,
+    white: Vec<i32>,
+    nfilled: i32,
+    nwhite: i32,
+    exterior: i32,
+}
+
+impl FaceRegions {
+    fn build(arrangement: &Arrangement, analysis: &WindingAnalysis) -> Self {
+        let atomics = arrangement.atomics();
+        let totals = analysis.totals();
+        let nfaces = arrangement.nfaces();
+        let (filled, nfilled) = Self::label(nfaces, atomics, totals, |t| t != 0);
+        let (white, nwhite) = Self::label(nfaces, atomics, totals, |t| t == 0);
+        // Face 0 has zero winding and belongs to the unbounded white region.
+        let exterior = white[0];
+        Self {
+            filled,
+            white,
+            nfilled,
+            nwhite,
+            exterior,
+        }
+    }
+
+    // Shared and neutral edges connect faces with the same fill state.
+    fn label(
+        nfaces: usize,
+        atomics: &[Atomic],
+        totals: &[i64],
+        keep: impl Fn(i64) -> bool,
+    ) -> (Vec<i32>, i32) {
+        let mut labels = vec![-1i32; nfaces];
+        let mut count = 0i32;
+        for f in 0..nfaces {
+            if !keep(totals[f]) || labels[f] >= 0 {
+                continue;
+            }
+            let mut q = VecDeque::new();
+            q.push_back(f);
+            labels[f] = count;
+            while let Some(cur) = q.pop_front() {
+                for e in 0..atomics.len() {
+                    if atomics[e].f1 != cur && atomics[e].f2 != cur {
+                        continue;
+                    }
+                    let ni = if atomics[e].f1 == cur {
+                        atomics[e].f2
+                    } else {
+                        atomics[e].f1
+                    };
+                    if keep(totals[ni]) && labels[ni] < 0 {
+                        labels[ni] = count;
+                        q.push_back(ni);
+                    }
+                }
+            }
+            count += 1;
+        }
+        (labels, count)
+    }
+
+    fn filled(&self) -> &[i32] {
+        &self.filled
+    }
+
+    fn white(&self) -> &[i32] {
+        &self.white
+    }
+
+    fn nfilled(&self) -> i32 {
+        self.nfilled
+    }
+
+    fn nwhite(&self) -> i32 {
+        self.nwhite
+    }
+
+    fn exterior(&self) -> i32 {
+        self.exterior
+    }
+}
+
+fn lift_inputs(loops: &[Vec<[f64; 2]>]) -> Option<Vec<Seg>> {
     let mut inputs: Vec<Seg> = Vec::new();
     for (label, contour) in loops.iter().enumerate() {
         let mut pts: Vec<Pt> = Vec::with_capacity(contour.len());
@@ -187,10 +439,11 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
     if inputs.is_empty() || inputs.len() > MAX_INPUT_EDGES {
         return None;
     }
+    Some(inputs)
+}
 
-    // Split every segment at all exact intersections (proper crossings
-    // plus any endpoint lying on another segment, covering T-junctions
-    // and collinear overlaps).
+/// Split proper crossings, endpoint contacts and collinear overlaps.
+fn split_inputs(inputs: &[Seg]) -> Vec<Vec<Pt>> {
     let mut splits: Vec<Vec<Pt>> = inputs
         .iter()
         .map(|s| vec![s.a.clone(), s.b.clone()])
@@ -200,86 +453,139 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
             if inputs[i].bounds.disjoint(inputs[j].bounds) {
                 continue;
             }
-            let (a, b) = (&inputs[i].a, &inputs[i].b);
-            let (c, d) = (&inputs[j].a, &inputs[j].b);
-            let o1 = orient(a, b, c);
-            let o2 = orient(a, b, d);
-            let o3 = orient(c, d, a);
-            let o4 = orient(c, d, b);
-            if ((o1 == 1 && o2 == -1) || (o1 == -1 && o2 == 1))
-                && ((o3 == 1 && o4 == -1) || (o3 == -1 && o4 == 1))
-            {
-                let x = crossing(a, &sub(b, a), c, &sub(d, c));
-                splits[i].push(x.clone());
-                splits[j].push(x);
-                continue;
-            }
-            for (q, slot) in [(c, i), (d, i), (a, j), (b, j)] {
-                let (p, r) = if slot == i { (a, b) } else { (c, d) };
-                if orient(p, r, q) == 0 && in_box(q, p, r) {
-                    splits[slot].push(q.clone());
-                }
-            }
+            let (head, tail) = splits.split_at_mut(j);
+            split_pair(&inputs[i], &inputs[j], &mut head[i], &mut tail[0]);
         }
     }
+    splits
+}
 
-    // Atomic undirected edges, canonical endpoints, accumulated cover.
-    let mut atomics: Vec<Atomic> = Vec::new();
-    let mut edge_index: BTreeMap<(Pt, Pt), usize> = BTreeMap::new();
-    for (i, seg) in inputs.iter().enumerate() {
-        let dx = &seg.b.0 - &seg.a.0;
-        let dy = &seg.b.1 - &seg.a.1;
-        let use_x = dx.abs() >= dy.abs();
-        splits[i].sort_by(|p, q| {
-            let o = if use_x { p.0.cmp(&q.0) } else { p.1.cmp(&q.1) };
-            o.then_with(|| p.1.cmp(&q.1).then_with(|| p.0.cmp(&q.0)))
-        });
-        splits[i].dedup();
-        for w in splits[i].windows(2) {
-            let (lo, hi) = if w[0] <= w[1] {
-                (&w[0], &w[1])
+fn is_proper_crossing(o1: i8, o2: i8, o3: i8, o4: i8) -> bool {
+    ((o1 == 1 && o2 == -1) || (o1 == -1 && o2 == 1))
+        && ((o3 == 1 && o4 == -1) || (o3 == -1 && o4 == 1))
+}
+
+fn push_contacts(
+    a: &Pt,
+    b: &Pt,
+    c: &Pt,
+    d: &Pt,
+    first_splits: &mut Vec<Pt>,
+    second_splits: &mut Vec<Pt>,
+) {
+    for (q, first_side) in [(c, true), (d, true), (a, false), (b, false)] {
+        let (p, r) = if first_side { (a, b) } else { (c, d) };
+        if orient(p, r, q) == 0 && in_box(q, p, r) {
+            if first_side {
+                first_splits.push(q.clone());
             } else {
-                (&w[1], &w[0])
-            };
-            let key = (lo.clone(), hi.clone());
-            // Cover sign against the canonical direction: exact dot
-            // product (nonzero, as the sub-edge is a collinear slice of
-            // a nonzero input).
-            let dot =
-                (&seg.b.0 - &seg.a.0) * (&hi.0 - &lo.0) + (&seg.b.1 - &seg.a.1) * (&hi.1 - &lo.1);
-            let aligned = dot.is_positive();
-            let id = match edge_index.get(&key) {
-                Some(&id) => id,
-                None => {
-                    if atomics.len() >= MAX_ATOMIC_EDGES {
-                        return None;
-                    }
-                    let id = atomics.len();
-                    atomics.push(Atomic {
-                        a: key.0.clone(),
-                        b: key.1.clone(),
-                        va: 0,
-                        vb: 0,
-                        cover: BTreeMap::new(),
-                        f1: 0,
-                        f2: 0,
-                    });
-                    edge_index.insert(key, id);
-                    id
-                }
-            };
-            let net = atomics[id].cover.entry(seg.contour).or_insert(0);
-            *net += if aligned { 1 } else { -1 };
-            if *net == 0 {
-                atomics[id].cover.remove(&seg.contour);
+                second_splits.push(q.clone());
             }
         }
     }
-    if atomics.is_empty() {
-        return None;
+}
+
+fn split_pair(first: &Seg, second: &Seg, first_splits: &mut Vec<Pt>, second_splits: &mut Vec<Pt>) {
+    let (a, b) = (&first.a, &first.b);
+    let (c, d) = (&second.a, &second.b);
+    let o1 = orient(a, b, c);
+    let o2 = orient(a, b, d);
+    let o3 = orient(c, d, a);
+    let o4 = orient(c, d, b);
+    if is_proper_crossing(o1, o2, o3, o4) {
+        let x = crossing(a, &sub(b, a), c, &sub(d, c));
+        first_splits.push(x.clone());
+        second_splits.push(x);
+        return;
+    }
+    push_contacts(a, b, c, d, first_splits, second_splits);
+}
+
+/// Retain neutral edges when opposing contour contributions cancel.
+fn assemble_atomics(inputs: &[Seg], splits: &mut [Vec<Pt>]) -> Option<Vec<Atomic>> {
+    let mut builder = AtomicBuilder::new();
+    for (i, seg) in inputs.iter().enumerate() {
+        sort_split_points(seg, &mut splits[i]);
+        for w in splits[i].windows(2) {
+            builder.add(seg, &w[0], &w[1])?;
+        }
+    }
+    builder.finish()
+}
+
+struct AtomicBuilder {
+    atomics: Vec<Atomic>,
+    edge_index: BTreeMap<(Pt, Pt), usize>,
+}
+
+impl AtomicBuilder {
+    fn new() -> Self {
+        Self {
+            atomics: Vec::new(),
+            edge_index: BTreeMap::new(),
+        }
     }
 
-    // Vertices in exact lexicographic order; neutral edges kept.
+    fn add(&mut self, seg: &Seg, p: &Pt, q: &Pt) -> Option<()> {
+        let key = if p <= q {
+            (p.clone(), q.clone())
+        } else {
+            (q.clone(), p.clone())
+        };
+        // Each split edge is collinear with a nonzero input segment,
+        // so this dot product cannot be zero.
+        let dot = (&seg.b.0 - &seg.a.0) * (&key.1 .0 - &key.0 .0)
+            + (&seg.b.1 - &seg.a.1) * (&key.1 .1 - &key.0 .1);
+        let aligned = dot.is_positive();
+        let id = match self.edge_index.get(&key) {
+            Some(&id) => id,
+            None => {
+                if self.atomics.len() >= MAX_ATOMIC_EDGES {
+                    return None;
+                }
+                let id = self.atomics.len();
+                self.atomics.push(Atomic {
+                    a: key.0.clone(),
+                    b: key.1.clone(),
+                    va: 0,
+                    vb: 0,
+                    cover: BTreeMap::new(),
+                    f1: 0,
+                    f2: 0,
+                });
+                self.edge_index.insert(key, id);
+                id
+            }
+        };
+        let net = self.atomics[id].cover.entry(seg.contour).or_insert(0);
+        *net += if aligned { 1 } else { -1 };
+        if *net == 0 {
+            self.atomics[id].cover.remove(&seg.contour);
+        }
+        Some(())
+    }
+
+    fn finish(self) -> Option<Vec<Atomic>> {
+        if self.atomics.is_empty() {
+            return None;
+        }
+        Some(self.atomics)
+    }
+}
+
+fn sort_split_points(seg: &Seg, points: &mut Vec<Pt>) {
+    let dx = &seg.b.0 - &seg.a.0;
+    let dy = &seg.b.1 - &seg.a.1;
+    let use_x = dx.abs() >= dy.abs();
+    points.sort_by(|p, q| {
+        let o = if use_x { p.0.cmp(&q.0) } else { p.1.cmp(&q.1) };
+        o.then_with(|| p.1.cmp(&q.1).then_with(|| p.0.cmp(&q.0)))
+    });
+    points.dedup();
+}
+
+/// Merge endpoints by exact coordinate equality.
+fn index_vertices(atomics: &mut [Atomic]) -> Vec<Vec<usize>> {
     let mut vertex_index: BTreeMap<Pt, usize> = BTreeMap::new();
     let mut incident: Vec<Vec<usize>> = Vec::new();
     for e in atomics.iter_mut() {
@@ -297,15 +603,17 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
         incident[e.va].push(id);
         incident[e.vb].push(id);
     }
+    incident
+}
+
+fn ordered_outgoing(atomics: &[Atomic], nverts: usize) -> Vec<Vec<usize>> {
     // Directed half-edges: 2e is a->b, 2e+1 is b->a.
-    let nverts = incident.len();
     let mut outgoing: Vec<Vec<usize>> = vec![Vec::new(); nverts];
     for e in 0..atomics.len() {
         outgoing[atomics[e].va].push(2 * e);
         outgoing[atomics[e].vb].push(2 * e + 1);
     }
-    // Outgoing half-edges in exact CCW order (half-plane + cross
-    // product, never atan2).
+    // Exact CCW order from +x; half-planes separate opposite directions.
     let mut he_dir: Vec<(Exact, Exact)> = Vec::with_capacity(2 * atomics.len());
     for e in 0..atomics.len() {
         he_dir.push(sub(&atomics[e].b, &atomics[e].a));
@@ -316,7 +624,7 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
             let (dh, dk) = (&he_dir[h], &he_dir[k]);
             let (uh, uk) = (is_upper(dh), is_upper(dk));
             if uh != uk {
-                return uk.cmp(&uh); // Upper half-plane first (CCW from +x).
+                return uk.cmp(&uh);
             }
             let c = cross(dh, dk);
             if !c.is_zero() {
@@ -329,15 +637,36 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
             h.cmp(&k)
         });
     }
-    let mut rank: Vec<Vec<usize>> = vec![Vec::new(); nverts];
-    for v in 0..nverts {
-        rank[v].resize(2 * atomics.len(), usize::MAX);
+    outgoing
+}
+
+fn rank_lookup(outgoing: &[Vec<usize>], nhe: usize) -> Vec<Vec<usize>> {
+    let mut rank: Vec<Vec<usize>> = vec![Vec::new(); outgoing.len()];
+    for v in 0..outgoing.len() {
+        rank[v].resize(nhe, usize::MAX);
         for (pos, &he) in outgoing[v].iter().enumerate() {
             rank[v][he] = pos;
         }
     }
-    // Trace left-face boundary cycles: next(h) is the clockwise
-    // predecessor of twin(h) around its target.
+    rank
+}
+
+fn successor(outgoing: &[Vec<usize>], rank: &[Vec<usize>], atomics: &[Atomic], he: usize) -> usize {
+    // The clockwise predecessor of the twin keeps the face on the left.
+    let twin = he ^ 1;
+    let e = he / 2;
+    let v = if he % 2 == 0 {
+        atomics[e].vb
+    } else {
+        atomics[e].va
+    };
+    let deg = outgoing[v].len();
+    outgoing[v][(rank[v][twin] + deg - 1) % deg]
+}
+
+fn trace_cycles(atomics: &[Atomic], nverts: usize) -> Option<(Vec<Vec<usize>>, Vec<usize>)> {
+    let outgoing = ordered_outgoing(atomics, nverts);
+    let rank = rank_lookup(&outgoing, 2 * atomics.len());
     let nhe = 2 * atomics.len();
     let mut he_cycle = vec![usize::MAX; nhe];
     let mut cycles: Vec<Vec<usize>> = Vec::new();
@@ -351,126 +680,162 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
         loop {
             he_cycle[he] = id;
             cyc.push(he);
-            let twin = he ^ 1;
-            let e = he / 2;
-            let v = if he % 2 == 0 {
-                atomics[e].vb
-            } else {
-                atomics[e].va
-            };
-            let deg = outgoing[v].len();
-            he = outgoing[v][(rank[v][twin] + deg - 1) % deg];
+            he = successor(&outgoing, &rank, atomics, he);
             if he == start {
                 break;
-            }
-            if cyc.len() > nhe + 1 {
-                return None; // Inconsistent topology fails closed.
             }
         }
         cycles.push(cyc);
     }
+    Some((cycles, he_cycle))
+}
+
+fn cycle_area(atomics: &[Atomic], cyc: &[usize]) -> Exact {
     // Doubled signed areas classify outers (+) / holes (-) / bridges (0).
-    let mut cycle_area: Vec<Exact> = Vec::with_capacity(cycles.len());
-    for cyc in cycles.iter() {
-        let mut s = Exact::zero();
-        for &he in cyc {
-            let e = &atomics[he / 2];
-            let (p, q) = if he % 2 == 0 {
-                (&e.a, &e.b)
-            } else {
-                (&e.b, &e.a)
-            };
-            s += &p.0 * &q.1 - &q.0 * &p.1;
-        }
-        cycle_area.push(s);
-    }
-    // Group boundary cycles into faces. Each positive cycle is the
-    // outer boundary of a new face; negative/zero cycles attach to the
-    // face of the innermost strictly containing positive cycle (or the
-    // unbounded face). Probes sit exactly left of a cycle edge at half
-    // the nearest positive ray distance to any edge, so no epsilon.
-    let cycle_verts = |cyc: &[usize]| -> Vec<Pt> {
-        cyc.iter()
-            .map(|&he| {
-                let e = &atomics[he / 2];
-                if he % 2 == 0 {
-                    e.a.clone()
-                } else {
-                    e.b.clone()
-                }
-            })
-            .collect()
-    };
-    let left_probe = |cyc: &[usize]| -> Pt {
-        let he = cyc[0];
+    let mut s = Exact::zero();
+    for &he in cyc {
         let e = &atomics[he / 2];
-        let (s, t) = if he % 2 == 0 {
+        let (p, q) = if he % 2 == 0 {
             (&e.a, &e.b)
         } else {
             (&e.b, &e.a)
         };
-        let m = s.mid(t);
-        let d = sub(t, s);
-        let n = (-d.1.clone(), d.0.clone());
-        let nn = &n.0 * &n.0 + &n.1 * &n.1;
-        let mut best: Option<Exact> = None;
-        for f in atomics.iter() {
-            let q = sub(&f.b, &f.a);
-            let den = cross(&n, &q);
-            if den.is_zero() {
-                // Collinear with the ray: nearest endpoint ahead counts.
-                let w = sub(&f.a, &m);
-                if cross(&w, &q).is_zero() && cross(&w, &n).is_zero() {
-                    for end in [&f.a, &f.b] {
-                        let w = sub(end, &m);
-                        let tt = (&w.0 * &n.0 + &w.1 * &n.1) / &nn;
-                        if tt.is_positive() && best.as_ref().is_none_or(|b| tt < *b) {
-                            best = Some(tt);
-                        }
-                    }
-                }
-                continue;
+        s += &p.0 * &q.1 - &q.0 * &p.1;
+    }
+    s
+}
+
+fn cycle_vertices(atomics: &[Atomic], cyc: &[usize]) -> Vec<Pt> {
+    cyc.iter()
+        .map(|&he| {
+            let e = &atomics[he / 2];
+            if he % 2 == 0 {
+                e.a.clone()
+            } else {
+                e.b.clone()
             }
-            let w = sub(&f.a, &m);
-            let tt = cross(&w, &q) / &den;
-            let u = cross(&w, &n) / &den;
-            if tt.is_positive() && !u.is_negative() && u <= Exact::integer(1) {
-                if best.as_ref().is_none_or(|b| tt < *b) {
-                    best = Some(tt);
-                }
+        })
+        .collect()
+}
+
+fn probe_hit(edge: &Atomic, m: &Pt, n: &(Exact, Exact), nn: &Exact) -> Option<Exact> {
+    let q = sub(&edge.b, &edge.a);
+    let den = cross(n, &q);
+    if den.is_zero() {
+        collinear_endpoint_hit(edge, m, n, nn, &q)
+    } else {
+        let w = sub(&edge.a, m);
+        let tt = cross(&w, &q) / &den;
+        let u = cross(&w, n) / &den;
+        if tt.is_positive() && !u.is_negative() && u <= Exact::integer(1) {
+            Some(tt)
+        } else {
+            None
+        }
+    }
+}
+
+fn collinear_endpoint_hit(
+    edge: &Atomic,
+    m: &Pt,
+    n: &(Exact, Exact),
+    nn: &Exact,
+    q: &(Exact, Exact),
+) -> Option<Exact> {
+    let w = sub(&edge.a, m);
+    if !cross(&w, q).is_zero() || !cross(&w, n).is_zero() {
+        return None;
+    }
+    let mut hit: Option<Exact> = None;
+    for end in [&edge.a, &edge.b] {
+        let w = sub(end, m);
+        let tt = (&w.0 * &n.0 + &w.1 * &n.1) / nn;
+        if tt.is_positive() && hit.as_ref().is_none_or(|b| tt < *b) {
+            hit = Some(tt);
+        }
+    }
+    hit
+}
+
+fn probe_ray_distance(atomics: &[Atomic], m: &Pt, n: &(Exact, Exact), nn: &Exact) -> Option<Exact> {
+    let mut best: Option<Exact> = None;
+    for edge in atomics.iter() {
+        if let Some(tt) = probe_hit(edge, m, n, nn) {
+            if best.as_ref().is_none_or(|b| tt < *b) {
+                best = Some(tt);
             }
         }
-        let half = best
-            .map(|t| t / Exact::integer(2))
-            .unwrap_or_else(|| Exact::integer(1));
-        Pt(&m.0 + &half * &n.0, &m.1 + &half * &n.1)
+    }
+    best
+}
+
+// Half the nearest positive ray distance keeps the probe off every edge.
+fn left_probe(atomics: &[Atomic], cyc: &[usize]) -> Pt {
+    let he = cyc[0];
+    let e = &atomics[he / 2];
+    let (s, t) = if he % 2 == 0 {
+        (&e.a, &e.b)
+    } else {
+        (&e.b, &e.a)
     };
-    let positives: Vec<usize> = (0..cycles.len())
-        .filter(|&c| cycle_area[c].is_positive())
-        .collect();
-    let pos_verts: Vec<Vec<Pt>> = positives.iter().map(|&c| cycle_verts(&cycles[c])).collect();
+    let m = s.mid(t);
+    let d = sub(t, s);
+    let n = (-d.1.clone(), d.0.clone());
+    let nn = &n.0 * &n.0 + &n.1 * &n.1;
+    let half = probe_ray_distance(atomics, &m, &n, &nn)
+        .map(|t| t / Exact::integer(2))
+        .unwrap_or_else(|| Exact::integer(1));
+    Pt(&m.0 + &half * &n.0, &m.1 + &half * &n.1)
+}
+
+fn assign_cycle_faces(
+    atomics: &[Atomic],
+    cycles: &[Vec<usize>],
+    areas: &[Exact],
+    positives: &[usize],
+    pos_verts: &[Vec<Pt>],
+) -> Vec<usize> {
+    // Other cycles belong to the smallest containing positive cycle, or face 0.
     let mut face_of_cycle = vec![0usize; cycles.len()];
     for (fi, &c) in positives.iter().enumerate() {
         face_of_cycle[c] = fi + 1;
     }
     for c in 0..cycles.len() {
-        if cycle_area[c].is_positive() {
+        if areas[c].is_positive() {
             continue;
         }
-        let p = left_probe(&cycles[c]);
+        let p = left_probe(atomics, &cycles[c]);
         let mut owner = 0usize;
         let mut owner_area: Option<Exact> = None;
         for (k, &pc) in positives.iter().enumerate() {
             if strictly_inside(&p, &pos_verts[k])
-                && owner_area.as_ref().is_none_or(|b| cycle_area[pc] < *b)
+                && owner_area.as_ref().is_none_or(|b| areas[pc] < *b)
             {
                 owner = k + 1;
-                owner_area = Some(cycle_area[pc].clone());
+                owner_area = Some(areas[pc].clone());
             }
         }
         face_of_cycle[c] = owner;
     }
+    face_of_cycle
+}
+
+fn group_faces(
+    atomics: &mut [Atomic],
+    cycles: &[Vec<usize>],
+    he_cycle: &[usize],
+) -> Vec<Vec<usize>> {
+    let areas: Vec<Exact> = cycles.iter().map(|cyc| cycle_area(atomics, cyc)).collect();
+    let positives: Vec<usize> = (0..cycles.len())
+        .filter(|&c| areas[c].is_positive())
+        .collect();
+    let pos_verts: Vec<Vec<Pt>> = positives
+        .iter()
+        .map(|&c| cycle_vertices(atomics, &cycles[c]))
+        .collect();
+    let face_of_cycle = assign_cycle_faces(atomics, cycles, &areas, &positives, &pos_verts);
     let nfaces = positives.len() + 1;
+    let nhe = 2 * atomics.len();
     let mut members: Vec<Vec<usize>> = vec![Vec::new(); nfaces];
     for he in 0..nhe {
         members[face_of_cycle[he_cycle[he]]].push(he);
@@ -479,210 +844,157 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
         atomics[e].f1 = face_of_cycle[he_cycle[2 * e]];
         atomics[e].f2 = face_of_cycle[he_cycle[2 * e + 1]];
     }
-    // Contour order matches the reference (sorted input labels).
-    let mut contour_set = BTreeSet::new();
-    for s in inputs.iter() {
-        contour_set.insert(s.contour);
-    }
-    let contours: Vec<usize> = contour_set.into_iter().collect();
-    let ncont = contours.len();
-    let cindex: BTreeMap<usize, usize> =
-        contours.iter().enumerate().map(|(i, &c)| (c, i)).collect();
-    // Directed jump of each half-edge: cover net, negated for twins.
-    let mut jump: Vec<Vec<(usize, i64)>> = vec![Vec::new(); nhe];
-    for e in 0..atomics.len() {
-        for (label, net) in atomics[e].cover.iter() {
-            jump[2 * e].push((cindex[label], *net));
-            jump[2 * e + 1].push((cindex[label], -*net));
+    members
+}
+
+struct BoundaryAnalysis {
+    comp_labels: Vec<BTreeSet<usize>>,
+    pinches: Vec<(u64, Vec<Vec<usize>>)>,
+    contacts: Vec<Vec<Vec<usize>>>,
+}
+
+impl BoundaryAnalysis {
+    fn build(arrangement: &Arrangement, analysis: &WindingAnalysis, regions: &FaceRegions) -> Self {
+        let comp_labels = Self::component_labels(arrangement, analysis, regions);
+        let (degree, vcomps) = Self::vertex_incidence(arrangement, analysis, regions);
+        let (pinches, contacts) = Self::rosters(&comp_labels, &degree, &vcomps);
+        Self {
+            comp_labels,
+            pinches,
+            contacts,
         }
-    }
-    // Per-contour windings from the unbounded face: W[left] equals
-    // W[right] plus the half-edge jump; spikes cancel in the sum.
-    let mut wind = vec![vec![0i64; ncont]; nfaces];
-    let mut known = vec![false; nfaces];
-    let mut queue = VecDeque::new();
-    known[0] = true;
-    queue.push_back(0usize);
-    while let Some(cur) = queue.pop_front() {
-        for &he in members[cur].iter() {
-            let e = he / 2;
-            let (left, right) = if he % 2 == 0 {
-                (atomics[e].f1, atomics[e].f2)
-            } else {
-                (atomics[e].f2, atomics[e].f1)
-            };
-            let (nxt, sign) = if left == cur && !known[right] {
-                (right, -1i64)
-            } else if right == cur && !known[left] {
-                (left, 1i64)
-            } else {
-                continue;
-            };
-            wind[nxt] = wind[cur].clone();
-            for &(c, net) in jump[he].iter() {
-                wind[nxt][c] += sign * net;
-            }
-            known[nxt] = true;
-            queue.push_back(nxt);
-        }
-    }
-    if known.iter().any(|&k| !k) {
-        return None; // Disconnected face graph fails closed.
-    }
-    for he in 0..nhe {
-        let e = he / 2;
-        let (left, right) = if he % 2 == 0 {
-            (atomics[e].f1, atomics[e].f2)
-        } else {
-            (atomics[e].f2, atomics[e].f1)
-        };
-        let mut delta = vec![0i64; ncont];
-        for &(c, net) in jump[he].iter() {
-            delta[c] += net;
-        }
-        for c in 0..ncont {
-            if wind[left][c] - wind[right][c] != delta[c] {
-                return None; // Inconsistent winding fails closed.
-            }
-        }
-    }
-    let mut global = vec![0i64; nfaces];
-    for f in 0..nfaces {
-        global[f] = wind[f].iter().sum();
     }
 
-    // Filled components merge over any shared edge, seams included.
-    let mut comp = vec![-1i32; nfaces];
-    let mut ncomp = 0i32;
-    for f in 0..nfaces {
-        if global[f] == 0 || comp[f] >= 0 {
-            continue;
-        }
-        let mut q = VecDeque::new();
-        q.push_back(f);
-        comp[f] = ncomp;
-        while let Some(cur) = q.pop_front() {
-            for e in 0..atomics.len() {
-                if atomics[e].f1 != cur && atomics[e].f2 != cur {
-                    continue;
-                }
-                let ni = if atomics[e].f1 == cur {
-                    atomics[e].f2
-                } else {
-                    atomics[e].f1
-                };
-                if global[ni] != 0 && comp[ni] < 0 {
-                    comp[ni] = ncomp;
-                    q.push_back(ni);
-                }
-            }
-        }
-        ncomp += 1;
-    }
-    // White components merge across zero edges; the unbounded holder
-    // is the exterior, never a counter.
-    let mut white = vec![-1i32; nfaces];
-    let mut nwhite = 0i32;
-    let mut exterior = 0i32;
-    for f in 0..nfaces {
-        if global[f] != 0 || white[f] >= 0 {
-            continue;
-        }
-        let mut q = VecDeque::new();
-        q.push_back(f);
-        white[f] = nwhite;
-        if f == 0 {
-            exterior = nwhite;
-        }
-        while let Some(cur) = q.pop_front() {
-            for e in 0..atomics.len() {
-                if atomics[e].f1 != cur && atomics[e].f2 != cur {
-                    continue;
-                }
-                let ni = if atomics[e].f1 == cur {
-                    atomics[e].f2
-                } else {
-                    atomics[e].f1
-                };
-                if global[ni] == 0 && white[ni] < 0 {
-                    white[ni] = nwhite;
-                    if ni == 0 {
-                        exterior = nwhite;
-                    }
-                    q.push_back(ni);
-                }
-            }
-        }
-        nwhite += 1;
-    }
-    // Component contour labels from boundary half-edges.
-    let ncomp = ncomp as usize;
-    let mut comp_labels: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); ncomp];
-    for e in atomics.iter() {
-        let (b1, b2) = (global[e.f1] != 0, global[e.f2] != 0);
-        if b1 != b2 {
-            let c = if b1 {
-                comp[e.f1] as usize
-            } else {
-                comp[e.f2] as usize
-            };
-            for label in e.cover.keys() {
-                comp_labels[c].insert(*label);
-            }
-        }
-    }
-    // Boundary degree and filled-component contacts per vertex.
-    let mut degree = vec![0u64; nverts];
-    let mut vcomps: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); nverts];
-    for e in atomics.iter() {
-        let (b1, b2) = (global[e.f1] != 0, global[e.f2] != 0);
-        for &v in &[e.va, e.vb] {
+    fn component_labels(
+        arrangement: &Arrangement,
+        analysis: &WindingAnalysis,
+        regions: &FaceRegions,
+    ) -> Vec<BTreeSet<usize>> {
+        let atomics = arrangement.atomics();
+        let global = analysis.totals();
+        let comp = regions.filled();
+        let ncomp = regions.nfilled() as usize;
+        let mut comp_labels: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); ncomp];
+        for e in atomics.iter() {
+            let (b1, b2) = (global[e.f1] != 0, global[e.f2] != 0);
             if b1 != b2 {
-                degree[v] += 1;
+                let c = if b1 {
+                    comp[e.f1] as usize
+                } else {
+                    comp[e.f2] as usize
+                };
+                for label in e.cover.keys() {
+                    comp_labels[c].insert(*label);
+                }
             }
-            if b1 {
-                vcomps[v].insert(comp[e.f1] as usize);
+        }
+        comp_labels
+    }
+
+    fn vertex_incidence(
+        arrangement: &Arrangement,
+        analysis: &WindingAnalysis,
+        regions: &FaceRegions,
+    ) -> (Vec<u64>, Vec<BTreeSet<usize>>) {
+        let atomics = arrangement.atomics();
+        let global = analysis.totals();
+        let comp = regions.filled();
+        let nverts = arrangement.nverts();
+        let mut degree = vec![0u64; nverts];
+        let mut vcomps: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); nverts];
+        for e in atomics.iter() {
+            let (b1, b2) = (global[e.f1] != 0, global[e.f2] != 0);
+            for &v in &[e.va, e.vb] {
+                if b1 != b2 {
+                    degree[v] += 1;
+                }
+                if b1 {
+                    vcomps[v].insert(comp[e.f1] as usize);
+                }
+                if b2 {
+                    vcomps[v].insert(comp[e.f2] as usize);
+                }
             }
-            if b2 {
-                vcomps[v].insert(comp[e.f2] as usize);
+        }
+        (degree, vcomps)
+    }
+
+    fn rosters(
+        comp_labels: &[BTreeSet<usize>],
+        degree: &[u64],
+        vcomps: &[BTreeSet<usize>],
+    ) -> (Vec<(u64, Vec<Vec<usize>>)>, Vec<Vec<Vec<usize>>>) {
+        let mut pinches: Vec<(u64, Vec<Vec<usize>>)> = Vec::new();
+        let mut contacts: Vec<Vec<Vec<usize>>> = Vec::new();
+        for v in 0..degree.len() {
+            if degree[v] >= 4 {
+                let sides: Vec<Vec<usize>> = vcomps[v]
+                    .iter()
+                    .map(|&c| comp_labels[c].iter().cloned().collect())
+                    .collect();
+                let mut ordered = sides.clone();
+                for s in ordered.iter_mut() {
+                    s.sort();
+                }
+                ordered.sort();
+                pinches.push((degree[v], ordered.clone()));
+                if vcomps[v].len() >= 2 {
+                    contacts.push(ordered);
+                }
             }
+        }
+        pinches.sort();
+        contacts.sort();
+        (pinches, contacts)
+    }
+}
+
+struct HoleAttribution {
+    comp_holes: Vec<u64>,
+    hole_adj: Vec<Vec<usize>>,
+}
+
+impl HoleAttribution {
+    fn build(arrangement: &Arrangement, analysis: &WindingAnalysis, regions: &FaceRegions) -> Self {
+        let nfaces = arrangement.nfaces();
+        let white = regions.white();
+        let nwhite = regions.nwhite();
+        let exterior = regions.exterior();
+        let ncomp = regions.nfilled() as usize;
+        let mut comp_holes = vec![0u64; ncomp];
+        let mut hole_adj: Vec<Vec<usize>> = Vec::new();
+        let white_faces_of =
+            |w: i32| -> Vec<usize> { (0..nfaces).filter(|&f| white[f] == w).collect() };
+        for w in 0..nwhite as i32 {
+            if w == exterior {
+                continue;
+            }
+            let (adjacent, adj_comps) =
+                Self::boundary_adjacency(arrangement, analysis, regions, &white_faces_of(w));
+            for &c in adj_comps.iter() {
+                comp_holes[c] += 1;
+            }
+            hole_adj.push(adjacent.into_iter().collect());
+        }
+        hole_adj.sort();
+        Self {
+            comp_holes,
+            hole_adj,
         }
     }
-    // Pinch roster: degree >= 4 with labeled sides, canonical order.
-    let mut pinches: Vec<(u64, Vec<Vec<usize>>)> = Vec::new();
-    let mut contacts: Vec<Vec<Vec<usize>>> = Vec::new();
-    for v in 0..nverts {
-        if degree[v] >= 4 {
-            let sides: Vec<Vec<usize>> = vcomps[v]
-                .iter()
-                .map(|&c| comp_labels[c].iter().cloned().collect())
-                .collect();
-            let mut ordered = sides.clone();
-            for s in ordered.iter_mut() {
-                s.sort();
-            }
-            ordered.sort();
-            pinches.push((degree[v], ordered.clone()));
-            if vcomps[v].len() >= 2 {
-                contacts.push(ordered);
-            }
-        }
-    }
-    pinches.sort();
-    contacts.sort();
-    // Holes are bounded white components; adjacency comes from the
-    // hole's own boundary edges, not whole-component labels.
-    let mut comp_holes = vec![0u64; ncomp];
-    let mut hole_adj: Vec<Vec<usize>> = Vec::new();
-    let white_faces_of =
-        |w: i32| -> Vec<usize> { (0..nfaces).filter(|&f| white[f] == w).collect() };
-    for w in 0..nwhite as i32 {
-        if w == exterior {
-            continue;
-        }
+
+    fn boundary_adjacency(
+        arrangement: &Arrangement,
+        analysis: &WindingAnalysis,
+        regions: &FaceRegions,
+        faces: &[usize],
+    ) -> (BTreeSet<usize>, BTreeSet<usize>) {
+        let atomics = arrangement.atomics();
+        let global = analysis.totals();
+        let comp = regions.filled();
         let mut adjacent = BTreeSet::new();
         let mut adj_comps = BTreeSet::new();
-        for f in white_faces_of(w) {
+        for &f in faces.iter() {
             for e in atomics.iter() {
                 if e.f1 != f && e.f2 != f {
                     continue;
@@ -692,190 +1004,287 @@ pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
                     continue;
                 }
                 adj_comps.insert(comp[ni] as usize);
+                // A hole's labels come from its own boundary edges.
                 for label in e.cover.keys() {
                     adjacent.insert(*label);
                 }
             }
         }
-        for &c in adj_comps.iter() {
-            comp_holes[c] += 1;
-        }
-        hole_adj.push(adjacent.into_iter().collect());
+        (adjacent, adj_comps)
     }
-    hole_adj.sort();
-    // Per-pair attachment classes; masks use individual contour
-    // windings so coincident cancellations still expose sharing.
-    let mut pairs: Vec<(Vec<usize>, u64, u64, u64, u64, Vec<u64>)> = Vec::new();
-    // Face adjacency once for the flood fills below.
-    let mut face_edges: Vec<Vec<usize>> = vec![Vec::new(); nfaces];
-    for (e, a) in atomics.iter().enumerate() {
-        face_edges[a.f1].push(e);
-        if a.f2 != a.f1 {
-            face_edges[a.f2].push(e);
+}
+
+type PairRecord = (Vec<usize>, u64, u64, u64, u64, Vec<u64>);
+
+struct PairAttachments {
+    records: Vec<PairRecord>,
+}
+
+impl PairAttachments {
+    fn build(arrangement: &Arrangement, analysis: &WindingAnalysis) -> Self {
+        let atomics = arrangement.atomics();
+        let incident = arrangement.incident();
+        let contours = arrangement.contours();
+        let wind = analysis.windings();
+        let nfaces = arrangement.nfaces();
+        let nverts = arrangement.nverts();
+        let mut face_edges: Vec<Vec<usize>> = vec![Vec::new(); nfaces];
+        for (e, a) in atomics.iter().enumerate() {
+            face_edges[a.f1].push(e);
+            if a.f2 != a.f1 {
+                face_edges[a.f2].push(e);
+            }
         }
+        let mut records: Vec<PairRecord> = Vec::new();
+        for ai in 0..contours.len() {
+            for bi in (ai + 1)..contours.len() {
+                let pair = PairContext {
+                    atomics,
+                    incident,
+                    contours,
+                    wind,
+                    face_edges: &face_edges,
+                    nfaces,
+                    nverts,
+                    ai,
+                    bi,
+                };
+                if let Some(record) = pair.record() {
+                    records.push(record);
+                }
+            }
+        }
+        records.sort();
+        Self { records }
     }
-    let neighbor = |f: usize, e: usize| -> usize {
-        if atomics[e].f1 == f {
-            atomics[e].f2
+}
+
+struct PairContext<'a> {
+    atomics: &'a [Atomic],
+    incident: &'a [Vec<usize>],
+    contours: &'a [usize],
+    wind: &'a [Vec<i64>],
+    face_edges: &'a [Vec<usize>],
+    nfaces: usize,
+    nverts: usize,
+    ai: usize,
+    bi: usize,
+}
+
+impl<'a> PairContext<'a> {
+    // Pair overlap survives cancellation in the total winding.
+    fn in_mask(&self, f: usize) -> bool {
+        self.wind[f][self.ai] != 0 && self.wind[f][self.bi] != 0
+    }
+
+    fn neighbor(&self, f: usize, e: usize) -> usize {
+        if self.atomics[e].f1 == f {
+            self.atomics[e].f2
         } else {
-            atomics[e].f1
-        }
-    };
-    for ai in 0..ncont {
-        for bi in (ai + 1)..ncont {
-            let in_mask = |f: usize| wind[f][ai] != 0 && wind[f][bi] != 0;
-            let mut seen = vec![false; nfaces];
-            let mut area_components = 0u64;
-            for f in 0..nfaces {
-                if !in_mask(f) || seen[f] {
-                    continue;
-                }
-                area_components += 1;
-                let mut q = VecDeque::new();
-                q.push_back(f);
-                seen[f] = true;
-                while let Some(cur) = q.pop_front() {
-                    for &e in face_edges[cur].iter() {
-                        let ni = neighbor(cur, e);
-                        if in_mask(ni) && !seen[ni] {
-                            seen[ni] = true;
-                            q.push_back(ni);
-                        }
-                    }
-                }
-            }
-            let mut wmask = vec![-1i32; nfaces];
-            let mut area_holes = 0u64;
-            let mut nw = 0i32;
-            for f in 0..nfaces {
-                if in_mask(f) || wmask[f] >= 0 {
-                    continue;
-                }
-                let mut q = VecDeque::new();
-                q.push_back(f);
-                wmask[f] = nw;
-                let mut touches = f == 0;
-                while let Some(cur) = q.pop_front() {
-                    for &e in face_edges[cur].iter() {
-                        let ni = neighbor(cur, e);
-                        if !in_mask(ni) && wmask[ni] < 0 {
-                            wmask[ni] = nw;
-                            if ni == 0 {
-                                touches = true;
-                            }
-                            q.push_back(ni);
-                        }
-                    }
-                }
-                if !touches {
-                    area_holes += 1;
-                }
-                nw += 1;
-            }
-            // Pure edge contacts: both contours cover the edge but no
-            // incident face carries the intersection mask.
-            let mut edge_contact = vec![false; atomics.len()];
-            for (e, a) in atomics.iter().enumerate() {
-                let (mut ca, mut cb) = (false, false);
-                for label in a.cover.keys() {
-                    if *label == contours[ai] {
-                        ca = true;
-                    }
-                    if *label == contours[bi] {
-                        cb = true;
-                    }
-                }
-                if ca && cb && !in_mask(a.f1) && !in_mask(a.f2) {
-                    edge_contact[e] = true;
-                }
-            }
-            let edge_components = {
-                let mut parent: Vec<usize> = (0..nverts).collect();
-                fn find(p: &mut [usize], mut x: usize) -> usize {
-                    let mut root = x;
-                    while p[root] != root {
-                        root = p[root];
-                    }
-                    while p[x] != root {
-                        let nxt = p[x];
-                        p[x] = root;
-                        x = nxt;
-                    }
-                    root
-                }
-                for (e, a) in atomics.iter().enumerate() {
-                    if edge_contact[e] {
-                        let (u, v) = (find(&mut parent, a.va), find(&mut parent, a.vb));
-                        if u != v {
-                            parent[u] = v;
-                        }
-                    }
-                }
-                let mut roots = BTreeSet::new();
-                for (e, a) in atomics.iter().enumerate() {
-                    if edge_contact[e] {
-                        roots.insert(find(&mut parent, a.va));
-                    }
-                }
-                roots.len() as u64
-            };
-            let mut point_contacts = 0u64;
-            for v in 0..nverts {
-                let (mut ca, mut cb, mut mask_near, mut edge_near) = (false, false, false, false);
-                for &e in incident[v].iter() {
-                    for label in atomics[e].cover.keys() {
-                        if *label == contours[ai] {
-                            ca = true;
-                        }
-                        if *label == contours[bi] {
-                            cb = true;
-                        }
-                    }
-                    if edge_contact[e] {
-                        edge_near = true;
-                    }
-                    if in_mask(atomics[e].f1) || in_mask(atomics[e].f2) {
-                        mask_near = true;
-                    }
-                }
-                if ca && cb && !mask_near && !edge_near {
-                    point_contacts += 1;
-                }
-            }
-            // Intersection-mask boundary singularities: incident edges
-            // separating mask interior from exterior; manifold boundary
-            // vertices have degree 2, anything else is a pinch/branch.
-            let mut boundary_degrees: Vec<u64> = Vec::new();
-            for v in 0..nverts {
-                let mut deg = 0u64;
-                for &e in incident[v].iter() {
-                    if in_mask(atomics[e].f1) != in_mask(atomics[e].f2) {
-                        deg += 1;
-                    }
-                }
-                if deg > 0 && deg != 2 {
-                    boundary_degrees.push(deg);
-                }
-            }
-            boundary_degrees.sort();
-            if area_components > 0
-                || area_holes > 0
-                || edge_components > 0
-                || point_contacts > 0
-                || !boundary_degrees.is_empty()
-            {
-                pairs.push((
-                    vec![contours[ai], contours[bi]],
-                    area_components,
-                    area_holes,
-                    edge_components,
-                    point_contacts,
-                    boundary_degrees,
-                ));
-            }
+            self.atomics[e].f1
         }
     }
-    pairs.sort();
+
+    fn area_components(&self) -> u64 {
+        let mut seen = vec![false; self.nfaces];
+        let mut area_components = 0u64;
+        for f in 0..self.nfaces {
+            if !self.in_mask(f) || seen[f] {
+                continue;
+            }
+            area_components += 1;
+            let mut q = VecDeque::new();
+            q.push_back(f);
+            seen[f] = true;
+            while let Some(cur) = q.pop_front() {
+                for &e in self.face_edges[cur].iter() {
+                    let ni = self.neighbor(cur, e);
+                    if self.in_mask(ni) && !seen[ni] {
+                        seen[ni] = true;
+                        q.push_back(ni);
+                    }
+                }
+            }
+        }
+        area_components
+    }
+
+    fn complement_holes(&self) -> u64 {
+        let mut wmask = vec![-1i32; self.nfaces];
+        let mut area_holes = 0u64;
+        let mut nw = 0i32;
+        for f in 0..self.nfaces {
+            if self.in_mask(f) || wmask[f] >= 0 {
+                continue;
+            }
+            let mut q = VecDeque::new();
+            q.push_back(f);
+            wmask[f] = nw;
+            let touches = f == 0;
+            while let Some(cur) = q.pop_front() {
+                for &e in self.face_edges[cur].iter() {
+                    let ni = self.neighbor(cur, e);
+                    if !self.in_mask(ni) && wmask[ni] < 0 {
+                        wmask[ni] = nw;
+                        q.push_back(ni);
+                    }
+                }
+            }
+            if !touches {
+                area_holes += 1;
+            }
+            nw += 1;
+        }
+        area_holes
+    }
+
+    // Pure edge contacts have no incident face in the pair mask.
+    fn edge_flags(&self) -> Vec<bool> {
+        let mut edge_contact = vec![false; self.atomics.len()];
+        for (e, a) in self.atomics.iter().enumerate() {
+            let (mut ca, mut cb) = (false, false);
+            for label in a.cover.keys() {
+                if *label == self.contours[self.ai] {
+                    ca = true;
+                }
+                if *label == self.contours[self.bi] {
+                    cb = true;
+                }
+            }
+            if ca && cb && !self.in_mask(a.f1) && !self.in_mask(a.f2) {
+                edge_contact[e] = true;
+            }
+        }
+        edge_contact
+    }
+
+    fn edge_components(&self, edge_contact: &[bool]) -> u64 {
+        let mut parent: Vec<usize> = (0..self.nverts).collect();
+        for (e, a) in self.atomics.iter().enumerate() {
+            if edge_contact[e] {
+                let (u, v) = (find_root(&mut parent, a.va), find_root(&mut parent, a.vb));
+                if u != v {
+                    parent[u] = v;
+                }
+            }
+        }
+        let mut roots = BTreeSet::new();
+        for (e, a) in self.atomics.iter().enumerate() {
+            if edge_contact[e] {
+                roots.insert(find_root(&mut parent, a.va));
+            }
+        }
+        roots.len() as u64
+    }
+
+    fn vertex_evidence(&self, v: usize, edge_contact: &[bool]) -> (bool, bool, bool, bool) {
+        let (mut ca, mut cb, mut mask_near, mut edge_near) = (false, false, false, false);
+        for &e in self.incident[v].iter() {
+            for label in self.atomics[e].cover.keys() {
+                if *label == self.contours[self.ai] {
+                    ca = true;
+                }
+                if *label == self.contours[self.bi] {
+                    cb = true;
+                }
+            }
+            if edge_contact[e] {
+                edge_near = true;
+            }
+            if self.in_mask(self.atomics[e].f1) || self.in_mask(self.atomics[e].f2) {
+                mask_near = true;
+            }
+        }
+        (ca, cb, mask_near, edge_near)
+    }
+
+    fn point_contacts(&self, edge_contact: &[bool]) -> u64 {
+        let mut point_contacts = 0u64;
+        for v in 0..self.nverts {
+            let (ca, cb, mask_near, edge_near) = self.vertex_evidence(v, edge_contact);
+            if ca && cb && !mask_near && !edge_near {
+                point_contacts += 1;
+            }
+        }
+        point_contacts
+    }
+
+    // Manifold mask-boundary vertices have degree 2.
+    fn boundary_degrees(&self) -> Vec<u64> {
+        let mut boundary_degrees: Vec<u64> = Vec::new();
+        for v in 0..self.nverts {
+            let mut deg = 0u64;
+            for &e in self.incident[v].iter() {
+                if self.in_mask(self.atomics[e].f1) != self.in_mask(self.atomics[e].f2) {
+                    deg += 1;
+                }
+            }
+            if deg > 0 && deg != 2 {
+                boundary_degrees.push(deg);
+            }
+        }
+        boundary_degrees.sort();
+        boundary_degrees
+    }
+
+    fn record(&self) -> Option<PairRecord> {
+        let area_components = self.area_components();
+        let area_holes = self.complement_holes();
+        let edge_contact = self.edge_flags();
+        let edge_components = self.edge_components(&edge_contact);
+        let point_contacts = self.point_contacts(&edge_contact);
+        let boundary_degrees = self.boundary_degrees();
+        if area_components > 0
+            || area_holes > 0
+            || edge_components > 0
+            || point_contacts > 0
+            || !boundary_degrees.is_empty()
+        {
+            Some((
+                vec![self.contours[self.ai], self.contours[self.bi]],
+                area_components,
+                area_holes,
+                edge_components,
+                point_contacts,
+                boundary_degrees,
+            ))
+        } else {
+            None
+        }
+    }
+}
+
+fn find_root(p: &mut [usize], mut x: usize) -> usize {
+    let mut root = x;
+    while p[root] != root {
+        root = p[root];
+    }
+    while p[x] != root {
+        let nxt = p[x];
+        p[x] = root;
+        x = nxt;
+    }
+    root
+}
+
+/// Public entry: canonical topology signature, or `None` fail-closed.
+pub fn signature(loops: &[Vec<[f64; 2]>]) -> Option<Value> {
+    let arrangement = Arrangement::build(loops)?;
+    let analysis = WindingAnalysis::build(&arrangement)?;
+
+    let regions = FaceRegions::build(&arrangement, &analysis);
+    let ncomp = regions.nfilled();
+    let BoundaryAnalysis {
+        comp_labels,
+        pinches,
+        contacts,
+    } = BoundaryAnalysis::build(&arrangement, &analysis, &regions);
+    let ncomp = ncomp as usize;
+    let HoleAttribution {
+        comp_holes,
+        hole_adj,
+    } = HoleAttribution::build(&arrangement, &analysis, &regions);
+    let PairAttachments { records: pairs } = PairAttachments::build(&arrangement, &analysis);
     let mut comp_rows: Vec<(Vec<usize>, u64)> = Vec::with_capacity(ncomp);
     for c in 0..ncomp {
         comp_rows.push((comp_labels[c].iter().cloned().collect(), comp_holes[c]));
@@ -1153,6 +1562,42 @@ mod tests {
         with_neutral.push(rect_cw(4.0, 1.0, 6.0, 9.0));
         assert_eq!(sig(&annulus)["holes"], json!(1));
         assert_eq!(sig(&with_neutral)["holes"], json!(1));
+        assert_eq!(sig(&annulus)["filled_components"], json!(1));
+        assert_eq!(
+            sig(&with_neutral)["filled_components"],
+            sig(&annulus)["filled_components"]
+        );
+    }
+
+    #[test]
+    fn cw_and_disjoint_opposite_stay_filled() {
+        let cw = sig(&[rect_cw(0.0, 0.0, 100.0, 50.0)]);
+        assert_eq!(cw["filled_components"], json!(1));
+        assert_eq!(cw["holes"], json!(0));
+        assert_eq!(cw["components"], json!([{"contours": [0], "holes": 0}]));
+        let v = sig(&[rect(0.0, 0.0, 10.0, 10.0), rect_cw(20.0, 0.0, 30.0, 10.0)]);
+        assert_eq!(v["filled_components"], json!(2));
+        assert_eq!(v["holes"], json!(0));
+        assert_eq!(
+            v["components"],
+            json!([{"contours": [0], "holes": 0}, {"contours": [1], "holes": 0}])
+        );
+    }
+
+    #[test]
+    fn two_separate_holes_share_one_outer() {
+        let v = sig(&[
+            rect(0.0, 0.0, 100.0, 50.0),
+            rect_cw(10.0, 10.0, 30.0, 40.0),
+            rect_cw(60.0, 10.0, 80.0, 40.0),
+        ]);
+        assert_eq!(v["filled_components"], json!(1));
+        assert_eq!(v["holes"], json!(2));
+        assert_eq!(v["hole_boundaries"], json!([[1], [2]]));
+        assert_eq!(
+            v["components"],
+            json!([{"contours": [0, 1, 2], "holes": 2}])
+        );
     }
 
     #[test]
@@ -1164,6 +1609,75 @@ mod tests {
             v["pairs"],
             json!([{"pair": [0, 1], "area_components": 0, "area_holes": 0,
                    "edge_components": 1, "point_contacts": 0, "boundary_degrees": []}])
+        );
+        let split_a = vec![[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [2.0, 2.0], [0.0, 2.0]];
+        assert_eq!(v, sig(&[split_a, rect(2.0, 0.0, 4.0, 2.0)]));
+    }
+
+    #[test]
+    fn bridged_duplicate_annulus_pair_masks_hole() {
+        let lobe = vec![
+            [0.0, 0.0],
+            [12.0, 0.0],
+            [12.0, 12.0],
+            [0.0, 12.0],
+            [0.0, 4.0],
+            [4.0, 4.0],
+            [4.0, 8.0],
+            [8.0, 8.0],
+            [8.0, 4.0],
+            [4.0, 4.0],
+            [0.0, 4.0],
+        ];
+        let v = sig(&[lobe.clone(), lobe]);
+        assert_eq!(v["filled_components"], json!(1));
+        assert_eq!(v["holes"], json!(1));
+        assert_eq!(
+            v["pairs"],
+            json!([{"pair": [0, 1], "area_components": 1, "area_holes": 1,
+                   "edge_components": 0, "point_contacts": 0, "boundary_degrees": []}])
+        );
+    }
+
+    #[test]
+    fn c_polygon_two_edge_contacts() {
+        let c = vec![
+            [4.0, 0.0],
+            [6.0, 0.0],
+            [6.0, 4.0],
+            [4.0, 4.0],
+            [4.0, 3.0],
+            [5.0, 3.0],
+            [5.0, 1.0],
+            [4.0, 1.0],
+        ];
+        let v = sig(&[rect(0.0, 0.0, 4.0, 4.0), c]);
+        assert_eq!(v["filled_components"], json!(1));
+        assert_eq!(v["holes"], json!(1));
+        assert_eq!(
+            v["pairs"],
+            json!([{"pair": [0, 1], "area_components": 0, "area_holes": 0,
+                   "edge_components": 2, "point_contacts": 0, "boundary_degrees": []}])
+        );
+    }
+
+    #[test]
+    fn contour_labels_preserved_across_empty_gaps() {
+        let v = sig(&[
+            vec![],
+            rect(0.0, 0.0, 100.0, 50.0),
+            vec![],
+            rect(100.0, 50.0, 200.0, 100.0),
+        ]);
+        assert_eq!(v["filled_components"], json!(2));
+        assert_eq!(
+            v["pairs"],
+            json!([{"pair": [1, 3], "area_components": 0, "area_holes": 0,
+                   "edge_components": 0, "point_contacts": 1, "boundary_degrees": []}])
+        );
+        assert_eq!(
+            v["components"],
+            json!([{"contours": [1], "holes": 0}, {"contours": [3], "holes": 0}])
         );
     }
 
@@ -1311,5 +1825,732 @@ mod tests {
             .map(|i| [i as f64, (i % 2) as f64 * 10.0])
             .collect();
         assert!(signature(&[big]).is_none());
+    }
+
+    #[test]
+    fn unreached_face_fails_closed() {
+        let mut arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0)]).expect("supported topology");
+        arrangement.members.push(Vec::new());
+        assert!(WindingAnalysis::build(&arrangement).is_none());
+    }
+
+    #[test]
+    fn swapped_incidence_fails_closed() {
+        // Every face stays reachable, but one edge's jump no longer matches
+        // the propagated windings across it.
+        let mut arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0)]).expect("supported topology");
+        let (f1, f2) = (arrangement.atomics[0].f1, arrangement.atomics[0].f2);
+        arrangement.atomics[0].f1 = f2;
+        arrangement.atomics[0].f2 = f1;
+        assert!(WindingAnalysis::build(&arrangement).is_none());
+    }
+
+    #[test]
+    fn winding_sign_and_multiplicity() {
+        let opposed =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0), rect_cw(0.0, 0.0, 100.0, 50.0)])
+                .expect("supported topology");
+        let opposed = WindingAnalysis::build(&opposed).expect("consistent winding");
+        assert_eq!(opposed.windings(), &[vec![0, 0], vec![1, -1]]);
+        assert_eq!(opposed.totals(), &[0, 0]);
+        let doubled =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0), rect(0.0, 0.0, 100.0, 50.0)])
+                .expect("supported topology");
+        let doubled = WindingAnalysis::build(&doubled).expect("consistent winding");
+        assert_eq!(doubled.windings(), &[vec![0, 0], vec![1, 1]]);
+        assert_eq!(doubled.totals(), &[0, 2]);
+        let twice = [rect(0.0, 0.0, 100.0, 50.0), rect(0.0, 0.0, 100.0, 50.0)].concat();
+        let twice = Arrangement::build(&[twice]).expect("supported topology");
+        let twice = WindingAnalysis::build(&twice).expect("consistent winding");
+        assert_eq!(twice.windings(), &[vec![0], vec![2]]);
+        assert_eq!(twice.totals(), &[0, 2]);
+        let twice_cw = [
+            rect_cw(0.0, 0.0, 100.0, 50.0),
+            rect_cw(0.0, 0.0, 100.0, 50.0),
+        ]
+        .concat();
+        let twice_cw = Arrangement::build(&[twice_cw]).expect("supported topology");
+        let twice_cw = WindingAnalysis::build(&twice_cw).expect("consistent winding");
+        assert_eq!(twice_cw.windings(), &[vec![0], vec![-2]]);
+        assert_eq!(twice_cw.totals(), &[0, -2]);
+    }
+
+    #[test]
+    fn face_regions_cover_unbounded_face() {
+        let arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0)]).expect("supported topology");
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        let regions = FaceRegions::build(&arrangement, &analysis);
+        assert!(regions.white()[0] >= 0);
+        assert_eq!(regions.white()[0], regions.exterior());
+        assert_eq!(regions.nwhite(), 1);
+        assert_eq!(regions.nfilled(), 1);
+    }
+
+    #[test]
+    fn faces_rect_halfedges_partition_unbounded_first() {
+        let arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 4.0, 4.0)]).expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 2);
+        assert_eq!(arrangement.nhe(), 8);
+        assert!(!arrangement.members()[0].is_empty());
+        let mut seen = vec![false; 8];
+        for (f, cyc) in arrangement.members().iter().enumerate() {
+            for &he in cyc.iter() {
+                assert!(!seen[he]);
+                seen[he] = true;
+                let (left, _) = arrangement.half_edge_faces(he);
+                assert_eq!(left, f);
+            }
+        }
+        assert!(seen.iter().all(|&s| s));
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.windings()[0], vec![0]);
+        assert_eq!(analysis.totals(), vec![0, 1]);
+    }
+
+    #[test]
+    fn faces_hole_owner_windings() {
+        let arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 10.0, 10.0), rect_cw(2.0, 2.0, 8.0, 8.0)])
+                .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 3);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals()[0], 0);
+        let mut rows: Vec<Vec<i64>> = analysis.windings()[1..].to_vec();
+        rows.sort();
+        assert_eq!(rows, vec![vec![1, -1], vec![1, 0]]);
+    }
+
+    #[test]
+    fn faces_nested_island_innermost_owner() {
+        let arrangement = Arrangement::build(&[
+            rect(0.0, 0.0, 10.0, 10.0),
+            rect_cw(1.0, 1.0, 9.0, 9.0),
+            rect(2.0, 2.0, 8.0, 8.0),
+            rect_cw(3.0, 3.0, 7.0, 7.0),
+        ])
+        .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 5);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.windings()[0], vec![0, 0, 0, 0]);
+        let mut rows: Vec<Vec<i64>> = analysis.windings()[1..].to_vec();
+        rows.sort();
+        assert_eq!(
+            rows,
+            vec![
+                vec![1, -1, 0, 0],
+                vec![1, -1, 1, -1],
+                vec![1, -1, 1, 0],
+                vec![1, 0, 0, 0],
+            ]
+        );
+    }
+
+    #[test]
+    fn faces_point_touch_has_no_seam() {
+        let arrangement = Arrangement::build(&[rect(0.0, 0.0, 2.0, 2.0), rect(2.0, 2.0, 4.0, 4.0)])
+            .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 3);
+        assert!(arrangement.atomics().iter().all(|a| a.cover.len() == 1));
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals()[0], 0);
+        let mut totals: Vec<i64> = analysis.totals()[1..].to_vec();
+        totals.sort();
+        assert_eq!(totals, vec![1, 1]);
+    }
+
+    #[test]
+    fn faces_shared_edge_seam_stays_filled() {
+        let arrangement = Arrangement::build(&[rect(0.0, 0.0, 2.0, 2.0), rect(2.0, 0.0, 4.0, 2.0)])
+            .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 3);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals()[0], 0);
+        let mut seams = 0;
+        for a in arrangement.atomics().iter() {
+            if a.cover.len() == 2 {
+                seams += 1;
+                assert_ne!(analysis.totals()[a.f1], 0);
+                assert_ne!(analysis.totals()[a.f2], 0);
+            }
+        }
+        assert_eq!(seams, 1);
+        let mut totals: Vec<i64> = analysis.totals()[1..].to_vec();
+        totals.sort();
+        assert_eq!(totals, vec![1, 1]);
+    }
+
+    #[test]
+    fn faces_outward_spur_absorbed_without_fill_change() {
+        let spike = vec![
+            [0.0, 0.0],
+            [4.0, 0.0],
+            [4.0, 4.0],
+            [2.0, 4.0],
+            [2.0, 6.0],
+            [2.0, 4.0],
+            [0.0, 4.0],
+        ];
+        let loops = vec![spike];
+        assert_eq!(sig(&loops), sig(&[rect(0.0, 0.0, 4.0, 4.0)]));
+        let arrangement = Arrangement::build(&loops).expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 2);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals(), vec![0, 1]);
+        let empties: Vec<&Atomic> = arrangement
+            .atomics()
+            .iter()
+            .filter(|a| a.cover.is_empty())
+            .collect();
+        assert_eq!(empties.len(), 1);
+        assert_eq!(empties[0].f1, empties[0].f2);
+        assert_eq!(analysis.totals()[empties[0].f1], 0);
+    }
+
+    #[test]
+    fn faces_coincident_opposite_zero_winding() {
+        let arrangement =
+            Arrangement::build(&[rect(0.0, 0.0, 100.0, 50.0), rect_cw(0.0, 0.0, 100.0, 50.0)])
+                .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 2);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals(), vec![0, 0]);
+        assert_eq!(analysis.windings(), &[vec![0, 0], vec![1, -1]]);
+    }
+
+    #[test]
+    fn faces_collinear_exterior_probe_absorbed() {
+        let loops = vec![rect(0.0, 0.0, 4.0, 4.0), vec![[2.0, -4.0], [2.0, -2.0]]];
+        assert_eq!(sig(&loops), sig(&[rect(0.0, 0.0, 4.0, 4.0)]));
+        assert_eq!(
+            sig(&loops),
+            json!({
+                "filled_components": 1, "holes": 0,
+                "pinch_roster": [], "point_contacts": [],
+                "hole_boundaries": [], "pairs": [],
+                "components": [{"contours": [0], "holes": 0}],
+            })
+        );
+        let arrangement = Arrangement::build(&loops).expect("supported topology");
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.totals()[0], 0);
+        assert!(analysis.windings().iter().all(|w| w[1] == 0));
+        let bottom = arrangement
+            .atomics()
+            .iter()
+            .position(|a| {
+                a.a == Pt(Exact::integer(0), Exact::integer(0))
+                    && a.b == Pt(Exact::integer(4), Exact::integer(0))
+            })
+            .expect("rectangle bottom atomic");
+        assert_eq!(
+            left_probe(arrangement.atomics(), &[2 * bottom + 1]),
+            Pt(Exact::integer(2), Exact::integer(-1))
+        );
+    }
+
+    #[test]
+    fn faces_endpoint_contact_probe_stops_at_segment_end() {
+        let loops = vec![rect(0.0, 0.0, 4.0, 4.0), vec![[-1.0, -2.0], [2.0, -2.0]]];
+        assert_eq!(sig(&loops), sig(&[rect(0.0, 0.0, 4.0, 4.0)]));
+        let arrangement = Arrangement::build(&loops).expect("supported topology");
+        let bottom = arrangement
+            .atomics()
+            .iter()
+            .position(|a| {
+                a.a == Pt(Exact::integer(0), Exact::integer(0))
+                    && a.b == Pt(Exact::integer(4), Exact::integer(0))
+            })
+            .expect("rectangle bottom atomic");
+        assert_eq!(
+            left_probe(arrangement.atomics(), &[2 * bottom + 1]),
+            Pt(Exact::integer(2), Exact::integer(-1))
+        );
+    }
+
+    #[test]
+    fn faces_bowtie_lobes_opposite_winding() {
+        let arrangement =
+            Arrangement::build(&[vec![[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0]]])
+                .expect("supported topology");
+        assert_eq!(arrangement.nfaces(), 3);
+        let analysis = WindingAnalysis::build(&arrangement).expect("consistent winding");
+        assert_eq!(analysis.windings()[0], vec![0]);
+        let mut rows: Vec<Vec<i64>> = analysis.windings()[1..].to_vec();
+        rows.sort();
+        assert_eq!(rows, vec![vec![-1], vec![1]]);
+    }
+
+    #[test]
+    fn strictly_inside_convex_and_notch() {
+        let pt = |x: f64, y: f64| Pt(Exact::from_f64(x).unwrap(), Exact::from_f64(y).unwrap());
+        let square = vec![pt(0.0, 0.0), pt(4.0, 0.0), pt(4.0, 4.0), pt(0.0, 4.0)];
+        assert!(strictly_inside(&pt(1.0, 1.0), &square));
+        assert!(!strictly_inside(&pt(5.0, 5.0), &square));
+        assert!(!strictly_inside(&pt(5.0, 2.0), &square));
+        let notch = vec![
+            pt(0.0, 0.0),
+            pt(4.0, 0.0),
+            pt(4.0, 4.0),
+            pt(2.0, 4.0),
+            pt(2.0, 2.0),
+            pt(0.0, 2.0),
+        ];
+        assert!(strictly_inside(&pt(1.0, 1.0), &notch));
+        assert!(strictly_inside(&pt(3.0, 3.0), &notch));
+        assert!(!strictly_inside(&pt(1.0, 3.0), &notch));
+    }
+
+    #[test]
+    fn splits_proper_crossing_shares_identical_rational() {
+        let pt = |x: f64, y: f64| Pt(Exact::from_f64(x).unwrap(), Exact::from_f64(y).unwrap());
+        let inputs = vec![
+            Seg {
+                bounds: Bounds::new([0.0, 0.0], [1.0, 2.0]),
+                a: pt(0.0, 0.0),
+                b: pt(1.0, 2.0),
+                contour: 0,
+            },
+            Seg {
+                bounds: Bounds::new([0.0, 1.0], [1.0, 0.0]),
+                a: pt(0.0, 1.0),
+                b: pt(1.0, 0.0),
+                contour: 1,
+            },
+        ];
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits.len(), 2);
+        assert_eq!(splits[0][0], pt(0.0, 0.0));
+        assert_eq!(splits[0][1], pt(1.0, 2.0));
+        assert_eq!(splits[1][0], pt(0.0, 1.0));
+        assert_eq!(splits[1][1], pt(1.0, 0.0));
+        assert_eq!(splits[0].len(), 3);
+        assert_eq!(splits[1].len(), 3);
+        assert_eq!(splits[0][2], splits[1][2]);
+        assert_eq!(
+            splits[0][2],
+            crossing(
+                &pt(0.0, 0.0),
+                &sub(&pt(1.0, 2.0), &pt(0.0, 0.0)),
+                &pt(0.0, 1.0),
+                &sub(&pt(1.0, 0.0), &pt(0.0, 1.0)),
+            )
+        );
+        assert_eq!(
+            splits[0][2].0.to_rational(),
+            num_rational::BigRational::new(1.into(), 3.into())
+        );
+        assert_eq!(
+            splits[0][2].1.to_rational(),
+            num_rational::BigRational::new(2.into(), 3.into())
+        );
+    }
+
+    #[test]
+    fn splits_endpoint_t_contact_pins_interior_point() {
+        let pt = |x: f64, y: f64| Pt(Exact::from_f64(x).unwrap(), Exact::from_f64(y).unwrap());
+        let inputs = vec![
+            Seg {
+                bounds: Bounds::new([0.0, 0.0], [2.0, 0.0]),
+                a: pt(0.0, 0.0),
+                b: pt(2.0, 0.0),
+                contour: 0,
+            },
+            Seg {
+                bounds: Bounds::new([1.0, 0.0], [1.0, 2.0]),
+                a: pt(1.0, 0.0),
+                b: pt(1.0, 2.0),
+                contour: 1,
+            },
+        ];
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 0.0), pt(1.0, 0.0)]);
+        assert_eq!(splits[1], vec![pt(1.0, 0.0), pt(1.0, 2.0)]);
+        let corner = vec![
+            Seg {
+                bounds: Bounds::new([0.0, 0.0], [1.0, 1.0]),
+                a: pt(0.0, 0.0),
+                b: pt(1.0, 1.0),
+                contour: 0,
+            },
+            Seg {
+                bounds: Bounds::new([1.0, 1.0], [2.0, 0.0]),
+                a: pt(1.0, 1.0),
+                b: pt(2.0, 0.0),
+                contour: 1,
+            },
+        ];
+        let splits = split_inputs(&corner);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(1.0, 1.0), pt(1.0, 1.0)]);
+        assert_eq!(splits[1], vec![pt(1.0, 1.0), pt(2.0, 0.0), pt(1.0, 1.0)]);
+    }
+
+    #[test]
+    fn splits_collinear_overlap_and_disjoint_guard() {
+        let pt = |x: f64, y: f64| Pt(Exact::from_f64(x).unwrap(), Exact::from_f64(y).unwrap());
+        let seg = |ax: f64, ay: f64, bx: f64, by: f64, contour: usize| Seg {
+            bounds: Bounds::new([ax, ay], [bx, by]),
+            a: pt(ax, ay),
+            b: pt(bx, by),
+            contour,
+        };
+        let inputs = vec![seg(0.0, 0.0, 2.0, 0.0, 0), seg(1.0, 0.0, 3.0, 0.0, 1)];
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 0.0), pt(1.0, 0.0)]);
+        assert_eq!(splits[1], vec![pt(1.0, 0.0), pt(3.0, 0.0), pt(2.0, 0.0)]);
+        let inputs = vec![seg(0.0, 0.0, 2.0, 0.0, 0), seg(3.0, 0.0, 1.0, 0.0, 1)];
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 0.0), pt(1.0, 0.0)]);
+        assert_eq!(splits[1], vec![pt(3.0, 0.0), pt(1.0, 0.0), pt(2.0, 0.0)]);
+        let inputs = vec![seg(0.0, 0.0, 2.0, 0.0, 0), seg(2.0, 0.0, 4.0, 0.0, 1)];
+        assert!(!inputs[0].bounds.disjoint(inputs[1].bounds));
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 0.0), pt(2.0, 0.0)]);
+        assert_eq!(splits[1], vec![pt(2.0, 0.0), pt(4.0, 0.0), pt(2.0, 0.0)]);
+        assert_eq!(splits[1][0], splits[1][2]);
+        let inputs = vec![seg(0.0, 0.0, 1.0, 0.0, 0), seg(5.0, 0.0, 6.0, 1.0, 1)];
+        assert!(inputs[0].bounds.disjoint(inputs[1].bounds));
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(1.0, 0.0)]);
+        assert_eq!(splits[1], vec![pt(5.0, 0.0), pt(6.0, 1.0)]);
+        let inputs = vec![seg(0.0, 0.0, 2.0, 2.0, 0), seg(0.0, 1.0, 0.5, 1.0, 1)];
+        assert!(!inputs[0].bounds.disjoint(inputs[1].bounds));
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 2.0)]);
+        assert_eq!(splits[1], vec![pt(0.0, 1.0), pt(0.5, 1.0)]);
+    }
+
+    #[test]
+    fn splits_straddle_line_without_segment_hit_keeps_endpoints() {
+        let pt = |x: f64, y: f64| Pt(Exact::from_f64(x).unwrap(), Exact::from_f64(y).unwrap());
+        let seg = |ax: f64, ay: f64, bx: f64, by: f64, contour: usize| Seg {
+            bounds: Bounds::new([ax, ay], [bx, by]),
+            a: pt(ax, ay),
+            b: pt(bx, by),
+            contour,
+        };
+        let inputs = vec![seg(0.0, 0.0, 2.0, 2.0, 0), seg(-1.0, 0.5, 0.5, -1.0, 1)];
+        assert!(!inputs[0].bounds.disjoint(inputs[1].bounds));
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 2.0)]);
+        assert_eq!(splits[1], vec![pt(-1.0, 0.5), pt(0.5, -1.0)]);
+        let inputs = vec![seg(0.0, 0.0, 2.0, 2.0, 0), seg(0.5, -1.0, -1.0, 0.5, 1)];
+        assert!(!inputs[0].bounds.disjoint(inputs[1].bounds));
+        let splits = split_inputs(&inputs);
+        assert_eq!(splits[0], vec![pt(0.0, 0.0), pt(2.0, 2.0)]);
+        assert_eq!(splits[1], vec![pt(0.5, -1.0), pt(-1.0, 0.5)]);
+    }
+
+    fn traced(loops: &[Vec<[f64; 2]>]) -> (Vec<Atomic>, usize, Vec<Vec<usize>>, Vec<usize>) {
+        let inputs = lift_inputs(loops).expect("supported");
+        let mut splits = split_inputs(&inputs);
+        let mut atomics = assemble_atomics(&inputs, &mut splits).expect("supported");
+        let incident = index_vertices(&mut atomics);
+        let nverts = incident.len();
+        let (cycles, he_cycle) = trace_cycles(&atomics, nverts).expect("supported");
+        (atomics, nverts, cycles, he_cycle)
+    }
+
+    fn assert_partition(atomics: &[Atomic], cycles: &[Vec<usize>], he_cycle: &[usize]) {
+        let nhe = 2 * atomics.len();
+        assert_eq!(he_cycle.len(), nhe);
+        let mut seen = vec![false; nhe];
+        for (id, cyc) in cycles.iter().enumerate() {
+            assert!(!cyc.is_empty());
+            for &he in cyc.iter() {
+                assert!(he < nhe);
+                assert!(!seen[he]);
+                seen[he] = true;
+                assert_eq!(he_cycle[he], id);
+            }
+        }
+        assert!(seen.iter().all(|&s| s));
+    }
+
+    fn cycle_signs(atomics: &[Atomic], cycles: &[Vec<usize>]) -> Vec<bool> {
+        cycles
+            .iter()
+            .map(|cyc| cycle_area(atomics, cyc).is_positive())
+            .collect()
+    }
+
+    #[test]
+    fn cycle_trace_square_both_directions() {
+        let pinned_cycles = vec![vec![0, 2, 5, 7], vec![1, 6, 4, 3]];
+        let pinned_he = vec![0, 1, 0, 1, 1, 0, 1, 0];
+        let directed = [
+            (vec![rect(0.0, 0.0, 4.0, 4.0)], vec![true, false]),
+            (vec![rect_cw(0.0, 0.0, 4.0, 4.0)], vec![false, true]),
+        ];
+        for (loops, signs) in directed {
+            let (atomics, nverts, cycles, he_cycle) = traced(&loops);
+            assert_eq!(nverts, 4);
+            assert_eq!(cycles, pinned_cycles);
+            assert_eq!(he_cycle, pinned_he);
+            assert_partition(&atomics, &cycles, &he_cycle);
+            assert_eq!(cycle_signs(&atomics, &cycles), signs);
+        }
+    }
+
+    #[test]
+    fn cycle_trace_crossing_star_opposite_pairs() {
+        let loops = vec![vec![[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0]]];
+        let (atomics, nverts, cycles, he_cycle) = traced(&loops);
+        assert_eq!(atomics.len(), 6);
+        assert_eq!(nverts, 5);
+        assert_eq!(
+            cycles,
+            vec![vec![0, 7, 11], vec![1, 10, 6, 2, 5, 9], vec![3, 8, 4]]
+        );
+        assert_eq!(he_cycle, vec![0, 1, 1, 2, 2, 1, 1, 0, 2, 1, 1, 0]);
+        assert_partition(&atomics, &cycles, &he_cycle);
+        assert_eq!(cycle_signs(&atomics, &cycles), vec![true, false, true]);
+    }
+
+    #[test]
+    fn cycle_trace_pinched_pair_with_disjoint_loop() {
+        let loops = vec![
+            rect(0.0, 0.0, 2.0, 2.0),
+            rect(2.0, 2.0, 4.0, 4.0),
+            rect(10.0, 10.0, 12.0, 12.0),
+        ];
+        let (atomics, nverts, cycles, he_cycle) = traced(&loops);
+        assert_eq!(atomics.len(), 12);
+        assert_eq!(nverts, 11);
+        assert_eq!(
+            cycles,
+            vec![
+                vec![0, 2, 5, 7],
+                vec![1, 6, 4, 14, 12, 11, 9, 3],
+                vec![8, 10, 13, 15],
+                vec![16, 18, 21, 23],
+                vec![17, 22, 20, 19],
+            ]
+        );
+        assert_eq!(
+            he_cycle,
+            vec![0, 1, 0, 1, 1, 0, 1, 0, 2, 1, 2, 1, 1, 2, 1, 2, 3, 4, 3, 4, 4, 3, 4, 3]
+        );
+        assert_partition(&atomics, &cycles, &he_cycle);
+        assert_eq!(
+            cycle_signs(&atomics, &cycles),
+            vec![true, false, true, true, false]
+        );
+    }
+
+    #[test]
+    fn orient_exact_matches_explicit_determinants() {
+        let pt = |x: i128, y: i128| Pt(Exact::integer(x), Exact::integer(y));
+        let one = num_rational::BigRational::new(1.into(), 1.into());
+        let zero = num_rational::BigRational::new(0.into(), 1.into());
+        let minus_one = zero.clone() - one.clone();
+        let (a, b, c) = (pt(0, 0), pt(1, 0), pt(0, 1));
+        assert_eq!(cross(&sub(&b, &a), &sub(&c, &a)).to_rational(), one);
+        assert_eq!(orient_exact(&a, &b, &c), 1);
+        let (a, b, c) = (pt(0, 0), pt(0, 1), pt(1, 0));
+        assert_eq!(cross(&sub(&b, &a), &sub(&c, &a)).to_rational(), minus_one);
+        assert_eq!(orient_exact(&a, &b, &c), -1);
+        let (a, b, c) = (pt(0, 0), pt(1, 1), pt(2, 2));
+        assert_eq!(cross(&sub(&b, &a), &sub(&c, &a)).to_rational(), zero);
+        assert_eq!(orient_exact(&a, &b, &c), 0);
+    }
+
+    #[test]
+    fn orient_filter_deferral_falls_back_across_signs() {
+        let origin = Pt(Exact::integer(0), Exact::integer(0));
+        let third = &Exact::integer(1) / &Exact::integer(3);
+        let two_thirds = &Exact::integer(2) / &Exact::integer(3);
+        let eps = &Exact::integer(1) / &Exact::integer(1i128 << 70);
+        let corner = Pt(third.clone(), third.clone());
+        let det_unit = num_rational::BigRational::new(1.into(), (3i128 * (1i128 << 70)).into());
+        let zero = num_rational::BigRational::new(0.into(), 1.into());
+        assert_eq!(
+            corner.0.to_rational(),
+            num_rational::BigRational::new(1.into(), 3.into())
+        );
+        assert_eq!(
+            corner.1.to_rational(),
+            num_rational::BigRational::new(1.into(), 3.into())
+        );
+        let cases = [
+            (Pt(two_thirds.clone(), two_thirds.clone()), zero, 0),
+            (
+                Pt(two_thirds.clone(), &two_thirds + &eps),
+                det_unit.clone(),
+                1,
+            ),
+            (
+                Pt(two_thirds.clone(), &two_thirds - &eps),
+                -det_unit.clone(),
+                -1,
+            ),
+        ];
+        for (c, det, sign) in &cases {
+            assert_eq!(
+                cross(&sub(&corner, &origin), &sub(c, &origin)).to_rational(),
+                det.clone()
+            );
+            assert_eq!(
+                filtered::orient_sign((&origin.0, &origin.1), (&corner.0, &corner.1), (&c.0, &c.1)),
+                None
+            );
+            assert_eq!(orient(&origin, &corner, c), *sign);
+        }
+    }
+
+    #[test]
+    fn assemble_shuffled_splits_order_atomics_and_covers() {
+        let pt = |x: i128, y: i128| Pt(Exact::integer(x), Exact::integer(y));
+        let seg = |ax: i128, ay: i128, bx: i128, by: i128, contour: usize| Seg {
+            bounds: Bounds::new([ax as f64, ay as f64], [bx as f64, by as f64]),
+            a: pt(ax, ay),
+            b: pt(bx, by),
+            contour,
+        };
+        let inputs = vec![
+            seg(0, 0, 4, 0, 0),
+            seg(0, 4, 0, 0, 1),
+            seg(4, 0, 0, 4, 2),
+            seg(10, 20, 14, 18, 3),
+            seg(10, 20, 12, 16, 4),
+        ];
+        let mut splits = vec![
+            vec![pt(4, 0), pt(1, 0), pt(2, 0), pt(1, 0), pt(0, 0), pt(3, 0)],
+            vec![pt(0, 0), pt(0, 2), pt(0, 4), pt(0, 2)],
+            vec![pt(0, 4), pt(4, 0), pt(2, 2), pt(2, 2)],
+            vec![pt(14, 18), pt(10, 20), pt(12, 19), pt(12, 19)],
+            vec![pt(10, 20), pt(12, 16), pt(11, 18), pt(10, 20)],
+        ];
+        let atomics = assemble_atomics(&inputs, &mut splits).expect("supported splits");
+        assert_eq!(
+            splits[0],
+            vec![pt(0, 0), pt(1, 0), pt(2, 0), pt(3, 0), pt(4, 0)]
+        );
+        assert_eq!(splits[1], vec![pt(0, 0), pt(0, 2), pt(0, 4)]);
+        assert_eq!(splits[2], vec![pt(0, 4), pt(2, 2), pt(4, 0)]);
+        assert_eq!(splits[3], vec![pt(10, 20), pt(12, 19), pt(14, 18)]);
+        assert_eq!(splits[4], vec![pt(12, 16), pt(11, 18), pt(10, 20)]);
+        let want = [
+            (pt(0, 0), pt(1, 0), 0usize, 1i64),
+            (pt(1, 0), pt(2, 0), 0, 1),
+            (pt(2, 0), pt(3, 0), 0, 1),
+            (pt(3, 0), pt(4, 0), 0, 1),
+            (pt(0, 0), pt(0, 2), 1, -1),
+            (pt(0, 2), pt(0, 4), 1, -1),
+            (pt(0, 4), pt(2, 2), 2, -1),
+            (pt(2, 2), pt(4, 0), 2, -1),
+            (pt(10, 20), pt(12, 19), 3, 1),
+            (pt(12, 19), pt(14, 18), 3, 1),
+            (pt(11, 18), pt(12, 16), 4, 1),
+            (pt(10, 20), pt(11, 18), 4, 1),
+        ];
+        assert_eq!(atomics.len(), want.len());
+        for (i, (a, b, contour, net)) in want.iter().enumerate() {
+            assert_eq!(atomics[i].a, a.clone());
+            assert_eq!(atomics[i].b, b.clone());
+            assert_eq!(atomics[i].cover, BTreeMap::from([(*contour, *net)]));
+        }
+    }
+
+    #[test]
+    fn assemble_coincident_contours_cancel_but_retain_neutral() {
+        let pt = |x: i128, y: i128| Pt(Exact::integer(x), Exact::integer(y));
+        let seg = |ax: i128, ay: i128, bx: i128, by: i128, contour: usize| Seg {
+            bounds: Bounds::new([ax as f64, ay as f64], [bx as f64, by as f64]),
+            a: pt(ax, ay),
+            b: pt(bx, by),
+            contour,
+        };
+        let inputs = vec![
+            seg(0, 0, 2, 0, 0),
+            seg(0, 0, 2, 0, 1),
+            seg(0, 0, 2, 0, 1),
+            seg(2, 0, 0, 0, 0),
+            seg(3, 0, 4, 0, 2),
+            seg(4, 0, 3, 0, 2),
+        ];
+        let mut splits: Vec<Vec<Pt>> = inputs
+            .iter()
+            .map(|s| vec![s.b.clone(), s.a.clone()])
+            .collect();
+        let atomics = assemble_atomics(&inputs, &mut splits).expect("supported splits");
+        assert_eq!(splits[3], vec![pt(0, 0), pt(2, 0)]);
+        assert_eq!(atomics.len(), 2);
+        assert_eq!(atomics[0].a, pt(0, 0));
+        assert_eq!(atomics[0].b, pt(2, 0));
+        assert_eq!(atomics[0].cover, BTreeMap::from([(1usize, 2i64)]));
+        assert_eq!(atomics[1].a, pt(3, 0));
+        assert_eq!(atomics[1].b, pt(4, 0));
+        assert!(atomics[1].cover.is_empty());
+    }
+
+    #[test]
+    fn assemble_degenerate_splits_fail_closed() {
+        let pt = |x: i128, y: i128| Pt(Exact::integer(x), Exact::integer(y));
+        let seg = |ax: i128, ay: i128, bx: i128, by: i128, contour: usize| Seg {
+            bounds: Bounds::new([ax as f64, ay as f64], [bx as f64, by as f64]),
+            a: pt(ax, ay),
+            b: pt(bx, by),
+            contour,
+        };
+        let inputs = vec![seg(0, 0, 2, 0, 0)];
+        let mut splits: Vec<Vec<Pt>> = vec![Vec::new()];
+        assert!(assemble_atomics(&inputs, &mut splits).is_none());
+        let mut splits = vec![vec![pt(0, 0)]];
+        assert!(assemble_atomics(&inputs, &mut splits).is_none());
+        let inputs = vec![seg(0, 0, 2, 0, 0), seg(5, 5, 7, 5, 3)];
+        let mut splits = vec![vec![pt(0, 0)], vec![pt(5, 5), pt(7, 5)]];
+        let atomics = assemble_atomics(&inputs, &mut splits).expect("partial splits");
+        assert_eq!(atomics.len(), 1);
+        assert_eq!(atomics[0].a, pt(5, 5));
+        assert_eq!(atomics[0].b, pt(7, 5));
+        assert_eq!(atomics[0].cover, BTreeMap::from([(3usize, 1i64)]));
+    }
+
+    #[test]
+    fn assemble_atomic_capacity_boundary() {
+        let pt = |x: i128, y: i128| Pt(Exact::integer(x), Exact::integer(y));
+        let long = Seg {
+            bounds: Bounds::new([0.0, 0.0], [8192.0, 0.0]),
+            a: pt(0, 0),
+            b: pt(8192, 0),
+            contour: 0,
+        };
+        let mut inputs = vec![long];
+        let mut splits: Vec<Vec<Pt>> = vec![(0..=8192).rev().map(|i| pt(i, 0)).collect()];
+        let atomics = assemble_atomics(&inputs, &mut splits).expect("at capacity");
+        assert_eq!(splits[0].len(), 8193);
+        assert_eq!(splits[0][0], pt(0, 0));
+        assert_eq!(splits[0][8192], pt(8192, 0));
+        assert_eq!(atomics.len(), 8192);
+        assert_eq!(atomics[0].a, pt(0, 0));
+        assert_eq!(atomics[0].b, pt(1, 0));
+        assert_eq!(atomics[0].cover, BTreeMap::from([(0usize, 1i64)]));
+        assert_eq!(atomics[8191].a, pt(8191, 0));
+        assert_eq!(atomics[8191].b, pt(8192, 0));
+        inputs.push(Seg {
+            bounds: Bounds::new([0.0, 0.0], [1.0, 0.0]),
+            a: pt(0, 0),
+            b: pt(1, 0),
+            contour: 1,
+        });
+        splits.push(vec![pt(1, 0), pt(0, 0)]);
+        let atomics = assemble_atomics(&inputs, &mut splits).expect("existing key at capacity");
+        assert_eq!(atomics.len(), 8192);
+        assert_eq!(
+            atomics[0].cover,
+            BTreeMap::from([(0usize, 1i64), (1usize, 1i64)])
+        );
+        inputs.push(Seg {
+            bounds: Bounds::new([100000.0, 0.0], [100001.0, 0.0]),
+            a: pt(100000, 0),
+            b: pt(100001, 0),
+            contour: 2,
+        });
+        splits.push(vec![pt(100000, 0), pt(100001, 0)]);
+        assert!(assemble_atomics(&inputs, &mut splits).is_none());
     }
 }

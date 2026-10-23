@@ -2,7 +2,7 @@ import * as React from "react";
 import type { StoredFont } from "../../fonts/storage.js";
 import type { RendererRole } from "../../renderer/renderer-types.js";
 import type { VariantSettings } from "../../variants/model.js";
-import { defaultFamilySnapshot, type FamilyMeta, type PreviewSnapshot } from "./state/snapshot-codec.js";
+import { defaultFamilySnapshot, previewVariantSettings, type FamilyMeta, type PreviewSnapshot } from "./state/snapshot-codec.js";
 import { presetForText } from "./presets";
 import { displayName } from "../../fonts/metadata";
 import type { FontLibrary } from "../../fonts/useFontLibrary";
@@ -36,9 +36,7 @@ interface FontPageProps {
   saveVariantError: string;
 }
 
-// Legacy unsaved URL preview host. All snapshot-format conversion stays
-// here at the URL boundary: the shared editor below speaks only native
-// settings and sample text.
+// Legacy unsaved URL preview host.
 export function FontPage({
   nav, font, meta, snapshot, role, previewStatus, notice, library,
   onSnapshot, onPatch, onRole, onStatus, onOpenFont, onIndex, onDelete,
@@ -59,19 +57,7 @@ export function FontPage({
       </section>
     </main>
   );
-  const settings: VariantSettings = {
-    sizePx: family.size,
-    axes: { ...family.axes },
-    letterSpacingPx: family.spacing,
-    profile: snapshot.profile,
-            paletteId: snapshot.paletteId ?? 0,
-    kerning: snapshot.kerning,
-    stemFitting: snapshot.stemFitting,
-    diagonalFitting: snapshot.diagonalFitting ?? false,
-    monoRaster: snapshot.monoRaster,
-    rasterization: snapshot.rasterization,
-    renderer: snapshot.rasterization === undefined ? role : "candidate",
-  };
+  const settings: VariantSettings = previewVariantSettings(family, snapshot, role);
   const { axes: defaultAxes, ...defaultFields } = defaultFamilySnapshot(meta);
   const { axes, ...fields } = family;
   const singleFont = (library.fonts?.length ?? 0) <= 1;

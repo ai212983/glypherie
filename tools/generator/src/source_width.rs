@@ -24,13 +24,12 @@
 //! self-intersection, vertex-dominated branches and ambiguous ownership
 //! abstain.
 
-use crate::{fail, probe::FittedCommand, Error};
+use crate::{fail, orientation::filtered_sign as orient, probe::FittedCommand, Error};
 
 /// Guard in normalized units; arithmetic only, never a model gate.
 const GUARD: f64 = 1e-9;
 /// Degree-detection threshold for linear/constant/quadratic cases.
 const DEG: f64 = 1e-12;
-const ERRBOUND_A: f64 = (3.0 + 16.0 * f64::EPSILON) * f64::EPSILON;
 /// Eligibility cap: straight on-curve vertices on the single contour.
 const MAX_VERTS: usize = 64;
 /// Work and size caps keeping the slice bounded.
@@ -47,6 +46,86 @@ const OPPOSITION_COS: f64 = -0.92050485345244;
 pub struct FitResult {
     pub commands: Vec<FittedCommand>,
     pub applied: bool,
+}
+
+struct Ownership {
+    related: Vec<usize>,
+    owned_related: Vec<bool>,
+    free: Vec<usize>,
+}
+
+fn partition_ownership(kept: &[PairOut], anchor: usize, len: usize) -> Option<Ownership> {
+    let related: Vec<usize> = kept
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| {
+            *i != anchor
+                && kept[*i]
+                    .verts
+                    .iter()
+                    .any(|v| kept[anchor].verts.contains(v))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if related.is_empty() {
+        return None;
+    }
+    let owned_anchor = kept[anchor].verts.clone();
+    let mut owned_related = vec![false; len];
+    for r in &related {
+        for v in &kept[*r].verts {
+            owned_related[*v] = true;
+        }
+    }
+    for v in &owned_anchor {
+        owned_related[*v] = false;
+    }
+    let free: Vec<usize> = (0..len).filter(|v| owned_related[*v]).collect();
+    if free.is_empty() {
+        return None;
+    }
+    Some(Ownership {
+        related,
+        owned_related,
+        free,
+    })
+}
+
+fn limit_movement(
+    cand: &mut [[f64; 2]],
+    up: &[[f64; 2]],
+    free: &[usize],
+    bound: f64,
+    scale: f64,
+) -> bool {
+    let mut movement = 0.0_f64;
+    for v in free {
+        let dx = cand[*v][0] - up[*v][0];
+        let dy = cand[*v][1] - up[*v][1];
+        movement = movement.max(dx * dx + dy * dy);
+    }
+    movement = movement.sqrt();
+    // Convex quadratic descent along the segment to the free-variable LS
+    // minimizer (Boyd/Vandenberghe, chapters 2/9). This feasible prefix is
+    // a project adaptation, not the exact constrained optimum. Preserve the
+    // source budget and reserve the worst Euclidean nearest-26.6 error.
+    let reserve = 2.0_f64.sqrt() / 128.0 / scale;
+    let available = bound - reserve;
+    if available <= 0.0 {
+        return false;
+    }
+    let fraction = if movement > available {
+        available / movement
+    } else {
+        1.0
+    };
+    for v in free {
+        cand[*v] = [
+            up[*v][0] + fraction * (cand[*v][0] - up[*v][0]),
+            up[*v][1] + fraction * (cand[*v][1] - up[*v][1]),
+        ];
+    }
+    true
 }
 
 /// Couple related straight strokes to the upstream-fitted rectilinear anchor.
@@ -114,36 +193,16 @@ pub fn fit(
             return Ok(unchanged());
         }
     };
-    let related: Vec<usize> = pairs
-        .kept
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| {
-            *i != anchor
-                && pairs.kept[*i]
-                    .verts
-                    .iter()
-                    .any(|v| pairs.kept[anchor].verts.contains(v))
-        })
-        .map(|(i, _)| i)
-        .collect();
-    if related.is_empty() {
-        return Ok(unchanged());
-    }
-    let owned_anchor = pairs.kept[anchor].verts.clone();
-    let mut owned_related = vec![false; base.len()];
-    for r in &related {
-        for v in &pairs.kept[*r].verts {
-            owned_related[*v] = true;
+    let Ownership {
+        related,
+        owned_related,
+        free,
+    } = match partition_ownership(&pairs.kept, anchor, base.len()) {
+        Some(ownership) => ownership,
+        None => {
+            return Ok(unchanged());
         }
-    }
-    for v in &owned_anchor {
-        owned_related[*v] = false;
-    }
-    let free: Vec<usize> = (0..base.len()).filter(|v| owned_related[*v]).collect();
-    if free.is_empty() {
-        return Ok(unchanged());
-    }
+    };
     let shift: Vec<[f64; 2]> = base
         .iter()
         .zip(up.iter())
@@ -151,7 +210,7 @@ pub fn fit(
         .collect();
     let mut system = System::new(base.len());
     for edge in &edges {
-        system.edge_row(&base, &shift, edge, height);
+        system.edge_row(&shift, edge, height);
     }
     let mut anchor_samples = Vec::new();
     for sample in &pairs.kept[anchor].samples {
@@ -222,32 +281,8 @@ pub fn fit(
     }
     // Invariant: movement is candidate relative to upstream, before and
     // after quantization, bounded by half the narrowest coupled width.
-    let mut movement = 0.0_f64;
-    for v in &free {
-        let dx = cand[*v][0] - up[*v][0];
-        let dy = cand[*v][1] - up[*v][1];
-        movement = movement.max(dx * dx + dy * dy);
-    }
-    movement = movement.sqrt();
-    // Convex quadratic descent along the segment to the free-variable LS
-    // minimizer (Boyd/Vandenberghe, chapters 2/9). This feasible prefix is
-    // a project adaptation, not the exact constrained optimum. Preserve the
-    // source budget and reserve the worst Euclidean nearest-26.6 error.
-    let reserve = 2.0_f64.sqrt() / 128.0 / frame.scale;
-    let available = bound - reserve;
-    if available <= 0.0 {
+    if !limit_movement(&mut cand, &up, &free, bound, frame.scale) {
         return Ok(unchanged());
-    }
-    let fraction = if movement > available {
-        available / movement
-    } else {
-        1.0
-    };
-    for v in &free {
-        cand[*v] = [
-            up[*v][0] + fraction * (cand[*v][0] - up[*v][0]),
-            up[*v][1] + fraction * (cand[*v][1] - up[*v][1]),
-        ];
     }
     if !valid_geometry(&base, &cand, &loops) {
         return Ok(unchanged());
@@ -466,39 +501,6 @@ impl Frame {
     fn back_y(&self, y: f64) -> f64 {
         y * self.scale + self.min_y
     }
-}
-
-/// Error-filtered orientation sign for widened f32 geometry.
-///
-/// Source: Shewchuk error-filtered predicates
-/// (https://www.cs.cmu.edu/~quake/robust.html); the opposite-sign fast path
-/// and the static error bound are exact filters, and anything below the bound
-/// abstains. Axis-aligned exact zeros and shared points are decided
-/// structurally; other computed zeros abstain.
-fn orient(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64) -> Option<i8> {
-    if (ax == bx && ay == by) || (ax == cx && ay == cy) || (bx == cx && by == cy) {
-        return Some(0);
-    }
-    if (ay == by && ay == cy) || (ax == bx && ax == cx) {
-        return Some(0);
-    }
-    let detleft = (ax - cx) * (by - cy);
-    let detright = (ay - cy) * (bx - cx);
-    let det = detleft - detright;
-    if detleft > 0.0 && detright <= 0.0 {
-        return Some(1);
-    }
-    if detleft < 0.0 && detright >= 0.0 {
-        return Some(-1);
-    }
-    if det == 0.0 {
-        return None;
-    }
-    let bound = ERRBOUND_A * (detleft.abs() + detright.abs());
-    if det.abs() >= bound {
-        return Some(det.signum() as i8);
-    }
-    None
 }
 
 /// Nonzero winding test on straight loops.
@@ -1108,11 +1110,7 @@ fn recognize(
     loops: &[Vec<usize>],
     work: &mut u64,
 ) -> Recognition {
-    // Source: one border yields one pair; exact score ties abstain. Sampling
-    // uses every retained interval, never index-matched thirds.
     struct Scored {
-        width: f64,
-        ilen: f64,
         samples: Vec<SamplePt>,
         verts: [usize; 4],
         borders: [usize; 2],
@@ -1150,21 +1148,6 @@ fn recognize(
                 Some(v) => v,
                 None => continue,
             };
-            // Scoring contact at the widest interval midpoint.
-            let mut best: Option<(f64, f64)> = None;
-            for (ta, tb) in &raw.intervals {
-                let r = raw.r0 + raw.g * (ta + tb) / 2.0;
-                if r > 0.0 {
-                    let w = 2.0 * r;
-                    if best.is_none_or(|(bw, _)| w > bw) {
-                        best = Some((w, tb - ta));
-                    }
-                }
-            }
-            let (width, ilen) = match best {
-                Some(v) => v,
-                None => continue,
-            };
             // Three equal-midpoint samples per actual valid interval; a
             // failing recheck drops the interval.
             let mut samples = Vec::new();
@@ -1199,8 +1182,6 @@ fn recognize(
                 continue;
             }
             scored.push(Scored {
-                width,
-                ilen,
                 samples,
                 verts: [e1.va, e1.vb, e2.va, e2.vb],
                 borders: [i, j],
@@ -1213,9 +1194,7 @@ fn recognize(
             ambiguous: true,
         };
     }
-    // This restricted recognizer owns one pair per border. Multiple surviving
-    // partners require interval ownership across branches, outside this slice;
-    // do not resolve that conflict by preferring a narrow or long stroke.
+    // Multiple surviving partners require interval ownership across branches.
     let mut claims = vec![0usize; n];
     for pair in &scored {
         for border in pair.borders {
@@ -1229,43 +1208,21 @@ fn recognize(
         };
     }
     let mut kept = Vec::new();
-    let mut used = vec![false; n];
-    let mut ambiguous = false;
     for idx in 0..scored.len() {
-        let borders = scored[idx].borders;
-        let width = scored[idx].width;
-        let ilen = scored[idx].ilen;
-        if used[borders[0]] || used[borders[1]] {
-            // Exact score ties on a shared border abstain the slice.
-            for o in scored.iter() {
-                if o.borders == borders {
-                    continue;
-                }
-                let shares = o
-                    .borders
-                    .iter()
-                    .any(|b| *b == borders[0] || *b == borders[1]);
-                if shares && o.width == width && o.ilen == ilen {
-                    ambiguous = true;
-                }
-            }
-            continue;
-        }
-        used[borders[0]] = true;
-        used[borders[1]] = true;
         let samples = std::mem::take(&mut scored[idx].samples);
         kept.push(PairOut {
             verts: scored[idx].verts,
             samples,
         });
     }
-    Recognition { kept, ambiguous }
+    Recognition {
+        kept,
+        ambiguous: false,
+    }
 }
 
 /// Rectilinear anchor with integral fitted boundaries, unique.
 fn select_anchor(pairs: &[PairOut], edges: &[Edge], fit_pts: &[[f64; 2]]) -> Option<usize> {
-    // Source: rectilinear support segments paired on integral red lines.
-    // Hysteresis and grid fitting live outside this slice.
     let mut found = None;
     for (idx, pair) in pairs.iter().enumerate() {
         let e1 = edges.get(pair_edge_index(edges, pair, 0)?)?;
@@ -1346,34 +1303,14 @@ impl System {
         }
     }
 
-    fn edge_row(&mut self, base: &[[f64; 2]], shift: &[[f64; 2]], edge: &Edge, height: f64) {
+    fn edge_row(&mut self, shift: &[[f64; 2]], edge: &Edge, height: f64) {
         // Source: edge residuals (1)-(3) with the upstream position target.
         let alpha1 = 1000.0 / (height * height * height);
         let t = edge.t;
         let nrm = edge.n;
         let a = edge.va;
         let b = edge.vb;
-        let ri = vec![(2 * a, nrm[0]), (2 * a + 1, nrm[1])];
-        let rj = vec![(2 * b, nrm[0]), (2 * b + 1, nrm[1])];
-        let _ = base;
         let scale_pos = (alpha1 * edge.len / 4.0).sqrt();
-        let mut row: Vec<(usize, f64)> = ri
-            .iter()
-            .chain(rj.iter())
-            .map(|(k, v)| {
-                if *k / 2 == a {
-                    (*k, v * scale_pos)
-                } else {
-                    (*k, v * scale_pos)
-                }
-            })
-            .collect();
-        // (ri + rj) and (rj - ri) share the same scaled entries here;
-        // expand explicitly below for the mean and difference modes.
-        row.clear();
-        for v in [nrm[0], nrm[1]] {
-            let _ = v;
-        }
         let mut mean = Vec::with_capacity(4);
         mean.push((2 * a, nrm[0] * scale_pos));
         mean.push((2 * a + 1, nrm[1] * scale_pos));
@@ -1400,9 +1337,6 @@ impl System {
             let constant = -r.iter().map(|(k, v)| v * shift[k / 2][k % 2]).sum::<f64>();
             self.rows.push((r, constant));
         }
-        let _ = ri;
-        let _ = rj;
-        let _ = row;
     }
 
     fn match_row(&mut self, row: &SampleRow, other: &SampleRow, height: f64, width_scale: f64) {
@@ -1714,5 +1648,122 @@ mod math_controls {
         let px = width_weight(1., 1.5, [1., 0.], [0., 1.], 16., 0.7);
         let normalized = width_weight(0.1, 0.15, [1., 0.], [0., 1.], 1.6, 0.07);
         assert!((normalized * 0.01 - px).abs() < 1e-12);
+    }
+    #[test]
+    fn edge_residual_zero_at_upstream_shift_positive_at_origin() {
+        let pts = [[0.0, 0.0], [3.0, 4.0], [-1.0, 7.0], [-4.0, 3.0]];
+        let edges = straight_edges(&pts);
+        let shift = [[0.25, -0.5], [0.75, 0.125], [0.0, 0.0], [0.0, 0.0]];
+        let mut system = System::new(4);
+        system.edge_row(&shift, &edges[0], 10.0);
+        assert!(width_cost(&system, &shift) < 1e-24);
+        assert!(width_cost(&system, &[[0.0, 0.0]; 4]) > 0.0);
+    }
+    fn pair(verts: [usize; 4]) -> PairOut {
+        PairOut {
+            verts,
+            samples: Vec::new(),
+        }
+    }
+    #[test]
+    fn ownership_isolated_pairs_yield_none() {
+        let kept = vec![pair([0, 1, 2, 3]), pair([4, 5, 6, 7])];
+        assert!(partition_ownership(&kept, 0, 8).is_none());
+    }
+    #[test]
+    fn ownership_shared_vert_marks_related_and_clears_anchor() {
+        let kept = vec![pair([0, 1, 2, 3]), pair([3, 4, 5, 6])];
+        let ownership = partition_ownership(&kept, 0, 7).unwrap();
+        assert_eq!(ownership.related, vec![1]);
+        assert_eq!(
+            ownership.owned_related,
+            vec![false, false, false, false, true, true, true]
+        );
+        assert_eq!(ownership.free, vec![4, 5, 6]);
+    }
+    #[test]
+    fn ownership_nonzero_anchor_excludes_anchor_verts() {
+        let kept = vec![pair([0, 1, 2, 3]), pair([2, 3, 4, 5])];
+        let ownership = partition_ownership(&kept, 1, 6).unwrap();
+        assert_eq!(ownership.related, vec![0]);
+        assert_eq!(
+            ownership.owned_related,
+            vec![true, true, false, false, false, false]
+        );
+        assert_eq!(ownership.free, vec![0, 1]);
+    }
+    #[test]
+    fn ownership_duplicate_verts_leave_free_empty() {
+        let kept = vec![pair([0, 1, 2, 3]), pair([0, 1, 2, 3])];
+        assert!(partition_ownership(&kept, 0, 4).is_none());
+    }
+    #[test]
+    fn ownership_free_lists_ascending_free_indices() {
+        let kept = vec![pair([0, 1, 2, 3]), pair([3, 9, 8, 7])];
+        let ownership = partition_ownership(&kept, 0, 10).unwrap();
+        assert_eq!(ownership.free, vec![7, 8, 9]);
+    }
+    #[test]
+    fn limited_movement_keeps_under_budget_candidate() {
+        let mut cand = vec![[3.0, 4.0], [1.0, 0.0]];
+        let up = vec![[0.0, 0.0], [1.0, 0.0]];
+        assert!(limit_movement(&mut cand, &up, &[0], 10.0, 1.0));
+        assert_eq!(cand, vec![[3.0, 4.0], [1.0, 0.0]]);
+    }
+    #[test]
+    fn limited_movement_scales_over_budget_by_exact_quantum_budget() {
+        let mut cand = vec![[5.0, 0.0], [0.0, 5.0], [9.0, 9.0]];
+        let up = vec![[1.0, 0.0], [0.0, 2.0], [7.0, 7.0]];
+        assert!(limit_movement(
+            &mut cand,
+            &up,
+            &[0, 1],
+            1.0,
+            std::f64::consts::SQRT_2
+        ));
+        assert_eq!(cand[0], [1.0 + 127.0 / 128.0, 0.0]);
+        assert_eq!(cand[1], [0.0, 2.0 + 381.0 / 512.0]);
+        assert_eq!(cand[2], [9.0, 9.0]);
+    }
+    #[test]
+    fn limited_movement_leaves_pinned_vertices_untouched() {
+        let mut cand = vec![[3.0, 0.0], [0.0, 4.0]];
+        let up = vec![[0.0, 0.0], [0.0, 0.0]];
+        assert!(limit_movement(&mut cand, &up, &[0], 3.0, 1.0));
+        assert!(cand[0][0] > 2.0 && cand[0][0] < 3.0);
+        assert_eq!(cand[0][1], 0.0);
+        assert_eq!(cand[1], [0.0, 4.0]);
+    }
+    #[test]
+    fn limited_movement_rejects_exhausted_budget_untouched() {
+        let mut cand = vec![[3.0, 4.0]];
+        let up = vec![[0.0, 0.0]];
+        assert!(!limit_movement(&mut cand, &up, &[0], 0.01, 1.0));
+        assert_eq!(cand, vec![[3.0, 4.0]]);
+        let mut cand = vec![[3.0, 4.0]];
+        assert!(!limit_movement(
+            &mut cand,
+            &up,
+            &[0],
+            1.0 / 128.0,
+            std::f64::consts::SQRT_2
+        ));
+        assert_eq!(cand, vec![[3.0, 4.0]]);
+    }
+    #[test]
+    fn limited_movement_accepts_zero_move() {
+        let mut cand = vec![[1.0, 2.0]];
+        let up = vec![[1.0, 2.0]];
+        assert!(limit_movement(&mut cand, &up, &[0], 1.0, 1.0));
+        assert_eq!(cand, vec![[1.0, 2.0]]);
+    }
+    #[test]
+    fn limited_movement_reserve_shrinks_with_scale() {
+        let mut cand = vec![[4.0, 0.0], [0.0, 1.0]];
+        let up = vec![[0.0, 0.0], [0.0, 1.0]];
+        assert!(limit_movement(&mut cand, &up, &[0], 1.0, 4.0));
+        assert!(cand[0][0] > 0.99 && cand[0][0] < 1.0);
+        assert_eq!(cand[0][1], 0.0);
+        assert_eq!(cand[1], [0.0, 1.0]);
     }
 }

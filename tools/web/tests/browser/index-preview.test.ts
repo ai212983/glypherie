@@ -19,7 +19,6 @@ import {
   selectPalettePreset,
   servePrefix,
   setZoom,
-  tooltipText,
 } from "../helpers/spa-helpers.ts";
 import type { Locator, Page } from "playwright-core";
 
@@ -424,11 +423,13 @@ test("index settings survive navigation and reload", { skip: !browserAvailable }
     (name) => document.querySelector(".family h2")?.textContent === name,
     names[0],
   );
-  assert.notEqual(
+  assert.equal(
     await page.locator("[data-text]").inputValue(),
     "Qq Rr Zz",
-    "variant keeps its own saved settings",
+    "new variants inherit the library sample",
   );
+  await page.locator("[data-text]").fill("Variant keeps Rr");
+  await page.waitForFunction(() => document.querySelector("[data-save-status]")?.textContent === "Saved");
   await page.locator('[data-primary-nav="fonts"]').click();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   async function expectLibrarySettings(label: string): Promise<void> {
@@ -518,12 +519,17 @@ test("variant renders from the shared cache without reloading fonts", { skip: !b
   assert.equal(
     await page.locator("text=Loading font into the renderer…").count(),
     0,
-    "cached font renders without a loader flash",
+    "cached font has no pending loader after rendering",
   );
   assert.equal(
     await page.evaluate(() => document.querySelectorAll("[data-source-preview]").length),
-    0,
-    "index canvases unmount on detail",
+    1,
+    "only the variant sidebar keeps a source specimen",
+  );
+  assert.equal(
+    await page.evaluate(() => document.querySelectorAll('[data-source-preview][data-rendered="true"]').length),
+    1,
+    "the sidebar specimen paints from the shared cache",
   );
 });
 
@@ -607,7 +613,7 @@ test("canvas appearance presets repaint with exact colors, geometry and persiste
   assert.match(await presetLabel.getAttribute("class") ?? "", /sr-only/, "preset label is sr-only, not duplicated");
   const presetBox = page.getByRole("combobox", { name: "Canvas preset" });
   assert.equal(await page.locator("[data-canvas-inverse]").getAttribute("role"), "switch", "inverse is a switch");
-  assert.equal(await tooltipText(page, page.locator("[data-canvas-inverse]")), "Invert canvas colors");
+  assert.equal(await page.locator("[data-canvas-inverse]").getAttribute("aria-label"), "Inverse canvas colors", "inverse keeps its accessible name");
   assert.deepEqual(await canvasAppearance(page), { palette: "black-white", inverse: false });
   const row = await page.evaluate(() => {
     const select = document.querySelector("[data-canvas-preset]")!.getBoundingClientRect();
@@ -838,8 +844,11 @@ test("saved variants render their own specimens in the library", { skip: !browse
   await page.locator("[data-text]").fill("Compact specimen AA");
   await page.locator("[data-size-px]").fill("12");
   assert.equal(await page.locator("#rasterization").count(), 0);
-  await page.getByRole("combobox", { name: "Fitting", exact: true }).click();
-  await page.getByRole("option", { name: "Automatic", exact: true }).click();
+  assert.equal(await page.getByRole("combobox", { name: "Fitting", exact: true }).count(), 0, "fitting uses switches, without a combobox");
+  const hints = page.getByRole("switch", { name: "Use font hints", exact: true });
+  assert.equal(await hints.isChecked(), true);
+  await hints.uncheck();
+  assert.equal(await hints.isChecked(), false);
   await waitSaved();
 
   await backToLibrary(1);

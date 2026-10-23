@@ -78,8 +78,21 @@ fn changed_ink_quantity_is_not_an_acceptance_rule() {
         wider.glyphs[0].upstream.coverage_area_px,
         wider.glyphs[0].candidate.coverage_area_px
     );
+    assert!(wider.glyphs[0].candidate_outline_changed);
+    assert!(narrower.glyphs[0].candidate_outline_changed);
     let serialized = serde_json::to_value(wider).unwrap();
     assert!(serialized.get("score").is_none());
+    assert_eq!(
+        serialized["glyphs"][0]["candidate_outline_changed"],
+        serde_json::Value::Bool(true)
+    );
+    let (source, upstream, candidate) = reports("mono_1bit");
+    let identical = evaluate(&source, &upstream, &candidate);
+    assert!(!identical.glyphs[0].candidate_outline_changed);
+    assert_eq!(
+        serde_json::to_value(identical).unwrap()["glyphs"][0]["candidate_outline_changed"],
+        serde_json::Value::Bool(false)
+    );
 }
 
 #[test]
@@ -399,5 +412,791 @@ fn unlike_inputs_and_duplicate_records_cannot_pass_comparability_checks() {
             .hard_failures
             .iter()
             .any(|failure| failure.invariant == expected));
+    }
+}
+
+const OUTLINE_INVARIANT: &str = "outline coordinates or contour command structure invalid";
+const STORED_RASTER_INVARIANT: &str = "stored raster does not reproduce from fitted outline";
+const COVERAGE_CHECKSUM_INVARIANT: &str = "coverage checksum inconsistent";
+
+fn has_invariant(evaluation: &font_generator::evaluation::Evaluation, invariant: &str) -> bool {
+    evaluation
+        .hard_failures
+        .iter()
+        .any(|failure| failure.invariant == invariant)
+}
+
+fn header_failures(evaluation: &font_generator::evaluation::Evaluation) -> Vec<(&str, &str)> {
+    evaluation
+        .hard_failures
+        .iter()
+        .filter(|failure| failure.codepoint.is_none())
+        .map(|failure| (failure.report.as_str(), failure.invariant.as_str()))
+        .collect()
+}
+
+fn candidate_with_outline(base: &ReferenceReport, commands: Vec<FittedCommand>) -> ReferenceReport {
+    let mut candidate = base.clone();
+    candidate.records[0].fitted_commands = commands;
+    candidate
+}
+
+fn coordinate_outlines(value: f32) -> Vec<(&'static str, Vec<FittedCommand>)> {
+    vec![
+        (
+            "move_x",
+            vec![FittedCommand::MoveTo(value, 0.0), FittedCommand::Close],
+        ),
+        (
+            "move_y",
+            vec![FittedCommand::MoveTo(0.0, value), FittedCommand::Close],
+        ),
+        (
+            "line_x",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::LineTo(value, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "line_y",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::LineTo(0.0, value),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "quad_x1",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::QuadTo(value, 0.0, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "quad_y1",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::QuadTo(0.0, value, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "quad_x",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::QuadTo(0.0, 0.0, value, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "quad_y",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::QuadTo(0.0, 0.0, 0.0, value),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_x1",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(value, 0.0, 0.0, 0.0, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_y1",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(0.0, value, 0.0, 0.0, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_x2",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(0.0, 0.0, value, 0.0, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_y2",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(0.0, 0.0, 0.0, value, 0.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_x",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(0.0, 0.0, 0.0, 0.0, value, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_y",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(0.0, 0.0, 0.0, 0.0, 0.0, value),
+                FittedCommand::Close,
+            ],
+        ),
+    ]
+}
+
+#[test]
+fn outline_grammar_valid_shapes_have_no_outline_failure() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut multi = rectangle(0.0, 0.0, 1.0, 1.0);
+    multi.extend(rectangle(2.0, 2.0, 1.0, 1.0));
+    let cases: Vec<(&str, Vec<FittedCommand>)> = vec![
+        ("empty", vec![]),
+        (
+            "move_close",
+            vec![FittedCommand::MoveTo(0.0, 0.0), FittedCommand::Close],
+        ),
+        ("multi_closed_contours", multi),
+        (
+            "line_within_open",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::LineTo(1.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "quad_within_open",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::QuadTo(1.0, 0.0, 1.0, 1.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "curve_within_open",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::CurveTo(1.0, 0.0, 1.0, 1.0, 0.0, 1.0),
+                FittedCommand::Close,
+            ],
+        ),
+    ];
+    for (name, commands) in cases {
+        let mut candidate = base.clone();
+        replace_outline(&mut candidate, commands);
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, OUTLINE_INVARIANT),
+            "{name} should have no outline failure"
+        );
+        assert!(
+            evaluation.hard_invariants_pass,
+            "{name}: {:?}",
+            evaluation.hard_failures
+        );
+    }
+}
+
+#[test]
+fn outline_grammar_invalid_shapes_fail_exact_invariant_and_skip_raster() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let cases: Vec<(&str, Vec<FittedCommand>)> = vec![
+        ("stray_line", vec![FittedCommand::LineTo(1.0, 0.0)]),
+        (
+            "stray_quad",
+            vec![FittedCommand::QuadTo(1.0, 0.0, 1.0, 1.0)],
+        ),
+        (
+            "stray_curve",
+            vec![FittedCommand::CurveTo(1.0, 0.0, 1.0, 1.0, 0.0, 1.0)],
+        ),
+        ("stray_close", vec![FittedCommand::Close]),
+        (
+            "nested_move",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::LineTo(1.0, 0.0),
+                FittedCommand::MoveTo(2.0, 0.0),
+                FittedCommand::Close,
+            ],
+        ),
+        (
+            "open_ended_path",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::LineTo(1.0, 0.0),
+            ],
+        ),
+        (
+            "double_close",
+            vec![
+                FittedCommand::MoveTo(0.0, 0.0),
+                FittedCommand::Close,
+                FittedCommand::Close,
+            ],
+        ),
+    ];
+    for (name, commands) in cases {
+        let candidate = candidate_with_outline(&base, commands);
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(!evaluation.hard_invariants_pass, "{name}");
+        assert!(
+            has_invariant(&evaluation, OUTLINE_INVARIANT),
+            "{name} missing exact contour invariant"
+        );
+        assert!(
+            !has_invariant(&evaluation, STORED_RASTER_INVARIANT),
+            "{name} must skip stored raster reproduction"
+        );
+    }
+}
+
+#[test]
+fn outline_numeric_boundary_inclusive_for_every_slot() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut checked = 0;
+    for bound in [32768.0_f32, -32768.0_f32] {
+        for (slot, commands) in coordinate_outlines(bound) {
+            let candidate = candidate_with_outline(&base, commands);
+            let evaluation = evaluate(&source, &upstream, &candidate);
+            assert!(
+                !has_invariant(&evaluation, OUTLINE_INVARIANT),
+                "{slot}_{bound} at inclusive boundary should have no outline failure"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 28);
+}
+
+#[test]
+fn outline_numeric_outside_invalid_for_every_slot() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let just_outside = f32::from_bits(32768.0_f32.to_bits() + 1);
+    let just_outside_neg = -just_outside;
+    assert!(just_outside.is_finite() && just_outside > 32768.0);
+    assert!(just_outside_neg.is_finite() && just_outside_neg < -32768.0);
+    let witnesses: Vec<(&str, f32)> = vec![
+        ("next_above", just_outside),
+        ("next_below", just_outside_neg),
+        ("nan", f32::NAN),
+        ("pos_inf", f32::INFINITY),
+        ("neg_inf", f32::NEG_INFINITY),
+    ];
+    let mut checked = 0;
+    for (witness_name, witness) in &witnesses {
+        for (slot, commands) in coordinate_outlines(*witness) {
+            let candidate = candidate_with_outline(&base, commands);
+            let evaluation = evaluate(&source, &upstream, &candidate);
+            assert!(!evaluation.hard_invariants_pass, "{slot}/{witness_name}");
+            assert!(
+                has_invariant(&evaluation, OUTLINE_INVARIANT),
+                "{slot}/{witness_name} missing exact contour invariant"
+            );
+            assert!(
+                !has_invariant(&evaluation, STORED_RASTER_INVARIANT),
+                "{slot}/{witness_name} must skip stored raster reproduction"
+            );
+            checked += 1;
+        }
+    }
+    assert_eq!(checked, 70);
+}
+
+#[test]
+fn outline_invalid_skips_later_raster_after_earlier_checksum() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut candidate = candidate_with_outline(&base, vec![FittedCommand::LineTo(1.0, 0.0)]);
+    candidate.records[0].coverage_sha256 = "0".repeat(64);
+    assert!(!candidate.records[0].pixels.is_empty());
+    candidate.records[0].pixels[0] ^= 1;
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    let ordered: Vec<&str> = evaluation
+        .hard_failures
+        .iter()
+        .map(|failure| failure.invariant.as_str())
+        .collect();
+    assert_eq!(
+        ordered,
+        vec![COVERAGE_CHECKSUM_INVARIANT, OUTLINE_INVARIANT]
+    );
+}
+
+const SIDEBEARING_INVARIANT: &str = "invalid monochrome side bearing deltas";
+const NONFINITE_INVARIANT: &str = "nonfinite fitted metrics";
+
+#[test]
+fn fitted_side_bearing_delta_magnitudes() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let valid: Vec<Option<[i32; 2]>> = vec![
+        None,
+        Some([96, 0]),
+        Some([0, 96]),
+        Some([96, 96]),
+        Some([-96, -96]),
+        Some([96, -96]),
+        Some([-96, 96]),
+    ];
+    for deltas in valid {
+        let mut candidate = base.clone();
+        candidate.records[0].side_bearing_deltas_26_6 = deltas;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, SIDEBEARING_INVARIANT),
+            "{deltas:?} within guard should have no side bearing failure"
+        );
+    }
+    let invalid: Vec<[i32; 2]> = vec![
+        [97, 0],
+        [0, 97],
+        [-97, 0],
+        [0, -97],
+        [97, 97],
+        [-97, -97],
+        [i32::MIN, 0],
+        [0, i32::MIN],
+    ];
+    for deltas in invalid {
+        let mut candidate = base.clone();
+        candidate.records[0].side_bearing_deltas_26_6 = Some(deltas);
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(!evaluation.hard_invariants_pass, "{deltas:?}");
+        assert!(
+            has_invariant(&evaluation, SIDEBEARING_INVARIANT),
+            "{deltas:?} missing side bearing failure"
+        );
+    }
+}
+
+#[test]
+fn fitted_side_bearing_deltas_require_mono_target_and_auto_engine() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut control = base.clone();
+    control.records[0].side_bearing_deltas_26_6 = Some([0, 0]);
+    assert!(!has_invariant(
+        &evaluate(&source, &upstream, &control),
+        SIDEBEARING_INVARIANT
+    ));
+    let mut target = base.clone();
+    target.records[0].side_bearing_deltas_26_6 = Some([0, 0]);
+    target.records[0].target = "smooth".into();
+    assert!(has_invariant(
+        &evaluate(&source, &upstream, &target),
+        SIDEBEARING_INVARIANT
+    ));
+    let mut engine = base.clone();
+    engine.records[0].side_bearing_deltas_26_6 = Some([0, 0]);
+    engine.records[0].selected_engine = "interpreter".into();
+    assert!(has_invariant(
+        &evaluate(&source, &upstream, &engine),
+        SIDEBEARING_INVARIANT
+    ));
+}
+
+#[test]
+fn fitted_hinted_metrics_finite_domain() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let valid: Vec<(Option<f32>, Option<f32>)> = vec![(None, None), (Some(8.0), Some(1.5))];
+    for (width, lsb) in valid {
+        let mut candidate = base.clone();
+        candidate.records[0].hinted_advance_width = width;
+        candidate.records[0].hinted_lsb = lsb;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, NONFINITE_INVARIANT),
+            "{width:?}/{lsb:?} should have no fitted metric failure"
+        );
+    }
+    let invalid: Vec<(Option<f32>, Option<f32>)> = vec![
+        (Some(f32::NAN), None),
+        (Some(f32::INFINITY), None),
+        (Some(f32::NEG_INFINITY), None),
+        (None, Some(f32::NAN)),
+        (None, Some(f32::INFINITY)),
+        (None, Some(f32::NEG_INFINITY)),
+    ];
+    for (width, lsb) in invalid {
+        let mut candidate = base.clone();
+        candidate.records[0].hinted_advance_width = width;
+        candidate.records[0].hinted_lsb = lsb;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(!evaluation.hard_invariants_pass, "{width:?}/{lsb:?}");
+        assert!(
+            has_invariant(&evaluation, NONFINITE_INVARIANT),
+            "{width:?}/{lsb:?} missing fitted metric failure"
+        );
+    }
+    let mut both = base.clone();
+    both.records[0].hinted_advance_width = Some(f32::NAN);
+    both.records[0].hinted_lsb = Some(f32::INFINITY);
+    let evaluation = evaluate(&source, &upstream, &both);
+    assert!(has_invariant(&evaluation, NONFINITE_INVARIANT));
+    assert_eq!(
+        evaluation
+            .hard_failures
+            .iter()
+            .filter(|failure| failure.invariant == NONFINITE_INVARIANT)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn fitted_metric_failures_continue_to_later_checks_in_order() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut candidate = base.clone();
+    candidate.records[0].side_bearing_deltas_26_6 = Some([97, 0]);
+    candidate.records[0].hinted_advance_width = Some(f32::NAN);
+    candidate.records[0].coverage_sha256 = "0".repeat(64);
+    assert!(!candidate.records[0].pixels.is_empty());
+    candidate.records[0].pixels[0] ^= 1;
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    let ordered: Vec<&str> = evaluation
+        .hard_failures
+        .iter()
+        .map(|failure| failure.invariant.as_str())
+        .collect();
+    assert_eq!(
+        ordered,
+        vec![
+            SIDEBEARING_INVARIANT,
+            NONFINITE_INVARIANT,
+            COVERAGE_CHECKSUM_INVARIANT,
+            STORED_RASTER_INVARIANT
+        ]
+    );
+}
+
+const QUANT_INVARIANT: &str = "raster quantization policy invalid";
+const BUFFER_INVARIANT: &str = "bitmap dimensions or buffer lengths invalid";
+const PIXEL_LEVEL_INVARIANT: &str = "pixel level outside configured range";
+const POLICY_INVARIANT: &str = "glyph render policy changed";
+
+#[test]
+fn quantization_output_bits_domain() {
+    let (source, upstream, base) = reports("mono_1bit");
+    for bits in [1, 2, 3, 4, 8] {
+        let mut candidate = base.clone();
+        candidate.records[0].output_bits = bits;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, QUANT_INVARIANT),
+            "{bits} valid bits should have no quant failure"
+        );
+    }
+    for bits in [0, 5, 16, 255] {
+        let mut candidate = base.clone();
+        candidate.records[0].output_bits = bits;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            has_invariant(&evaluation, QUANT_INVARIANT),
+            "{bits} missing quant failure"
+        );
+    }
+}
+
+#[test]
+fn quantization_threshold_domain() {
+    let (source, upstream, base) = reports("mono_1bit");
+    for threshold in [1, 255] {
+        let mut candidate = base.clone();
+        candidate.records[0].mono_threshold = threshold;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, QUANT_INVARIANT),
+            "{threshold} nonzero threshold should have no quant failure"
+        );
+    }
+    let mut candidate = base.clone();
+    candidate.records[0].mono_threshold = 0;
+    assert!(has_invariant(
+        &evaluate(&source, &upstream, &candidate),
+        QUANT_INVARIANT
+    ));
+}
+
+#[test]
+fn quantization_gamma_domain() {
+    let (source, upstream, base) = reports("mono_1bit");
+    for gamma in [0.5, 1e-30, f32::MIN_POSITIVE] {
+        let mut candidate = base.clone();
+        candidate.records[0].gray_gamma = gamma;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            !has_invariant(&evaluation, QUANT_INVARIANT),
+            "{gamma} finite positive gamma should have no quant failure"
+        );
+    }
+    for gamma in [0.0, -0.0, -1.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let mut candidate = base.clone();
+        candidate.records[0].gray_gamma = gamma;
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(
+            has_invariant(&evaluation, QUANT_INVARIANT),
+            "{gamma} missing quant failure"
+        );
+    }
+}
+
+#[test]
+fn quantization_invalid_stops_before_later_checks() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut stopped = base.clone();
+    assert!(!stopped.records[0].pixels.is_empty());
+    stopped.records[0].output_bits = 0;
+    stopped.records[0].pixels[0] = 200;
+    stopped.records[0].coverage_sha256 = "0".repeat(64);
+    stopped.records[0].fitted_commands = vec![FittedCommand::LineTo(1.0, 0.0)];
+    let evaluation = evaluate(&source, &upstream, &stopped);
+    assert!(has_invariant(&evaluation, QUANT_INVARIANT));
+    for unexpected in [
+        PIXEL_LEVEL_INVARIANT,
+        COVERAGE_CHECKSUM_INVARIANT,
+        OUTLINE_INVARIANT,
+        STORED_RASTER_INVARIANT,
+    ] {
+        assert!(
+            !has_invariant(&evaluation, unexpected),
+            "quant policy must stop before {unexpected}"
+        );
+    }
+    let ordered: Vec<&str> = evaluation
+        .hard_failures
+        .iter()
+        .map(|failure| failure.invariant.as_str())
+        .collect();
+    assert_eq!(ordered, vec![QUANT_INVARIANT, POLICY_INVARIANT]);
+    let mut buffered = base.clone();
+    buffered.records[0].pixels.pop();
+    buffered.records[0].mono_threshold = 0;
+    buffered.records[0].coverage_sha256 = "0".repeat(64);
+    buffered.records[0].fitted_commands = vec![FittedCommand::LineTo(1.0, 0.0)];
+    let evaluation = evaluate(&source, &upstream, &buffered);
+    assert!(!evaluation.hard_invariants_pass);
+    let ordered: Vec<&str> = evaluation
+        .hard_failures
+        .iter()
+        .map(|failure| failure.invariant.as_str())
+        .collect();
+    assert_eq!(
+        ordered,
+        vec![BUFFER_INVARIANT, QUANT_INVARIANT, POLICY_INVARIANT]
+    );
+}
+
+#[test]
+fn header_report_provenance_is_exact_per_report() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut hinted = source.clone();
+    hinted.hinting_requested = "auto".into();
+    assert_eq!(
+        header_failures(&evaluate(&hinted, &upstream, &base)),
+        [("source", "independent unhinted source required")]
+    );
+    let mut extensions = source.clone();
+    extensions.extensions = "diagonal-01".into();
+    assert_eq!(
+        header_failures(&evaluate(&extensions, &upstream, &base)),
+        [("source", "independent unhinted source required")]
+    );
+    let mut fork = source.clone();
+    fork.fork = true;
+    assert_eq!(
+        header_failures(&evaluate(&fork, &upstream, &base)),
+        [("source", "independent unhinted source required")]
+    );
+    let mut implementation = source.clone();
+    implementation.implementation = "rolled".into();
+    assert_eq!(
+        header_failures(&evaluate(&implementation, &upstream, &base)),
+        [("source", "independent unhinted source required")]
+    );
+    let mut extensions = upstream.clone();
+    extensions.extensions = "diagonal-01".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &extensions, &base)),
+        [("upstream", "independent upstream baseline required")]
+    );
+    let mut fork = upstream.clone();
+    fork.fork = true;
+    assert_eq!(
+        header_failures(&evaluate(&source, &fork, &base)),
+        [("upstream", "independent upstream baseline required")]
+    );
+    let mut implementation = upstream.clone();
+    implementation.implementation = "rolled".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &implementation, &base)),
+        [("upstream", "independent upstream baseline required")]
+    );
+}
+
+#[test]
+fn header_independent_rendering_contract_is_exact() {
+    use font_generator::reference::{AdvancePolicy, RasterPolicy};
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut hinted = source.clone();
+    hinted.advance_policy = AdvancePolicy::Hinted;
+    assert_eq!(
+        header_failures(&evaluate(&hinted, &upstream, &base)),
+        [(
+            "source",
+            "independent rendering requires linear metrics without bearing correction"
+        )]
+    );
+    let mut bearing = upstream.clone();
+    bearing.records[0].side_bearing_deltas_26_6 = Some([0, 0]);
+    assert_eq!(
+        header_failures(&evaluate(&source, &bearing, &base)),
+        [(
+            "upstream",
+            "independent rendering requires linear metrics without bearing correction"
+        )]
+    );
+    let mut coverage = source.clone();
+    coverage.records[0].raster_policy = RasterPolicy::CoverageDropout;
+    assert_eq!(
+        header_failures(&evaluate(&coverage, &upstream, &base)),
+        [(
+            "source",
+            "independent rendering requires coverage raster policy"
+        )]
+    );
+}
+
+#[test]
+fn header_candidate_divergence_pins_exact_report() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut target = base.clone();
+    target.extensions = "mono-width-01".into();
+    target.target = "smooth".into();
+    target.records[0].target = "smooth".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &target)),
+        [
+            (
+                "candidate",
+                "Mono candidate must declare the upstream mono target"
+            ),
+            ("candidate", "render profile or rasterizer policy changed"),
+        ]
+    );
+    let mut size = base.clone();
+    size.size_px = 17.0;
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &size)),
+        [("candidate", "font, size or variation identity changed")]
+    );
+    let mut size = source.clone();
+    size.size_px = 17.0;
+    assert_eq!(
+        header_failures(&evaluate(&size, &upstream, &base)),
+        [("source", "font, size or variation identity changed")]
+    );
+    let mut profile = base.clone();
+    profile.profile = "gray_3bit".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &profile)),
+        [("candidate", "render profile or rasterizer policy changed")]
+    );
+    let mut profile = source.clone();
+    profile.profile = "gray_3bit".into();
+    assert_eq!(
+        header_failures(&evaluate(&profile, &upstream, &base)),
+        [("source", "render profile or rasterizer policy changed")]
+    );
+    let mut metrics = base.clone();
+    metrics.metrics.ascent_26_6 += 64;
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &metrics)),
+        [("candidate", "layout metrics or missing repertoire changed")]
+    );
+    let mut missing = base.clone();
+    missing.missing_codepoints = vec![65];
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &missing)),
+        [("candidate", "layout metrics or missing repertoire changed")]
+    );
+    let mut hinting = base.clone();
+    hinting.hinting_requested = "none".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &hinting)),
+        [("candidate", "requested hinting policy changed")]
+    );
+    let mut advance = base.clone();
+    advance.advance_policy = font_generator::reference::AdvancePolicy::Hinted;
+    advance.extensions = "diagonal-01".into();
+    advance.hinting_requested = "none".into();
+    assert_eq!(
+        header_failures(&evaluate(&source, &upstream, &advance)),
+        [
+            ("candidate", "requested hinting policy changed"),
+            (
+                "candidate",
+                "hinted advance policy requires enabled automatic mono fitting"
+            ),
+        ]
+    );
+}
+
+#[test]
+fn header_simultaneous_divergences_keep_documented_order() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut provenance = source.clone();
+    provenance.extensions = "diagonal-01".into();
+    let mut candidate = base.clone();
+    candidate.size_px = 17.0;
+    candidate.missing_codepoints = vec![65];
+    assert_eq!(
+        header_failures(&evaluate(&provenance, &upstream, &candidate)),
+        [
+            ("source", "independent unhinted source required"),
+            ("candidate", "font, size or variation identity changed"),
+            ("candidate", "layout metrics or missing repertoire changed"),
+        ]
+    );
+}
+
+#[test]
+fn header_rasterizer_identity_fields_fail_individually() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let edits: Vec<(&str, fn(&mut ReferenceReport))> = vec![
+        ("draw_pedantic", |report| report.draw_pedantic = true),
+        ("zeno_version", |report| {
+            report.zeno_version = "rolled".into()
+        }),
+        ("smooth_mode", |report| {
+            report.smooth_mode = Some("smooth".into())
+        }),
+        ("symmetric_rendering", |report| {
+            report.symmetric_rendering = Some(true)
+        }),
+        ("preserve_linear_metrics", |report| {
+            report.preserve_linear_metrics = Some(false)
+        }),
+    ];
+    for (field, edit) in &edits {
+        let mut candidate = base.clone();
+        edit(&mut candidate);
+        assert_eq!(
+            header_failures(&evaluate(&source, &upstream, &candidate)),
+            [("candidate", "render profile or rasterizer policy changed")],
+            "{field} candidate"
+        );
+        let mut changed = source.clone();
+        edit(&mut changed);
+        assert_eq!(
+            header_failures(&evaluate(&changed, &upstream, &base)),
+            [("source", "render profile or rasterizer policy changed")],
+            "{field} source"
+        );
     }
 }

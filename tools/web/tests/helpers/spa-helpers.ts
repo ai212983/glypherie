@@ -54,7 +54,10 @@ export async function servePrefix(t: TestContext, root: string): Promise<string>
     }
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  t.after(() => new Promise<void>((resolve) => {
+    server.close(() => resolve());
+    server.closeAllConnections();
+  }));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Test server did not bind a port.");
   return `http://127.0.0.1:${address.port}/preview/`;

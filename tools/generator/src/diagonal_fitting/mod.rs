@@ -106,6 +106,23 @@ impl Sample {
             terms: vec![(i0, t0), (i1, t1)],
         }
     }
+
+    fn point(&self, points: &[[f64; 2]]) -> [f64; 2] {
+        let mut p = [0.0, 0.0];
+        for &(index, weight) in &self.terms {
+            p[0] += weight * points[index][0];
+            p[1] += weight * points[index][1];
+        }
+        p
+    }
+}
+
+fn basis_row(weights: &[(usize, f64)], n: usize) -> Vec<f64> {
+    let mut row = vec![0.0; n];
+    for &(i, w) in weights {
+        row[i] += w;
+    }
+    row
 }
 
 /// Frozen upright reference anchor: same font, axes, size and native settings.
@@ -180,34 +197,17 @@ impl System {
         }
     }
 
-    fn basis(&self, sample: &Sample) -> Vec<f64> {
-        let mut row = vec![0.0; self.points.len()];
-        for &(index, weight) in &sample.terms {
-            row[index] += weight;
-        }
-        row
-    }
-
-    fn point(&self, sample: &Sample) -> [f64; 2] {
-        let mut p = [0.0, 0.0];
-        for &(index, weight) in &sample.terms {
-            p[0] += weight * self.points[index][0];
-            p[1] += weight * self.points[index][1];
-        }
-        p
-    }
-
     /// Outer product of the correspondence basis with a direction, raveled
     /// per-coordinate `(x0, y0, x1, y1, ...)`.
     fn projected(&self, a: &Sample, dir: [f64; 2], b: Option<&Sample>) -> Vec<f64> {
-        let ba = self.basis(a);
+        let ba = basis_row(&a.terms, self.points.len());
         let mut row = vec![0.0; 2 * self.points.len()];
         for (k, w) in ba.iter().enumerate() {
             row[2 * k] = w * dir[0];
             row[2 * k + 1] = w * dir[1];
         }
         if let Some(other) = b {
-            let bb = self.basis(other);
+            let bb = basis_row(&other.terms, self.points.len());
             for (k, w) in bb.iter().enumerate() {
                 row[2 * k] -= w * dir[0];
                 row[2 * k + 1] -= w * dir[1];
@@ -220,8 +220,8 @@ impl System {
     fn edge(&mut self, i: usize, j: usize) -> Result<(), ()> {
         let a = Sample::vertex(i);
         let b = Sample::vertex(j);
-        let pa = self.point(&a);
-        let pb = self.point(&b);
+        let pa = a.point(&self.points);
+        let pb = b.point(&self.points);
         let delta = [pb[0] - pa[0], pb[1] - pa[1]];
         let length = delta[0].hypot(delta[1]);
         if !(length > 0.0) {
@@ -271,8 +271,8 @@ impl System {
         if !(arc.is_finite() && arc > 0.0) {
             return Err(());
         }
-        let pa = self.point(a);
-        let pb = self.point(b);
+        let pa = a.point(&self.points);
+        let pb = b.point(&self.points);
         let chord = [pa[0] - pb[0], pa[1] - pb[1]];
         let distance = chord[0].hypot(chord[1]);
         if !(distance > 0.0) {
@@ -1498,5 +1498,25 @@ mod tests {
         let x = min_norm_solve(&a, &b);
         assert!((x[0] - 1.0).abs() < 1e-9);
         assert!((x[1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn width_weight_asymmetric_scaled_tangents() {
+        let w = width_weight(1.7, 1.0, [3.0, 4.0], [-1.0, 7.0], 10.0);
+        assert!((w - 1.8254425977371571).abs() < 1e-12);
+    }
+
+    #[test]
+    fn acute_keeps_or_flips_orientation_by_sign() {
+        assert_eq!(acute([3.0, 4.0], [-4.0, 3.0]), [3.0, 4.0]);
+        assert_eq!(acute([3.0, 4.0], [-3.0, -4.0]), [-3.0, -4.0]);
+        assert_eq!(acute([1.0, -2.0], [3.0, 1.0]), [1.0, -2.0]);
+        assert_eq!(acute([-2.0, 1.0], [1.0, 3.0]), [-2.0, 1.0]);
+    }
+    #[test]
+    fn affine_samples_preserve_endpoint_and_interior_coordinates() {
+        let points = [[-4.0, 8.0], [12.0, -8.0]];
+        assert_eq!(Sample::vertex(1).point(&points), points[1]);
+        assert_eq!(Sample::affine(0, 0.25, 1, 0.75).point(&points), [8.0, -4.0]);
     }
 }

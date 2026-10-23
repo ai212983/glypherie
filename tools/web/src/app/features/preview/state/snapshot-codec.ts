@@ -16,7 +16,8 @@
 // multiline text even when a preset is selected, so a copied URL does not
 // depend on the other browser's storage or preset definitions. Unknown
 // query parameters are preserved; the hosting path prefix is untouched.
-import type { MonoRaster, OutputProfile, Rasterization, StemFitting } from "../../../renderer/renderer-types.js";
+import type { MonoRaster, OutputProfile, Rasterization, RendererRole, StemFitting } from "../../../renderer/renderer-types.js";
+import type { VariantSettings } from "../../../variants/model.js";
 import { PREVIEW_MONO_RASTER } from "../../../renderer/render-spec.ts";
 import { OWNED_PARAMS, hashFamilyId } from "../../../navigation/router.ts";
 
@@ -301,4 +302,24 @@ export function encodeHashSearch(
   const params = encodeUrlSnapshot(snapshot, baseSearch, familyOrder);
   params.delete("font");
   return params;
+}
+
+export function previewVariantSettings(
+  family: FamilySnapshot,
+  snapshot: PreviewSnapshot,
+  role: RendererRole,
+): VariantSettings {
+  return {
+    sizePx: family.size,
+    axes: { ...family.axes },
+    letterSpacingPx: family.spacing,
+    profile: snapshot.profile,
+    paletteId: snapshot.paletteId ?? 0,
+    kerning: snapshot.kerning,
+    stemFitting: snapshot.stemFitting,
+    diagonalFitting: snapshot.diagonalFitting ?? false,
+    monoRaster: snapshot.monoRaster,
+    rasterization: snapshot.rasterization,
+    renderer: snapshot.rasterization === undefined ? role : "candidate",
+  };
 }

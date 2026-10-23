@@ -21,9 +21,10 @@
 //! error. Runtime never uses experiments, Python, subprocesses or corpus
 //! corrections.
 
+use super::crossing::{match_borders, Side};
 use super::{
-    achieved_json, achieved_widths, assemble, geometry, mean_widths, qp, reference_meta, validate,
-    FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS,
+    abstain, achieved_json, achieved_widths, assemble, crossing, geometry, mean_widths, qp,
+    reference_meta, validate, FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS,
 };
 use crate::{fail, probe::FittedCommand, Error};
 use std::collections::{HashMap, HashSet};
@@ -217,99 +218,26 @@ fn waist_from_slabs(parsed: &geometry::Parsed) -> Option<Waist> {
     })
 }
 
-/// Parity-compatible axis position from geometry, never from pixels.
-///
-/// Returns `None` when the snapped count is below one: centering on a
-/// boundary for a sub-half-pixel span guarantees dropout, so the parity
-/// choice is unsupported rather than defaulted.
-fn parity_target(axis: f64, width: f64) -> Option<f64> {
-    let n = (width + 0.5).floor() as i64;
-    if n < 1 {
-        return None;
+fn decide_parity_target(
+    axis_src: f64,
+    predicted: f64,
+    rel_med: f64,
+    prepped: &[super::PreppedInfo],
+) -> Result<f64, &'static str> {
+    if !(predicted > 0.0) {
+        return Err("no-waist");
     }
-    if n % 2 == 1 {
-        let base = (axis - 0.5).floor() + 0.5;
-        Some(if (axis - base).abs() <= (axis - (base + 1.0)).abs() {
-            base
-        } else {
-            base + 1.0
-        })
-    } else {
-        let base = (axis + 0.5).floor();
-        Some(if (axis - base).abs() <= (axis - (base - 1.0)).abs() {
-            base
-        } else {
-            base - 1.0
-        })
+    let pair_mean = prepped
+        .iter()
+        .map(|info| info.src_widths.iter().sum::<f64>() / info.src_widths.len() as f64)
+        .sum::<f64>()
+        / prepped.len() as f64;
+    if crossing::parity_target(axis_src, pair_mean * (1.0 + rel_med))
+        != crossing::parity_target(axis_src, predicted)
+    {
+        return Err("parity-ambiguous");
     }
-}
-
-#[derive(Clone)]
-struct Side {
-    pair: String,
-    p0: [f64; 2],
-    p1: [f64; 2],
-    i0: usize,
-    i1: usize,
-    t0: f64,
-    t1: f64,
-}
-
-fn reflect(point: [f64; 2], axis: f64) -> [f64; 2] {
-    [2.0 * axis - point[0], point[1]]
-}
-
-/// Segment-to-segment reflection matches under M about the source axis.
-///
-/// The returned second side is re-encoded to the matching orientation, so
-/// corresponding coefficient indices always reflect that orientation.
-fn match_borders(sides: &[Side], axis: f64, epsilon: f64) -> Vec<(Side, Side, f64)> {
-    let mut matches = Vec::new();
-    let mut seen: HashSet<(usize, usize)> = HashSet::new();
-    for (i, s) in sides.iter().enumerate() {
-        let (rp0, rp1) = (reflect(s.p0, axis), reflect(s.p1, axis));
-        let mut best: Option<(f64, usize, bool)> = None;
-        for (j, o) in sides.iter().enumerate() {
-            if i == j || s.pair == o.pair {
-                continue;
-            }
-            for reversed in [false, true] {
-                let (q0, q1) = if reversed { (o.p1, o.p0) } else { (o.p0, o.p1) };
-                let dist = (rp0[0] - q0[0])
-                    .hypot(rp0[1] - q0[1])
-                    .max((rp1[0] - q1[0]).hypot(rp1[1] - q1[1]));
-                if best.is_none_or(|(d, _, _)| dist < d) {
-                    best = Some((dist, j, reversed));
-                }
-            }
-        }
-        let Some((dist, j, reversed)) = best else {
-            continue;
-        };
-        if dist > epsilon {
-            continue;
-        }
-        let key = (i.min(j), i.max(j));
-        if !seen.insert(key) {
-            continue;
-        }
-        let o = &sides[j];
-        let second = if reversed {
-            Side {
-                p0: o.p1,
-                p1: o.p0,
-                i0: o.i1,
-                i1: o.i0,
-                t0: 1.0 - o.t1,
-                t1: 1.0 - o.t0,
-                ..o.clone()
-            }
-        } else {
-            o.clone()
-        };
-        matches.push((s.clone(), second, dist));
-    }
-    matches
+    crossing::parity_target(axis_src, predicted).ok_or("parity-ambiguous")
 }
 
 /// Hobby (16) rows about the fixed parity axis, source mismatch retained.
@@ -371,15 +299,6 @@ fn symmetry_rows(
         rows.push((diff, (cb - ca) * (1.0f64 / 12.0).sqrt() * factor));
     }
     rows
-}
-
-fn abstain(upstream: &[FittedCommand], reason: &str, diagnostics: serde_json::Value) -> FitResult {
-    FitResult {
-        commands: upstream.to_vec(),
-        applied: false,
-        reason: reason.to_string(),
-        diagnostics,
-    }
 }
 
 fn median(values: &[f64]) -> f64 {
@@ -657,34 +576,16 @@ fn fit_impl<const SELECTING: bool>(
             .collect::<Vec<f64>>(),
     );
     let predicted = waist.width * (1.0 + rel_med);
-    if !(predicted > 0.0) {
-        return Ok(abstain(
-            original_upstream,
-            "no-waist",
-            serde_json::json!({"skipped": skipped_json}),
-        ));
-    }
-    let pair_mean = prepped
-        .iter()
-        .map(|info| info.src_widths.iter().sum::<f64>() / info.src_widths.len() as f64)
-        .sum::<f64>()
-        / prepped.len() as f64;
     let axis_src = locus.mid();
-    if parity_target(locus.mid(), pair_mean * (1.0 + rel_med))
-        != parity_target(locus.mid(), predicted)
-    {
-        return Ok(abstain(
-            original_upstream,
-            "parity-ambiguous",
-            serde_json::json!({"skipped": skipped_json}),
-        ));
-    }
-    let Some(target) = parity_target(axis_src, predicted) else {
-        return Ok(abstain(
-            original_upstream,
-            "parity-ambiguous",
-            serde_json::json!({"skipped": skipped_json}),
-        ));
+    let target = match decide_parity_target(axis_src, predicted, rel_med, &prepped) {
+        Ok(target) => target,
+        Err(reason) => {
+            return Ok(abstain(
+                original_upstream,
+                reason,
+                serde_json::json!({"skipped": skipped_json}),
+            ));
+        }
     };
     let f_k = 2.0 * target;
     let mut sides = Vec::new();
@@ -1033,6 +934,87 @@ impl AxisLocus {
 mod correspondence_tests {
     use super::*;
 
+    fn vside(pair: &str, x: f64, indices: [usize; 2], interval: [f64; 2]) -> Side {
+        Side {
+            pair: pair.into(),
+            p0: [x, 0.0],
+            p1: [x, 1.0],
+            i0: indices[0],
+            i1: indices[1],
+            t0: interval[0],
+            t1: interval[1],
+        }
+    }
+
+    #[test]
+    fn forward_match_orders_sides_and_keeps_metadata() {
+        let sides = vec![
+            vside("a", -1.0, [0, 1], [0.0, 1.0]),
+            vside("b", 1.0, [2, 3], [0.125, 0.625]),
+        ];
+        let matches = match_borders(&sides, 0.0, 0.25);
+        assert_eq!(matches.len(), 1);
+        let (first, second, dist) = &matches[0];
+        assert_eq!(first.pair, "a");
+        assert_eq!(second.pair, "b");
+        assert_eq!(dist, &0.0);
+        assert_eq!(second.p0, [1.0, 0.0]);
+        assert_eq!(second.p1, [1.0, 1.0]);
+        assert_eq!((second.i0, second.i1), (2, 3));
+        assert_eq!((second.t0, second.t1), (0.125, 0.625));
+    }
+
+    #[test]
+    fn reversed_match_reencodes_points_indices_and_parameters() {
+        let mut flipped = vside("b", 1.0, [2, 3], [0.125, 0.625]);
+        flipped.p0 = [1.0, 1.0];
+        flipped.p1 = [1.0, 0.0];
+        let sides = vec![vside("a", -1.0, [0, 1], [0.0, 1.0]), flipped];
+        let matches = match_borders(&sides, 0.0, 0.25);
+        assert_eq!(matches.len(), 1);
+        let (first, second, dist) = &matches[0];
+        assert_eq!(first.pair, "a");
+        assert_eq!(second.pair, "b");
+        assert_eq!(dist, &0.0);
+        assert_eq!((second.p0, second.p1), ([1.0, 0.0], [1.0, 1.0]));
+        assert_eq!((second.i0, second.i1), (3, 2));
+        assert_eq!((second.t0, second.t1), (0.375, 0.875));
+    }
+
+    #[test]
+    fn mirrored_sides_sharing_pair_id_yield_no_match() {
+        let sides = vec![
+            vside("a", -1.0, [0, 1], [0.0, 1.0]),
+            vside("a", 1.0, [2, 3], [0.0, 1.0]),
+        ];
+        assert!(match_borders(&sides, 0.0, 0.25).is_empty());
+    }
+
+    #[test]
+    fn equal_distance_keeps_first_encounter() {
+        let sides = vec![
+            vside("a", -1.0, [0, 1], [0.0, 1.0]),
+            vside("b", 1.125, [2, 3], [0.0, 1.0]),
+            vside("c", 0.875, [4, 5], [0.0, 1.0]),
+        ];
+        let matches = match_borders(&sides, 0.0, 0.25);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].1.pair, "b");
+        assert_eq!((matches[0].1.i0, matches[0].1.i1), (2, 3));
+        assert_eq!(matches[1].0.pair, "c");
+    }
+
+    #[test]
+    fn offset_equal_to_epsilon_is_accepted() {
+        let sides = vec![
+            vside("a", -1.0, [0, 1], [0.0, 1.0]),
+            vside("b", 1.25, [2, 3], [0.0, 1.0]),
+        ];
+        let matches = match_borders(&sides, 0.0, 0.25);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].2, 0.25);
+    }
+
     #[test]
     fn reflected_portions_keep_their_own_affine_coordinates() {
         // Hobby (16) matches points on two source portions. Their parent
@@ -1063,5 +1045,103 @@ mod correspondence_tests {
         assert!((rows[0].0[4] / rows[0].0[6] - 3.0 / 7.0).abs() < 1e-12);
         // The two portions span 0.5 and 0.4 of their parent edges.
         assert!((rows[1].0[4] / rows[1].0[0] - 0.8).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod parity_decision_tests {
+    use super::super::geometry::Portion;
+    use super::super::PreppedInfo;
+    use super::decide_parity_target;
+
+    fn info_with_widths(src_widths: Vec<f64>) -> PreppedInfo {
+        let blank = Portion {
+            contour: 0,
+            seg: 0,
+            t0: 0.0,
+            t1: 0.0,
+            p0: [0.0, 0.0],
+            p1: [0.0, 0.0],
+            i0: 0,
+            i1: 0,
+            hidden: false,
+            unknown: false,
+        };
+        PreppedInfo {
+            id: String::new(),
+            a: blank.clone(),
+            b: blank,
+            normal: [0.0, 0.0],
+            stations: Vec::new(),
+            src_widths,
+            fit_widths: Vec::new(),
+            arc: 0.0,
+            span_lo: 0.0,
+            span_hi: 0.0,
+            bound: 0.0,
+            prefix: 0.0,
+            peak: 0.0,
+            rounded_peak: None,
+            pairs: Vec::new(),
+            feet: serde_json::Value::Null,
+        }
+    }
+
+    #[test]
+    fn no_waist_rejects_nonpositive_and_nan_prediction() {
+        let empty: Vec<PreppedInfo> = Vec::new();
+        for predicted in [0.0, -1.0, f64::NAN] {
+            assert!(matches!(
+                decide_parity_target(0.0, predicted, 0.0, &empty),
+                Err("no-waist")
+            ));
+        }
+    }
+
+    #[test]
+    fn unequal_groups_average_with_nonzero_rel() {
+        let prepped = [
+            info_with_widths(vec![1.0, 3.0]),
+            info_with_widths(vec![5.0]),
+        ];
+        assert_eq!(decide_parity_target(0.25, 3.85, 0.1, &prepped), Ok(0.0));
+        assert_eq!(decide_parity_target(0.25, 2.8, -0.2, &prepped), Ok(0.5));
+    }
+
+    #[test]
+    fn odd_width_targets_pixel_center_with_lower_tie() {
+        for width in [0.5, 1.0, 3.0] {
+            let prepped = [info_with_widths(vec![width])];
+            assert_eq!(decide_parity_target(0.0, width, 0.0, &prepped), Ok(-0.5));
+            assert_eq!(decide_parity_target(0.25, width, 0.0, &prepped), Ok(0.5));
+        }
+    }
+
+    #[test]
+    fn even_width_targets_boundary() {
+        let prepped = [info_with_widths(vec![2.0])];
+        assert_eq!(decide_parity_target(0.0, 2.0, 0.0, &prepped), Ok(0.0));
+        assert_eq!(decide_parity_target(0.5, 2.0, 0.0, &prepped), Ok(1.0));
+        assert_eq!(decide_parity_target(-0.25, 2.0, 0.0, &prepped), Ok(0.0));
+        let axis = ((1_u64 << 53) - 1) as f64;
+        assert_eq!(decide_parity_target(axis, 2.0, 0.0, &prepped), Ok(axis));
+    }
+
+    #[test]
+    fn width_mismatch_is_ambiguous() {
+        let prepped = [info_with_widths(vec![3.0])];
+        assert!(matches!(
+            decide_parity_target(0.0, 2.0, 0.0, &prepped),
+            Err("parity-ambiguous")
+        ));
+    }
+
+    #[test]
+    fn subhalf_widths_fall_through_to_ambiguous() {
+        let prepped = [info_with_widths(vec![0.25])];
+        assert!(matches!(
+            decide_parity_target(0.0, 0.25, 0.0, &prepped),
+            Err("parity-ambiguous")
+        ));
     }
 }

@@ -222,6 +222,119 @@ fn sizes_valid(
     Ok(())
 }
 
+fn validate_variants(variants: &[Variant]) -> Result<(), Error> {
+    for variant in variants {
+        if (variant.kind == VariantKind::Reference)
+            != (variant.renderer() == RendererRole::Reference)
+        {
+            return Err(fail("reference package kind and renderer role must agree"));
+        }
+        if variant.renderer() == RendererRole::Baseline
+            && (variant.version.as_deref() != Some(crate::baseline::VERSION)
+                || variant.extensions != crate::baseline::EXTENSIONS_DIAGONAL_01)
+        {
+            return Err(fail(
+                "baseline must identify the legacy version and fitting policy",
+            ));
+        }
+        // Validate the effective route, including roleless iterations.
+        // `none` remains the explicit upstream-reference bypass.
+        if variant.renderer() == RendererRole::Candidate
+            && ![
+                crate::reference::EXTENSIONS_NONE,
+                crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST,
+                crate::stem_fitting::EXTENSIONS_MONO_WIDTH_01,
+            ]
+            .contains(&variant.extensions.as_str())
+        {
+            return Err(fail(
+                "candidate requires extensions none, font-hints-01 or mono-width-01",
+            ));
+        }
+        if ![
+            "none",
+            "diagonal-01",
+            crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST,
+            crate::stem_fitting::EXTENSIONS_MONO_WIDTH_01,
+        ]
+        .contains(&variant.extensions.as_str())
+            || !(variant.hinting == Hinting::Auto
+                || (variant.renderer() == RendererRole::Candidate
+                    && variant.extensions == crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST
+                    && variant.hinting == Hinting::AutoFallback))
+        {
+            return Err(fail("specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"));
+        }
+        if variant.kind == VariantKind::Reference && variant.extensions != "none" {
+            return Err(fail("reference variants require extensions none"));
+        }
+        match variant.kind {
+            VariantKind::Reference if variant.version.is_some() => {
+                return Err(fail("reference version must be null"))
+            }
+            VariantKind::Iteration
+                if variant.version.as_ref().is_none_or(|v| v.trim().is_empty()) =>
+            {
+                return Err(fail("iteration requires a nonempty version"))
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn expand_family_cases(
+    family: &Family,
+    defaults: &Selection,
+    variants: &BTreeSet<&str>,
+    profiles: &BTreeSet<&str>,
+    config_dir: &Path,
+) -> Result<Vec<RenderCase>, Error> {
+    let sizes = family.sizes.as_ref().unwrap_or(&defaults.sizes);
+    let family_variants = family.variants.as_ref().unwrap_or(&defaults.variants);
+    let family_profiles = family.profiles.as_ref().unwrap_or(&defaults.profiles);
+    sizes_valid(sizes, variants, profiles)?;
+    selected(family_variants, variants, "variant")?;
+    selected(family_profiles, profiles, "profile")?;
+    let mut cases = Vec::new();
+    for size in sizes {
+        let (px, chosen_variants, chosen_profiles) = match size {
+            SizeSelection::Size(px) => (*px, family_variants, family_profiles),
+            SizeSelection::Overrides(overrides) => (
+                overrides.size_px,
+                overrides.variants.as_ref().unwrap_or(family_variants),
+                overrides.profiles.as_ref().unwrap_or(family_profiles),
+            ),
+        };
+        let axes = family
+            .axes
+            .iter()
+            .map(|(tag, value)| {
+                (
+                    tag.clone(),
+                    match value {
+                        AxisValue::Fixed(value) => *value,
+                        AxisValue::Binding(AxisBinding::SizePx) => px,
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        for variant in chosen_variants {
+            for profile in chosen_profiles {
+                cases.push(RenderCase {
+                    family_id: family.id.clone(),
+                    font: config_dir.join(&family.font),
+                    size_px: px,
+                    axes: axes.clone(),
+                    variant: variant.clone(),
+                    profile: profile.clone(),
+                });
+            }
+        }
+    }
+    Ok(cases)
+}
+
 impl SpecimenConfig {
     pub fn latest_variant(&self) -> Result<&str, Error> {
         crate::preview_selection::select_roles(self.variants.iter().map(|variant| {
@@ -324,63 +437,7 @@ impl SpecimenConfig {
         let profiles = identities(self.profiles.iter().map(|p| p.id.as_str()), "profile")?;
         identities(self.families.iter().map(|f| f.id.as_str()), "family")?;
         let latest = self.latest_variant()?;
-        for variant in &self.variants {
-            if (variant.kind == VariantKind::Reference)
-                != (variant.renderer() == RendererRole::Reference)
-            {
-                return Err(fail("reference package kind and renderer role must agree"));
-            }
-            if variant.renderer() == RendererRole::Baseline
-                && (variant.version.as_deref() != Some(crate::baseline::VERSION)
-                    || variant.extensions != crate::baseline::EXTENSIONS_DIAGONAL_01)
-            {
-                return Err(fail(
-                    "baseline must identify the legacy version and fitting policy",
-                ));
-            }
-            // Validate the effective route, including roleless iterations.
-            // `none` remains the explicit upstream-reference bypass.
-            if variant.renderer() == RendererRole::Candidate
-                && ![
-                    crate::reference::EXTENSIONS_NONE,
-                    crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST,
-                    crate::stem_fitting::EXTENSIONS_MONO_WIDTH_01,
-                ]
-                .contains(&variant.extensions.as_str())
-            {
-                return Err(fail(
-                    "candidate requires extensions none, font-hints-01 or mono-width-01",
-                ));
-            }
-            if ![
-                "none",
-                "diagonal-01",
-                crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST,
-                crate::stem_fitting::EXTENSIONS_MONO_WIDTH_01,
-            ]
-            .contains(&variant.extensions.as_str())
-                || !(variant.hinting == Hinting::Auto
-                    || (variant.renderer() == RendererRole::Candidate
-                        && variant.extensions == crate::stem_fitting::EXTENSIONS_FONT_HINTS_FIRST
-                        && variant.hinting == Hinting::AutoFallback))
-            {
-                return Err(fail("specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"));
-            }
-            if variant.kind == VariantKind::Reference && variant.extensions != "none" {
-                return Err(fail("reference variants require extensions none"));
-            }
-            match variant.kind {
-                VariantKind::Reference if variant.version.is_some() => {
-                    return Err(fail("reference version must be null"))
-                }
-                VariantKind::Iteration
-                    if variant.version.as_ref().is_none_or(|v| v.trim().is_empty()) =>
-                {
-                    return Err(fail("iteration requires a nonempty version"))
-                }
-                _ => {}
-            }
-        }
+        validate_variants(&self.variants)?;
         for profile in &self.profiles {
             let expected = match profile.id.as_str() {
                 "mono_1bit" => 1,
@@ -430,47 +487,13 @@ impl SpecimenConfig {
                     )));
                 }
             }
-            let sizes = family.sizes.as_ref().unwrap_or(&self.defaults.sizes);
-            let family_variants = family.variants.as_ref().unwrap_or(&self.defaults.variants);
-            let family_profiles = family.profiles.as_ref().unwrap_or(&self.defaults.profiles);
-            sizes_valid(sizes, &variants, &profiles)?;
-            selected(family_variants, &variants, "variant")?;
-            selected(family_profiles, &profiles, "profile")?;
-            for size in sizes {
-                let (px, chosen_variants, chosen_profiles) = match size {
-                    SizeSelection::Size(px) => (*px, family_variants, family_profiles),
-                    SizeSelection::Overrides(overrides) => (
-                        overrides.size_px,
-                        overrides.variants.as_ref().unwrap_or(family_variants),
-                        overrides.profiles.as_ref().unwrap_or(family_profiles),
-                    ),
-                };
-                let axes = family
-                    .axes
-                    .iter()
-                    .map(|(tag, value)| {
-                        (
-                            tag.clone(),
-                            match value {
-                                AxisValue::Fixed(value) => *value,
-                                AxisValue::Binding(AxisBinding::SizePx) => px,
-                            },
-                        )
-                    })
-                    .collect::<BTreeMap<_, _>>();
-                for variant in chosen_variants {
-                    for profile in chosen_profiles {
-                        cases.push(RenderCase {
-                            family_id: family.id.clone(),
-                            font: config_dir.join(&family.font),
-                            size_px: px,
-                            axes: axes.clone(),
-                            variant: variant.clone(),
-                            profile: profile.clone(),
-                        });
-                    }
-                }
-            }
+            cases.extend(expand_family_cases(
+                family,
+                &self.defaults,
+                &variants,
+                &profiles,
+                config_dir,
+            )?);
         }
         if !cases.iter().any(|case| case.variant == latest) {
             return Err(fail("latest variant must select at least one render case"));

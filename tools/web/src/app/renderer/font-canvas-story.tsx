@@ -503,6 +503,7 @@ function DiagnosticRawTools({ args, updateArgs }: {
           Palette JSON (commits verbatim; blank restores the default)
           <textarea
             data-raw-palette
+            data-raw-committed={paletteSource}
             rows={2}
             value={paletteDraft}
             onChange={(event) => setPaletteDraft(event.target.value)}

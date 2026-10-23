@@ -251,6 +251,65 @@ fn adding_a_family_requires_only_config_data() {
 }
 
 #[test]
+fn family_cases_pin_font_path_fixed_axes_and_order() {
+    let mut value = document();
+    value["families"].as_array_mut().unwrap().truncate(1);
+    let cases = resolve(value).unwrap();
+    assert_eq!(cases.len(), 8);
+    assert_eq!(cases[0].family_id, "roboto");
+    assert_eq!(cases[0].font, Path::new("/config/../../fonts/Roboto.ttf"));
+    assert_eq!(cases[0].size_px, 14.0);
+    assert_eq!(cases[0].variant, "reference");
+    assert_eq!(cases[0].profile, "mono_1bit");
+    assert_eq!(cases[0].axes["wght"], 400.0);
+    assert_eq!(cases[0].axes["wdth"], 100.0);
+    assert_eq!(cases[1].profile, "gray_3bit");
+    assert_eq!(cases[1].size_px, 14.0);
+    assert_eq!(cases[2].size_px, 16.0);
+    assert_eq!(cases[2].profile, "mono_1bit");
+}
+
+#[test]
+fn override_size_propagates_to_size_px_axis_binding() {
+    let mut value = document();
+    value["families"][1]["sizes"] = json!([14, {"size_px": 20}]);
+    let cases = resolve(value).unwrap();
+    let literata: Vec<_> = cases
+        .iter()
+        .filter(|case| case.family_id == "literata")
+        .collect();
+    assert_eq!(literata.len(), 4);
+    assert_eq!(literata[0].axes["opsz"], 14.0);
+    assert_eq!(literata[0].axes["wght"], 400.0);
+    assert_eq!(literata[2].size_px, 20.0);
+    assert_eq!(literata[2].axes["opsz"], 20.0);
+    assert_eq!(literata[2].axes["wght"], 400.0);
+}
+
+#[test]
+fn family_level_selection_errors_are_exact_and_ordered() {
+    let mut value = document();
+    value["families"][0]["profiles"] = json!(["missing"]);
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "unknown profile ID \"missing\""
+    );
+    let mut value = document();
+    value["families"][0]["sizes"] = json!([]);
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "size selections must be nonempty"
+    );
+    let mut value = document();
+    value["families"][0]["sizes"] = json!([]);
+    value["families"][0]["profiles"] = json!(["missing"]);
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "size selections must be nonempty"
+    );
+}
+
+#[test]
 fn unknown_and_duplicate_selections_are_rejected() {
     for selection in [
         json!([]),
@@ -493,6 +552,109 @@ fn stable_renderer_roles_distinguish_approval_from_working_version_metadata() {
     assert!(resolve(working).is_ok());
     current["variants"][1]["renderer"] = json!("candidate");
     assert!(resolve(current).unwrap_err().contains("legacy baseline"));
+}
+
+#[test]
+fn variant_kind_role_version_and_extension_guards_are_exact_and_ordered() {
+    let mut value = document();
+    value["variants"][0]["renderer"] = json!("candidate");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "reference package kind and renderer role must agree"
+    );
+
+    let mut current: Value = serde_json::from_str(include_str!("../specimens.json")).unwrap();
+    current.as_object_mut().unwrap().remove("preview_policy");
+    let mut drift = current.clone();
+    drift["variants"][1]["version"] = json!("999.999");
+    assert_eq!(
+        resolve(drift).unwrap_err(),
+        "baseline must identify the legacy version and fitting policy"
+    );
+    let mut drift = current.clone();
+    drift["variants"][1]["extensions"] = json!("none");
+    assert_eq!(
+        resolve(drift).unwrap_err(),
+        "baseline must identify the legacy version and fitting policy"
+    );
+
+    let mut value = document();
+    value["variants"][0]["extensions"] = json!("custom");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"
+    );
+    let mut value = document();
+    value["variants"][0]["hinting"] = json!("auto_fallback");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"
+    );
+    let mut value = document();
+    value["variants"][0]["extensions"] = json!("diagonal-01");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "reference variants require extensions none"
+    );
+    let mut value = document();
+    value["variants"][0]["version"] = json!("001.01");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "first revision requires reference for comparison"
+    );
+
+    let mut value = document();
+    value["variants"].as_array_mut().unwrap().push(json!({
+        "id": "empty-version", "kind": "iteration",
+        "hinting": "auto", "extensions": "none"
+    }));
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "preview requires a unique reference variant"
+    );
+    let mut value = document();
+    value["variants"].as_array_mut().unwrap().push(json!({
+        "id": "empty-version", "kind": "iteration", "version": "",
+        "hinting": "auto", "extensions": "none"
+    }));
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "iteration version must be numeric revision.iteration"
+    );
+
+    let mut drift = current.clone();
+    drift["variants"][1]["version"] = json!("999.999");
+    drift["profiles"][0]["output_bits"] = json!(3);
+    assert_eq!(
+        resolve(drift).unwrap_err(),
+        "baseline must identify the legacy version and fitting policy"
+    );
+    let mut drift = current.clone();
+    drift["variants"][1]["extensions"] = json!("none");
+    drift["families"][0]["profiles"] = json!(["missing"]);
+    assert_eq!(
+        resolve(drift).unwrap_err(),
+        "baseline must identify the legacy version and fitting policy"
+    );
+}
+
+#[test]
+fn auto_fallback_requires_candidate_with_font_hints() {
+    let mut current: Value = serde_json::from_str(include_str!("../specimens.json")).unwrap();
+    current.as_object_mut().unwrap().remove("preview_policy");
+    current["variants"][2]["extensions"] = json!("mono-width-01");
+    current["variants"][2]["hinting"] = json!("auto_fallback");
+    assert_eq!(
+        resolve(current).unwrap_err(),
+        "specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"
+    );
+    let mut value = document();
+    value["variants"][0]["extensions"] = json!("font-hints-01");
+    value["variants"][0]["hinting"] = json!("auto_fallback");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"
+    );
 }
 
 #[test]

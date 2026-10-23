@@ -102,7 +102,7 @@ fn midpoint(a: &Rat, b: &Rat) -> Rat {
 }
 
 /// Monotone-chain hull over exact rationals; collinear interiors drop.
-fn convex_hull(points: &[Rat]) -> Vec<Rat> {
+pub(super) fn convex_hull(points: &[Rat]) -> Vec<Rat> {
     let mut pts: Vec<Rat> = points.to_vec();
     pts.sort();
     pts.dedup();
@@ -166,7 +166,7 @@ fn convex_hull_exact(points: &[Rat]) -> Vec<Rat> {
     lower
 }
 
-fn poly_edges(poly: &[Rat]) -> Vec<(Rat, Rat)> {
+pub(super) fn poly_edges(poly: &[Rat]) -> Vec<(Rat, Rat)> {
     if poly.len() < 2 {
         return Vec::new();
     }
@@ -178,7 +178,7 @@ fn poly_edges(poly: &[Rat]) -> Vec<(Rat, Rat)> {
 /// True only with a strict separating-axis gap; touch fails closed.
 /// A decided exact/filter verdict returns at once; otherwise the general
 /// rational narrow phase runs unchanged.
-fn strictly_disjoint(poly_p: &[Rat], poly_q: &[Rat]) -> bool {
+pub(super) fn strictly_disjoint(poly_p: &[Rat], poly_q: &[Rat]) -> bool {
     if let Some(verdict) = filtered::polys_strictly_disjoint(poly_p, poly_q) {
         return verdict;
     }
@@ -186,7 +186,7 @@ fn strictly_disjoint(poly_p: &[Rat], poly_q: &[Rat]) -> bool {
 }
 
 /// Exact narrow phase; the certified filter's fallback.
-fn strictly_disjoint_exact(poly_p: &[Rat], poly_q: &[Rat]) -> bool {
+pub(super) fn strictly_disjoint_exact(poly_p: &[Rat], poly_q: &[Rat]) -> bool {
     let mut axes: Vec<Rat> = Vec::new();
     for poly in [poly_p, poly_q] {
         for (a, b) in poly_edges(poly) {
@@ -228,7 +228,7 @@ fn subdivide(ctrls: &[Rat]) -> (Vec<Rat>, Vec<Rat>) {
 }
 
 /// Exact dyadic control chains of the 2**depth sub-pieces.
-fn piece_chains(ctrls: &[Rat], depth: usize) -> Vec<Vec<Rat>> {
+pub(super) fn piece_chains(ctrls: &[Rat], depth: usize) -> Vec<Vec<Rat>> {
     let mut pieces = vec![ctrls.to_vec()];
     for _ in 0..depth {
         let mut halves = Vec::with_capacity(2 * pieces.len());
@@ -243,7 +243,7 @@ fn piece_chains(ctrls: &[Rat], depth: usize) -> Vec<Vec<Rat>> {
 }
 
 /// Control hulls of the 2**depth dyadic sub-pieces.
-fn piece_hulls(ctrls: &[Rat], depth: usize) -> Vec<Vec<Rat>> {
+pub(super) fn piece_hulls(ctrls: &[Rat], depth: usize) -> Vec<Vec<Rat>> {
     piece_chains(ctrls, depth)
         .iter()
         .map(|piece| convex_hull(piece))
@@ -297,7 +297,7 @@ fn strictly_outside_exact(pt: &Rat, poly: &[Rat]) -> bool {
 /// of either hull lies inside or on the other hull except the junction.
 /// Filter-first: a proven interval verdict returns at once, else the
 /// exact narrow phase below runs unchanged.
-fn hulls_meet_only_at(poly_p: &[Rat], poly_q: &[Rat], shared: &Rat) -> bool {
+pub(super) fn hulls_meet_only_at(poly_p: &[Rat], poly_q: &[Rat], shared: &Rat) -> bool {
     if let Some(v) = filtered::hulls_meet_only_at(poly_p, poly_q, shared) {
         return v;
     }
@@ -306,7 +306,7 @@ fn hulls_meet_only_at(poly_p: &[Rat], poly_q: &[Rat], shared: &Rat) -> bool {
 
 /// Exact narrow phase with no filtering: the certified filter's fallback
 /// and the independent test reference.
-fn hulls_meet_only_at_exact(poly_p: &[Rat], poly_q: &[Rat], shared: &Rat) -> bool {
+pub(super) fn hulls_meet_only_at_exact(poly_p: &[Rat], poly_q: &[Rat], shared: &Rat) -> bool {
     for (a, b) in poly_edges(poly_p) {
         for (c, d) in poly_edges(poly_q) {
             let (o1, o2, o3, o4) = (
@@ -816,7 +816,7 @@ struct Entry {
 }
 
 /// Exact bounding box of a nonempty hull: (lo_x, lo_y, hi_x, hi_y).
-fn hull_bbox(hull: &[Rat]) -> (BigRational, BigRational, BigRational, BigRational) {
+pub(super) fn hull_bbox(hull: &[Rat]) -> (BigRational, BigRational, BigRational, BigRational) {
     let (mut lo_x, mut lo_y) = (hull[0].0.clone(), hull[0].1.clone());
     let (mut hi_x, mut hi_y) = (hull[0].0.clone(), hull[0].1.clone());
     for p in &hull[1..] {
@@ -837,7 +837,7 @@ fn hull_bbox(hull: &[Rat]) -> (BigRational, BigRational, BigRational, BigRationa
 }
 
 /// Strict box separation on exact bounds; shared edges do not separate.
-fn boxes_strictly_separate(
+pub(super) fn boxes_strictly_separate(
     a: &(BigRational, BigRational, BigRational, BigRational),
     b: &(BigRational, BigRational, BigRational, BigRational),
 ) -> bool {
@@ -2691,5 +2691,63 @@ mod moving_substitution_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod kernel_boundary {
+    use super::{
+        boxes_strictly_separate, hull_bbox, hulls_meet_only_at_exact, lift,
+        strictly_disjoint_exact, Rat,
+    };
+
+    fn pts(corners: &[[f64; 2]]) -> Vec<Rat> {
+        corners.iter().map(|p| lift(p).unwrap()).collect()
+    }
+
+    #[test]
+    fn singleton_hulls_are_never_strictly_disjoint() {
+        let p = pts(&[[1.0, 2.0]]);
+        let q = pts(&[[5.0, 7.0]]);
+        assert!(!strictly_disjoint_exact(&p, &q));
+        assert!(!strictly_disjoint_exact(&q, &p));
+        let same = pts(&[[1.0, 2.0]]);
+        assert!(!strictly_disjoint_exact(&p, &same));
+        assert!(!strictly_disjoint_exact(&same, &p));
+    }
+
+    #[test]
+    fn box_separation_tracks_positive_gaps_only() {
+        let a = hull_bbox(&pts(&[[0.0, 0.0], [4.0, 0.0], [4.0, 1.0], [0.0, 1.0]]));
+        let x_gap = hull_bbox(&pts(&[[5.0, -1.0], [9.0, -1.0], [9.0, 2.0], [5.0, 2.0]]));
+        assert!(boxes_strictly_separate(&a, &x_gap));
+        assert!(boxes_strictly_separate(&x_gap, &a));
+        let y_gap = hull_bbox(&pts(&[[0.0, 5.0], [3.0, 5.0], [3.0, 7.0], [0.0, 7.0]]));
+        assert!(boxes_strictly_separate(&a, &y_gap));
+        assert!(boxes_strictly_separate(&y_gap, &a));
+        let x_touch = hull_bbox(&pts(&[[4.0, -1.0], [8.0, -1.0], [8.0, 2.0], [4.0, 2.0]]));
+        assert!(!boxes_strictly_separate(&a, &x_touch));
+        assert!(!boxes_strictly_separate(&x_touch, &a));
+        let y_touch = hull_bbox(&pts(&[[0.0, 1.0], [3.0, 1.0], [3.0, 4.0], [0.0, 4.0]]));
+        assert!(!boxes_strictly_separate(&a, &y_touch));
+        assert!(!boxes_strictly_separate(&y_touch, &a));
+        let corner = hull_bbox(&pts(&[[4.0, 1.0], [6.0, 1.0], [6.0, 3.0], [4.0, 3.0]]));
+        assert!(!boxes_strictly_separate(&a, &corner));
+        assert!(!boxes_strictly_separate(&corner, &a));
+        let overlap = hull_bbox(&pts(&[[2.0, 0.0], [6.0, 0.0], [6.0, 1.0], [2.0, 1.0]]));
+        assert!(!boxes_strictly_separate(&a, &overlap));
+        assert!(!boxes_strictly_separate(&overlap, &a));
+    }
+
+    #[test]
+    fn hull_contact_only_at_shared_junction() {
+        let p = pts(&[[-2.0, 0.0], [2.0, 0.0]]);
+        let q = pts(&[[0.0, 0.0], [0.0, 3.0]]);
+        let shared = lift(&[0.0, 0.0]).unwrap();
+        assert!(hulls_meet_only_at_exact(&p, &q, &shared));
+        assert!(hulls_meet_only_at_exact(&q, &p, &shared));
+        let off = pts(&[[1.0, 0.0], [1.0, 3.0]]);
+        assert!(!hulls_meet_only_at_exact(&p, &off, &shared));
+        assert!(!hulls_meet_only_at_exact(&off, &p, &shared));
     }
 }

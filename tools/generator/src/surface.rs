@@ -20,6 +20,7 @@ use crate::{
     stem_fitting::StemFittingStrategy,
     Config, Error, GeneratedFont, Glyph, MissingGlyphs,
 };
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
 
 pub use crate::source::PreparedFont;
@@ -362,41 +363,71 @@ fn render_pipeline_in_session(
     }
 }
 
-/// Shared validation/layout/compositing pipeline behind [`render_text`]
-/// and [`render_text_with_renderer`]; `None` and `Some(Baseline)` both
-/// take the approved `generate()` path unchanged. All numerical spacing
-/// decisions (finalized advances, single pair application, tracking and
-/// the tracking floor) run through the [`SpacingEngine`] built below.
-fn render_inner(
-    session: &CaptureSession<'_>,
+fn require_candidate_mono(
+    config: &Config,
+    role: Option<RendererRole>,
+    requirement_clause: &'static str,
+) -> Result<(), Error> {
+    #[cfg(not(feature = "candidate"))]
+    {
+        let _ = (config, role);
+        return Err(fail(format!(
+            "{requirement_clause} the candidate Cargo feature"
+        )));
+    }
+    #[cfg(feature = "candidate")]
+    {
+        if role != Some(RendererRole::Candidate) {
+            return Err(fail(format!(
+                "{requirement_clause} the candidate preview role"
+            )));
+        }
+        if config.output_bits != 1 {
+            return Err(fail(format!(
+                "{requirement_clause} monochrome output_bits 1, got {}",
+                config.output_bits
+            )));
+        }
+        if !matches!(
+            config.hinting,
+            crate::Hinting::Auto | crate::Hinting::AutoFallback
+        ) {
+            return Err(fail(format!(
+                "{requirement_clause} automatic hinting, got {:?}",
+                config.hinting
+            )));
+        }
+        Ok(())
+    }
+}
+
+fn admit_request(
     request: &TextRenderRequest,
     role: Option<RendererRole>,
     letter_spacing_px: f32,
     strategy: Option<StemFittingStrategy>,
     pipeline: Option<crate::renderer::RenderPipeline>,
-) -> Result<RenderedText, Error> {
-    let font_data = session.data;
+) -> Result<Cow<'_, TextRenderRequest>, Error> {
     if !letter_spacing_px.is_finite() || !(-16.0..=16.0).contains(&letter_spacing_px) {
         return Err(fail("letter_spacing_px must be finite and within -16..=16"));
     }
     // The Mono strategy owns automatic engine selection. Normalize the
     // effective configuration before validation, blank handling or generation
     // so report settings and layout provenance match the actual draw.
-    let mut effective_request;
     let request = if role == Some(RendererRole::Candidate)
         && matches!(
             request.config.hinting,
             crate::Hinting::Auto | crate::Hinting::AutoFallback
         ) {
-        effective_request = request.clone();
-        effective_request.config.hinting = if request.config.output_bits == 1 {
+        let mut owned = request.clone();
+        owned.config.hinting = if request.config.output_bits == 1 {
             strategy.unwrap_or_default().hinting()
         } else {
             crate::Hinting::Auto
         };
-        &effective_request
+        Cow::Owned(owned)
     } else {
-        request
+        Cow::Borrowed(request)
     };
     if !(1..=MAX_CANVAS_DIM).contains(&request.width) {
         return Err(fail("canvas width must be within 1..=4096"));
@@ -438,79 +469,32 @@ fn render_inner(
             _ => {}
         }
     }
-    // Explicit scan overrides are gated here, before blank-text handling:
-    // candidate role with monochrome output and automatic hinting, nothing
-    // else. An explicit override on an incompatible blank request is an
-    // error, matching the strategy gate below. Baseline, reference and
-    // gray paths keep coverage and reject overrides in `generate()`,
-    // `reference()` and `validate_settings()`.
+    // Validate explicit Mono options before the blank-text shortcut.
     if request.config.mono_raster != crate::MonoRasterSettings::default() {
-        #[cfg(not(feature = "candidate"))]
-        {
-            return Err(fail(
-                "mono raster settings require the candidate Cargo feature",
-            ));
-        }
-        #[cfg(feature = "candidate")]
-        {
-            if role != Some(RendererRole::Candidate) {
-                return Err(fail(
-                    "mono raster settings require the candidate preview role",
-                ));
-            }
-            if request.config.output_bits != 1 {
-                return Err(fail(format!(
-                    "mono raster settings require monochrome output_bits 1, got {}",
-                    request.config.output_bits
-                )));
-            }
-            if !matches!(
-                request.config.hinting,
-                crate::Hinting::Auto | crate::Hinting::AutoFallback
-            ) {
-                return Err(fail(format!(
-                    "mono raster settings require automatic hinting, got {:?}",
-                    request.config.hinting
-                )));
-            }
-        }
+        require_candidate_mono(&request.config, role, "mono raster settings require")?;
     }
-    // Explicit fitting strategies are gated here, before blank-text
-    // handling: candidate role with monochrome automatic hinting and the
-    // candidate feature, nothing else. In particular an explicit strategy
-    // on an incompatible blank request is an error. Compatible blank text
-    // retains normal rendering semantics; default gray remains unchanged.
     if strategy.is_some() {
-        #[cfg(not(feature = "candidate"))]
-        {
-            return Err(fail(
-                "explicit fitting strategy requires the candidate Cargo feature",
-            ));
-        }
-        #[cfg(feature = "candidate")]
-        {
-            if role != Some(RendererRole::Candidate) {
-                return Err(fail(
-                    "explicit fitting strategy requires the candidate preview role",
-                ));
-            }
-            if request.config.output_bits != 1 {
-                return Err(fail(format!(
-                    "explicit fitting strategy requires monochrome output_bits 1, got {}",
-                    request.config.output_bits
-                )));
-            }
-            if !matches!(
-                request.config.hinting,
-                crate::Hinting::Auto | crate::Hinting::AutoFallback
-            ) {
-                return Err(fail(format!(
-                    "explicit fitting strategy requires automatic hinting, got {:?}",
-                    request.config.hinting
-                )));
-            }
-        }
+        require_candidate_mono(&request.config, role, "explicit fitting strategy requires")?;
     }
+    Ok(request)
+}
+
+/// Shared validation/layout/compositing pipeline behind [`render_text`]
+/// and [`render_text_with_renderer`]; `None` and `Some(Baseline)` both
+/// take the approved `generate()` path unchanged. All numerical spacing
+/// decisions (finalized advances, single pair application, tracking and
+/// the tracking floor) run through the [`SpacingEngine`] built below.
+fn render_inner(
+    session: &CaptureSession<'_>,
+    request: &TextRenderRequest,
+    role: Option<RendererRole>,
+    letter_spacing_px: f32,
+    strategy: Option<StemFittingStrategy>,
+    pipeline: Option<crate::renderer::RenderPipeline>,
+) -> Result<RenderedText, Error> {
+    let font_data = session.data;
+    let admitted = admit_request(request, role, letter_spacing_px, strategy, pipeline)?;
+    let request = admitted.as_ref();
     let paragraphs = split_paragraphs(&request.text);
     let repertoire: BTreeSet<char> = request
         .text
@@ -1233,6 +1217,52 @@ mod tests {
             foreground: [0, 0, 0, 255],
             background: [255, 255, 255, 255],
             palette: None,
+        }
+    }
+
+    #[test]
+    fn admit_request_normalizes_effective_hinting() {
+        use crate::stem_fitting::StemFittingStrategy;
+        use crate::Hinting;
+        use RendererRole::*;
+        let cases = [
+            (
+                1,
+                Hinting::Auto,
+                None,
+                Some(Candidate),
+                Hinting::AutoFallback,
+            ),
+            (
+                1,
+                Hinting::AutoFallback,
+                Some(StemFittingStrategy::UpstreamMono),
+                Some(Candidate),
+                Hinting::Auto,
+            ),
+            (
+                3,
+                Hinting::AutoFallback,
+                None,
+                Some(Candidate),
+                Hinting::Auto,
+            ),
+            (
+                1,
+                Hinting::AutoFallback,
+                None,
+                Some(Baseline),
+                Hinting::AutoFallback,
+            ),
+        ];
+        for (bits, hinting, strategy, role, expected) in cases {
+            let mut input = request("A");
+            input.config.output_bits = bits;
+            input.config.hinting = hinting;
+            let before = input.clone();
+            let admitted = super::admit_request(&input, role, 0.0, strategy, None).unwrap();
+            assert_eq!(admitted.config.hinting, expected);
+            assert_eq!(input, before);
         }
     }
 

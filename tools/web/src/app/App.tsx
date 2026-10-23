@@ -20,6 +20,7 @@ import {
   defaultFamilySnapshot,
   parseLegacyState,
   parseUrlSnapshot,
+  previewVariantSettings,
 } from "./features/preview/state/snapshot-codec.js";
 import {
   buildMetas,
@@ -387,19 +388,7 @@ function AppContent(): React.JSX.Element {
     void (async () => {
       try {
         const created = await createVariant(active.id, {
-          settings: {
-            sizePx: family.size,
-            axes: { ...family.axes },
-            letterSpacingPx: family.spacing,
-            profile: snapshot.profile,
-            paletteId: snapshot.paletteId ?? 0,
-            kerning: snapshot.kerning,
-            stemFitting: snapshot.stemFitting,
-            diagonalFitting: snapshot.diagonalFitting ?? false,
-            monoRaster: snapshot.monoRaster,
-            rasterization: snapshot.rasterization,
-            renderer: snapshot.rasterization === undefined ? role : "candidate",
-          },
+          settings: previewVariantSettings(family, snapshot, role),
           sampleText: family.text,
         });
         setSavingVariant(false);

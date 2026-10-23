@@ -11,7 +11,7 @@
 //! exact upstream fallback; the joint couples (17) relative-width rows with
 //! hard parallel/separation rows about the integer target. Smooth-curve
 //! helpers (weld map, joints, G1 rows, cross bounds, emit, quad-interval
-//! certificate) come from the sibling worker module `super::curve_model`.
+//! certificate) come from the sibling module `super::curve_model`.
 //! Native-owned X abstains outright; upstream Y is always retained, so only
 //! X displacements solve. Any infeasible gate returns the exact upstream
 //! commands with `applied=false`. Only malformed, non-finite or out-of-range
@@ -20,7 +20,8 @@
 
 use super::curve_model as scf;
 use super::{
-    acute, curves, geometry, qp, width_weight, FitResult, Reference, HEADROOM, MAX_COMMANDS,
+    abstain, acute, curves, geometry, qp, width_weight, FitResult, Reference, HEADROOM,
+    MAX_COMMANDS,
 };
 use crate::{fail, probe::FittedCommand, Error};
 use std::collections::{HashMap, HashSet};
@@ -30,15 +31,6 @@ const GRID_SPREAD: f64 = 0.25;
 
 fn dot(a: &[f64], b: &[f64]) -> f64 {
     a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
-}
-
-fn abstain(upstream: &[FittedCommand], reason: &str, diagnostics: serde_json::Value) -> FitResult {
-    FitResult {
-        commands: upstream.to_vec(),
-        applied: false,
-        reason: reason.to_string(),
-        diagnostics,
-    }
 }
 
 /// Integer line-separation target from the coupled normal width.
@@ -287,6 +279,13 @@ fn add_quad_shape(system: &mut super::System, ctrl: [usize; 3]) {
     }
 }
 
+/// Hard equality row over full-coordinate displacements.
+struct HardRow {
+    kind: &'static str,
+    row: Vec<f64>,
+    constant: f64,
+}
+
 /// Retained joint leg for the post-rounding continuity check.
 #[derive(Clone, Copy)]
 struct JointCheck {
@@ -299,8 +298,8 @@ struct JointCheck {
 
 /// Far endpoint or off-curve control adjacent to the joint, global index.
 ///
-/// Mirrors the sibling worker's leg rule exactly: a line leg resolves to its
-/// non-joint endpoint, a quad leg to its off-curve control.
+/// A line leg resolves to its non-joint endpoint, a quad leg to its off-curve
+/// control.
 fn leg_far(prev: scf::SegRef, seg: scf::SegRef) -> (usize, usize) {
     let iv = match prev {
         scf::SegRef::Line { a, .. } => a,
@@ -311,49 +310,6 @@ fn leg_far(prev: scf::SegRef, seg: scf::SegRef) -> (usize, usize) {
         scf::SegRef::Quad { off, .. } => off,
     };
     (iv, ov)
-}
-
-/// Joint cross and legs at one coordinate set.
-///
-/// Local port of the smooth-curve cross check: cross(J-I, O-J) with the
-/// incoming and outgoing legs. Kept beside the solver-owned rows until the
-/// sibling worker exposes its private cross helper for shared use.
-fn cross_of(coords: &[[f64; 2]], j: usize, iv: usize, ov: usize) -> (f64, [f64; 2], [f64; 2]) {
-    let (j_pt, i_pt, o_pt) = (coords[j], coords[iv], coords[ov]);
-    let li = [j_pt[0] - i_pt[0], j_pt[1] - i_pt[1]];
-    let lo = [o_pt[0] - j_pt[0], o_pt[1] - j_pt[1]];
-    (li[0] * lo[1] - li[1] * lo[0], li, lo)
-}
-
-/// Nearest-26.6 half-quantum error per moved coordinate.
-const ROUND_HALF: f64 = 1.0 / 128.0;
-
-/// 26.6 rounding bound on joint-cross perturbation.
-///
-/// Only moved coordinates err, at most 1/128 per axis; unmoved legs
-/// contribute zero. The bilinear cross gains first-order leg-error terms
-/// plus the second-order product. Each leg's error partners with the OTHER
-/// leg's components (incoming error with the outgoing leg and vice versa):
-/// cross(li + ei, lo + eo) - cross(li, lo) expands to ei x lo + li x eo at
-/// first order. Local port of the smooth-curve bound, kept beside
-/// `cross_of` until shared exposure lands; the sibling worker's copy needs
-/// the same partner correction from its owner.
-fn quant_cross_bound(leg_in: [f64; 2], leg_out: [f64; 2], moved: [(bool, bool); 3]) -> f64 {
-    let err = |m: (bool, bool)| {
-        [
-            if m.0 { ROUND_HALF } else { 0.0 },
-            if m.1 { ROUND_HALF } else { 0.0 },
-        ]
-    };
-    let (ei, ej, eo) = (err(moved[0]), err(moved[1]), err(moved[2]));
-    let ein = [ei[0] + ej[0], ei[1] + ej[1]];
-    let eout = [ej[0] + eo[0], ej[1] + eo[1]];
-    ein[0] * leg_out[1].abs()
-        + ein[1] * leg_out[0].abs()
-        + eout[0] * leg_in[1].abs()
-        + eout[1] * leg_in[0].abs()
-        + ein[0] * eout[1]
-        + ein[1] * eout[0]
 }
 
 /// Weld-aware X-column reduction of a full-coordinate row.
@@ -369,6 +325,208 @@ fn reduce_row(row: &[f64], weld: &HashMap<usize, usize>, cols: &[usize]) -> Vec<
         full[2 * c] += full[2 * d];
     }
     cols.iter().map(|v| full[2 * v]).collect()
+}
+
+fn reduce_hard_rows(
+    hard: &[HardRow],
+    weld: &HashMap<usize, usize>,
+    cols: &[usize],
+) -> Option<(Vec<Vec<f64>>, Vec<f64>)> {
+    let g_full: Vec<Vec<f64>> = hard
+        .iter()
+        .map(|h| reduce_row(&h.row, weld, cols))
+        .collect();
+    let h_full: Vec<f64> = hard.iter().map(|h| -h.constant).collect();
+    let mut g_active: Vec<Vec<f64>> = Vec::new();
+    let mut h_active: Vec<f64> = Vec::new();
+    for (row, rhs) in g_full.iter().zip(h_full.iter()) {
+        if row.iter().all(|v| *v == 0.0) {
+            if rhs.abs() > 1e-9 {
+                return None;
+            }
+            continue;
+        }
+        g_active.push(row.clone());
+        h_active.push(*rhs);
+    }
+    Some((g_active, h_active))
+}
+
+fn collect_joint_constraints(
+    parsed: &geometry::Parsed,
+    up: &[[f64; 2]],
+    involved: &HashSet<usize>,
+    size_px: f64,
+    hard: &mut Vec<HardRow>,
+) -> Result<Vec<JointCheck>, &'static str> {
+    let joints_map = scf::joints(parsed);
+    let mut ordered_j: Vec<usize> = joints_map.keys().copied().collect();
+    ordered_j.sort();
+    let mut joint_checks: Vec<JointCheck> = Vec::new();
+    for j in ordered_j {
+        let mut occs = joints_map[&j].clone();
+        occs.sort_by_key(|o| leg_far(o.prev, o.seg));
+        for occ in &occs {
+            let (iv, ov) = leg_far(occ.prev, occ.seg);
+            if ![j, iv, ov].iter().any(|v| involved.contains(v)) {
+                continue;
+            }
+            if occ.degenerate {
+                return Err("degenerate-joint");
+            }
+            let curved_join = matches!(occ.prev, scf::SegRef::Quad { .. })
+                || matches!(occ.seg, scf::SegRef::Quad { .. });
+            let constrained = curved_join || occ.smooth;
+            if constrained {
+                match scf::g1_row(up, j, occ.prev, occ.seg, size_px, occ.smooth) {
+                    Some((row, constant)) => hard.push(HardRow {
+                        kind: "joint",
+                        row,
+                        constant,
+                    }),
+                    None => {
+                        return Err("degenerate-leg");
+                    }
+                }
+            }
+            joint_checks.push(JointCheck {
+                j,
+                iv,
+                ov,
+                constrained,
+                smooth: occ.smooth,
+            });
+        }
+    }
+    Ok(joint_checks)
+}
+
+fn rounded_hard_checks(
+    hard: &[HardRow],
+    point_count: usize,
+    up_flat: &[f64],
+    raw: &[[f64; 2]],
+    up: &[[f64; 2]],
+    cand: &[[f64; 2]],
+) -> Result<Vec<serde_json::Value>, Vec<serde_json::Value>> {
+    let raw_flat: Vec<f64> = raw.iter().flat_map(|p| [p[0], p[1]]).collect();
+    let cand_flat: Vec<f64> = cand.iter().flat_map(|p| [p[0], p[1]]).collect();
+    let mut hard_checks = Vec::new();
+    for h in hard {
+        let raw_error = (dot(&h.row, &raw_flat) - dot(&h.row, &up_flat) + h.constant).abs();
+        let error = (dot(&h.row, &cand_flat) - dot(&h.row, &up_flat) + h.constant).abs();
+        let allowance = (0..point_count)
+            .filter(|v| raw[*v][0] != up[*v][0])
+            .map(|v| h.row[2 * v].abs() / 128.0)
+            .sum::<f64>();
+        let ok = raw_error <= 1e-8 * (1.0 + h.constant.abs()) && error <= allowance + 1e-9;
+        hard_checks.push(serde_json::json!({
+            "kind": h.kind, "raw_error": raw_error, "rounded_error": error,
+            "allowance": allowance, "ok": ok,
+        }));
+        if !ok {
+            return Err(hard_checks);
+        }
+    }
+    Ok(hard_checks)
+}
+
+fn joint_continuity_checks(
+    joint_checks: &[JointCheck],
+    base: &[[f64; 2]],
+    up: &[[f64; 2]],
+    raw: &[[f64; 2]],
+    cand: &[[f64; 2]],
+) -> Result<Vec<serde_json::Value>, Vec<serde_json::Value>> {
+    let mut continuity = Vec::new();
+    for jc in joint_checks {
+        let (raw_cross, li, lo) = scf::cross_of(raw, jc.j, jc.iv, jc.ov);
+        let (old_cross, old_li, old_lo) = scf::cross_of(up, jc.j, jc.iv, jc.ov);
+        let (cross, new_li, new_lo) = scf::cross_of(cand, jc.j, jc.iv, jc.ov);
+        let (source_cross, _, _) = scf::cross_of(base, jc.j, jc.iv, jc.ov);
+        let target = if jc.smooth { 0.0 } else { old_cross };
+        let moved_flags = [
+            (raw[jc.iv][0] != up[jc.iv][0], false),
+            (raw[jc.j][0] != up[jc.j][0], false),
+            (raw[jc.ov][0] != up[jc.ov][0], false),
+        ];
+        let allowance = scf::quant_cross_bound(li, lo, moved_flags);
+        let legs_live = new_li[0].hypot(new_li[1]) > 0.0 && new_lo[0].hypot(new_lo[1]) > 0.0;
+        let mut ok = legs_live;
+        if jc.constrained {
+            ok &= (raw_cross - target).abs() <= 1e-8 * (1.0 + target.abs())
+                && (cross - target).abs() <= allowance + 1e-9;
+            ok &= (new_li[0] * old_li[0] + new_li[1] * old_li[1]) > 0.0
+                && (new_lo[0] * old_lo[0] + new_lo[1] * old_lo[1]) > 0.0;
+            if jc.smooth {
+                ok &= (new_li[0] * new_lo[0] + new_li[1] * new_lo[1]) > 0.0;
+            }
+        } else if source_cross != 0.0 {
+            ok &= cross * source_cross > 0.0;
+        }
+        continuity.push(serde_json::json!({
+            "joint": jc.j, "constrained": jc.constrained, "smooth": jc.smooth,
+            "raw_cross": raw_cross, "raw_target": if jc.constrained { Some(target) } else { None },
+            "source_cross": source_cross, "cross_up": old_cross,
+            "cross_cand": cross, "allowed": allowance, "ok": ok,
+        }));
+        if !ok {
+            return Err(continuity);
+        }
+    }
+    Ok(continuity)
+}
+
+fn quad_inequality_rows(
+    curves_idx: &[Vec<usize>],
+    base: &[[f64; 2]],
+    up: &[[f64; 2]],
+    up_flat: &[f64],
+    weld: &HashMap<usize, usize>,
+    cols: &[usize],
+    involved: &HashSet<usize>,
+) -> Option<(Vec<Vec<f64>>, Vec<f64>)> {
+    // Hersch section 2's quadratic derivatives: the signed curvature is
+    // cross(C-P0,P1-C), linear in X when Y is fixed. The four source-leg
+    // dot products certify forward tangents over the entire interval. One
+    // 26.6 product quantum plus the exact X-rounding reserve makes each
+    // strict sign representable without a curvature threshold.
+    let mut ineq_rows: Vec<Vec<f64>> = Vec::new();
+    let mut ineq_lower: Vec<f64> = Vec::new();
+    for c in curves_idx {
+        if c.len() != 3 || !c.iter().any(|i| involved.contains(i)) {
+            continue;
+        }
+        let (p0, ctrl, p1) = (c[0], c[1], c[2]);
+        let su = [base[ctrl][0] - base[p0][0], base[ctrl][1] - base[p0][1]];
+        let sv = [base[p1][0] - base[ctrl][0], base[p1][1] - base[ctrl][1]];
+        let source_cross = su[0] * sv[1] - su[1] * sv[0];
+        if source_cross == 0.0 {
+            return None;
+        }
+        let sign = if source_cross > 0.0 { 1.0 } else { -1.0 };
+        let mut row = vec![0.0; 2 * base.len()];
+        row[2 * p0] = sign * (up[ctrl][1] - up[p1][1]);
+        row[2 * ctrl] = sign * (up[p1][1] - up[p0][1]);
+        row[2 * p1] = sign * (up[p0][1] - up[ctrl][1]);
+        let red = reduce_row(&row, weld, cols);
+        let reserve = red.iter().map(|v| v.abs()).sum::<f64>() / 128.0 + 1.0 / 4096.0;
+        ineq_rows.push(red);
+        ineq_lower.push(reserve - dot(&row, up_flat));
+        for (i, j) in [(p0, ctrl), (ctrl, p1)] {
+            for leg in [su, sv] {
+                let mut row = vec![0.0; 2 * base.len()];
+                row[2 * j] = leg[0];
+                row[2 * i] = -leg[0];
+                let value = (up[j][0] - up[i][0]) * leg[0] + (up[j][1] - up[i][1]) * leg[1];
+                let red = reduce_row(&row, weld, cols);
+                let reserve = red.iter().map(|v| v.abs()).sum::<f64>() / 128.0 + 1.0 / 4096.0;
+                ineq_rows.push(red);
+                ineq_lower.push(reserve - value);
+            }
+        }
+    }
+    Some((ineq_rows, ineq_lower))
 }
 
 /// One bounded solve from the original upstream outline.
@@ -600,11 +758,6 @@ pub(super) fn fit_with_analysis(
         .flat_map(|(b, u)| [u[0] - b[0], u[1] - b[1]])
         .collect();
     let up_flat: Vec<f64> = up.iter().flat_map(|p| [p[0], p[1]]).collect();
-    struct HardRow {
-        kind: &'static str,
-        row: Vec<f64>,
-        constant: f64,
-    }
     let mut hard: Vec<HardRow> = Vec::new();
     for info in &prepared {
         let n = info.normal;
@@ -666,88 +819,35 @@ pub(super) fn fit_with_analysis(
             }
         }
     }
-    // Hersch's border rotation changes angular line-line corners. Their
-    // orientation is checked below; curve joins and collinear subdivision
-    // joints retain exact tangent/cross constraints.
-    let joints_map = scf::joints(&parsed);
-    let mut ordered_j: Vec<usize> = joints_map.keys().copied().collect();
-    ordered_j.sort();
-    let mut joint_checks: Vec<JointCheck> = Vec::new();
-    for j in ordered_j {
-        let mut occs = joints_map[&j].clone();
-        occs.sort_by_key(|o| leg_far(o.prev, o.seg));
-        for occ in &occs {
-            let (iv, ov) = leg_far(occ.prev, occ.seg);
-            if ![j, iv, ov].iter().any(|v| involved.contains(v)) {
-                continue;
-            }
-            if occ.degenerate {
-                return Ok(abstain(
-                    upstream,
-                    "degenerate-joint",
-                    serde_json::json!({"size_px": size_px}),
-                ));
-            }
-            let curved_join = matches!(occ.prev, scf::SegRef::Quad { .. })
-                || matches!(occ.seg, scf::SegRef::Quad { .. });
-            // Cubic joins never reach here: the contour gate admits lines and
-            // quads only, so every joint leg is a line or a quad control.
-            let constrained = curved_join || occ.smooth;
-            if constrained {
-                match scf::g1_row(&up, j, occ.prev, occ.seg, size_px, occ.smooth) {
-                    Some((row, constant)) => hard.push(HardRow {
-                        kind: "joint",
-                        row,
-                        constant,
-                    }),
-                    // A degenerate leg cannot linearize: the joint keeps the
-                    // upstream defect instead of constraining it.
-                    None => {
-                        return Ok(abstain(
-                            upstream,
-                            "degenerate-leg",
-                            serde_json::json!({"size_px": size_px}),
-                        ));
-                    }
-                }
-            }
-            joint_checks.push(JointCheck {
-                j,
-                iv,
-                ov,
-                constrained,
-                smooth: occ.smooth,
-            });
+    // Hersch's border rotation changes angular line-line corners; curve
+    // joins and collinear subdivision joints retain exact tangent/cross
+    // constraints.
+    let joint_checks = match collect_joint_constraints(&parsed, &up, &involved, size_px, &mut hard)
+    {
+        Ok(checks) => checks,
+        Err(reason) => {
+            return Ok(abstain(
+                upstream,
+                reason,
+                serde_json::json!({"size_px": size_px}),
+            ));
         }
-    }
+    };
     let mat: Vec<Vec<f64>> = obj_rows
         .iter()
         .map(|r| reduce_row(r, &weld, &cols))
         .collect();
     let rhs: Vec<f64> = obj_const.iter().map(|c| -c).collect();
-    let g_full: Vec<Vec<f64>> = hard
-        .iter()
-        .map(|h| reduce_row(&h.row, &weld, &cols))
-        .collect();
-    let h_full: Vec<f64> = hard.iter().map(|h| -h.constant).collect();
-    // Redundant equality rows fail closed here with the fixed-constraint
-    // reason; the solver repeats the same gate on its normalized rows.
-    let mut g_active: Vec<Vec<f64>> = Vec::new();
-    let mut h_active: Vec<f64> = Vec::new();
-    for (row, rhs) in g_full.iter().zip(h_full.iter()) {
-        if row.iter().all(|v| *v == 0.0) {
-            if rhs.abs() > 1e-9 {
-                return Ok(abstain(
-                    upstream,
-                    "fixed-constraints-incompatible",
-                    serde_json::json!({"size_px": size_px}),
-                ));
-            }
-            continue;
+    let (g_active, h_active) = match reduce_hard_rows(&hard, &weld, &cols) {
+        Some(active) => active,
+        None => {
+            return Ok(abstain(
+                upstream,
+                "fixed-constraints-incompatible",
+                serde_json::json!({"size_px": size_px}),
+            ));
         }
-        g_active.push(row.clone());
-        h_active.push(*rhs);
-    }
+    };
     let radius = prepared
         .iter()
         .map(|p| p.src_widths.iter().cloned().fold(f64::INFINITY, f64::min) / 2.0)
@@ -760,50 +860,15 @@ pub(super) fn fit_with_analysis(
             serde_json::json!({"size_px": size_px}),
         ));
     }
-    // Hersch section 2's quadratic derivatives: the signed curvature is
-    // cross(C-P0,P1-C), linear in X when Y is fixed. The four source-leg
-    // dot products certify forward tangents over the entire interval. One
-    // 26.6 product quantum plus the exact X-rounding reserve makes each
-    // strict sign representable without a curvature threshold.
-    let mut ineq_rows: Vec<Vec<f64>> = Vec::new();
-    let mut ineq_lower: Vec<f64> = Vec::new();
-    for c in &curves_idx {
-        if c.len() != 3 || !c.iter().any(|i| involved.contains(i)) {
-            continue;
-        }
-        let (p0, ctrl, p1) = (c[0], c[1], c[2]);
-        let su = [base[ctrl][0] - base[p0][0], base[ctrl][1] - base[p0][1]];
-        let sv = [base[p1][0] - base[ctrl][0], base[p1][1] - base[ctrl][1]];
-        let source_cross = su[0] * sv[1] - su[1] * sv[0];
-        if source_cross == 0.0 {
-            return Ok(abstain(
-                upstream,
-                "source-degenerate-curvature",
-                serde_json::json!({"size_px": size_px}),
-            ));
-        }
-        let sign = if source_cross > 0.0 { 1.0 } else { -1.0 };
-        let mut row = vec![0.0; 2 * base.len()];
-        row[2 * p0] = sign * (up[ctrl][1] - up[p1][1]);
-        row[2 * ctrl] = sign * (up[p1][1] - up[p0][1]);
-        row[2 * p1] = sign * (up[p0][1] - up[ctrl][1]);
-        let red = reduce_row(&row, &weld, &cols);
-        let reserve = red.iter().map(|v| v.abs()).sum::<f64>() / 128.0 + 1.0 / 4096.0;
-        ineq_rows.push(red);
-        ineq_lower.push(reserve - dot(&row, &up_flat));
-        for (i, j) in [(p0, ctrl), (ctrl, p1)] {
-            for leg in [su, sv] {
-                let mut row = vec![0.0; 2 * base.len()];
-                row[2 * j] = leg[0];
-                row[2 * i] = -leg[0];
-                let value = (up[j][0] - up[i][0]) * leg[0] + (up[j][1] - up[i][1]) * leg[1];
-                let red = reduce_row(&row, &weld, &cols);
-                let reserve = red.iter().map(|v| v.abs()).sum::<f64>() / 128.0 + 1.0 / 4096.0;
-                ineq_rows.push(red);
-                ineq_lower.push(reserve - value);
-            }
-        }
-    }
+    let Some((ineq_rows, ineq_lower)) =
+        quad_inequality_rows(&curves_idx, &base, &up, &up_flat, &weld, &cols, &involved)
+    else {
+        return Ok(abstain(
+            upstream,
+            "source-degenerate-curvature",
+            serde_json::json!({"size_px": size_px}),
+        ));
+    };
     let Some((delta, qp_info)) = qp::convex_qp(
         &mat,
         &rhs,
@@ -847,70 +912,26 @@ pub(super) fn fit_with_analysis(
             serde_json::json!({"size_px": size_px}),
         ));
     }
-    let raw_flat: Vec<f64> = raw.iter().flat_map(|p| [p[0], p[1]]).collect();
-    let cand_flat: Vec<f64> = cand.iter().flat_map(|p| [p[0], p[1]]).collect();
-    let mut hard_checks = Vec::new();
-    for h in &hard {
-        let raw_error = (dot(&h.row, &raw_flat) - dot(&h.row, &up_flat) + h.constant).abs();
-        let error = (dot(&h.row, &cand_flat) - dot(&h.row, &up_flat) + h.constant).abs();
-        let allowance = (0..base.len())
-            .filter(|v| raw[*v][0] != up[*v][0])
-            .map(|v| h.row[2 * v].abs() / 128.0)
-            .sum::<f64>();
-        let ok = raw_error <= 1e-8 * (1.0 + h.constant.abs()) && error <= allowance + 1e-9;
-        hard_checks.push(serde_json::json!({
-            "kind": h.kind, "raw_error": raw_error, "rounded_error": error,
-            "allowance": allowance, "ok": ok,
-        }));
-        if !ok {
+    let hard_checks = match rounded_hard_checks(&hard, base.len(), &up_flat, &raw, &up, &cand) {
+        Ok(checks) => checks,
+        Err(prefix) => {
             return Ok(abstain(
                 upstream,
                 "rounded-hard-constraint",
-                serde_json::json!({"size_px": size_px, "hard_checks": hard_checks}),
+                serde_json::json!({"size_px": size_px, "hard_checks": prefix}),
             ));
         }
-    }
-    let mut continuity = Vec::new();
-    for jc in &joint_checks {
-        let (raw_cross, li, lo) = cross_of(&raw, jc.j, jc.iv, jc.ov);
-        let (old_cross, old_li, old_lo) = cross_of(&up, jc.j, jc.iv, jc.ov);
-        let (cross, new_li, new_lo) = cross_of(&cand, jc.j, jc.iv, jc.ov);
-        let (source_cross, _, _) = cross_of(&base, jc.j, jc.iv, jc.ov);
-        let target = if jc.smooth { 0.0 } else { old_cross };
-        let moved_flags = [
-            (raw[jc.iv][0] != up[jc.iv][0], false),
-            (raw[jc.j][0] != up[jc.j][0], false),
-            (raw[jc.ov][0] != up[jc.ov][0], false),
-        ];
-        let allowance = quant_cross_bound(li, lo, moved_flags);
-        let legs_live = new_li[0].hypot(new_li[1]) > 0.0 && new_lo[0].hypot(new_lo[1]) > 0.0;
-        let mut ok = legs_live;
-        if jc.constrained {
-            ok &= (raw_cross - target).abs() <= 1e-8 * (1.0 + target.abs())
-                && (cross - target).abs() <= allowance + 1e-9;
-            ok &= (new_li[0] * old_li[0] + new_li[1] * old_li[1]) > 0.0
-                && (new_lo[0] * old_lo[0] + new_lo[1] * old_lo[1]) > 0.0;
-            if jc.smooth {
-                ok &= (new_li[0] * new_lo[0] + new_li[1] * new_lo[1]) > 0.0;
-            }
-        } else if source_cross != 0.0 {
-            ok &= cross * source_cross > 0.0;
-        }
-        continuity.push(serde_json::json!({
-            "joint": jc.j, "constrained": jc.constrained, "smooth": jc.smooth,
-            "raw_cross": raw_cross, "raw_target": if jc.constrained { Some(target) } else { None },
-            "source_cross": source_cross, "cross_up": old_cross,
-            "cross_cand": cross, "allowed": allowance, "ok": ok,
-        }));
-
-        if !ok {
+    };
+    let continuity = match joint_continuity_checks(&joint_checks, &base, &up, &raw, &cand) {
+        Ok(entries) => entries,
+        Err(prefix) => {
             return Ok(abstain(
                 upstream,
                 "joint-continuity",
-                serde_json::json!({"size_px": size_px, "continuity": continuity}),
+                serde_json::json!({"size_px": size_px, "continuity": prefix}),
             ));
         }
-    }
+    };
     let moved: HashSet<usize> = (0..base.len()).filter(|i| cand[*i] != up[*i]).collect();
     for c in &curves_idx {
         if c.len() != 3 || !c.iter().any(|i| moved.contains(i)) {
@@ -1010,7 +1031,849 @@ mod tests {
         let leg_in = [3.0, 1.0];
         let leg_out = [0.5, 4.0];
         let moved = [(true, false), (false, false), (false, false)];
-        let got = quant_cross_bound(leg_in, leg_out, moved);
-        assert_eq!(got, ROUND_HALF * leg_out[1].abs());
+        let got = scf::quant_cross_bound(leg_in, leg_out, moved);
+        assert_eq!(got, 1.0 / 128.0 * leg_out[1].abs());
+    }
+
+    fn joint_shape_source() -> Vec<FittedCommand> {
+        vec![
+            FittedCommand::MoveTo(0.0, 0.0),
+            FittedCommand::LineTo(2.0, 0.0),
+            FittedCommand::QuadTo(3.0, 1.0, 2.0, 2.0),
+            FittedCommand::LineTo(1.0, 2.0),
+            FittedCommand::LineTo(0.0, 2.0),
+            FittedCommand::Close,
+        ]
+    }
+
+    fn degenerate_joint_source() -> Vec<FittedCommand> {
+        let mut source = joint_shape_source();
+        source[2] = FittedCommand::QuadTo(2.0, 0.0, 2.0, 2.0);
+        source
+    }
+
+    fn flat_up(parsed: &geometry::Parsed) -> Vec<[f64; 2]> {
+        parsed
+            .oncurve
+            .iter()
+            .chain(parsed.offcurve.iter())
+            .copied()
+            .collect()
+    }
+
+    fn prefixed_hard(n: usize) -> Vec<HardRow> {
+        vec![
+            HardRow {
+                kind: "parallel",
+                row: (0..n).map(|i| i as f64 + 1.0).collect(),
+                constant: 3.25,
+            },
+            HardRow {
+                kind: "separation",
+                row: (0..n).map(|i| -(i as f64) - 2.0).collect(),
+                constant: -7.5,
+            },
+        ]
+    }
+
+    fn check_by_j(checks: &[JointCheck], j: usize) -> JointCheck {
+        *checks.iter().find(|c| c.j == j).expect("joint collected")
+    }
+
+    fn hard_row(row: Vec<f64>, constant: f64) -> HardRow {
+        HardRow {
+            kind: "stage",
+            row,
+            constant,
+        }
+    }
+    #[test]
+    fn reduce_hard_rows_merges_weld_columns_and_negates_rhs() {
+        let hard = vec![hard_row(vec![1.0, 0.0, 2.0, 0.0], 0.5)];
+        let mut weld = HashMap::new();
+        weld.insert(1, 0);
+        let (g, h) = reduce_hard_rows(&hard, &weld, &[0]).expect("compatible");
+        assert_eq!(g, vec![vec![3.0]]);
+        assert_eq!(h, vec![-0.5]);
+        let cancelled = vec![hard_row(vec![1.0, 0.0, -1.0, 0.0], 0.0)];
+        assert_eq!(
+            reduce_hard_rows(&cancelled, &weld, &[0]),
+            Some((vec![], vec![]))
+        );
+    }
+    #[test]
+    fn reduce_hard_rows_selects_columns_in_given_order() {
+        let hard = vec![hard_row(vec![1.0, 0.0, 2.0, 0.0, 4.0, 0.0], 1.0)];
+        let (g, h) = reduce_hard_rows(&hard, &HashMap::new(), &[2, 0]).expect("compatible");
+        assert_eq!(g, vec![vec![4.0, 1.0]]);
+        assert_eq!(h, vec![-1.0]);
+    }
+    #[test]
+    fn reduce_hard_rows_drops_compatible_zero_rows() {
+        let hard = vec![
+            hard_row(vec![0.0, 0.0, 0.0, 0.0], 0.0),
+            hard_row(vec![0.0, 0.0, 0.0, 0.0], -1e-9),
+            hard_row(vec![0.0, 9.0, 7.0, -3.0], 0.0),
+            hard_row(vec![5.0, 0.0, 0.0, 0.0], 2.0),
+        ];
+        let (g, h) = reduce_hard_rows(&hard, &HashMap::new(), &[0]).expect("compatible");
+        assert_eq!(g, vec![vec![5.0]]);
+        assert_eq!(h, vec![-2.0]);
+    }
+    #[test]
+    fn reduce_hard_rows_rejects_incompatible_zero_rows() {
+        let just_over = f64::from_bits(1e-9f64.to_bits() + 1);
+        let hard = vec![hard_row(vec![0.0, 0.0], 1.5)];
+        assert!(reduce_hard_rows(&hard, &HashMap::new(), &[0]).is_none());
+        let threshold = vec![hard_row(vec![0.0, 0.0], -just_over)];
+        assert!(reduce_hard_rows(&threshold, &HashMap::new(), &[0]).is_none());
+    }
+
+    #[test]
+    fn collect_preserves_prefix_and_joint_metadata() {
+        let parsed = geometry::parse_commands(&joint_shape_source()).expect("valid shape");
+        let up = flat_up(&parsed);
+        let involved: HashSet<usize> = (0..up.len()).collect();
+        let mut hard = prefixed_hard(2 * up.len());
+        let checks =
+            collect_joint_constraints(&parsed, &up, &involved, 16.0, &mut hard).expect("valid");
+        assert_eq!(hard.len(), 2 + 3);
+        assert_eq!(hard[0].kind, "parallel");
+        assert_eq!(hard[1].kind, "separation");
+        assert_eq!(
+            hard[0].row,
+            (0..2 * up.len())
+                .map(|i| i as f64 + 1.0)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(hard[0].constant, 3.25);
+        assert_eq!(
+            hard[1].row,
+            (0..2 * up.len())
+                .map(|i| -(i as f64) - 2.0)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(hard[1].constant, -7.5);
+        assert!(hard[2..].iter().all(|h| h.kind == "joint"));
+        let js: Vec<usize> = checks.iter().map(|c| c.j).collect();
+        assert_eq!(js, vec![0, 1, 2, 3, 4]);
+        let (j1, j2) = (check_by_j(&checks, 1), check_by_j(&checks, 2));
+        assert!(j1.constrained && !j1.smooth);
+        assert!(j2.constrained && !j2.smooth);
+        let j3 = check_by_j(&checks, 3);
+        assert!(j3.constrained && j3.smooth);
+        let j0 = check_by_j(&checks, 0);
+        assert!(!j0.constrained);
+    }
+
+    #[test]
+    fn collect_reports_degenerate_joint() {
+        let parsed = geometry::parse_commands(&degenerate_joint_source()).expect("valid commands");
+        let up = flat_up(&parsed);
+        let involved: HashSet<usize> = HashSet::from([1]);
+        let mut hard = prefixed_hard(2 * up.len());
+        assert!(matches!(
+            collect_joint_constraints(&parsed, &up, &involved, 16.0, &mut hard),
+            Err("degenerate-joint")
+        ));
+    }
+
+    #[test]
+    fn collect_skips_unrelated_degenerate_joint() {
+        let parsed = geometry::parse_commands(&degenerate_joint_source()).expect("valid commands");
+        let up = flat_up(&parsed);
+        let involved: HashSet<usize> = HashSet::from([3]);
+        let mut hard = prefixed_hard(2 * up.len());
+        let checks =
+            collect_joint_constraints(&parsed, &up, &involved, 16.0, &mut hard).expect("skips j1");
+        assert!(!checks.iter().any(|c| c.j == 1));
+        let j3 = check_by_j(&checks, 3);
+        assert!(j3.constrained && j3.smooth);
+        let j2 = check_by_j(&checks, 2);
+        assert!(j2.constrained && !j2.smooth);
+        assert_eq!(hard.len(), 2 + 2);
+        assert!(hard[2..].iter().all(|h| h.kind == "joint"));
+    }
+
+    #[test]
+    fn collect_reports_degenerate_leg() {
+        let parsed = geometry::parse_commands(&joint_shape_source()).expect("valid shape");
+        let mut up = flat_up(&parsed);
+        let off = parsed.oncurve.len();
+        up[off] = up[1];
+        let involved: HashSet<usize> = HashSet::from([1]);
+        let mut hard = prefixed_hard(2 * up.len());
+        assert!(matches!(
+            collect_joint_constraints(&parsed, &up, &involved, 16.0, &mut hard),
+            Err("degenerate-leg")
+        ));
+    }
+
+    #[test]
+    fn rounded_checks_accept_exact_allowance_tie() {
+        let h = 1.0 / 128.0;
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![1.0, 0.0],
+            constant: -h,
+        }];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[h, 0.0]];
+        let cand = [[2.0 * h, 0.0]];
+        let checks = rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand).expect("tie passes");
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0]["ok"], true);
+        assert_eq!(checks[0]["raw_error"].as_f64().unwrap(), 0.0);
+        assert_eq!(checks[0]["rounded_error"].as_f64().unwrap(), h);
+        assert_eq!(checks[0]["allowance"].as_f64().unwrap(), h);
+    }
+
+    #[test]
+    fn rounded_checks_enforce_additive_bound() {
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![1.0, 0.0],
+            constant: 0.0,
+        }];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[0.0, 0.0]];
+        let fine = [[2.0_f64.powi(-31), 0.0]];
+        let checks =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &fine).expect("2^-31 passes");
+        assert_eq!(checks[0]["ok"], true);
+        let coarse = [[2.0_f64.powi(-29), 0.0]];
+        let prefix =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &coarse).expect_err("2^-29 fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn rounded_checks_gate_raw_before_rounded() {
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![1.0, 0.0],
+            constant: 0.125,
+        }];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[-0.125 + 3.0 * 2.0_f64.powi(-28), 0.0]];
+        let cand = [[-0.125, 0.0]];
+        let checks = rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand)
+            .expect("near-tolerance raw passes");
+        assert_eq!(checks[0]["ok"], true);
+        let raw_bad = [[1.0, 0.0]];
+        let prefix = rounded_hard_checks(&hard, 1, &up_flat, &raw_bad, &up, &cand)
+            .expect_err("raw-bad fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["rounded_error"].as_f64().unwrap(), 0.0);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn rounded_checks_stop_at_first_failure() {
+        let hard = [
+            HardRow {
+                kind: "first",
+                row: vec![0.0, 1.0],
+                constant: 0.0,
+            },
+            HardRow {
+                kind: "second",
+                row: vec![1.0, 0.0],
+                constant: 0.0,
+            },
+            HardRow {
+                kind: "third",
+                row: vec![1.0, 0.0],
+                constant: 0.0,
+            },
+        ];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[0.0, 0.0]];
+        let cand = [[1.0, 0.0]];
+        let prefix =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand).expect_err("second fails");
+        assert_eq!(prefix.len(), 2);
+        assert_eq!(prefix[0]["kind"], "first");
+        assert_eq!(prefix[1]["kind"], "second");
+        assert_eq!(prefix[0]["ok"], true);
+        assert_eq!(prefix[1]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_accepts_smooth_zero() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let pts = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let entries =
+            joint_continuity_checks(&checks, &pts, &pts, &pts, &pts).expect("straight passes");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["ok"], true);
+        assert_eq!(entries[0]["raw_target"], 0.0);
+    }
+
+    #[test]
+    fn continuity_accepts_sharp_old_cross() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: false,
+        }];
+        let pts = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        let entries =
+            joint_continuity_checks(&checks, &pts, &pts, &pts, &pts).expect("corner passes");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["ok"], true);
+        assert_eq!(entries[0]["raw_target"], 1.0);
+    }
+
+    #[test]
+    fn continuity_unconstrained_tracks_source_sign() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: false,
+            smooth: false,
+        }];
+        let base = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        let keep = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        let entries =
+            joint_continuity_checks(&checks, &base, &base, &base, &keep).expect("sign kept");
+        assert_eq!(entries[0]["ok"], true);
+        let flip = [[0.0, 0.0], [1.0, 0.0], [1.0, -1.0]];
+        let prefix = joint_continuity_checks(&checks, &base, &base, &base, &flip)
+            .expect_err("sign flip fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+        let flat_base = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let entries = joint_continuity_checks(&checks, &flat_base, &flat_base, &flat_base, &flip)
+            .expect("zero source bypasses sign");
+        assert_eq!(entries[0]["ok"], true);
+    }
+
+    #[test]
+    fn continuity_rejects_dead_leg() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let pts = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let cand = [[0.0, 0.0], [1.0, 0.0], [1.0, 0.0]];
+        let prefix =
+            joint_continuity_checks(&checks, &pts, &pts, &pts, &cand).expect_err("dead leg fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_rejects_reversed_forward_leg() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let pts = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let cand = [[2.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let prefix = joint_continuity_checks(&checks, &pts, &pts, &pts, &cand)
+            .expect_err("reversed leg fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_rejects_smooth_fold() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let pts = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let s = 2.0_f64.powi(-18);
+        let cand = [[1.0 - s, -10.0 * s], [1.0, 0.0], [1.0 + s, -10.0 * s]];
+        let prefix = joint_continuity_checks(&checks, &pts, &pts, &pts, &cand)
+            .expect_err("fold fails orientation");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_keeps_valid_prefix_before_failure() {
+        let keep = JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: false,
+            smooth: false,
+        };
+        let flip = JointCheck {
+            j: 4,
+            iv: 3,
+            ov: 5,
+            constrained: false,
+            smooth: false,
+        };
+        let base = [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+            [5.0, 5.0],
+            [6.0, 5.0],
+            [6.0, 6.0],
+        ];
+        let cand = [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [1.0, 1.0],
+            [5.0, 5.0],
+            [6.0, 5.0],
+            [6.0, 4.0],
+        ];
+        let prefix = joint_continuity_checks(&[keep, flip], &base, &base, &base, &cand)
+            .expect_err("second fails");
+        assert_eq!(prefix.len(), 2);
+        assert_eq!(prefix[0]["joint"], 1);
+        assert_eq!(prefix[0]["ok"], true);
+        assert_eq!(prefix[1]["joint"], 4);
+        assert_eq!(prefix[1]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_x_only_bound_table() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: false,
+            smooth: false,
+        }];
+        let base = [[2.0, 3.0], [5.0, 7.0], [11.0, 17.0]];
+        let cases: [([[f64; 2]; 3], f64); 4] = [
+            (base, 0.0),
+            (
+                [[2.0 + 1.0 / 256.0, 3.0], [5.0, 7.0], [11.0, 17.0]],
+                10.0 / 128.0,
+            ),
+            (
+                [[2.0, 3.0], [5.0 + 1.0 / 256.0, 7.0], [11.0, 17.0]],
+                14.0 / 128.0,
+            ),
+            (
+                [[2.0, 3.0], [5.0, 7.0], [11.0 + 1.0 / 256.0, 17.0]],
+                4.0 / 128.0,
+            ),
+        ];
+        for (raw, allowed) in cases {
+            let entries =
+                joint_continuity_checks(&checks, &base, &base, &raw, &base).expect("accepted");
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0]["allowed"].as_f64().unwrap(), allowed);
+            assert_eq!(entries[0]["ok"], true);
+        }
+    }
+
+    #[test]
+    fn continuity_zero_source_dead_legs_rejected() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: false,
+            smooth: false,
+        }];
+        let base = [[5.0, 0.0], [5.0, 1.0], [5.0, 2.0]];
+        let entries =
+            joint_continuity_checks(&checks, &base, &base, &base, &base).expect("live passes");
+        assert_eq!(entries[0]["ok"], true);
+        let dead_in = [[5.0, 1.0], [5.0, 1.0], [5.0, 2.0]];
+        let prefix = joint_continuity_checks(&checks, &base, &base, &base, &dead_in)
+            .expect_err("dead incoming fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+        let dead_out = [[5.0, 0.0], [5.0, 1.0], [5.0, 1.0]];
+        let prefix = joint_continuity_checks(&checks, &base, &base, &base, &dead_out)
+            .expect_err("dead outgoing fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_sharp_skew_accepted() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: false,
+        }];
+        let base = [[-0.5, -2.0], [0.0, 0.0], [0.0, 1.0]];
+        let cand = [[2.0, -1.0], [0.0, 0.0], [-2.5, 1.0]];
+        let entries =
+            joint_continuity_checks(&checks, &base, &base, &base, &cand).expect("skew passes");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["cross_up"], 0.5);
+        assert_eq!(entries[0]["cross_cand"], 0.5);
+        assert_eq!(entries[0]["ok"], true);
+    }
+
+    #[test]
+    fn continuity_perpendicular_forward_rejected() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: false,
+        }];
+        let up = [[-1.0, 0.0], [0.0, 0.0], [1.0, 1.0]];
+        let cand = [[0.0, 1.0], [0.0, 0.0], [1.0, 1.0]];
+        let prefix = joint_continuity_checks(&checks, &up, &up, &up, &cand)
+            .expect_err("incoming perpendicular fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+        let up = [[-1.0, -1.0], [0.0, 0.0], [0.0, 1.0]];
+        let cand = [[-1.0, -1.0], [0.0, 0.0], [-1.0, 0.0]];
+        let prefix = joint_continuity_checks(&checks, &up, &up, &up, &cand)
+            .expect_err("outgoing perpendicular fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_smooth_diagonal_accepted() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let pts = [[1.0, -2.0], [0.0, 0.0], [-1.0, 2.0]];
+        let entries =
+            joint_continuity_checks(&checks, &pts, &pts, &pts, &pts).expect("diagonal passes");
+        assert_eq!(entries[0]["ok"], true);
+    }
+
+    #[test]
+    fn continuity_smooth_right_angle_fold_rejected() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let up = [[-1.0, -1.0], [0.0, 0.0], [1.0, 1.0]];
+        let s = 2.0_f64.powi(-18);
+        let cand = [[-s, 0.0], [0.0, 0.0], [0.0, s]];
+        let prefix = joint_continuity_checks(&checks, &up, &up, &up, &cand)
+            .expect_err("fold fails orientation");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn continuity_raw_rounded_independent() {
+        let smooth = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: true,
+        }];
+        let up = [[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]];
+        let raw = [[-1.0, 0.0], [0.0, 0.0], [1.0, 1e-8]];
+        let entries =
+            joint_continuity_checks(&smooth, &up, &up, &raw, &up).expect("raw tie passes");
+        assert_eq!(entries[0]["ok"], true);
+        let sharp = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: true,
+            smooth: false,
+        }];
+        let up = [[-1.0, 0.0], [0.0, 0.0], [1.0, 1.0]];
+        let raw = [[-1.0, 0.0], [0.0, 0.0], [1.0, 1.0 + 1.5e-8]];
+        let entries =
+            joint_continuity_checks(&sharp, &up, &up, &raw, &up).expect("near tolerance passes");
+        assert_eq!(entries[0]["ok"], true);
+        let raw_bad = [[-1.0, 0.0], [0.0, 0.0], [1.0, 2.0]];
+        let prefix =
+            joint_continuity_checks(&sharp, &up, &up, &raw_bad, &up).expect_err("raw bad fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+        let flat = [[-1.0, 0.0], [0.0, 0.0], [1.0, 0.0]];
+        let cand = [[-1.0, 0.0], [0.0, 0.0], [1.0, 1e-9]];
+        let entries =
+            joint_continuity_checks(&smooth, &flat, &flat, &flat, &cand).expect("round tie passes");
+        assert_eq!(entries[0]["ok"], true);
+    }
+
+    #[test]
+    fn continuity_unconstrained_flat_live_rejected() {
+        let checks = [JointCheck {
+            j: 1,
+            iv: 0,
+            ov: 2,
+            constrained: false,
+            smooth: false,
+        }];
+        let base = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]];
+        let cand = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]];
+        let prefix = joint_continuity_checks(&checks, &base, &base, &base, &cand)
+            .expect_err("zero cross fails");
+        assert_eq!(prefix.len(), 1);
+        assert_eq!(prefix[0]["ok"], false);
+    }
+
+    #[test]
+    fn rounded_checks_accept_empty() {
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[0.0, 0.0]];
+        let cand = [[0.0, 0.0]];
+        let checks = rounded_hard_checks(&[], 1, &up_flat, &raw, &up, &cand).expect("empty passes");
+        assert!(checks.is_empty());
+    }
+
+    #[test]
+    fn rounded_checks_translated_nonzero_xy() {
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![1.0, 2.0],
+            constant: 0.0,
+        }];
+        let up = [[2.0, 3.0]];
+        let up_flat = [2.0, 3.0];
+        let raw = [[2.0, 3.0]];
+        let cand = [[2.0, 3.0]];
+        let checks =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand).expect("translated passes");
+        assert_eq!(checks[0]["raw_error"].as_f64().unwrap(), 0.0);
+        assert_eq!(checks[0]["rounded_error"].as_f64().unwrap(), 0.0);
+        assert_eq!(checks[0]["allowance"].as_f64().unwrap(), 0.0);
+        assert_eq!(checks[0]["ok"], true);
+    }
+
+    #[test]
+    fn rounded_checks_raw_inclusive_boundary() {
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![1.0, 0.0],
+            constant: 0.0,
+        }];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[1e-8, 0.0]];
+        let cand = [[0.0, 0.0]];
+        let checks =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand).expect("raw tie passes");
+        assert_eq!(checks[0]["raw_error"].as_f64().unwrap(), 1e-8);
+        assert_eq!(checks[0]["ok"], true);
+    }
+
+    #[test]
+    fn rounded_checks_round_inclusive_boundary() {
+        let hard = [HardRow {
+            kind: "joint",
+            row: vec![0.0, 1.0],
+            constant: 1e-9,
+        }];
+        let up = [[0.0, 0.0]];
+        let up_flat = [0.0, 0.0];
+        let raw = [[0.0, 0.0]];
+        let cand = [[0.0, 0.0]];
+        let checks =
+            rounded_hard_checks(&hard, 1, &up_flat, &raw, &up, &cand).expect("round tie passes");
+        assert_eq!(checks[0]["raw_error"].as_f64().unwrap(), 1e-9);
+        assert_eq!(checks[0]["rounded_error"].as_f64().unwrap(), 1e-9);
+        assert_eq!(checks[0]["allowance"].as_f64().unwrap(), 0.0);
+        assert_eq!(checks[0]["ok"], true);
+    }
+
+    fn quad_base() -> Vec<[f64; 2]> {
+        vec![[0.0, 0.0], [2.0, 1.0], [4.0, 0.0]]
+    }
+
+    fn flat_of(pts: &[[f64; 2]]) -> Vec<f64> {
+        pts.iter().flat_map(|p| [p[0], p[1]]).collect()
+    }
+
+    #[test]
+    fn quad_inequalities_skip_empty_and_uninvolved() {
+        let mut base = quad_base();
+        base.extend([[10.0, 0.0], [12.0, 1.0], [14.0, 0.0]]);
+        let up = base.clone();
+        let up_flat = flat_of(&up);
+        let weld = HashMap::new();
+        let cols = vec![0, 1, 2, 3, 4, 5];
+        let involved: HashSet<usize> = HashSet::from([0]);
+        let (rows, lower) =
+            quad_inequality_rows(&[], &base, &up, &up_flat, &weld, &cols, &involved)
+                .expect("empty curves pass");
+        assert!(rows.is_empty() && lower.is_empty());
+        let (rows, lower) = quad_inequality_rows(
+            &[vec![0, 1, 2, 3], vec![3, 4, 5]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved,
+        )
+        .expect("skipped curves pass");
+        assert!(rows.is_empty() && lower.is_empty());
+    }
+
+    #[test]
+    fn quad_inequalities_reject_degenerate_source() {
+        let base = vec![[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]];
+        let up = base.clone();
+        let up_flat = flat_of(&up);
+        let weld = HashMap::new();
+        let cols = vec![0, 1, 2];
+        let involved: HashSet<usize> = HashSet::from([0, 1, 2]);
+        assert!(quad_inequality_rows(
+            &[vec![0, 1, 2]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn quad_inequalities_match_hand_computed_rows() {
+        let base = quad_base();
+        let up = base.clone();
+        let up_flat = flat_of(&up);
+        let weld = HashMap::new();
+        let cols = vec![0, 1, 2];
+        let involved: HashSet<usize> = HashSet::from([0, 1, 2]);
+        let (rows, lower) = quad_inequality_rows(
+            &[vec![0, 1, 2]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved,
+        )
+        .expect("nondegenerate passes");
+        assert_eq!(
+            rows,
+            vec![
+                vec![-1.0, 0.0, 1.0],
+                vec![-2.0, 2.0, 0.0],
+                vec![-2.0, 2.0, 0.0],
+                vec![0.0, -2.0, 2.0],
+                vec![0.0, -2.0, 2.0],
+            ]
+        );
+        let reserve2 = 65.0 / 4096.0;
+        let reserve4 = 129.0 / 4096.0;
+        assert_eq!(
+            lower,
+            vec![
+                reserve2 - 4.0,
+                reserve4 - 5.0,
+                reserve4 - 3.0,
+                reserve4 - 3.0,
+                reserve4 - 5.0,
+            ]
+        );
+    }
+
+    #[test]
+    fn quad_inequalities_track_horizontal_moves() {
+        let base = quad_base();
+        let weld = HashMap::new();
+        let cols = vec![0, 1, 2];
+        let involved: HashSet<usize> = HashSet::from([0, 1, 2]);
+        let up = vec![[0.0, 0.0], [3.0, 1.0], [4.0, 0.0]];
+        let up_flat = flat_of(&up);
+        let (_, lower) = quad_inequality_rows(
+            &[vec![0, 1, 2]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved,
+        )
+        .expect("moved control passes");
+        let reserve4 = 129.0 / 4096.0;
+        assert_eq!(lower[1], reserve4 - 7.0);
+        let up = vec![[0.0, 0.0], [2.0, 1.0], [5.0, 0.0]];
+        let up_flat = flat_of(&up);
+        let (_, lower) = quad_inequality_rows(
+            &[vec![0, 1, 2]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved,
+        )
+        .expect("moved endpoint passes");
+        let reserve2 = 65.0 / 4096.0;
+        assert_eq!(lower[0], reserve2 - 5.0);
+    }
+
+    #[test]
+    fn quad_inequalities_ignore_coincident_weld() {
+        let plain = quad_base();
+        let plain_flat = flat_of(&plain);
+        let empty_weld = HashMap::new();
+        let cols = vec![0, 1, 2];
+        let involved: HashSet<usize> = HashSet::from([0, 1, 2]);
+        let (plain_rows, plain_lower) = quad_inequality_rows(
+            &[vec![0, 1, 2]],
+            &plain,
+            &plain,
+            &plain_flat,
+            &empty_weld,
+            &cols,
+            &involved,
+        )
+        .expect("plain passes");
+        let base = vec![[0.0, 0.0], [2.0, 1.0], [4.0, 0.0], [0.0, 0.0]];
+        let up = base.clone();
+        let up_flat = flat_of(&up);
+        let weld: HashMap<usize, usize> = HashMap::from([(3, 0)]);
+        let (rows, lower) = quad_inequality_rows(
+            &[vec![3, 1, 2]],
+            &base,
+            &up,
+            &up_flat,
+            &weld,
+            &cols,
+            &involved,
+        )
+        .expect("welded passes");
+        assert_eq!(rows, plain_rows);
+        assert_eq!(lower, plain_lower);
     }
 }

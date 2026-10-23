@@ -9,7 +9,7 @@ import {
 } from "../../src/app/renderer/fixture-renderer.js";
 import { useFontLibrary } from "../../src/app/fonts/useFontLibrary.js";
 import { saveFont, type FontMetadata } from "../../src/app/fonts/storage.js";
-import type { OutputProfile, RGBA } from "../../src/app/renderer/renderer-types.js";
+import type { OutputProfile, RGBA, RenderSpec, RendererService } from "../../src/app/renderer/renderer-types.js";
 
 interface HarnessArgs {
   text: string;
@@ -68,6 +68,28 @@ function HarnessStatus(): React.JSX.Element {
   );
 }
 
+interface HarnessRenderGate {
+  hold: () => void;
+  releaseNext: () => void;
+  waitingCount: () => number;
+}
+
+let gateClosed = false;
+const gateWaiters: Array<() => void> = [];
+
+function awaitRenderGate(): Promise<void> {
+  if (!gateClosed) return Promise.resolve();
+  return new Promise<void>((resolve) => { gateWaiters.push(resolve); });
+}
+
+if (typeof window !== "undefined") {
+  (window as unknown as { __harnessRenderGate?: HarnessRenderGate }).__harnessRenderGate = {
+    hold: () => { gateClosed = true; },
+    releaseNext: () => { gateWaiters.shift()?.(); },
+    waitingCount: () => gateWaiters.length,
+  };
+}
+
 // Mounted lifecycle harness around the real shared canvas. Internal inputs
 // drive specimen, readiness, geometry and renderer replacement without
 // remounting the canvas, so browser tests can assert the React effect wiring
@@ -101,14 +123,22 @@ function LifecycleHarness(args: HarnessArgs): React.JSX.Element {
       setTick((tick) => tick + 1);
     },
   }), []);
-  const createService = React.useCallback(() => {
+  const createService = React.useCallback((): RendererService => {
     if (args.factoryBehavior === "throw") throw new Error("Harness factory failure (synthetic).");
-    return createFixtureRenderer({
+    const inner = createFixtureRenderer({
       scenario: args.renderScenario,
       latencyMs: args.latencyMs,
       lineHeight: 24,
       events,
     });
+    return {
+      ...inner,
+      render: async (fontId: string, token: number, spec: RenderSpec) => {
+        const result = await inner.render(fontId, token, spec);
+        await awaitRenderGate();
+        return result;
+      },
+    };
   }, [factoryId, args.factoryBehavior, args.latencyMs, args.renderScenario]);
   React.useEffect(() => {
     setStatus("Waiting for paint…");

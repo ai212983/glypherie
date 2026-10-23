@@ -30,6 +30,7 @@
 
 use crate::{
     fail,
+    orientation::filtered_sign as orient_f,
     probe::{FittedCommand, RasterOutput},
     Error,
 };
@@ -39,8 +40,6 @@ const QBOUND: i64 = 2_097_152;
 const MAX_WORK: u64 = 4_194_304;
 const MAX_POINTS: usize = u16::MAX as usize;
 const MAX_PIXELS: u64 = 4_194_304;
-const EPSILON: f64 = 1.0 / 4503599627370496.0;
-const ERRBOUND_A: f64 = (3.0 + 16.0 * EPSILON) * EPSILON;
 
 /// Suppressed raster plus removed outline-space pixel coordinates.
 pub struct Suppression {
@@ -362,43 +361,6 @@ fn parse(commands: &[FittedCommand]) -> Result<(Vec<ContourF>, Vec<Vec<u8>>), Er
         return Err(fail("terminal cap outline has unclosed contour"));
     }
     Ok((contours, structure))
-}
-
-/// Error-filtered orientation sign for widened f32 geometry.
-///
-/// Source: Shewchuk error-filtered predicates
-/// (https://www.cs.cmu.edu/~quake/robust.html); the opposite-sign fast
-/// path and the static error bound are exact filters, and anything below
-/// the bound abstains. Axis-aligned exact zeros and shared points are
-/// decided structurally; other computed zeros abstain.
-fn orient_f(ax: f64, ay: f64, bx: f64, by: f64, cx: f64, cy: f64) -> Option<i8> {
-    if (ax == bx && ay == by) || (ax == cx && ay == cy) || (bx == cx && by == cy) {
-        return Some(0);
-    }
-    if (ay == by && ay == cy) || (ax == bx && ax == cx) {
-        return Some(0);
-    }
-    let acx = ax - cx;
-    let bcy = by - cy;
-    let acy = ay - cy;
-    let bcx = bx - cx;
-    let detleft = acx * bcy;
-    let detright = acy * bcx;
-    let det = detleft - detright;
-    if detleft > 0.0 && detright <= 0.0 {
-        return Some(1);
-    }
-    if detleft < 0.0 && detright >= 0.0 {
-        return Some(-1);
-    }
-    if det == 0.0 {
-        return None;
-    }
-    let bound = ERRBOUND_A * (detleft.abs() + detright.abs());
-    if det.abs() >= bound {
-        return Some(det.signum() as i8);
-    }
-    None
 }
 
 fn orient_i(ax: i64, ay: i64, bx: i64, by: i64, cx: i64, cy: i64) -> i8 {
