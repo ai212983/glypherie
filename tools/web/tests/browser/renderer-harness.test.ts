@@ -58,6 +58,33 @@ async function devBase(_t: TestContext): Promise<string> {
   return `http://127.0.0.1:${DEV_PORT}/`;
 }
 
+declare global {
+  interface Window {
+    __harnessRenderGate?: { hold: () => void; releaseNext: () => void; waitingCount: () => number };
+  }
+}
+
+async function holdRenders(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const gate = window.__harnessRenderGate;
+    if (!gate) throw new Error("harness render gate is not installed");
+    gate.hold();
+  });
+}
+
+async function releaseNextRender(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const gate = window.__harnessRenderGate;
+    if (!gate) throw new Error("harness render gate is not installed");
+    return gate.waitingCount() > 0;
+  });
+  await page.evaluate(() => {
+    const gate = window.__harnessRenderGate;
+    if (!gate) throw new Error("harness render gate is not installed");
+    gate.releaseNext();
+  });
+}
+
 interface HarnessCalls {
   constructed: number;
   terminated: number;
@@ -187,6 +214,7 @@ test("render spinner is delayed, preserves pixels and stays through the second p
   await painted(page);
   const before = await fullBuffer(page);
   const rect = await page.locator("canvas").boundingBox();
+  await holdRenders(page);
   await page.locator("[data-harness-text]").fill("Slow replacement");
   await page.waitForSelector('[data-font-canvas] [aria-busy="true"]');
   await page.waitForTimeout(60);
@@ -194,6 +222,9 @@ test("render spinner is delayed, preserves pixels and stays through the second p
   await page.locator("[data-render-spinner]").waitFor({ state: "visible" });
   assert.deepEqual(await fullBuffer(page), before, "existing pixels remain visible");
   assert.deepEqual(await page.locator("canvas").boundingBox(), rect, "indicator does not move the canvas");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.equal(await page.locator("[data-render-spinner] svg").evaluate((svg) => getComputedStyle(svg).animationName), "none");
+  await releaseNextRender(page);
   await page.waitForFunction(() => {
     const node = document.querySelector("[data-harness-calls]");
     const calls = JSON.parse(node?.textContent || "{}").renders || [];
@@ -201,10 +232,9 @@ test("render spinner is delayed, preserves pixels and stays through the second p
   });
   assert.equal(await page.locator("[data-render-spinner]").count(), 1, "second pass still has the spinner");
   assert.deepEqual(await fullBuffer(page), before);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  assert.equal(await page.locator("[data-render-spinner] svg").evaluate((svg) => getComputedStyle(svg).animationName), "none");
   await mkdir(path.join(repoRoot, "out/diagnostics/render-spinner"), { recursive: true });
   await page.screenshot({ path: path.join(repoRoot, "out/diagnostics/render-spinner/pending.png") });
+  await releaseNextRender(page);
   await painted(page);
   await page.locator("[data-render-spinner]").waitFor({ state: "detached" });
   assert.equal(await page.locator('[data-font-canvas] [aria-busy="false"]').count(), 1);
