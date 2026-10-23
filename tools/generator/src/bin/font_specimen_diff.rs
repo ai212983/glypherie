@@ -67,6 +67,130 @@ fn key(case: &Value) -> String {
     .to_string()
 }
 
+fn match_required_fields(a: &Value, b: &Value, fields: &[&str], label: &str) -> Result<(), String> {
+    for field in fields {
+        if a[field].is_null() || a[field] != b[field] {
+            return Err(format!("{label} {field} differs"));
+        }
+    }
+    Ok(())
+}
+
+struct CaseTally {
+    outlines: usize,
+    bitmaps: usize,
+    pairs: [u64; 3],
+    topology_differences: Vec<Value>,
+    changes: Vec<Value>,
+}
+
+fn accumulate_pairs(record: &Value, pairs: &mut [u64; 3]) -> Result<(), String> {
+    if let Some(counts) = record["diagonal_pairs"].as_array() {
+        if counts.len() != 3 {
+            return Err("invalid diagonal pair counts".into());
+        }
+        for (i, count) in counts.iter().enumerate() {
+            pairs[i] += count.as_u64().ok_or("invalid pair count")?;
+        }
+    }
+    Ok(())
+}
+
+fn describe_change(
+    r: &Value,
+    s: &Value,
+    outline: bool,
+    bitmap: bool,
+) -> Result<(Value, Option<Value>), String> {
+    let glyph = char::from_u32(s["codepoint"].as_u64().ok_or("invalid codepoint")? as u32)
+        .ok_or("invalid scalar")?
+        .to_string();
+    let mut change = json!({"glyph":glyph,"codepoint":s["codepoint"],"outline_changed":outline,"bitmap_changed":bitmap});
+    let mut topology_difference = None;
+    if s["output_bits"] == 1 {
+        let before = topology(r)?;
+        let after = topology(s)?;
+        change["reference_topology"] = json!(before);
+        change["proposal_topology"] = json!(after);
+        if before != after {
+            topology_difference = Some(change.clone());
+        }
+    }
+    Ok((change, topology_difference))
+}
+
+fn compare_records(ar: &[Value], br: &[Value]) -> Result<CaseTally, String> {
+    let mut tally = CaseTally {
+        outlines: 0,
+        bitmaps: 0,
+        pairs: [0; 3],
+        topology_differences: Vec::new(),
+        changes: Vec::new(),
+    };
+    for (r, s) in ar.iter().zip(br) {
+        match_required_fields(
+            r,
+            s,
+            &[
+                "codepoint",
+                "glyph_id",
+                "output_bits",
+                "mono_threshold",
+                "gray_gamma",
+            ],
+            "record",
+        )?;
+        accumulate_pairs(s, &mut tally.pairs)?;
+        let outline = r["fitted_commands"] != s["fitted_commands"];
+        let bitmap = ["pixels", "left", "top", "width", "height"]
+            .iter()
+            .any(|k| r[k] != s[k]);
+        tally.outlines += usize::from(outline);
+        tally.bitmaps += usize::from(bitmap);
+        if outline || bitmap {
+            let (change, topology_difference) = describe_change(r, s, outline, bitmap)?;
+            if let Some(difference) = topology_difference {
+                tally.topology_differences.push(difference);
+            }
+            tally.changes.push(change);
+        }
+    }
+    Ok(tally)
+}
+
+fn compare_case(original: &Value, case: &Value) -> Result<Value, String> {
+    let a = &original["report"];
+    let b = &case["report"];
+    if !a.is_object() || !b.is_object() {
+        return Err("capture has an unsuccessful outcome".into());
+    }
+    match_required_fields(
+        a,
+        b,
+        &[
+            "source_sha256",
+            "axes",
+            "profile",
+            "size_px",
+            "target",
+            "hinting_requested",
+        ],
+        "capture",
+    )?;
+    let ar = a["records"].as_array().ok_or("missing reference records")?;
+    let br = b["records"].as_array().ok_or("missing proposed records")?;
+    if ar.len() != br.len() {
+        return Err("record counts differ".into());
+    }
+    let tally = compare_records(ar, br)?;
+    Ok(
+        json!({"family_id":case["family_id"],"size_px":case["size_px"],"profile":case["profile"],
+        "record_count":br.len(),"diagonal_pairs":tally.pairs,"changed_outlines":tally.outlines,"changed_bitmaps":tally.bitmaps,
+        "metrics_changed":a["metrics"]!=b["metrics"],"advances_changed":ar.iter().zip(br).any(|(r,s)|r["advance_26_6"]!=s["advance_26_6"]),
+        "topology_differences":tally.topology_differences,"changes":tally.changes}),
+    )
+}
+
 fn compare(reference: &Value, proposal: &Value) -> Result<Value, String> {
     if reference["characters"] != proposal["characters"]
         || reference["profiles"] != proposal["profiles"]
@@ -89,82 +213,7 @@ fn compare(reference: &Value, proposal: &Value) -> Result<Value, String> {
     }
     let mut reports = Vec::new();
     for case in proposed {
-        let original = refs[&key(case)];
-        let a = &original["report"];
-        let b = &case["report"];
-        if !a.is_object() || !b.is_object() {
-            return Err("capture has an unsuccessful outcome".into());
-        }
-        for field in [
-            "source_sha256",
-            "axes",
-            "profile",
-            "size_px",
-            "target",
-            "hinting_requested",
-        ] {
-            if a[field].is_null() || a[field] != b[field] {
-                return Err(format!("capture {field} differs"));
-            }
-        }
-        let ar = a["records"].as_array().ok_or("missing reference records")?;
-        let br = b["records"].as_array().ok_or("missing proposed records")?;
-        if ar.len() != br.len() {
-            return Err("record counts differ".into());
-        }
-        let mut changed_outlines = 0;
-        let mut changed_bitmaps = 0;
-        let mut pair_counts = [0u64; 3];
-        let mut topology_differences = Vec::new();
-        let mut changes = Vec::new();
-        for (r, s) in ar.iter().zip(br) {
-            for field in [
-                "codepoint",
-                "glyph_id",
-                "output_bits",
-                "mono_threshold",
-                "gray_gamma",
-            ] {
-                if r[field].is_null() || r[field] != s[field] {
-                    return Err(format!("record {field} differs"));
-                }
-            }
-            if let Some(counts) = s["diagonal_pairs"].as_array() {
-                if counts.len() != 3 {
-                    return Err("invalid diagonal pair counts".into());
-                }
-                for (i, count) in counts.iter().enumerate() {
-                    pair_counts[i] += count.as_u64().ok_or("invalid pair count")?;
-                }
-            }
-            let outline = r["fitted_commands"] != s["fitted_commands"];
-            let bitmap = ["pixels", "left", "top", "width", "height"]
-                .iter()
-                .any(|k| r[k] != s[k]);
-            changed_outlines += usize::from(outline);
-            changed_bitmaps += usize::from(bitmap);
-            if outline || bitmap {
-                let glyph =
-                    char::from_u32(s["codepoint"].as_u64().ok_or("invalid codepoint")? as u32)
-                        .ok_or("invalid scalar")?
-                        .to_string();
-                let mut change = json!({"glyph":glyph,"codepoint":s["codepoint"],"outline_changed":outline,"bitmap_changed":bitmap});
-                if s["output_bits"] == 1 {
-                    let before = topology(r)?;
-                    let after = topology(s)?;
-                    change["reference_topology"] = json!(before);
-                    change["proposal_topology"] = json!(after);
-                    if before != after {
-                        topology_differences.push(change.clone());
-                    }
-                }
-                changes.push(change);
-            }
-        }
-        reports.push(json!({"family_id":case["family_id"],"size_px":case["size_px"],"profile":case["profile"],
-            "record_count":br.len(),"diagonal_pairs":pair_counts,"changed_outlines":changed_outlines,"changed_bitmaps":changed_bitmaps,
-            "metrics_changed":a["metrics"]!=b["metrics"],"advances_changed":ar.iter().zip(br).any(|(r,s)|r["advance_26_6"]!=s["advance_26_6"]),
-            "topology_differences":topology_differences,"changes":changes}));
+        reports.push(compare_case(refs[&key(case)], case)?);
     }
     Ok(
         json!({"schema_version":"specimen-diff-v1","reference_variant":reference["variant"],"proposal_variant":proposal["variant"],
@@ -210,6 +259,10 @@ fn main() -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "font_specimen_diff/comparison_tests.rs"]
+mod comparison_tests;
 
 #[cfg(test)]
 mod tests {
