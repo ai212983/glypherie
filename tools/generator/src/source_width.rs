@@ -49,6 +49,49 @@ pub struct FitResult {
     pub applied: bool,
 }
 
+struct Ownership {
+    related: Vec<usize>,
+    owned_related: Vec<bool>,
+    free: Vec<usize>,
+}
+
+fn partition_ownership(kept: &[PairOut], anchor: usize, len: usize) -> Option<Ownership> {
+    let related: Vec<usize> = kept
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| {
+            *i != anchor
+                && kept[*i]
+                    .verts
+                    .iter()
+                    .any(|v| kept[anchor].verts.contains(v))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if related.is_empty() {
+        return None;
+    }
+    let owned_anchor = kept[anchor].verts.clone();
+    let mut owned_related = vec![false; len];
+    for r in &related {
+        for v in &kept[*r].verts {
+            owned_related[*v] = true;
+        }
+    }
+    for v in &owned_anchor {
+        owned_related[*v] = false;
+    }
+    let free: Vec<usize> = (0..len).filter(|v| owned_related[*v]).collect();
+    if free.is_empty() {
+        return None;
+    }
+    Some(Ownership {
+        related,
+        owned_related,
+        free,
+    })
+}
+
 /// Couple related straight strokes to the upstream-fitted rectilinear anchor.
 ///
 /// Source carries the unhinted outline, upstream the fitted outline at
@@ -114,36 +157,16 @@ pub fn fit(
             return Ok(unchanged());
         }
     };
-    let related: Vec<usize> = pairs
-        .kept
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| {
-            *i != anchor
-                && pairs.kept[*i]
-                    .verts
-                    .iter()
-                    .any(|v| pairs.kept[anchor].verts.contains(v))
-        })
-        .map(|(i, _)| i)
-        .collect();
-    if related.is_empty() {
-        return Ok(unchanged());
-    }
-    let owned_anchor = pairs.kept[anchor].verts.clone();
-    let mut owned_related = vec![false; base.len()];
-    for r in &related {
-        for v in &pairs.kept[*r].verts {
-            owned_related[*v] = true;
+    let Ownership {
+        related,
+        owned_related,
+        free,
+    } = match partition_ownership(&pairs.kept, anchor, base.len()) {
+        Some(ownership) => ownership,
+        None => {
+            return Ok(unchanged());
         }
-    }
-    for v in &owned_anchor {
-        owned_related[*v] = false;
-    }
-    let free: Vec<usize> = (0..base.len()).filter(|v| owned_related[*v]).collect();
-    if free.is_empty() {
-        return Ok(unchanged());
-    }
+    };
     let shift: Vec<[f64; 2]> = base
         .iter()
         .zip(up.iter())
@@ -1701,5 +1724,49 @@ mod math_controls {
         system.edge_row(&shift, &edges[0], 10.0);
         assert!(width_cost(&system, &shift) < 1e-24);
         assert!(width_cost(&system, &[[0.0, 0.0]; 4]) > 0.0);
+    }
+    fn pair(verts: [usize; 4]) -> PairOut {
+        PairOut {
+            verts,
+            samples: Vec::new(),
+        }
+    }
+    #[test]
+    fn ownership_isolated_pairs_yield_none() {
+        let kept = vec![pair([0, 1, 2, 3]), pair([4, 5, 6, 7])];
+        assert!(partition_ownership(&kept, 0, 8).is_none());
+    }
+    #[test]
+    fn ownership_shared_vert_marks_related_and_clears_anchor() {
+        let kept = vec![pair([0, 1, 2, 3]), pair([3, 4, 5, 6])];
+        let ownership = partition_ownership(&kept, 0, 7).unwrap();
+        assert_eq!(ownership.related, vec![1]);
+        assert_eq!(
+            ownership.owned_related,
+            vec![false, false, false, false, true, true, true]
+        );
+        assert_eq!(ownership.free, vec![4, 5, 6]);
+    }
+    #[test]
+    fn ownership_nonzero_anchor_excludes_anchor_verts() {
+        let kept = vec![pair([0, 1, 2, 3]), pair([2, 3, 4, 5])];
+        let ownership = partition_ownership(&kept, 1, 6).unwrap();
+        assert_eq!(ownership.related, vec![0]);
+        assert_eq!(
+            ownership.owned_related,
+            vec![true, true, false, false, false, false]
+        );
+        assert_eq!(ownership.free, vec![0, 1]);
+    }
+    #[test]
+    fn ownership_duplicate_verts_leave_free_empty() {
+        let kept = vec![pair([0, 1, 2, 3]), pair([0, 1, 2, 3])];
+        assert!(partition_ownership(&kept, 0, 4).is_none());
+    }
+    #[test]
+    fn ownership_free_lists_ascending_free_indices() {
+        let kept = vec![pair([0, 1, 2, 3]), pair([3, 9, 8, 7])];
+        let ownership = partition_ownership(&kept, 0, 10).unwrap();
+        assert_eq!(ownership.free, vec![7, 8, 9]);
     }
 }
