@@ -283,6 +283,58 @@ fn validate_variants(variants: &[Variant]) -> Result<(), Error> {
     Ok(())
 }
 
+fn expand_family_cases(
+    family: &Family,
+    defaults: &Selection,
+    variants: &BTreeSet<&str>,
+    profiles: &BTreeSet<&str>,
+    config_dir: &Path,
+) -> Result<Vec<RenderCase>, Error> {
+    let sizes = family.sizes.as_ref().unwrap_or(&defaults.sizes);
+    let family_variants = family.variants.as_ref().unwrap_or(&defaults.variants);
+    let family_profiles = family.profiles.as_ref().unwrap_or(&defaults.profiles);
+    sizes_valid(sizes, variants, profiles)?;
+    selected(family_variants, variants, "variant")?;
+    selected(family_profiles, profiles, "profile")?;
+    let mut cases = Vec::new();
+    for size in sizes {
+        let (px, chosen_variants, chosen_profiles) = match size {
+            SizeSelection::Size(px) => (*px, family_variants, family_profiles),
+            SizeSelection::Overrides(overrides) => (
+                overrides.size_px,
+                overrides.variants.as_ref().unwrap_or(family_variants),
+                overrides.profiles.as_ref().unwrap_or(family_profiles),
+            ),
+        };
+        let axes = family
+            .axes
+            .iter()
+            .map(|(tag, value)| {
+                (
+                    tag.clone(),
+                    match value {
+                        AxisValue::Fixed(value) => *value,
+                        AxisValue::Binding(AxisBinding::SizePx) => px,
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        for variant in chosen_variants {
+            for profile in chosen_profiles {
+                cases.push(RenderCase {
+                    family_id: family.id.clone(),
+                    font: config_dir.join(&family.font),
+                    size_px: px,
+                    axes: axes.clone(),
+                    variant: variant.clone(),
+                    profile: profile.clone(),
+                });
+            }
+        }
+    }
+    Ok(cases)
+}
+
 impl SpecimenConfig {
     pub fn latest_variant(&self) -> Result<&str, Error> {
         crate::preview_selection::select_roles(self.variants.iter().map(|variant| {
@@ -435,47 +487,13 @@ impl SpecimenConfig {
                     )));
                 }
             }
-            let sizes = family.sizes.as_ref().unwrap_or(&self.defaults.sizes);
-            let family_variants = family.variants.as_ref().unwrap_or(&self.defaults.variants);
-            let family_profiles = family.profiles.as_ref().unwrap_or(&self.defaults.profiles);
-            sizes_valid(sizes, &variants, &profiles)?;
-            selected(family_variants, &variants, "variant")?;
-            selected(family_profiles, &profiles, "profile")?;
-            for size in sizes {
-                let (px, chosen_variants, chosen_profiles) = match size {
-                    SizeSelection::Size(px) => (*px, family_variants, family_profiles),
-                    SizeSelection::Overrides(overrides) => (
-                        overrides.size_px,
-                        overrides.variants.as_ref().unwrap_or(family_variants),
-                        overrides.profiles.as_ref().unwrap_or(family_profiles),
-                    ),
-                };
-                let axes = family
-                    .axes
-                    .iter()
-                    .map(|(tag, value)| {
-                        (
-                            tag.clone(),
-                            match value {
-                                AxisValue::Fixed(value) => *value,
-                                AxisValue::Binding(AxisBinding::SizePx) => px,
-                            },
-                        )
-                    })
-                    .collect::<BTreeMap<_, _>>();
-                for variant in chosen_variants {
-                    for profile in chosen_profiles {
-                        cases.push(RenderCase {
-                            family_id: family.id.clone(),
-                            font: config_dir.join(&family.font),
-                            size_px: px,
-                            axes: axes.clone(),
-                            variant: variant.clone(),
-                            profile: profile.clone(),
-                        });
-                    }
-                }
-            }
+            cases.extend(expand_family_cases(
+                family,
+                &self.defaults,
+                &variants,
+                &profiles,
+                config_dir,
+            )?);
         }
         if !cases.iter().any(|case| case.variant == latest) {
             return Err(fail("latest variant must select at least one render case"));

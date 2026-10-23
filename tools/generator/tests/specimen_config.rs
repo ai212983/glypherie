@@ -251,6 +251,65 @@ fn adding_a_family_requires_only_config_data() {
 }
 
 #[test]
+fn family_cases_pin_font_path_fixed_axes_and_order() {
+    let mut value = document();
+    value["families"].as_array_mut().unwrap().truncate(1);
+    let cases = resolve(value).unwrap();
+    assert_eq!(cases.len(), 8);
+    assert_eq!(cases[0].family_id, "roboto");
+    assert_eq!(cases[0].font, Path::new("/config/../../fonts/Roboto.ttf"));
+    assert_eq!(cases[0].size_px, 14.0);
+    assert_eq!(cases[0].variant, "reference");
+    assert_eq!(cases[0].profile, "mono_1bit");
+    assert_eq!(cases[0].axes["wght"], 400.0);
+    assert_eq!(cases[0].axes["wdth"], 100.0);
+    assert_eq!(cases[1].profile, "gray_3bit");
+    assert_eq!(cases[1].size_px, 14.0);
+    assert_eq!(cases[2].size_px, 16.0);
+    assert_eq!(cases[2].profile, "mono_1bit");
+}
+
+#[test]
+fn override_size_propagates_to_size_px_axis_binding() {
+    let mut value = document();
+    value["families"][1]["sizes"] = json!([14, {"size_px": 20}]);
+    let cases = resolve(value).unwrap();
+    let literata: Vec<_> = cases
+        .iter()
+        .filter(|case| case.family_id == "literata")
+        .collect();
+    assert_eq!(literata.len(), 4);
+    assert_eq!(literata[0].axes["opsz"], 14.0);
+    assert_eq!(literata[0].axes["wght"], 400.0);
+    assert_eq!(literata[2].size_px, 20.0);
+    assert_eq!(literata[2].axes["opsz"], 20.0);
+    assert_eq!(literata[2].axes["wght"], 400.0);
+}
+
+#[test]
+fn family_level_selection_errors_are_exact_and_ordered() {
+    let mut value = document();
+    value["families"][0]["profiles"] = json!(["missing"]);
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "unknown profile ID \"missing\""
+    );
+    let mut value = document();
+    value["families"][0]["sizes"] = json!([]);
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "size selections must be nonempty"
+    );
+    let mut value = document();
+    value["families"][0]["sizes"] = json!([]);
+    value["families"][0]["profiles"] = json!(["missing"]);
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "size selections must be nonempty"
+    );
+}
+
+#[test]
 fn unknown_and_duplicate_selections_are_rejected() {
     for selection in [
         json!([]),
