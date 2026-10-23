@@ -1499,4 +1499,10 @@ mod tests {
         assert!((x[0] - 1.0).abs() < 1e-9);
         assert!((x[1] - 1.0).abs() < 1e-6);
     }
+
+    #[test]
+    fn width_weight_asymmetric_scaled_tangents() {
+        let w = width_weight(1.7, 1.0, [3.0, 4.0], [-1.0, 7.0], 10.0);
+        assert!((w - 1.8254425977371571).abs() < 1e-12);
+    }
 }

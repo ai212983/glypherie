@@ -21,7 +21,7 @@
 
 use super::geometry::{self, Segment as GeomSegment};
 use super::qp;
-use super::{abstain, curves, FitResult, Reference, HEADROOM, MAX_COMMANDS};
+use super::{abstain, curves, width_weight, FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS};
 use crate::fail;
 use crate::{fitting_source::SourceOutline, probe::FittedCommand, Error};
 use num_rational::BigRational;
@@ -642,35 +642,6 @@ pub(super) fn quant_cross_bound(
     let (ax, ay) = (leg_in[0].abs(), leg_in[1].abs());
     let (bx, by) = (leg_out[0].abs(), leg_out[1].abs());
     ein_x * by + ein_y * bx + eout_x * ay + eout_y * ax + ein_x * eout_y + ein_y * eout_x
-}
-
-/// Supplied fixed affine correspondence to outline controls (Hobby (31)).
-#[derive(Clone, Debug)]
-struct Sample {
-    terms: Vec<(usize, f64)>,
-}
-
-impl Sample {
-    fn vertex(index: usize) -> Self {
-        Sample {
-            terms: vec![(index, 1.0)],
-        }
-    }
-
-    fn affine(i0: usize, t0: f64, i1: usize, t1: f64) -> Self {
-        Sample {
-            terms: vec![(i0, t0), (i1, t1)],
-        }
-    }
-}
-
-/// Hobby (17) angular/width coupling weight; the printed 9 is radians.
-fn width_weight(w1: f64, w2: f64, t1: [f64; 2], t2: [f64; 2], height: f64) -> f64 {
-    let cos = ((t1[0] * t2[0] + t1[1] * t2[1]) / (t1[0].hypot(t1[1]) * t2[0].hypot(t2[1])))
-        .clamp(-1.0, 1.0);
-    let angle = cos.acos();
-    let dw = (w1 - w2) / 0.7;
-    500.0 / (height * height) * (-(dw * dw) - (angle / 9.0).powi(2)).exp()
 }
 
 /// Linear weighted residuals in displacements at nominal scale.
