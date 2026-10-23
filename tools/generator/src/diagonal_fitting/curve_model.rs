@@ -17,7 +17,7 @@
 
 use super::exact::Exact as BigRational;
 use super::{
-    abstain, acute, curves, filtered, geometry, intervals, min_norm_solve,
+    abstain, acute, basis_row, curves, filtered, geometry, intervals, min_norm_solve,
     qp::{bounded_equalities, QpInfo},
     reference_meta, width_weight, FitResult, Reference, HEADROOM, MAX_COMMANDS,
 };
@@ -1130,14 +1130,6 @@ enum RowKind {
     Shape,
     Joint,
     Ink,
-}
-
-fn basis_row(weights: &[(usize, f64)], n: usize) -> Vec<f64> {
-    let mut row = vec![0.0; n];
-    for &(i, w) in weights {
-        row[i] += w;
-    }
-    row
 }
 
 fn projected_row(basis: &[f64], dir: [f64; 2], other: Option<&[f64]>, n: usize) -> Vec<f64> {

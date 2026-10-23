@@ -21,7 +21,9 @@
 
 use super::geometry::{self, Segment as GeomSegment};
 use super::qp;
-use super::{abstain, curves, width_weight, FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS};
+use super::{
+    abstain, basis_row, curves, width_weight, FitResult, Reference, Sample, HEADROOM, MAX_COMMANDS,
+};
 use crate::fail;
 use crate::{fitting_source::SourceOutline, probe::FittedCommand, Error};
 use num_rational::BigRational;
@@ -666,14 +668,14 @@ impl RowSys {
     /// Outer product of the correspondence basis with a direction, raveled
     /// per-coordinate `(x0, y0, x1, y1, ...)`.
     fn projected(&self, a: &Sample, dir: [f64; 2], b: Option<&Sample>) -> Vec<f64> {
-        let ba = a.basis(self.points.len());
+        let ba = basis_row(&a.terms, self.points.len());
         let mut row = vec![0.0; 2 * self.points.len()];
         for (k, w) in ba.iter().enumerate() {
             row[2 * k] += w * dir[0];
             row[2 * k + 1] += w * dir[1];
         }
         if let Some(other) = b {
-            let bb = other.basis(self.points.len());
+            let bb = basis_row(&other.terms, self.points.len());
             for (k, w) in bb.iter().enumerate() {
                 row[2 * k] -= w * dir[0];
                 row[2 * k + 1] -= w * dir[1];

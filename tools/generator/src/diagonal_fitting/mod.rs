@@ -107,14 +107,6 @@ impl Sample {
         }
     }
 
-    fn basis(&self, len: usize) -> Vec<f64> {
-        let mut row = vec![0.0; len];
-        for &(index, weight) in &self.terms {
-            row[index] += weight;
-        }
-        row
-    }
-
     fn point(&self, points: &[[f64; 2]]) -> [f64; 2] {
         let mut p = [0.0, 0.0];
         for &(index, weight) in &self.terms {
@@ -123,6 +115,14 @@ impl Sample {
         }
         p
     }
+}
+
+fn basis_row(weights: &[(usize, f64)], n: usize) -> Vec<f64> {
+    let mut row = vec![0.0; n];
+    for &(i, w) in weights {
+        row[i] += w;
+    }
+    row
 }
 
 /// Frozen upright reference anchor: same font, axes, size and native settings.
@@ -200,14 +200,14 @@ impl System {
     /// Outer product of the correspondence basis with a direction, raveled
     /// per-coordinate `(x0, y0, x1, y1, ...)`.
     fn projected(&self, a: &Sample, dir: [f64; 2], b: Option<&Sample>) -> Vec<f64> {
-        let ba = a.basis(self.points.len());
+        let ba = basis_row(&a.terms, self.points.len());
         let mut row = vec![0.0; 2 * self.points.len()];
         for (k, w) in ba.iter().enumerate() {
             row[2 * k] = w * dir[0];
             row[2 * k + 1] = w * dir[1];
         }
         if let Some(other) = b {
-            let bb = other.basis(self.points.len());
+            let bb = basis_row(&other.terms, self.points.len());
             for (k, w) in bb.iter().enumerate() {
                 row[2 * k] -= w * dir[0];
                 row[2 * k + 1] -= w * dir[1];
