@@ -111,6 +111,51 @@ test("dev footer tracks real HMR connection independently of network status", { 
   let navigations = 0;
   page.on("load", () => { navigations += 1; });
   const footer = page.getByRole("contentinfo");
+  await page.addInitScript(() => {
+    const seen = new Map<object, Set<boolean>>();
+    const originalAdd = document.addEventListener.bind(document);
+    const originalRemove = document.removeEventListener.bind(document);
+    const captureOf = (options: unknown): boolean =>
+      typeof options === "boolean" ? options : ((options as { capture?: boolean } | null)?.capture ?? false);
+    document.addEventListener = ((
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | AddEventListenerOptions,
+    ): void => {
+      if (type === "pointerdown" && listener !== null) {
+        const key = listener as object;
+        if (!seen.has(key)) seen.set(key, new Set<boolean>());
+        seen.get(key)?.add(captureOf(options));
+      }
+      originalAdd(type, listener as EventListener, options as AddEventListenerOptions);
+    }) as typeof document.addEventListener;
+    document.removeEventListener = ((
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ): void => {
+      if (type === "pointerdown" && listener !== null) {
+        const flags = seen.get(listener as object);
+        if (flags) {
+          flags.delete(captureOf(options));
+          if (flags.size === 0) seen.delete(listener as object);
+        }
+      }
+      originalRemove(type, listener as EventListener, options as EventListenerOptions);
+    }) as typeof document.removeEventListener;
+    const count = (): number => {
+      let total = 0;
+      seen.forEach((flags) => {
+        total += flags.size;
+      });
+      return total;
+    };
+    (window as unknown as { __pointerdownCount?: () => number }).__pointerdownCount = count;
+  });
+  const pointerListenerCount = (): Promise<number> =>
+    page.evaluate(
+      () => (window as unknown as { __pointerdownCount?: () => number }).__pointerdownCount?.() ?? -1,
+    );
 
   await page.goto(url, { waitUntil: "domcontentloaded" });
   // The initial ws:connect fires before React subscribes; the ping/pong
@@ -149,6 +194,7 @@ test("dev footer tracks real HMR connection independently of network status", { 
   const modules = server.moduleGraph.getModulesByFile(footerFile);
   const target = [...(modules ?? [])][0];
   assert.ok(target, "SiteFooter module is loaded");
+  const pointerListenersReady = await pointerListenerCount();
   await server.reloadModule(target);
   await footer.locator(".site-footer__development", { hasText: "Dev server r2" }).waitFor({ timeout: 20000 });
   assert.match(
@@ -159,6 +205,11 @@ test("dev footer tracks real HMR connection independently of network status", { 
   assert.equal(await footer.locator(".site-footer__info").isVisible(), true);
   assert.equal(await footer.locator('[data-hmr-status="connected"]').count(), 1);
   assert.equal(navigations, 0, "update applied without reloading");
+  assert.equal(
+    await pointerListenerCount(),
+    pointerListenersReady,
+    "settled HMR accumulates no document pointerdown registrations",
+  );
 
   // Dropping the dev server socket reports a disconnected HMR status, proving
   // the re-subscribed listeners from the refreshed module still work.
