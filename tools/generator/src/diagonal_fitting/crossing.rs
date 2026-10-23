@@ -2092,6 +2092,53 @@ fn rounded_hard_checks(
     (true, hard_checks)
 }
 
+fn rounded_joint_checks(
+    gates: &[JointGate],
+    raw_new: &[[f64; 2]],
+    cand_all: &[[f64; 2]],
+    up_all: &[[f64; 2]],
+    base_all: &[[f64; 2]],
+) -> (bool, Vec<serde_json::Value>) {
+    // Joint continuity with the 26.6 perturbation bound.
+    let mut continuity: Vec<serde_json::Value> = Vec::new();
+    for gate in gates {
+        let (raw_cross, _, _) = cross_of(raw_new, gate.j, gate.iv, gate.ov);
+        let (old_cross, li_u, lo_u) = cross_of(up_all, gate.j, gate.iv, gate.ov);
+        let (cross, li_c, lo_c) = cross_of(cand_all, gate.j, gate.iv, gate.ov);
+        let (source_cross, _, _) = cross_of(base_all, gate.j, gate.iv, gate.ov);
+        let target_cross = if gate.smooth { 0.0 } else { old_cross };
+        let moved = [
+            (raw_new[gate.iv] != up_all[gate.iv], false),
+            (raw_new[gate.j] != up_all[gate.j], false),
+            (raw_new[gate.ov] != up_all[gate.ov], false),
+        ];
+        let allowance = quant_cross_bound(li_u, lo_u, moved);
+        let mut ok = norm(li_c) > 0.0 && norm(lo_c) > 0.0;
+        if gate.smooth {
+            ok &= (raw_cross - target_cross).abs() <= 1e-8 * (1.0 + target_cross.abs());
+            ok &= (cross - target_cross).abs() <= allowance + 1e-9;
+            ok &= dot(li_c, lo_c) > 0.0;
+        } else if source_cross != 0.0 {
+            ok &= cross * source_cross > 0.0;
+        } else {
+            ok = false;
+        }
+        continuity.push(serde_json::json!({
+            "joint": gate.j,
+            "smooth": gate.smooth,
+            "cross_src": source_cross,
+            "cross_up": old_cross,
+            "cross_cand": cross,
+            "allowed": allowance,
+            "ok": ok,
+        }));
+        if !ok {
+            return (false, continuity);
+        }
+    }
+    (true, continuity)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn deliver(
     raw: &SourceOutline,
@@ -2180,51 +2227,19 @@ fn deliver(
             }),
         ));
     }
-    // Joint continuity with the 26.6 perturbation bound.
-    let mut continuity: Vec<serde_json::Value> = Vec::new();
-    for gate in &gates {
-        let (raw_cross, _, _) = cross_of(&raw_new, gate.j, gate.iv, gate.ov);
-        let (old_cross, li_u, lo_u) = cross_of(up_all, gate.j, gate.iv, gate.ov);
-        let (cross, li_c, lo_c) = cross_of(&cand_all, gate.j, gate.iv, gate.ov);
-        let (source_cross, _, _) = cross_of(base_all, gate.j, gate.iv, gate.ov);
-        let target_cross = if gate.smooth { 0.0 } else { old_cross };
-        let moved = [
-            (raw_new[gate.iv] != up_all[gate.iv], false),
-            (raw_new[gate.j] != up_all[gate.j], false),
-            (raw_new[gate.ov] != up_all[gate.ov], false),
-        ];
-        let allowance = quant_cross_bound(li_u, lo_u, moved);
-        let mut ok = norm(li_c) > 0.0 && norm(lo_c) > 0.0;
-        if gate.smooth {
-            ok &= (raw_cross - target_cross).abs() <= 1e-8 * (1.0 + target_cross.abs());
-            ok &= (cross - target_cross).abs() <= allowance + 1e-9;
-            ok &= dot(li_c, lo_c) > 0.0;
-        } else if source_cross != 0.0 {
-            ok &= cross * source_cross > 0.0;
-        } else {
-            ok = false;
-        }
-        continuity.push(serde_json::json!({
-            "joint": gate.j,
-            "smooth": gate.smooth,
-            "cross_src": source_cross,
-            "cross_up": old_cross,
-            "cross_cand": cross,
-            "allowed": allowance,
-            "ok": ok,
-        }));
-        if !ok {
-            return Ok(abstain(
-                upstream,
-                "joint-continuity",
-                serde_json::json!({
-                    "size_px": size_px,
-                    "skipped": skipped_json(),
-                    "waist": waist_json(),
-                    "continuity": continuity,
-                }),
-            ));
-        }
+    let (joints_ok, continuity) =
+        rounded_joint_checks(&gates, &raw_new, &cand_all, up_all, base_all);
+    if !joints_ok {
+        return Ok(abstain(
+            upstream,
+            "joint-continuity",
+            serde_json::json!({
+                "size_px": size_px,
+                "skipped": skipped_json(),
+                "waist": waist_json(),
+                "continuity": continuity,
+            }),
+        ));
     }
     // Source curvature and forward tangent over whole intervals.
     for idx in &quads {
@@ -2861,3 +2876,6 @@ mod sharp_joint_tests;
 
 #[cfg(test)]
 mod hard_check_tests;
+
+#[cfg(test)]
+mod continuity_tests;
