@@ -363,6 +363,44 @@ fn render_pipeline_in_session(
     }
 }
 
+fn require_candidate_mono(
+    config: &Config,
+    role: Option<RendererRole>,
+    requirement_clause: &'static str,
+) -> Result<(), Error> {
+    #[cfg(not(feature = "candidate"))]
+    {
+        let _ = (config, role);
+        return Err(fail(format!(
+            "{requirement_clause} the candidate Cargo feature"
+        )));
+    }
+    #[cfg(feature = "candidate")]
+    {
+        if role != Some(RendererRole::Candidate) {
+            return Err(fail(format!(
+                "{requirement_clause} the candidate preview role"
+            )));
+        }
+        if config.output_bits != 1 {
+            return Err(fail(format!(
+                "{requirement_clause} monochrome output_bits 1, got {}",
+                config.output_bits
+            )));
+        }
+        if !matches!(
+            config.hinting,
+            crate::Hinting::Auto | crate::Hinting::AutoFallback
+        ) {
+            return Err(fail(format!(
+                "{requirement_clause} automatic hinting, got {:?}",
+                config.hinting
+            )));
+        }
+        Ok(())
+    }
+}
+
 fn admit_request(
     request: &TextRenderRequest,
     role: Option<RendererRole>,
@@ -431,78 +469,12 @@ fn admit_request(
             _ => {}
         }
     }
-    // Explicit scan overrides are gated here, before blank-text handling:
-    // candidate role with monochrome output and automatic hinting, nothing
-    // else. An explicit override on an incompatible blank request is an
-    // error, matching the strategy gate below. Baseline, reference and
-    // gray paths keep coverage and reject overrides in `generate()`,
-    // `reference()` and `validate_settings()`.
+    // Validate explicit Mono options before the blank-text shortcut.
     if request.config.mono_raster != crate::MonoRasterSettings::default() {
-        #[cfg(not(feature = "candidate"))]
-        {
-            return Err(fail(
-                "mono raster settings require the candidate Cargo feature",
-            ));
-        }
-        #[cfg(feature = "candidate")]
-        {
-            if role != Some(RendererRole::Candidate) {
-                return Err(fail(
-                    "mono raster settings require the candidate preview role",
-                ));
-            }
-            if request.config.output_bits != 1 {
-                return Err(fail(format!(
-                    "mono raster settings require monochrome output_bits 1, got {}",
-                    request.config.output_bits
-                )));
-            }
-            if !matches!(
-                request.config.hinting,
-                crate::Hinting::Auto | crate::Hinting::AutoFallback
-            ) {
-                return Err(fail(format!(
-                    "mono raster settings require automatic hinting, got {:?}",
-                    request.config.hinting
-                )));
-            }
-        }
+        require_candidate_mono(&request.config, role, "mono raster settings require")?;
     }
-    // Explicit fitting strategies are gated here, before blank-text
-    // handling: candidate role with monochrome automatic hinting and the
-    // candidate feature, nothing else. In particular an explicit strategy
-    // on an incompatible blank request is an error. Compatible blank text
-    // retains normal rendering semantics; default gray remains unchanged.
     if strategy.is_some() {
-        #[cfg(not(feature = "candidate"))]
-        {
-            return Err(fail(
-                "explicit fitting strategy requires the candidate Cargo feature",
-            ));
-        }
-        #[cfg(feature = "candidate")]
-        {
-            if role != Some(RendererRole::Candidate) {
-                return Err(fail(
-                    "explicit fitting strategy requires the candidate preview role",
-                ));
-            }
-            if request.config.output_bits != 1 {
-                return Err(fail(format!(
-                    "explicit fitting strategy requires monochrome output_bits 1, got {}",
-                    request.config.output_bits
-                )));
-            }
-            if !matches!(
-                request.config.hinting,
-                crate::Hinting::Auto | crate::Hinting::AutoFallback
-            ) {
-                return Err(fail(format!(
-                    "explicit fitting strategy requires automatic hinting, got {:?}",
-                    request.config.hinting
-                )));
-            }
-        }
+        require_candidate_mono(&request.config, role, "explicit fitting strategy requires")?;
     }
     Ok(request)
 }
