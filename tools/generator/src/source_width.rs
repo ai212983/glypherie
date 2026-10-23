@@ -92,6 +92,43 @@ fn partition_ownership(kept: &[PairOut], anchor: usize, len: usize) -> Option<Ow
     })
 }
 
+fn limit_movement(
+    cand: &mut [[f64; 2]],
+    up: &[[f64; 2]],
+    free: &[usize],
+    bound: f64,
+    scale: f64,
+) -> bool {
+    let mut movement = 0.0_f64;
+    for v in free {
+        let dx = cand[*v][0] - up[*v][0];
+        let dy = cand[*v][1] - up[*v][1];
+        movement = movement.max(dx * dx + dy * dy);
+    }
+    movement = movement.sqrt();
+    // Convex quadratic descent along the segment to the free-variable LS
+    // minimizer (Boyd/Vandenberghe, chapters 2/9). This feasible prefix is
+    // a project adaptation, not the exact constrained optimum. Preserve the
+    // source budget and reserve the worst Euclidean nearest-26.6 error.
+    let reserve = 2.0_f64.sqrt() / 128.0 / scale;
+    let available = bound - reserve;
+    if available <= 0.0 {
+        return false;
+    }
+    let fraction = if movement > available {
+        available / movement
+    } else {
+        1.0
+    };
+    for v in free {
+        cand[*v] = [
+            up[*v][0] + fraction * (cand[*v][0] - up[*v][0]),
+            up[*v][1] + fraction * (cand[*v][1] - up[*v][1]),
+        ];
+    }
+    true
+}
+
 /// Couple related straight strokes to the upstream-fitted rectilinear anchor.
 ///
 /// Source carries the unhinted outline, upstream the fitted outline at
@@ -245,32 +282,8 @@ pub fn fit(
     }
     // Invariant: movement is candidate relative to upstream, before and
     // after quantization, bounded by half the narrowest coupled width.
-    let mut movement = 0.0_f64;
-    for v in &free {
-        let dx = cand[*v][0] - up[*v][0];
-        let dy = cand[*v][1] - up[*v][1];
-        movement = movement.max(dx * dx + dy * dy);
-    }
-    movement = movement.sqrt();
-    // Convex quadratic descent along the segment to the free-variable LS
-    // minimizer (Boyd/Vandenberghe, chapters 2/9). This feasible prefix is
-    // a project adaptation, not the exact constrained optimum. Preserve the
-    // source budget and reserve the worst Euclidean nearest-26.6 error.
-    let reserve = 2.0_f64.sqrt() / 128.0 / frame.scale;
-    let available = bound - reserve;
-    if available <= 0.0 {
+    if !limit_movement(&mut cand, &up, &free, bound, frame.scale) {
         return Ok(unchanged());
-    }
-    let fraction = if movement > available {
-        available / movement
-    } else {
-        1.0
-    };
-    for v in &free {
-        cand[*v] = [
-            up[*v][0] + fraction * (cand[*v][0] - up[*v][0]),
-            up[*v][1] + fraction * (cand[*v][1] - up[*v][1]),
-        ];
     }
     if !valid_geometry(&base, &cand, &loops) {
         return Ok(unchanged());
@@ -1723,5 +1736,68 @@ mod math_controls {
         let kept = vec![pair([0, 1, 2, 3]), pair([3, 9, 8, 7])];
         let ownership = partition_ownership(&kept, 0, 10).unwrap();
         assert_eq!(ownership.free, vec![7, 8, 9]);
+    }
+    #[test]
+    fn limited_movement_keeps_under_budget_candidate() {
+        let mut cand = vec![[3.0, 4.0], [1.0, 0.0]];
+        let up = vec![[0.0, 0.0], [1.0, 0.0]];
+        assert!(limit_movement(&mut cand, &up, &[0], 10.0, 1.0));
+        assert_eq!(cand, vec![[3.0, 4.0], [1.0, 0.0]]);
+    }
+    #[test]
+    fn limited_movement_scales_over_budget_by_exact_quantum_budget() {
+        let mut cand = vec![[5.0, 0.0], [0.0, 5.0], [9.0, 9.0]];
+        let up = vec![[1.0, 0.0], [0.0, 2.0], [7.0, 7.0]];
+        assert!(limit_movement(
+            &mut cand,
+            &up,
+            &[0, 1],
+            1.0,
+            std::f64::consts::SQRT_2
+        ));
+        assert_eq!(cand[0], [1.0 + 127.0 / 128.0, 0.0]);
+        assert_eq!(cand[1], [0.0, 2.0 + 381.0 / 512.0]);
+        assert_eq!(cand[2], [9.0, 9.0]);
+    }
+    #[test]
+    fn limited_movement_leaves_pinned_vertices_untouched() {
+        let mut cand = vec![[3.0, 0.0], [0.0, 4.0]];
+        let up = vec![[0.0, 0.0], [0.0, 0.0]];
+        assert!(limit_movement(&mut cand, &up, &[0], 3.0, 1.0));
+        assert!(cand[0][0] > 2.0 && cand[0][0] < 3.0);
+        assert_eq!(cand[0][1], 0.0);
+        assert_eq!(cand[1], [0.0, 4.0]);
+    }
+    #[test]
+    fn limited_movement_rejects_exhausted_budget_untouched() {
+        let mut cand = vec![[3.0, 4.0]];
+        let up = vec![[0.0, 0.0]];
+        assert!(!limit_movement(&mut cand, &up, &[0], 0.01, 1.0));
+        assert_eq!(cand, vec![[3.0, 4.0]]);
+        let mut cand = vec![[3.0, 4.0]];
+        assert!(!limit_movement(
+            &mut cand,
+            &up,
+            &[0],
+            1.0 / 128.0,
+            std::f64::consts::SQRT_2
+        ));
+        assert_eq!(cand, vec![[3.0, 4.0]]);
+    }
+    #[test]
+    fn limited_movement_accepts_zero_move() {
+        let mut cand = vec![[1.0, 2.0]];
+        let up = vec![[1.0, 2.0]];
+        assert!(limit_movement(&mut cand, &up, &[0], 1.0, 1.0));
+        assert_eq!(cand, vec![[1.0, 2.0]]);
+    }
+    #[test]
+    fn limited_movement_reserve_shrinks_with_scale() {
+        let mut cand = vec![[4.0, 0.0], [0.0, 1.0]];
+        let up = vec![[0.0, 0.0], [0.0, 1.0]];
+        assert!(limit_movement(&mut cand, &up, &[0], 1.0, 4.0));
+        assert!(cand[0][0] > 0.99 && cand[0][0] < 1.0);
+        assert_eq!(cand[0][1], 0.0);
+        assert_eq!(cand[1], [0.0, 1.0]);
     }
 }
