@@ -496,6 +496,109 @@ fn stable_renderer_roles_distinguish_approval_from_working_version_metadata() {
 }
 
 #[test]
+fn variant_kind_role_version_and_extension_guards_are_exact_and_ordered() {
+    let mut value = document();
+    value["variants"][0]["renderer"] = json!("candidate");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "reference package kind and renderer role must agree"
+    );
+
+    let mut current: Value = serde_json::from_str(include_str!("../specimens.json")).unwrap();
+    current.as_object_mut().unwrap().remove("preview_policy");
+    let mut drift = current.clone();
+    drift["variants"][1]["version"] = json!("999.999");
+    assert_eq!(
+        resolve(drift).unwrap_err(),
+        "baseline must identify the legacy version and fitting policy"
+    );
+    let mut drift = current.clone();
+    drift["variants"][1]["extensions"] = json!("none");
+    assert_eq!(
+        resolve(drift).unwrap_err(),
+        "baseline must identify the legacy version and fitting policy"
+    );
+
+    let mut value = document();
+    value["variants"][0]["extensions"] = json!("custom");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"
+    );
+    let mut value = document();
+    value["variants"][0]["hinting"] = json!("auto_fallback");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"
+    );
+    let mut value = document();
+    value["variants"][0]["extensions"] = json!("diagonal-01");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "reference variants require extensions none"
+    );
+    let mut value = document();
+    value["variants"][0]["version"] = json!("001.01");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "first revision requires reference for comparison"
+    );
+
+    let mut value = document();
+    value["variants"].as_array_mut().unwrap().push(json!({
+        "id": "empty-version", "kind": "iteration",
+        "hinting": "auto", "extensions": "none"
+    }));
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "preview requires a unique reference variant"
+    );
+    let mut value = document();
+    value["variants"].as_array_mut().unwrap().push(json!({
+        "id": "empty-version", "kind": "iteration", "version": "",
+        "hinting": "auto", "extensions": "none"
+    }));
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "iteration version must be numeric revision.iteration"
+    );
+
+    let mut drift = current.clone();
+    drift["variants"][1]["version"] = json!("999.999");
+    drift["profiles"][0]["output_bits"] = json!(3);
+    assert_eq!(
+        resolve(drift).unwrap_err(),
+        "baseline must identify the legacy version and fitting policy"
+    );
+    let mut drift = current.clone();
+    drift["variants"][1]["extensions"] = json!("none");
+    drift["families"][0]["profiles"] = json!(["missing"]);
+    assert_eq!(
+        resolve(drift).unwrap_err(),
+        "baseline must identify the legacy version and fitting policy"
+    );
+}
+
+#[test]
+fn auto_fallback_requires_candidate_with_font_hints() {
+    let mut current: Value = serde_json::from_str(include_str!("../specimens.json")).unwrap();
+    current.as_object_mut().unwrap().remove("preview_policy");
+    current["variants"][2]["extensions"] = json!("mono-width-01");
+    current["variants"][2]["hinting"] = json!("auto_fallback");
+    assert_eq!(
+        resolve(current).unwrap_err(),
+        "specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"
+    );
+    let mut value = document();
+    value["variants"][0]["extensions"] = json!("font-hints-01");
+    value["variants"][0]["hinting"] = json!("auto_fallback");
+    assert_eq!(
+        resolve(value).unwrap_err(),
+        "specimen variants support automatic fitting with extensions none, diagonal-01, font-hints-01 or mono-width-01"
+    );
+}
+
+#[test]
 fn effective_candidate_role_rejects_stale_fitting_policy_early() {
     for explicit in [false, true] {
         let mut config: Value = serde_json::from_str(include_str!("../specimens.json")).unwrap();
