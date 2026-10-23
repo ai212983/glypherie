@@ -327,6 +327,31 @@ fn reduce_row(row: &[f64], weld: &HashMap<usize, usize>, cols: &[usize]) -> Vec<
     cols.iter().map(|v| full[2 * v]).collect()
 }
 
+fn reduce_hard_rows(
+    hard: &[HardRow],
+    weld: &HashMap<usize, usize>,
+    cols: &[usize],
+) -> Option<(Vec<Vec<f64>>, Vec<f64>)> {
+    let g_full: Vec<Vec<f64>> = hard
+        .iter()
+        .map(|h| reduce_row(&h.row, weld, cols))
+        .collect();
+    let h_full: Vec<f64> = hard.iter().map(|h| -h.constant).collect();
+    let mut g_active: Vec<Vec<f64>> = Vec::new();
+    let mut h_active: Vec<f64> = Vec::new();
+    for (row, rhs) in g_full.iter().zip(h_full.iter()) {
+        if row.iter().all(|v| *v == 0.0) {
+            if rhs.abs() > 1e-9 {
+                return None;
+            }
+            continue;
+        }
+        g_active.push(row.clone());
+        h_active.push(*rhs);
+    }
+    Some((g_active, h_active))
+}
+
 fn collect_joint_constraints(
     parsed: &geometry::Parsed,
     up: &[[f64; 2]],
@@ -761,29 +786,16 @@ pub(super) fn fit_with_analysis(
         .map(|r| reduce_row(r, &weld, &cols))
         .collect();
     let rhs: Vec<f64> = obj_const.iter().map(|c| -c).collect();
-    let g_full: Vec<Vec<f64>> = hard
-        .iter()
-        .map(|h| reduce_row(&h.row, &weld, &cols))
-        .collect();
-    let h_full: Vec<f64> = hard.iter().map(|h| -h.constant).collect();
-    // Redundant equality rows fail closed here with the fixed-constraint
-    // reason; the solver repeats the same gate on its normalized rows.
-    let mut g_active: Vec<Vec<f64>> = Vec::new();
-    let mut h_active: Vec<f64> = Vec::new();
-    for (row, rhs) in g_full.iter().zip(h_full.iter()) {
-        if row.iter().all(|v| *v == 0.0) {
-            if rhs.abs() > 1e-9 {
-                return Ok(abstain(
-                    upstream,
-                    "fixed-constraints-incompatible",
-                    serde_json::json!({"size_px": size_px}),
-                ));
-            }
-            continue;
+    let (g_active, h_active) = match reduce_hard_rows(&hard, &weld, &cols) {
+        Some(active) => active,
+        None => {
+            return Ok(abstain(
+                upstream,
+                "fixed-constraints-incompatible",
+                serde_json::json!({"size_px": size_px}),
+            ));
         }
-        g_active.push(row.clone());
-        h_active.push(*rhs);
-    }
+    };
     let radius = prepared
         .iter()
         .map(|p| p.src_widths.iter().cloned().fold(f64::INFINITY, f64::min) / 2.0)
@@ -1049,6 +1061,55 @@ mod tests {
 
     fn check_by_j(checks: &[JointCheck], j: usize) -> JointCheck {
         *checks.iter().find(|c| c.j == j).expect("joint collected")
+    }
+
+    fn hard_row(row: Vec<f64>, constant: f64) -> HardRow {
+        HardRow {
+            kind: "stage",
+            row,
+            constant,
+        }
+    }
+    #[test]
+    fn reduce_hard_rows_merges_weld_columns_and_negates_rhs() {
+        let hard = vec![hard_row(vec![1.0, 0.0, 2.0, 0.0], 0.5)];
+        let mut weld = HashMap::new();
+        weld.insert(1, 0);
+        let (g, h) = reduce_hard_rows(&hard, &weld, &[0]).expect("compatible");
+        assert_eq!(g, vec![vec![3.0]]);
+        assert_eq!(h, vec![-0.5]);
+        let cancelled = vec![hard_row(vec![1.0, 0.0, -1.0, 0.0], 0.0)];
+        assert_eq!(
+            reduce_hard_rows(&cancelled, &weld, &[0]),
+            Some((vec![], vec![]))
+        );
+    }
+    #[test]
+    fn reduce_hard_rows_selects_columns_in_given_order() {
+        let hard = vec![hard_row(vec![1.0, 0.0, 2.0, 0.0, 4.0, 0.0], 1.0)];
+        let (g, h) = reduce_hard_rows(&hard, &HashMap::new(), &[2, 0]).expect("compatible");
+        assert_eq!(g, vec![vec![4.0, 1.0]]);
+        assert_eq!(h, vec![-1.0]);
+    }
+    #[test]
+    fn reduce_hard_rows_drops_compatible_zero_rows() {
+        let hard = vec![
+            hard_row(vec![0.0, 0.0, 0.0, 0.0], 0.0),
+            hard_row(vec![0.0, 0.0, 0.0, 0.0], -1e-9),
+            hard_row(vec![0.0, 9.0, 7.0, -3.0], 0.0),
+            hard_row(vec![5.0, 0.0, 0.0, 0.0], 2.0),
+        ];
+        let (g, h) = reduce_hard_rows(&hard, &HashMap::new(), &[0]).expect("compatible");
+        assert_eq!(g, vec![vec![5.0]]);
+        assert_eq!(h, vec![-2.0]);
+    }
+    #[test]
+    fn reduce_hard_rows_rejects_incompatible_zero_rows() {
+        let just_over = f64::from_bits(1e-9f64.to_bits() + 1);
+        let hard = vec![hard_row(vec![0.0, 0.0], 1.5)];
+        assert!(reduce_hard_rows(&hard, &HashMap::new(), &[0]).is_none());
+        let threshold = vec![hard_row(vec![0.0, 0.0], -just_over)];
+        assert!(reduce_hard_rows(&threshold, &HashMap::new(), &[0]).is_none());
     }
 
     #[test]
