@@ -704,6 +704,17 @@ struct SparseObjective<'a> {
     rows: Vec<Vec<(usize, f64)>>,
     cols: Vec<Vec<(usize, f64)>>,
 }
+fn sparse_dot(nz: &[(usize, f64)], dense: &[f64], x: &[f64], finite: bool) -> f64 {
+    if !finite {
+        return dot(dense, x);
+    }
+    let value = nz.iter().map(|&(j, v)| v * x[j]).sum::<f64>();
+    if value == 0.0 || !value.is_finite() {
+        dot(dense, x)
+    } else {
+        value
+    }
+}
 impl<'a> SparseObjective<'a> {
     fn new(a: &'a [Vec<f64>], n: usize) -> Self {
         let mut cols = vec![Vec::new(); n];
@@ -735,17 +746,7 @@ impl<'a> SparseObjective<'a> {
         self.rows
             .iter()
             .zip(self.dense)
-            .map(|(nz, row)| {
-                if !finite {
-                    return dot(row, x);
-                }
-                let value = nz.iter().map(|&(j, v)| v * x[j]).sum::<f64>();
-                if value == 0.0 || !value.is_finite() {
-                    dot(row, x)
-                } else {
-                    value
-                }
-            })
+            .map(|(nz, row)| sparse_dot(nz, row, x, finite))
             .collect()
     }
     fn transpose_product(&self, at: &[Vec<f64>], x: &[f64]) -> Vec<f64> {
@@ -753,17 +754,7 @@ impl<'a> SparseObjective<'a> {
         self.cols
             .iter()
             .zip(at)
-            .map(|(nz, col)| {
-                if !finite {
-                    return dot(col, x);
-                }
-                let value = nz.iter().map(|&(i, v)| v * x[i]).sum::<f64>();
-                if value == 0.0 || !value.is_finite() {
-                    dot(col, x)
-                } else {
-                    value
-                }
-            })
+            .map(|(nz, col)| sparse_dot(nz, col, x, finite))
             .collect()
     }
     fn project(&self, z: &DMatrix<f64>) -> DMatrix<f64> {
