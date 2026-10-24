@@ -2,28 +2,66 @@ name: pages
 on:
   push:
     branches: [main]
-  pull_request:
+    paths:
+      - .github/workflows/pages.yml
+      - .node-version
+      - .gitattributes
+      - fonts/**
+      - tools/generator/**
+      - tools/wasm/**
+      - tools/web/**
+      - '!**/*.md'
+      - '!tools/generator/tests/**'
+      - '!tools/wasm/tests/**'
+      - '!tools/web/tests/**'
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
         with:
           lfs: true
       - uses: dtolnay/rust-toolchain@stable
+        id: rust
         with:
           targets: wasm32-unknown-unknown
+      - name: Cache wasm-bindgen CLI
+        id: bindgen
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: ubuntu-24.04-${{ runner.arch }}-wasm-bindgen-0.2.129
       - name: Install pinned wasm-bindgen CLI
+        if: steps.bindgen.outputs.cache-hit != 'true'
         run: cargo install wasm-bindgen-cli --locked --version 0.2.129
+      - name: Cache Rust dependencies and WASM build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tools/wasm/target
+          key: ubuntu-24.04-${{ runner.arch }}-wasm-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('tools/wasm/Cargo.lock', 'tools/generator/Cargo.lock') }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: tools/web/package-lock.json
       - run: npm ci --ignore-scripts
         working-directory: tools/web
       - name: Build preview WASM renderer
@@ -31,37 +69,11 @@ jobs:
       - name: Build browser app
         run: npm run build
         working-directory: tools/web
-      - run: npm run typecheck
-        working-directory: tools/web
-      - name: Install browser for web tests
-        working-directory: tools/web
-        run: |
-          npx --no-install playwright-core install --with-deps chromium
-          node --input-type=module <<'JS'
-          import { appendFileSync } from "node:fs";
-          import { chromium } from "playwright-core";
-          appendFileSync(process.env.GITHUB_ENV, `WEB_TEST_BROWSER=${chromium.executablePath()}\n`);
-          JS
-      - run: npm test
-        working-directory: tools/web
+      - uses: actions/configure-pages@v5
       - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v4
         with:
           path: out/web
-
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/configure-pages@v5
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

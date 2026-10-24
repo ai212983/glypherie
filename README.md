@@ -33,9 +33,12 @@ Before tackling a problem, follow the
 
 The browser app publishes to GitHub Pages from `main` through
 [.github/workflows/pages.yml](.github/workflows/pages.yml). Enable it once under repository Settings, Pages, with source
-GitHub Actions. Pull requests build and test without deploying; pushes to `main` (or a manual run from `main`) upload
-`out/web/` and deploy it. Reproduce the build locally with the [web](tools/web/README.md) and
-[WASM](tools/wasm/README.md) guides.
+GitHub Actions. Pushes to `main` that change app/build inputs (or a manual run from `main`) build and deploy `out/web/`.
+Pull requests and documentation-only changes do not start CI. Deployment caches npm, Rust build inputs and the pinned
+WASM tool, and cancels superseded runs. Tests, type checks and quality checks run locally; the
+[generator workflow](.github/workflows/generator.yml) remains available through Actions → generator → Run workflow for
+manual validation. Reproduce the build locally with the [web](tools/web/README.md) and [WASM](tools/wasm/README.md)
+guides.
 
 ## Documentation
 
