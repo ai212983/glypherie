@@ -1,71 +1,62 @@
 # Bitmap spacing in the preview
 
-There is no spacing-model choice. Placement follows the selected renderer: the working candidate uses one bitmap policy
-for 1-bit and 3-bit output, while the reference and legacy baseline keep their source layout as independent comparison
-controls. Kerning adds the font's pair-specific adjustments, and **Spacing (px)** adds tracking. Switching renderers
-does not change a glyph's outline; the candidate's glyph bitmaps, exported advances and pair adjustments are the same
-values in the preview, native specimens and exported strikes.
+The preview uses bitmap placement, with **Kerning** and **Tracking (px)** controls in **Layout**. Historical reference
+and baseline APIs retain source-linear layout for diagnostic comparisons. The proposed optical-spacing experiment is not
+a preview mode.
 
-The preview groups the remaining controls under **Spacing and kerning**. Choose the font, size, axes and text first;
-compare renderer roles at **Spacing (px)** zero to see their neutral placement.
+## Bitmap placement
 
-## Candidate bitmap placement
+Fitting supplies the glyph outline and, when available, its adjusted advance. Layout finalizes whole-pixel advances and
+sparse whole-pixel pair adjustments, shared by preview, native specimens and bitmap export. Changing placement does not
+refit the glyph or change its bitmap. The exact rules belong to the
+[generator spacing API](../tools/generator/API.md#live-spacing-api).
 
-After fitting, each glyph is finalized as a bitmap with its bitmap offset, a whole-pixel advance and sparse whole-pixel
-pair adjustments:
+Adjusted advances and bearing-rounding residuals serve different purposes. Layout uses the adjusted advances and can
+apply residuals as additional pair compensation, but current captures provide no residuals. The
+[fitting-compensation investigation](revisions/001/03-spacing-kerning.md#fitting-bearing-compensation-investigation)
+explains the missing information and why bitmap bounds cannot replace it.
 
-- The advance is the fitter's returned advance when available, otherwise the rounded source advance. No glyph-specific
-  fallback is used.
-- Source-tabular digits retain one common whole-pixel advance, and fixed-pitch and tabular pairs carry no fitted bearing
-  correction.
-- Source kerning, when enabled, and any available fitted bearing correction are each applied once and resolved into the
-  pair adjustment. Captures without bearing deltas contribute no correction.
-- Values round to the nearest whole pixel, ties away from zero. Signed and negative adjustments keep their direction;
-  there is no minimum blank column at neutral tracking, so intentional overhang is preserved.
-
-Because pen positions accumulate in whole pixels, the same pair has the same relative placement regardless of preceding
-text. Line widths and wrapping use these integer metrics, so they can differ from the source-linear layout of the
-baseline and reference.
+Whole-pixel pen positions keep a pair's relative placement independent of preceding text. Fixed-pitch cells and
+source-tabular digits retain their advance relationships. Signed pair adjustments preserve intentional overhang without
+requiring a blank column. Fractional source kerning can disappear when rounded to whole pixels.
 
 ## Kerning and tracking
 
-**Kerning** enables or disables source pair adjustments. Turning it off removes that contribution; an available fitting
-correction can still apply. The expandable **Kerning pairs** list shows source data independently of this checkbox.
+**Kerning** enables or disables source-font pair adjustments at the selected size and axes. Turning it off removes that
+contribution independently of any fitting correction. Source pair data is available through the renderer's inspection
+API; the editor has no pair inspector.
 
-**Spacing (px)** applies a signed offset on top of neutral placement. The UI accepts -2 to +4 px. Mono uses whole-pixel
-steps, and the candidate uses whole-pixel steps in Gray as well; baseline and reference Gray keep fractional steps. When
-Mono tracking is nonzero, normally separated letter pairs retain at least one blank column. Intentional source overlaps,
-fixed pitch and tabular digit relationships bypass that minimum-gap constraint.
+**Tracking (px)** accepts -2 to +4 px in whole-pixel steps for both Mono and Gray. It adds the same signed offset to
+every finalized advance, including spaces and the final glyph advance. Negative tracking can narrow word gaps and
+overlap glyphs; the requested amount is not limited by minimum gaps or per-glyph clamps. Bitmaps and pair adjustments
+stay unchanged; measurement, wrapping and tracked export use the adjusted advances.
 
-Negative tracking preserves neutral ASCII word gaps while tightening letters within words. Positive tracking widens
-letters and spaces. The constraints can make the final tightening smaller than the requested offset; wrapping and
-drawing use the same placement rules. Exact semantics belong to the
-[tracking API](../tools/generator/API.md#tracking-policy).
+The [tracking API](../tools/generator/API.md#tracking-policy) documents the wider native range and historical tracking
+protections. Saved variants retain their kerning and tracking settings.
 
-## Comparing renderers
+There are no independent word-spacing or line-spacing controls. Fonts exposing an optical-size axis can change their
+design and metrics through the axis controls; optical size is not a replacement for pair kerning.
 
-Use a sample such as `mi li ni Pac quo AV VA` at a fixed size, weight and width. Compare the candidate with baseline and
-reference at zero tracking, then switch kerning off and on. Inspect repeated-letter rhythm and word boundaries as well
-as individual pairs. Equal measured gaps alone do not establish optical quality.
+## Assessing spacing
 
-Kerning preference is global: changing it applies to every font and is saved across reloads. Font and renderer switches
-retain it. Reset restores enabled kerning globally and saves that default; it also restores the active font's existing
-size, axes, sample text and zero tracking. Invalid saved preferences use defaults. If browser storage is unavailable,
-the controls still work during the current page session. Links copied from earlier previews may contain an obsolete
-spacing-model parameter; it is ignored and dropped when the URL is next written.
+At fixed size and axes, start with zero tracking and compare source kerning off and on. Inspect straight, curved and
+diagonal neighbors, repeated-letter rhythm, punctuation, digits and word boundaries. Include pairs with different
+prefixes to distinguish a pair adjustment from accumulated-position effects. Equal measured white gaps alone do not
+establish optical quality.
 
-## Sources and implementation
+The [pair-spacing decision](revisions/001/03-spacing-kerning.md#pair-spacing-and-kerning) records the adopted model and
+pending assessment. The
+[optical-spacing proposal](revisions/001/03-spacing-kerning.md#proposed-optical-pair-spacing-experiment) defines the
+planned source-relative comparison.
 
-- [FreeType glyph metrics](https://freetype.org/freetype2/docs/glyphs/glyphs-3.html) explains advances and bearings.
-- [FreeType kerning](https://freetype.org/freetype2/docs/glyphs/glyphs-4.html) distinguishes pair adjustment from
-  advances.
+## Sources
+
+- [FreeType glyph metrics](https://freetype.org/freetype2/docs/glyphs/glyphs-3.html) separates advances, bearings and
+  bitmap bounds.
+- [FreeType kerning](https://freetype.org/freetype2/docs/glyphs/glyphs-4.html) distinguishes source pair positioning
+  from advances.
 - [FreeType bearing correction](https://freetype.org/freetype2/docs/reference/ft2-glyph_retrieval.html#ft_glyphslotrec)
-  documents the correction used with fitted bearing deltas.
+  defines integer placement using fitting residuals.
 - [Hersch 1993, sections 5–6](references/papers/1993-hersch/paper.md) and
-  [Shamir 2003, section 3](references/papers/2003-shamir/paper.md) ground placement and geometric relationships.
-- [Generator spacing API](../tools/generator/API.md#live-spacing-api) owns numerical contracts;
-  [iteration 001.03](revisions/001/03-spacing-kerning.md#pair-spacing-and-kerning) records decisions and pending
-  findings.
-- [WHATWG Web Storage](https://html.spec.whatwg.org/multipage/webstorage.html#the-localstorage-attribute) and
-  [fieldset](https://html.spec.whatwg.org/multipage/form-elements.html#the-fieldset-element) specify the mechanisms used
-  for preference persistence and control grouping.
+  [Shamir 2003, section 3](references/papers/2003-shamir/paper.md) ground grid placement and preservation of source
+  relationships.

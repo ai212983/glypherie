@@ -176,11 +176,97 @@ in the live preview are therefore not claimed identical to the old live Gray ada
 crops in Gray after this change; broader Gray optical assessment remains pending.
 
 The earlier projected-gap experiment reproduced a rounded signed source projected gap at an integer relative origin.
-That placement algorithm is removed; only its general source/ink geometry remains, as the explicit-tracking
-minimum-clearance guard below. On the approved baseline at Roboto 14 px, weight 400, width 100 Mono, projected `AV` had
-advanced 19 px and `VA` 18 px with zero projected blank columns; independent HarfBuzz source measurements confirmed both
-source gaps round to zero. Classification: that advance difference followed the former placement contract, with no
-demonstrated calculation error. Perceived diagonal separation remains pending optical assessment.
+That placement algorithm is removed; its general source/ink geometry remains in the historical role APIs' tracking
+guard. On the approved baseline at Roboto 14 px, weight 400, width 100 Mono, projected `AV` had advanced 19 px and `VA`
+18 px with zero projected blank columns; independent HarfBuzz source measurements confirmed both source gaps round to
+zero. Classification: that advance difference followed the former placement contract, with no demonstrated calculation
+error. Perceived diagonal separation remains pending optical assessment.
+
+#### Fitting-bearing compensation investigation
+
+**Confirmed metadata limitation; optical consequence pending:** the candidate uses the fitter's adjusted advance, but
+current captures provide no left/right bearing-rounding residuals (`side_bearing_deltas_26_6` is `None`). Layout can
+apply those residuals once, independently of source kerning. Their absence has not been shown to cause a visual defect.
+
+[FreeType's integer-positioning example](https://freetype.org/freetype2/docs/reference/ft2-glyph_retrieval.html#ft_glyphslotrec)
+compares the preceding right residual with the current left residual and adjusts placement by one pixel at its
+documented half-pixel boundaries. The
+[pinned automatic loader](https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L420)
+defines each residual as the rounded metric point minus its pre-rounding value, after small-bearing adjustments.
+Fixed-pitch glyphs and source-tabular digits have zero residuals.
+
+Skrifa 0.48.0 follows this metric-point fitting sequence, but
+[`AdjustedMetrics`](https://docs.rs/skrifa/0.48.0/skrifa/outline/struct.AdjustedMetrics.html) exposes only overlap
+state, an optional adjusted left bearing and a rounded advance. The automatic path supplies no adjusted left bearing and
+discards the pre-rounding values; the scan-metadata snapshot has the same limitation. Finished outlines, bitmap bounds
+and rounded advances cannot uniquely recover that rounding error. FreeType's embedded interpreter does not provide these
+automatic-hinting residuals either.
+
+Independent FreeType 2.14.3 controls cover the four bundled upright families at 12/14/16/18/20/24 px, weight 400,
+default remaining axes and Mono/Normal targets. All 48 forced-automatic cases contain nonzero residuals; none of the 48
+controls with automatic fitting disabled do. This shows that the reference quantity is active at relevant sizes, without
+measuring Skrifa residuals or establishing renderer parity. Detailed captures are retained under
+`out/diagnostics/fitting-compensation-20261026/`.
+
+The next diagnostic should capture residuals from the exact automatic fitter that produced each glyph, preserving its
+arithmetic, outline translation and advance. Compare with independent FreeType at matched size, axes and target, while
+retaining engine differences. Verify correction boundaries, fixed-pitch and tabular exclusions, kerning and prefix
+independence, and preview/export placement parity. Pure embedded fitting contributes no automatic residual; selective
+fitting carries residuals with the owner of X metrics. Geometry overlays need explicit provenance rather than residuals
+inferred from bitmap bounds. Assess metadata capture separately from its placement effect before adoption.
+
+#### Proposed optical pair-spacing experiment
+
+**Project hypothesis; not adopted:** preserving a source pair's estimated optical separation through fitting may retain
+reading rhythm better than rounding source kerning alone. This experiment changes pair placement while retaining fitted
+outlines, rasters, bitmap offsets and finalized glyph advances. It is separate from metric-residual recovery.
+
+[FontForge's separation estimator](https://fontforge.org/docs/ui/dialogs/autowidth.html) compares facing outline
+envelopes across their shared vertical extent, with bounding boxes adjacent. It averages their separations with weights
+proportional to `1 / (separation + em_size / 50)^2`, excluding empty bands; its default band height is `em_size / 100`.
+These are upstream heuristics. Pin the implementation and license, retain its parameters without glyph-specific tuning,
+and verify estimator parity before assessing rendered output.
+
+Use selected-glyph source and final fitted outlines at the exact axes, scaled to pixels in a common baseline coordinate
+system. Let `S` be the envelope estimate at adjacent bounding boxes, `d` the origin separation, `xmax_left` the left
+glyph's maximum X and `xmin_right` the right glyph's minimum X. FontForge's linear-translation assumption gives `D(d) =
+d + xmin_right - xmax_left + S`. Calculate envelope weights once at adjacent boxes; recomputing them at trial placements
+would lose that translation property.
+
+Set `d_source = source_advance_left + source_pair_adjustment`, with the adjustment zero when source kerning is disabled.
+Solve `D_fitted(d_required) = D_source(d_source)`, then replace the eligible pair's adjustment with `round(d_required -
+finalized_advance_left)`. Apply the existing signed whole-pixel rounding to the adjustment once; rounding the absolute
+origin step would change signed half-tie behavior. Do not add source kerning or bearing compensation again. Apply user
+tracking through the existing advance operation afterward. Preserving source separation using fitted outlines is a
+project adaptation: FontForge's automatic kerning normally targets a chosen common separation. Uniformly re-spacing the
+source design is outside this experiment.
+
+Keep current placement for empty glyphs, spaces, pairs without shared valid bands, fixed-pitch fonts and source-tabular
+digit pairs; record abstention reasons. Retain unsupported-shaping errors and signed source overlaps. Non-finite
+geometry fails explicitly. Classify new intersections or separation concerns under the
+[evaluation rules](../../evaluation.md), without adding collision clamps or minimum blank columns.
+
+First compare rectangles, straight and curved envelopes, empty bands and unchanged source geometry against the pinned
+estimator. Check translation and scaling before expanding to a font sweep or browser integration; a failed invariant
+stops expansion.
+
+The isolated matrix should cover Roboto, Roboto Flex, Source Sans 3 and Literata at 12/14/16/18/20/24 px, weights
+300/400/700 and default remaining axes, plus independent optical-size endpoints where present. Include fixed-pitch and
+tabular controls, punctuation, supported accented scalars, straight/curved/diagonal pairs, repeated letters and words,
+and alternate prefixes. Compare current placement with kerning off/on, recovered-residual placement when available, and
+source-relative optical placement. Keep pure automatic, font-hints-auto and diagonal-overlay Mono cases separate. Gray
+uses its supported automatic coverage pipeline and fitted geometry.
+
+Retain font and glyph identities, axes, size, pipeline settings, source/fitted envelopes, reference revision, fractional
+targets, integer pair tables and abstentions. The experiment may reuse maintained capture and raster APIs; maintained
+components must not depend on it. Gates cover estimator parity, translation and scale, unchanged glyph images and
+advances, single application of pair adjustments, fixed cells, tracking separation, prefix independence and shared
+measurement/wrapping inputs. Quantization and size-transition differences remain evidence, not an acceptance score.
+
+Review source/current/experimental placement through an isolated browser comparison at native and enlarged sizes. Assess
+pair balance, punctuation and word boundaries across sizes and axes, keeping default preview behavior, publication scope
+and the separate baseline unchanged. Adoption requires optical assessment and one finalized metric table shared by
+native preview, WASM, wrapping and export; adapters must reject unrepresentable adjustments explicitly.
 
 #### Fractional source advances and bitmap placement
 
