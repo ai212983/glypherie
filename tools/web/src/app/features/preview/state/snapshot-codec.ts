@@ -62,7 +62,7 @@ export interface PreviewSnapshot {
   paletteId?: number;
   pixelAccurate: boolean;
   stemFitting: StemFitting;
-  // Independent native diagonal-width opt-in; default false.
+  // On in new snapshots; omission in links still means disabled.
   diagonalFitting: boolean;
   monoRaster: MonoRaster;
   rasterization?: Rasterization;
@@ -127,7 +127,7 @@ export function defaultSnapshot(
     paletteId: 0,
     pixelAccurate: true,
     stemFitting: "font_hints_first",
-    diagonalFitting: false,
+    diagonalFitting: true,
     monoRaster: { ...PREVIEW_MONO_RASTER },
     rasterization: defaults.profile === "mono_1bit" ? "free_type_mono" : "coverage",
     kerning: true,

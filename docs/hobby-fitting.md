@@ -767,11 +767,12 @@ agree across 152 render checks; four Playdate exports agree byte-for-byte. The p
 on 5,388 supported corpus comparisons, 41 analytic controls and 1,500 random integer-contour controls. The frozen
 comparison packets and Python model sources retain their original hashes.
 
-The default-off app toggle uses the same fitting in preview and export. A default Roboto browser check observed a
-changed preview with the toggle enabled and exact restoration after disabling it, with font hints still enabled. This
-records native implementation parity and browser operation; the iteration remains open for optical assessment. Evidence
-lives under `out/diagnostics/direct-diagonal/native-port-verification/` and `native-port-research/`; the repeatable
-check is `experiments/hobby_fitting/native_parity.py` and the compact frozen regression packet covers 45 cases.
+The app toggle (on by default in new previews, explicit off honored) uses the same fitting in preview and export. A
+default Roboto browser check observed a changed preview with the toggle enabled and exact restoration after disabling
+it, with font hints still enabled. This records native implementation parity and browser operation; the iteration
+remains open for optical assessment. Evidence lives under `out/diagnostics/direct-diagonal/native-port-verification/`
+and `native-port-research/`; the repeatable check is `experiments/hobby_fitting/native_parity.py` and the compact frozen
+regression packet covers 45 cases.
 
 ## Symmetry placement and curved-stroke study
 

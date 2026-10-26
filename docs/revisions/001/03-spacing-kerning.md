@@ -1098,12 +1098,13 @@ glyph exception. The default 400/16 outline commands match for both families and
 Evidence is retained under `out/diagnostics/approved-fitting-native/`: `final-summary.json`, `final-mismatches.json`,
 the six family/weight packets, `joint-rounding-analysis.json`, `final-tilde-control/` and `generator-tests-final.log`.
 The isolated approved comparison and all earlier previews remain separate. Browser checks confirm the reported `A y s x
-X 2` shapes in the production build and a working opt-in toggle.
+X 2` shapes in the production build and a working diagonal toggle.
 
 **Runtime limitation:** the 16 px, weight-400 pangram takes about 3.6–4.4 seconds for Roboto and 6.5–6.8 seconds for
 Source Sans 3 in the current WASM build on this host; disabled fitting takes about 26–69 ms. These measurements were
-taken during parallel verification and are approximate. Diagonal fitting remains opt-in; this adoption does not change
-the fast default path. The measurements are retained in `wasm-runtime-final.json`.
+taken during parallel verification and are approximate. Diagonal fitting is on by default in new previews with an
+explicit-off toggle; this adoption does not change the fast path without fitting. The measurements are retained in
+`wasm-runtime-final.json`.
 
 **Adopted in the main app, 2026-10-21:** native/WASM parity passes for 288 valid render cases and eight rejection
 controls across the complete corpus matrix, both fitting policies, both mono raster policies and diagonal fitting
@@ -1115,5 +1116,5 @@ The [main app](https://solitaire.taile005dc.ts.net:8906/) now serves the verifie
 through local HTTP and Tailscale HTTPS, and the existing persistent backend remains in place. The previous app is backed
 up separately; all 394 protected files are preserved, including the frozen approved comparison and preceding preview.
 Browser update activation confirms build `261021-1519`. Publication evidence is retained in `wasm-summary.json`,
-`deployment-receipt.json` and `publication-verification.json`. The existing opt-in setting and iteration's unrelated
-pending findings remain unchanged.
+`deployment-receipt.json` and `publication-verification.json`. The existing diagonal toggle setting and iteration's
+unrelated pending findings remain unchanged.

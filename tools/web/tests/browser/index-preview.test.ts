@@ -931,7 +931,7 @@ test("saved variants render their own specimens in the library", { skip: !browse
   assert.equal(monoReq!.kerning, true);
   assert.equal(monoReq!.stemFitting, null);
   assert.equal(monoReq!.renderer, undefined);
-  assert.deepEqual(monoReq!.pipeline, { fitting: "upstream_mono", rasterization: "free_type_mono_terminals" });
+  assert.deepEqual(monoReq!.pipeline, { fitting: "upstream_mono", rasterization: "free_type_mono_terminals", diagonal_fitting: true });
   assert.equal(monoReq!.palette!.length, 2, "the mono request carries two palette entries");
   assert.equal(grayReq!.sizePx, 24);
   assert.equal(grayReq!.outputBits, 3);

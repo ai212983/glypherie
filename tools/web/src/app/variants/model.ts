@@ -20,7 +20,7 @@ export interface VariantSettings {
   paletteId?: number;
   kerning: boolean;
   stemFitting: StemFitting;
-  // Independent opt-in for native diagonal-width fitting; default false.
+  // New variants default on; historical rows without the flag stay off.
   diagonalFitting: boolean;
   monoRaster: MonoRaster;
   renderer: RendererRole;
@@ -38,7 +38,6 @@ export function currentPreviewSettings(settings: VariantSettings): VariantSettin
     paletteId: settings.paletteId ?? 0,
     renderer: "candidate",
     rasterization: settings.profile === "mono_1bit" ? "free_type_mono" : "coverage",
-    // Historical rows carry no flag; the opt-in stays off unless set.
     diagonalFitting: settings.diagonalFitting ?? false,
     monoRaster: { ...PREVIEW_MONO_RASTER },
   };
@@ -112,7 +111,7 @@ export function defaultVariantSettings(font: StoredFont): VariantSettings {
     paletteId: 0,
     kerning: true,
     stemFitting: "font_hints_first",
-    diagonalFitting: false,
+    diagonalFitting: true,
     monoRaster: { ...PREVIEW_MONO_RASTER },
     renderer: "candidate",
     rasterization: "free_type_mono",

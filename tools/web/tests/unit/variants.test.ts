@@ -90,7 +90,7 @@ test("imported fonts start with no variants; Add creates a default saved variant
     paletteId: 0,
     kerning: true,
     stemFitting: "font_hints_first",
-    diagonalFitting: false,
+    diagonalFitting: true,
     monoRaster: { dropout: "smart", includeStubs: true, fontInstructions: true },
     renderer: "candidate",
     rasterization: "free_type_mono",

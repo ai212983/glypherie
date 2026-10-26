@@ -56,10 +56,19 @@ test("grayscale never forwards the diagonal flag", () => {
   assert.equal(spec.pipeline!.fitting, "upstream_mono");
 });
 
-test("snapshot defaults carry the opt-in off and historical links stay off", () => {
-  assert.equal(defaultSnapshot(METAS, DEFAULTS).diagonalFitting, false);
+test("new snapshots default diagonals on and historical links stay off", () => {
+  assert.equal(defaultSnapshot(METAS, DEFAULTS).diagonalFitting, true);
   const parsed = parseUrlSnapshot("?v=1&font=alpha", "", METAS, DEFAULTS);
   assert.equal(parsed?.diagonalFitting, false);
+});
+
+test("a fresh default snapshot encodes diagonals=1; diagonals=0 stays off", () => {
+  const search = `?${encodeUrlSnapshot(defaultSnapshot(METAS, DEFAULTS), "", ["alpha"]).toString()}`;
+  assert.match(search, /diagonals=1/);
+  const off = parseUrlSnapshot("?v=1&font=alpha&diagonals=0", "", METAS, DEFAULTS);
+  assert.equal(off?.diagonalFitting, false);
+  const explicit = parseUrlSnapshot("?v=1&font=alpha&diagonals=false", "", METAS, DEFAULTS);
+  assert.equal(explicit?.diagonalFitting, false);
 });
 
 test("diagonals=1 round-trips through the snapshot codec and stays owned", () => {
@@ -75,12 +84,12 @@ test("diagonals=1 round-trips through the snapshot codec and stays owned", () =>
   assert.equal(hash.get("font"), null);
 });
 
-test("saved settings default the opt-in off and reject non-booleans", () => {
+test("new variants default diagonals on; legacy rows stay off; non-booleans rejected", () => {
   const font = {
     id: "font", name: "F", fileName: "f.ttf", bytes: new ArrayBuffer(8),
     metadata: { names: { family: "F" }, axes: [] }, source: "uploaded" as const, addedAt: 0,
   };
-  assert.equal(defaultVariantSettings(font).diagonalFitting, false);
+  assert.equal(defaultVariantSettings(font).diagonalFitting, true);
   const legacy = { ...defaultVariantSettings(font) } as Record<string, unknown>;
   delete legacy.diagonalFitting;
   validateVariantSettings(legacy as never, font.metadata);
