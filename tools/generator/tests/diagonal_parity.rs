@@ -1,10 +1,6 @@
 #![cfg(feature = "candidate")]
-//! Golden parity for the native width-only diagonal port.
-//!
-//! Source: frozen experiment deliveries in `tests/fixtures/diagonal-width-port.json`
-//! (ascii captures plus coverage-review cells). Invariant: exact upstream
-//! fallback on abstention; delivered outlines and rasters must match the
-//! frozen golden bit-for-bit, with no raster tolerance.
+//! Exact parity with frozen diagonal-fit geometry and independent
+//! high-precision FreeType rasters, including terminal-cap suppression.
 use font_generator::{
     diagonal_fitting, mono,
     probe::{FittedCommand, RasterOutput},
@@ -61,7 +57,6 @@ fn parse_commands(commands: &Value) -> Vec<FittedCommand> {
         .collect()
 }
 
-/// Exact command identity: op plus every coordinate bit pattern.
 fn command_bits(command: &FittedCommand) -> (u8, Vec<u32>) {
     match *command {
         FittedCommand::MoveTo(x, y) => (0, vec![x.to_bits(), y.to_bits()]),
@@ -138,9 +133,7 @@ fn config_for(case: &Value) -> Config {
     }
 }
 
-/// Native reproduction of the maintained terminal raster kernel: stubs on,
-/// then the same clone with stubs and font instructions off plus certified
-/// suppression, exactly like the existing pipeline path.
+/// Replay the terminal policy over fitted outlines without rerunning fitting.
 fn rasterize_candidate(
     source: &[FittedCommand],
     fitted: &[FittedCommand],

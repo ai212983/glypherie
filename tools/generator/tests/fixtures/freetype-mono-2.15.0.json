@@ -1,7 +1,7 @@
 {
   "version": "2.15.0",
   "upstream_commit": "37515cf56ba3349656049edbed89ffc6f6466f2d",
-  "method": "Independent unmodified full FreeType FT_Outline_Get_Bitmap; smart dropout excluding stubs; exact 26.6 input; expected baseline-relative y-down pixels",
+  "method": "Independent unmodified full FreeType 2.15.0 FT_Outline_Get_Bitmap; FT_OUTLINE_HIGH_PRECISION; smart dropout excluding stubs; exact 26.6 input; expected baseline-relative y-down pixels",
   "cases": [
     {
       "key": "stem-1-1.4375-offset-0-0",
@@ -2232,10 +2232,6 @@
         ],
         [
           5,
-          -1
-        ],
-        [
-          6,
           -1
         ]
       ]
@@ -4787,6 +4783,231 @@
         [
           6,
           -1
+        ]
+      ]
+    },
+    {
+      "key": "near-center-quadratic-1-1-0-0",
+      "commands": [
+        {
+          "op": "move",
+          "coords": [
+            385,
+            16
+          ]
+        },
+        {
+          "op": "quadratic",
+          "coords": [
+            424,
+            33,
+            448,
+            61
+          ]
+        },
+        {
+          "op": "line",
+          "coords": [
+            448,
+            128
+          ]
+        },
+        {
+          "op": "line",
+          "coords": [
+            385,
+            128
+          ]
+        },
+        {
+          "op": "close",
+          "coords": []
+        }
+      ],
+      "pixels": [
+        [
+          6,
+          -2
+        ]
+      ]
+    },
+    {
+      "key": "near-center-quadratic-1-1--640-128",
+      "commands": [
+        {
+          "op": "move",
+          "coords": [
+            -255,
+            144
+          ]
+        },
+        {
+          "op": "quadratic",
+          "coords": [
+            -216,
+            161,
+            -192,
+            189
+          ]
+        },
+        {
+          "op": "line",
+          "coords": [
+            -192,
+            256
+          ]
+        },
+        {
+          "op": "line",
+          "coords": [
+            -255,
+            256
+          ]
+        },
+        {
+          "op": "close",
+          "coords": []
+        }
+      ],
+      "pixels": [
+        [
+          -4,
+          -4
+        ]
+      ]
+    },
+    {
+      "key": "near-center-quadratic--1-1-0-0",
+      "commands": [
+        {
+          "op": "move",
+          "coords": [
+            -385,
+            16
+          ]
+        },
+        {
+          "op": "quadratic",
+          "coords": [
+            -424,
+            33,
+            -448,
+            61
+          ]
+        },
+        {
+          "op": "line",
+          "coords": [
+            -448,
+            128
+          ]
+        },
+        {
+          "op": "line",
+          "coords": [
+            -385,
+            128
+          ]
+        },
+        {
+          "op": "close",
+          "coords": []
+        }
+      ],
+      "pixels": [
+        [
+          -7,
+          -2
+        ]
+      ]
+    },
+    {
+      "key": "near-center-quadratic-1--1-0-0",
+      "commands": [
+        {
+          "op": "move",
+          "coords": [
+            385,
+            -16
+          ]
+        },
+        {
+          "op": "quadratic",
+          "coords": [
+            424,
+            -33,
+            448,
+            -61
+          ]
+        },
+        {
+          "op": "line",
+          "coords": [
+            448,
+            -128
+          ]
+        },
+        {
+          "op": "line",
+          "coords": [
+            385,
+            -128
+          ]
+        },
+        {
+          "op": "close",
+          "coords": []
+        }
+      ],
+      "pixels": [
+        [
+          6,
+          1
+        ]
+      ]
+    },
+    {
+      "key": "near-center-quadratic--1--1-128--128",
+      "commands": [
+        {
+          "op": "move",
+          "coords": [
+            -257,
+            -144
+          ]
+        },
+        {
+          "op": "quadratic",
+          "coords": [
+            -296,
+            -161,
+            -320,
+            -189
+          ]
+        },
+        {
+          "op": "line",
+          "coords": [
+            -320,
+            -256
+          ]
+        },
+        {
+          "op": "line",
+          "coords": [
+            -257,
+            -256
+          ]
+        },
+        {
+          "op": "close",
+          "coords": []
+        }
+      ],
+      "pixels": [
+        [
+          -5,
+          3
         ]
       ]
     }

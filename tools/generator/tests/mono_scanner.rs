@@ -1,11 +1,12 @@
 #![cfg(feature = "candidate")]
-//! Exact scanner identity against an independent, unmodified FreeType build.
-//! These fixtures establish scan conversion parity, not optical acceptance.
+//! Parity with independent FreeType high-precision captures, including
+//! reflected and translated curves near pixel centers.
 use font_generator::{
     batch::{to_fitted, RawCommand},
     mono,
     probe::FittedCommand,
-    Config,
+    reference::FontScanState,
+    Config, MonoRasterSettings,
 };
 use serde::Deserialize;
 use std::collections::BTreeSet;
@@ -31,6 +32,27 @@ fn matches_independent_full_freetype_for_curves_overlap_stubs_and_thin_features(
     for case in fixture.cases {
         let commands = to_fitted(&case.commands).unwrap();
         let actual = mono::rasterize(&commands, &Config::default()).unwrap();
+        // Font-provided dropout state must retain the precision hint.
+        let scan = FontScanState {
+            source_sha256: env!("SKRIFA_SCAN_SHA256").into(),
+            enabled: true,
+            scan_type: 5, // Smart dropout, excluding stubs.
+            contour_modes: vec![None; case.commands.iter().filter(|c| c.op == "close").count()],
+            hinting_axes: [false; 2],
+        };
+        let from_font = mono::rasterize_with_scan_state(
+            &commands,
+            &Config {
+                mono_raster: MonoRasterSettings {
+                    font_instructions: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Some(&scan),
+        )
+        .unwrap();
+        assert_eq!(actual.pixels, from_font.pixels, "{} font scan", case.key);
         let pixels: BTreeSet<_> = actual
             .pixels
             .iter()

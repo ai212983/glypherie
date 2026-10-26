@@ -1,9 +1,6 @@
-//! Candidate monochrome scan conversion using FreeType 2.15.0's standalone
-//! `ftraster.c`. See vendor/freetype-mono/PATCH.md for provenance/adaptations.
-//! Fitting stays with Skrifa. The scanner uses nonzero winding, center-fill,
-//! both sweep directions with upstream overshoot handling, and the requested
-//! upstream dropout/stub flags (smart dropout without stubs by default).
-//! Zeno coverage is diagnostic only; no threshold controls Mono ink.
+//! FreeType monochrome scanning of Skrifa-fitted outlines.
+//! Source provenance: vendor/freetype-mono/PATCH.md.
+//! Zeno coverage is diagnostic and does not select monochrome pixels.
 use crate::{
     fail,
     probe::{self, FittedCommand, RasterOutput},
@@ -38,11 +35,9 @@ extern "C" {
     ) -> c_int;
 }
 
-/// Rasterize a closed fitted outline on its existing native integer grid.
-/// FreeType accepts 26.6 pixel positions. Boundary quantization uses nearest
-/// rounding with ties towards positive infinity, preserving integer-translation
-/// invariance across zero (the positive half-step convention of FT_PIX_ROUND). Integer translation
-/// places that grid in the destination buffer; there is no phase adjustment.
+/// Rasterize a closed outline at its integer origin.
+/// Points round to 26.6 with FT_PIX_ROUND ties toward positive infinity.
+/// Translation into the bitmap preserves the outline's pixel-grid phase.
 pub fn rasterize(commands: &[FittedCommand], config: &Config) -> Result<RasterOutput, Error> {
     rasterize_with_scan_state(commands, config, None)
 }
@@ -79,7 +74,6 @@ pub fn rasterize_with_scan_state(
         tags.push(tag);
         Ok(())
     }
-    // Validate the command grammar before invoking either rasterizer or C.
     for command in commands {
         match *command {
             FittedCommand::MoveTo(x, y) => {
@@ -131,7 +125,7 @@ pub fn rasterize_with_scan_state(
             first = usize::from(end) + 1;
         }
     }
-    // Retain the established placement and independently useful raw AA coverage.
+    // Reuse the coverage raster's bounds and diagnostic samples.
     let mut output = probe::rasterize(commands, config)?;
     if output.width == 0 || output.height == 0 {
         return Ok(output);
@@ -146,17 +140,14 @@ pub fn rasterize_with_scan_state(
     }
     let pitch = output.width.div_ceil(8) as usize;
     let mut packed = vec![0; pitch * output.height as usize];
-    // SAFETY: this pure size calculation receives validated nonzero dimensions
-    // whose product is at most 4 Mi pixels, enforced by probe::rasterize.
+    // SAFETY: probe::rasterize validated nonzero dimensions and at most 4 Mi pixels.
     let words = unsafe { font_mono_scratch_words(output.width, output.height) };
     let bytes = words
         .checked_mul(std::mem::size_of::<usize>())
         .filter(|n| *n <= MAX_SCRATCH_BYTES)
         .ok_or_else(|| fail("FreeType mono scratch exceeds allocation limit"))?;
     let mut scratch = vec![0usize; words];
-    // Upstream FT_OUTLINE_* control, VER-2-15-0 ftraster.c Render_Glyph: Off
-    // ignores dropouts (stub control then has no effect), unset Smart selects
-    // simple control, and INCLUDE_STUBS keeps short stubs.
+    // FreeType ignores stub control when IGNORE_DROPOUTS is set.
     const IGNORE_DROPOUTS: c_int = 0x8;
     const SMART_DROPOUTS: c_int = 0x10;
     const INCLUDE_STUBS: c_int = 0x20;
@@ -169,6 +160,9 @@ pub fn rasterize_with_scan_state(
     } else {
         0
     };
+    // FreeType refines small-bitmap curve intersections; its size guard selects the fallback.
+    // https://github.com/freetype/freetype/blob/VER-2-15-0/src/raster/ftraster.c#L522-L563
+    const HIGH_PRECISION: c_int = 0x100;
     // Match TT_Load_Glyph's full SCANTYPE switch. Only per-contour tags
     // truncate the mode to three bits; invalid global values disable dropout.
     let outline_flags = font_scan.map_or(manual_flags, |scan| {
@@ -182,7 +176,7 @@ pub fn rasterize_with_scan_state(
             5 => SMART_DROPOUTS,
             _ => IGNORE_DROPOUTS,
         }
-    });
+    }) | HIGH_PRECISION;
     // SAFETY: repr(C) Point matches FT_Vector's two signed longs. Arrays have
     // matching bounded lengths; ends are increasing indices into points, tags
     // encode only valid on/conic/cubic sequences, and every contour is closed.

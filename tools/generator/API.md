@@ -129,11 +129,12 @@ quality. On TrueType fonts verified to carry no glyph instruction streams, no `f
 upstream selection. The request stays `auto_fallback` while each record's `selected_engine` reports the actual engine.
 No Mono strength or diagonal-balance controls are exposed. The original two policies use whole upstream-fitted outlines.
 The default rasterization is the pinned FreeType 2.15.0 monochrome scanner: nonzero-winding center fill with
-two-direction sweeps and upstream overshoot handling. The scanner receives nearest-rounded 26.6 points (ties towards
-positive infinity) at the existing integer origin. Candidate Mono ignores `mono_threshold`; raw Zeno Alpha coverage is
-diagnostic and does not determine its delivered pixels on the FreeType path. FreeType captures declare `raster_policy:
-"free_type_mono"`, `mono_rasterizer` with the scanner version and compiled vendored-source SHA-256, and per-record
-effective `mono_raster` settings. FreeType does no font loading, hinting or layout here.
+two-direction sweeps, upstream overshoot handling and the high-precision outline hint; FreeType owns its bitmap-size
+guard and ordinary-precision fallback. The scanner receives nearest-rounded 26.6 points (ties towards positive infinity)
+at the existing integer origin. Candidate Mono ignores `mono_threshold`; raw Zeno Alpha coverage is diagnostic and does
+not determine its delivered pixels on the FreeType path. FreeType captures declare `raster_policy: "free_type_mono"`,
+`mono_rasterizer` with the scanner version and compiled vendored-source SHA-256, and per-record effective `mono_raster`
+settings. FreeType does no font loading, hinting or layout here.
 
 `free_type_mono_terminals` retains the same fitting and layout, then suppresses smart-dropout rescues only at straight
 caps certified against both the source and fitted outlines. Ambiguous features keep the original scan; executed font

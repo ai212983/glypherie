@@ -623,6 +623,31 @@ Flex 16 px, weight 400, width 100, optical size 14, slant zero retains readable 
 sample; broader optical acceptance, especially other weights and sizes, remains pending. These observations do not close
 the iteration or alter the approved comparison baseline.
 
+#### Curve scan precision
+
+Candidate Mono requests FreeType's
+[high-precision outline hint](https://freetype.org/freetype2/docs/reference/ft2-outline_processing.html#ft_outline_xxx).
+The pinned scanner's
+[precision selection and curve subdivision](https://github.com/freetype/freetype/blob/VER-2-15-0/src/raster/ftraster.c#L522-L563)
+use finer internal intersections for small bitmaps, retaining ordinary precision when its bitmap-size guard excludes
+them. This adopts an upstream scan policy: supplied 26.6 geometry, integer origin, fitting ownership, metrics and
+dropout controls retain their meanings. No glyph, row, threshold or placement exception selects the correction.
+
+**Confirmed existing scan-conversion defect, corrected:** Roboto Flex Regular at 16 px, all axes at font defaults, Mono
+with diagonal fitting off, has an extra pixel at the lower-right bowl arc of both `q` and `g`. Their shared fitted curve
+passes above the pixel center by about 0.013 px. Ordinary-precision subdivision rounds the boundary onto the center,
+filling it; high precision keeps it outside. Dropout and stub exclusion do not remove it. Independent full FreeType
+reproduces the distinction with the same fitted geometry. The rebuilt browser preview removes the pixel in both glyphs;
+the same local correction applies at 15 and 17 px.
+
+**Broader optical assessment pending:** isolated controls cover the five bundled families at 12/14/16/18/20/24 px,
+weights 300/400/700 plus Source Sans 3 weight 200, with font hints on and forced automatic fitting. Curve-edge ink can
+increase or decrease without outline movement. Roboto Italic weight 300 at 12 px separates the two quotation-mark
+strokes; Source Sans 3 weights 200/300 at 20 px separates percent-sign parts. These component increases do not
+demonstrate a broken principal stroke. Inspect retained curve weight, counter openness, joins and nearby size
+transitions; independent scanner parity does not establish broader optical acceptance. The publication matrix and
+separate comparison baseline remain unchanged.
+
 #### Terminal tips and junction continuity
 
 The web preview's automatic-fitting fallback includes terminal stubs; executed font scan instructions still take
