@@ -15,14 +15,16 @@ import {
   type PreviewSnapshot,
 } from "../features/preview/state/snapshot-codec.js";
 import {
-  detailHash,
-  indexHash,
-  isRouteHash,
-  palettesHash,
-  parseHashRoute,
-  splitHash,
+  detailPath,
+  indexPath,
+  isRoutePath,
+  palettesPath,
+  parseRoute,
   type Route,
 } from "./router.js";
+
+import { readRoutePath, readRouteSearch } from "./location.js";
+export { readRouteSearch } from "./location.js";
 
 export type { PreviewSnapshot, FamilySnapshot } from "../features/preview/state/snapshot-codec.js";
 
@@ -40,21 +42,10 @@ export function readRoleParam(search: string): RendererRole {
   return (SNAPSHOT_ROLES as readonly string[]).includes(value ?? "") ? (value as RendererRole) : "candidate";
 }
 
-// Inner hash query of the current URL. Outer search is legacy-only input, never written.
-export function readHashSearch(): string {
-  return splitHash(window.location.hash).search;
-}
-
 export function writeRoleParam(role: RendererRole): void {
-  const { path, search } = splitHash(window.location.hash);
-  const params = new URLSearchParams(search);
+  const params = new URLSearchParams(readRouteSearch());
   params.set("role", role);
-  const text = params.toString();
-  window.history.replaceState(
-    window.history.state,
-    "",
-    `${window.location.pathname}${window.location.search}#${path}${text ? `?${text}` : ""}`,
-  );
+  window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params}`);
 }
 
 function readStoredGlobals(): { kerning?: boolean } {
@@ -81,27 +72,27 @@ export function readInitialSnapshot(metas: FamilyMeta[]): PreviewSnapshot {
     font: metas[0]?.id ?? "",
     profile: "mono_1bit",
   };
-  const hash = window.location.hash;
+  const path = readRoutePath();
   const outer = window.location.search;
-  const parsed = parseHashRoute(hash);
+  const parsed = parseRoute(path);
   if (parsed?.name === "font" && parsed.font && ids.has(parsed.font)) {
-    const versioned = parseUrlSnapshot(splitHash(hash).search, "", metas, { ...defaults, font: parsed.font });
+    const versioned = parseUrlSnapshot(readRouteSearch(), "", metas, { ...defaults, font: parsed.font });
     const snapshot = versioned ?? withStoredGlobals(defaultSnapshot(metas, { ...defaults, font: parsed.font }));
     snapshot.font = parsed.font;
     return snapshot;
   }
-  if (parsed?.name === "font" || (parsed === null && isRouteHash(hash))) {
+  if (parsed?.name === "font" || (parsed === null && isRoutePath(path))) {
     return defaultSnapshot(metas, defaults);
   }
-  const legacy = legacyFont(outer, hash, metas);
+  const legacy = legacyFont(outer, window.location.hash, metas);
   if (legacy && ids.has(legacy)) {
-    const versioned = parseUrlSnapshot(outer, hash, metas, { ...defaults, font: legacy });
+    const versioned = parseUrlSnapshot(outer, window.location.hash, metas, { ...defaults, font: legacy });
     if (versioned) {
       versioned.font = legacy;
       return versioned;
     }
     const snapshot = withStoredGlobals(defaultSnapshot(metas, { ...defaults, font: legacy }));
-    const state = parseLegacyState(outer, hash, metas);
+    const state = parseLegacyState(outer, window.location.hash, metas);
     if (state.profile) snapshot.profile = state.profile;
     snapshot.font = legacy;
     return snapshot;
@@ -145,9 +136,9 @@ function historyStateFor(snapshot: PreviewSnapshot): { previewSnapshot: PreviewS
 export function writeSnapshotNow(snapshot: PreviewSnapshot, familyOrder: string[]): void {
   clearTimeout(writeTimer);
   writeTimer = undefined;
-  const params = encodeHashSearch(snapshot, readHashSearch(), familyOrder);
+  const params = encodeHashSearch(snapshot, readRouteSearch(), familyOrder);
   const text = params.toString();
-  const url = `${window.location.pathname}${window.location.search}${detailHash(snapshot.font)}${text ? `?${text}` : ""}`;
+  const url = `${detailPath(snapshot.font)}${text ? `?${text}` : ""}`;
   window.history.replaceState(historyStateFor(snapshot), "", url);
   try {
     localStorage.setItem(EXACT_KEY, "true");
@@ -155,27 +146,26 @@ export function writeSnapshotNow(snapshot: PreviewSnapshot, familyOrder: string[
   } catch { /* storage unavailable */ }
 }
 
-// Canonical hash for a resolved route, migrating legacy outer queries and
-// selection fragments into it.
-export function canonicalHashFor(
+// Canonical URL for a resolved route, migrating legacy queries and fragments.
+export function canonicalPathFor(
   route: Route,
   snapshot: PreviewSnapshot,
   familyOrder: string[],
   baseSearch: string,
 ): string {
   if (route.page === "font") {
-    return `${detailHash(route.font)}?${encodeHashSearch(snapshot, baseSearch, familyOrder).toString()}`;
+    return `${detailPath(route.font)}?${encodeHashSearch(snapshot, baseSearch, familyOrder).toString()}`;
   }
-  if (route.page === "palettes") return palettesHash(baseSearch);
-  return indexHash(baseSearch);
+  if (route.page === "palettes") return palettesPath(baseSearch);
+  return indexPath(baseSearch);
 }
 
-export function replaceCanonicalHash(
+export function replaceCanonicalPath(
   route: Route,
   snapshot: PreviewSnapshot,
   familyOrder: string[],
   baseSearch: string,
 ): void {
-  const hash = canonicalHashFor(route, snapshot, familyOrder, baseSearch);
-  window.history.replaceState(historyStateFor(snapshot), "", `${window.location.pathname}${hash}`);
+  const path = canonicalPathFor(route, snapshot, familyOrder, baseSearch);
+  window.history.replaceState(historyStateFor(snapshot), "", path);
 }

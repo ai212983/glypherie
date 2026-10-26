@@ -51,7 +51,7 @@ test("installed app shell reloads offline beneath the hosting prefix", { skip: !
   await page.waitForFunction(canvasRendered, null, { timeout: 20000 });
 
   const direct = await context.newPage();
-  await direct.goto(`${url}#/font/${ids[2]}/`, { waitUntil: "domcontentloaded" });
+  await direct.goto(`${url}font/${ids[2]}/`, { waitUntil: "domcontentloaded" });
   await direct.waitForFunction(
     (expected) => document.querySelector(".family h2")?.textContent === expected,
     names[2],

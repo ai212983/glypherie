@@ -9,8 +9,8 @@ import { FontEditor } from "../preview/FontEditor";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Label } from "../../../components/ui/label";
-import { indexHash, variantHash } from "../../navigation/router.js";
-import { readHashSearch } from "../../navigation/snapshot";
+import { indexPath, variantPath } from "../../navigation/router.js";
+import { readRouteSearch } from "../../navigation/snapshot";
 import { NavLink } from "../../../components/NavLink";
 import { SiteHeader } from "../../shell/SiteHeader";
 import { useLiveVariant } from "../../variants/useFontVariants.js";
@@ -139,8 +139,8 @@ function VariantRoute({
     if (font) library.ensureLoaded(font.id);
   }, [font, library]);
 
-  const base = readHashSearch() || window.location.search;
-  const indexHref = `${window.location.pathname}${indexHash(base)}`;
+  const base = readRouteSearch() || window.location.search;
+  const indexHref = indexPath(base);
   const header = (): React.JSX.Element => (
     <div className="sticky top-0 z-40 shrink-0">
       <SiteHeader
@@ -216,7 +216,7 @@ function VariantRoute({
         <h2>Variant belongs to another font.</h2>
         <p>
           <NavLink
-            href={`${window.location.pathname}${variantHash(saved.fontId, saved.id)}`}
+            href={variantPath(saved.fontId, saved.id)}
             data-variant-correct={saved.id}
             onNavigate={() => onOpenVariantId(saved.fontId, saved.id)}
           >

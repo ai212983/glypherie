@@ -72,6 +72,7 @@ test("Add variant creates a default saved variant and navigates after commit", {
   assert.equal(reloaded, false, "in-app navigation performs no document reload");
   await page.locator('[data-primary-nav="fonts"]').click();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
+  await page.locator(`[data-variant-link="${variantId}"]`).waitFor();
   assert.deepEqual(await cardVariantIds(page, ids[target]!), [variantId]);
 });
 
@@ -105,7 +106,7 @@ for (const expected of EXPECTED) {
     }
     const license = await page.locator("section.family a[href$='.txt']").getAttribute("href");
     assert.ok(license, `${heading} exposes a license link`);
-    const response = await page.request.get(license);
+    const response = await page.request.get(new URL(license, page.url()).href);
     assert.equal(response.status(), 200);
     assert.match(await response.text(), /SIL OPEN FONT LICENSE/i, `${heading} links a readable OFL notice`);
     const first = await canvasPixels(page);
@@ -138,7 +139,7 @@ test("direct first load into each legacy font route shows its unsaved preview", 
   }
 });
 
-test("legacy query and fragment links migrate to the canonical hash route", { skip: !browserAvailable }, async (t) => {
+test("legacy query and fragment links migrate to the canonical path", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
   const url = await servePrefix(t, output);
   const browser = await launch(t);

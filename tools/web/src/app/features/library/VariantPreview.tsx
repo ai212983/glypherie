@@ -2,7 +2,7 @@ import { userError } from "../../user-error";
 import * as React from "react";
 import type { FontVariant } from "../../variants/model.js";
 import { deleteVariant, VariantStorageError } from "../../variants/repository.js";
-import { variantHash } from "../../navigation/router.js";
+import { variantPath } from "../../navigation/router.js";
 import { NavLink } from "../../../components/NavLink";
 import { SpecimenRow } from "./SpecimenRow";
 import { FontCanvas } from "../../renderer/FontCanvas.js";
@@ -75,7 +75,7 @@ export function VariantPreview({
       tintAttributes={{ "data-library-variant-tint": variant.id }}
       action={
         <NavLink
-          href={`${window.location.pathname}${variantHash(fontId, variant.id)}`}
+          href={variantPath(fontId, variant.id)}
           data-variant-link={variant.id}
           data-variant-font={fontId}
           aria-label={variant.name}

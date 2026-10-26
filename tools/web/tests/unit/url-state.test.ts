@@ -12,7 +12,7 @@ import {
   type GlobalDefaults,
   type PreviewSnapshot,
 } from "../../src/app/features/preview/state/snapshot-codec.ts";
-import { detailHash, indexHash, palettesHash } from "../../src/app/navigation/router.ts";
+import { detailPath, indexPath, palettesPath } from "../../src/app/navigation/router.ts";
 
 const METAS: FamilyMeta[] = [
   {
@@ -200,16 +200,16 @@ test("minimal font links select known fonts and ignore unknown ones", () => {
 });
 
 test("palettes links keep foreign params while dropping snapshot state", () => {
-  assert.equal(palettesHash(""), "#/palettes/");
-  assert.equal(palettesHash("v=1&font=beta"), "#/palettes/");
-  assert.equal(palettesHash("role=baseline&utm=keep"), "#/palettes/?role=baseline&utm=keep");
+  assert.equal(palettesPath(""), "/palettes/");
+  assert.equal(palettesPath("v=1&font=beta"), "/palettes/");
+  assert.equal(palettesPath("role=baseline&utm=keep"), "/palettes/?role=baseline&utm=keep");
 });
 
 test("detail links name the font and index links drop snapshot state", () => {
-  assert.equal(detailHash("beta"), "#/font/beta/");
-  assert.equal(indexHash("?v=1&font=beta&profile=mono_1bit&utm=keep"), "#/?utm=keep");
-  assert.equal(indexHash("?v=1&font=beta"), "#/");
-  assert.equal(indexHash(""), "#/");
+  assert.equal(detailPath("beta"), "/font/beta/");
+  assert.equal(indexPath("?v=1&font=beta&profile=mono_1bit&utm=keep"), "/?utm=keep");
+  assert.equal(indexPath("?v=1&font=beta"), "/");
+  assert.equal(indexPath(""), "/");
 });
 
 test("hash search carries versioned state without the font identity", () => {
@@ -233,7 +233,7 @@ test("historical URLs resolve to current controls", () => {
   assert.equal(historical?.rasterization, "coverage");
   assert.equal(parseUrlSnapshot("?v=1&font=alpha&role=baseline", "", METAS, DEFAULTS)?.rasterization, "free_type_mono");
   assert.equal(defaultSnapshot(METAS, DEFAULTS).rasterization, "free_type_mono");
-  assert.equal(indexHash("?v=1&raster=coverage&utm=keep"), "#/?utm=keep");
+  assert.equal(indexPath("?v=1&raster=coverage&utm=keep"), "/?utm=keep");
 });
 
  test("old zoom and scan overrides are ignored and removed from shared links", () => {

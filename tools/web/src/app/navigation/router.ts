@@ -1,30 +1,32 @@
+import { appBase } from "./location.ts";
+
 export type Route =
   | { page: "index"; notice?: string }
   | { page: "font"; font: string }
   | { page: "variant"; font: string; variant: string }
   | { page: "palettes" };
 
-export interface HashParts {
+export interface RouteParts {
   path: string;
   search: string;
 }
 
-export function splitHash(hash: string): HashParts {
+export function splitRoute(hash: string): RouteParts {
   const raw = hash.startsWith("#") ? hash.slice(1) : hash;
   const query = raw.indexOf("?");
   if (query < 0) return { path: raw, search: "" };
   return { path: raw.slice(0, query), search: raw.slice(query + 1) };
 }
 
-export type HashRoute =
+export type ParsedRoute =
   | { name: "index" }
   | { name: "font"; font: string }
   | { name: "variant"; font: string; variant: string }
   | { name: "palettes" }
   | null;
 
-export function parseHashRoute(hash: string): HashRoute {
-  const { path } = splitHash(hash ?? "");
+export function parseRoute(hash: string): ParsedRoute {
+  const { path } = splitRoute(hash ?? "");
   if (path === "" || path === "/") return { name: "index" };
   if (/^\/palettes\/?$/.test(path)) return { name: "palettes" };
   const variant = path.match(/^\/font\/([^/]+)\/variant\/([^/]+)\/?$/);
@@ -48,8 +50,8 @@ export function parseHashRoute(hash: string): HashRoute {
   }
 }
 
-export function isRouteHash(hash: string): boolean {
-  return (hash ?? "").startsWith("#/");
+export function isRoutePath(hash: string): boolean {
+  return (hash ?? "").startsWith("#/") || (hash ?? "").startsWith("/");
 }
 
 export function hashFamilyId(hash: string): string | null {
@@ -72,7 +74,7 @@ export function resolveRoute(
   knownIds: readonly string[],
 ): Route {
   const known = new Set(knownIds);
-  const parsed = parseHashRoute(hash ?? "");
+  const parsed = parseRoute(hash ?? "");
   if (parsed?.name === "variant") {
     // Shape-level resolution only: the variant row itself (existence and
     // font ownership) resolves asynchronously in the editor from IndexedDB.
@@ -93,10 +95,10 @@ export function resolveRoute(
   // over stale legacy outer font queries or snapshot params on the way in.
   if (parsed?.name === "palettes") return { page: "palettes" };
   if (parsed === null) {
-    if (isRouteHash(hash ?? "")) {
+    if (isRoutePath(hash ?? "")) {
       return { page: "index", notice: "Page not found. Showing all fonts." };
     }
-  } else if (hash === "#/" || splitHash(hash ?? "").search) {
+  } else if (hash === "#/" || splitRoute(hash ?? "").search) {
     return { page: "index" };
   }
   const params = outerParams(outerSearch ?? "");
@@ -115,26 +117,26 @@ export function resolveRoute(
 
 // Query parameters owned by the versioned preview snapshot codec. Route
 // builders drop them when leaving a font route so stale settings do not
-// leak into the library hash; every other param (e.g. role, utm) is kept.
+// leak into the library URL; every other param (e.g. role, utm) is kept.
 export const OWNED_PARAMS: readonly string[] = [
   "v", "font", "profile", "palette", "zoom", "exact", "stem", "diagonals", "raster", "dropout", "stubs", "scanfont", "model", "kerning", "families",
 ];
 
-/** Canonical detail hash for one font; settings ride the inner snapshot once edited. */
-export function detailHash(font: string): string {
-  return `#/font/${font}/`;
+/** Canonical detail path for one font; settings ride the snapshot query once edited. */
+export function detailPath(font: string): string {
+  return `${appBase}font/${encodeURIComponent(font)}/`;
 }
 
-/** Canonical hash for one saved variant; its settings live in IndexedDB, never in the URL. */
-export function variantHash(font: string, variant: string): string {
-  return `#/font/${font}/variant/${variant}/`;
+/** Canonical path for one saved variant; its settings live in IndexedDB, never in the URL. */
+export function variantPath(font: string, variant: string): string {
+  return `${appBase}font/${encodeURIComponent(font)}/variant/${encodeURIComponent(variant)}/`;
 }
 
 /**
- * Canonical variant hash keeping foreign params (e.g. utm) while dropping
+ * Canonical variant path keeping foreign params (e.g. utm) while dropping
  * snapshot state and the renderer role, which the saved variant owns.
  */
-export function variantHashKeeping(
+export function variantPathKeeping(
   font: string,
   variant: string,
   baseSearch: string | URLSearchParams,
@@ -146,11 +148,11 @@ export function variantHashKeeping(
     if (!dropped.has(key)) result.append(key, value);
   }
   const text = result.toString();
-  return text ? `${variantHash(font, variant)}?${text}` : variantHash(font, variant);
+  return text ? `${variantPath(font, variant)}?${text}` : variantPath(font, variant);
 }
 
-/** Canonical palettes hash, keeping foreign params (e.g. role, utm) while dropping snapshot state. */
-export function palettesHash(baseSearch: string | URLSearchParams): string {
+/** Canonical palettes path, keeping foreign params (e.g. role, utm) while dropping snapshot state. */
+export function palettesPath(baseSearch: string | URLSearchParams): string {
   const base = outerParams(baseSearch ?? "");
   const owned = new Set(OWNED_PARAMS);
   const result = new URLSearchParams();
@@ -158,11 +160,11 @@ export function palettesHash(baseSearch: string | URLSearchParams): string {
     if (!owned.has(key)) result.append(key, value);
   }
   const text = result.toString();
-  return text ? `#/palettes/?${text}` : `#/palettes/`;
+  return text ? `${appBase}palettes/?${text}` : `${appBase}palettes/`;
 }
 
-/** Canonical library hash, keeping foreign params (e.g. role, utm) while dropping snapshot state. */
-export function indexHash(baseSearch: string | URLSearchParams): string {
+/** Canonical library URL, keeping foreign params (e.g. role, utm) while dropping snapshot state. */
+export function indexPath(baseSearch: string | URLSearchParams): string {
   const base = outerParams(baseSearch ?? "");
   const owned = new Set(OWNED_PARAMS);
   const result = new URLSearchParams();
@@ -170,5 +172,5 @@ export function indexHash(baseSearch: string | URLSearchParams): string {
     if (!owned.has(key)) result.append(key, value);
   }
   const text = result.toString();
-  return text ? `#/?${text}` : `#/`;
+  return text ? `${appBase}?${text}` : appBase;
 }

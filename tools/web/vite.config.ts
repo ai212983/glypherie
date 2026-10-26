@@ -1,13 +1,12 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { defineConfig, mergeConfig } from "vite";
+import { pagesRoutingPlugin } from "./pages-routing.js";
 import { fontPwaPlugin } from "./pwa.js";
 import uiConfig from "./vite.ui.js";
 import { createBuildInfo } from "./scripts/build-info.ts";
 
-// Primary browser app: static React SPA written to out/web/. Relative base
-// keeps navigation and hashed asset URLs working beneath a hosting prefix;
-// FONT_PREVIEW_BASE overrides it (e.g. "/font-preview/" for project pages).
+// Assets, history routes and the Pages fallback share the configured hosting prefix.
 export default defineConfig(({ command }) => mergeConfig(uiConfig, defineConfig({
   define: {
     __APP_BUILD__: JSON.stringify(createBuildInfo(
@@ -16,7 +15,7 @@ export default defineConfig(({ command }) => mergeConfig(uiConfig, defineConfig(
       command === "serve",
     )),
   },
-  base: process.env.FONT_PREVIEW_BASE ?? "./",
+  base: process.env.FONT_PREVIEW_BASE ?? "/",
   publicDir: "public",
   server: {
     port: 8903,
@@ -37,7 +36,7 @@ export default defineConfig(({ command }) => mergeConfig(uiConfig, defineConfig(
     emptyOutDir: true,
     assetsInlineLimit: 0,
   },
-  plugins: [fontPwaPlugin(), {
+  plugins: [pagesRoutingPlugin(), fontPwaPlugin(), {
     name: "hmr-status-handshake",
     configureServer(server) {
       server.hot.on("glypherie:hmr-ping", (_data, client) => {

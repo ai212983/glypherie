@@ -15,10 +15,10 @@ export const fontDir: string = path.join(repoRoot, "fonts");
 export const sha256 = (bytes: Uint8Array | string): string =>
   createHash("sha256").update(bytes).digest("hex");
 
-export async function buildApp(t: TestContext): Promise<string> {
+export async function buildApp(t: TestContext, base = "/preview/"): Promise<string> {
   const output = await fs.mkdtemp(path.join(os.tmpdir(), "font-spa-"));
   t.after(() => fs.rm(output, { recursive: true, force: true }));
-  execFileSync("npm", ["run", "build", "--", "--outDir", output], { cwd: webRoot, stdio: "pipe" });
+  execFileSync("npm", ["run", "build", "--", "--outDir", output], { cwd: webRoot, stdio: "pipe", env: { ...process.env, FONT_PREVIEW_BASE: base } });
   return output;
 }
 
@@ -36,12 +36,12 @@ const MIME: Record<string, string> = {
   ".webmanifest": "application/manifest+json",
 };
 
-export async function servePrefix(t: TestContext, root: string): Promise<string> {
+export async function servePrefix(t: TestContext, root: string, prefix = "/preview/"): Promise<string> {
   const server = http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
-      if (!url.pathname.startsWith("/preview/")) throw new Error("Unknown prefix");
-      let relative = decodeURIComponent(url.pathname.slice("/preview/".length));
+      if (!url.pathname.startsWith(prefix)) throw new Error("Unknown prefix");
+      let relative = decodeURIComponent(url.pathname.slice(prefix.length));
       if (!relative || relative.endsWith("/")) relative += "index.html";
       const file = path.resolve(root, relative);
       if (path.relative(root, file).startsWith("..")) throw new Error("Invalid path");
@@ -49,8 +49,8 @@ export async function servePrefix(t: TestContext, root: string): Promise<string>
       response.writeHead(200, { "Content-Type": MIME[path.extname(file)] ?? "application/octet-stream" });
       response.end(bytes);
     } catch {
-      response.writeHead(404);
-      response.end();
+      response.writeHead(404, { "Content-Type": "text/html" });
+      response.end(await fs.readFile(path.join(root, "404.html")).catch(() => ""));
     }
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -60,7 +60,7 @@ export async function servePrefix(t: TestContext, root: string): Promise<string>
   }));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Test server did not bind a port.");
-  return `http://127.0.0.1:${address.port}/preview/`;
+  return `http://127.0.0.1:${address.port}${prefix}`;
 }
 
 export const browserPath: string | undefined = process.env.WEB_TEST_BROWSER
@@ -138,15 +138,12 @@ export interface HashLocation {
   search: string;
 }
 
-/** Current hash route: path plus inner query (font identity lives in the path, never in outer search). */
+/** Current app route, relative to the test deployment prefix. */
 export async function hashLocation(page: Page): Promise<HashLocation> {
-  return page.evaluate(() => {
-    const hash = window.location.hash;
-    const raw = hash.startsWith("#") ? hash.slice(1) : hash;
-    const query = raw.indexOf("?");
-    if (query < 0) return { path: raw, search: "" };
-    return { path: raw.slice(0, query), search: raw.slice(query + 1) };
-  });
+  return page.evaluate(() => ({
+    path: window.location.pathname.replace(/^\/preview/, ""),
+    search: window.location.search.slice(1),
+  }));
 }
 
 export async function hashPath(page: Page): Promise<string> {
@@ -282,7 +279,9 @@ export async function createPalettePreset(
 ): Promise<{ rowId: number }> {
   const levels = 2 ** spec.bits;
   const depthLabel = `${spec.bits}-bit · ${levels} levels`;
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  const palettesLink = page.locator('[data-primary-nav="palettes"]');
+  if (await palettesLink.count()) await palettesLink.click();
+  else await page.goto(`${url}palettes/`, { waitUntil: "networkidle" });
   await page.waitForFunction(
     () => document.querySelector('main section[aria-label="Grayscale preview"]') !== null,
     null,

@@ -1,10 +1,12 @@
+import { NavLink } from "../../components/NavLink";
+import { navigateTo, readRouteSearch } from "../navigation/location";
 import * as React from "react";
 import { CanvasControls } from "./CanvasControls";
 import { ZoomControl } from "../renderer/ZoomControl";
 import { useDisplayPreferences } from "./DisplayPreferences";
 import { cn } from "utils";
 import { ThemeToggle } from "../../components/theme/ThemeToggle";
-import { indexHash, splitHash } from "../navigation/router";
+import { indexPath } from "../navigation/router";
 import "./SiteHeader.css";
 
 interface SiteHeaderProps {
@@ -33,9 +35,9 @@ export function SiteHeader({ eyebrow, title, sub, controls, search, actions, nav
             ? "font-display text-[16px] leading-6 font-bold tracking-[1.6px] text-studio-foreground uppercase"
             : "font-[650] text-[clamp(1.2rem,2.4vw,1.5rem)] tracking-[-.035em]")}>
             {title === "Glypherie" ? (
-              <a href={indexHash(splitHash(window.location.hash).search || window.location.search)} className="text-inherit no-underline">
+              <NavLink href={indexPath(readRouteSearch())} onNavigate={() => navigateTo(indexPath(readRouteSearch()))} className="text-inherit no-underline">
                 {title}
-              </a>
+              </NavLink>
             ) : title}
           </h1>
           {sub}

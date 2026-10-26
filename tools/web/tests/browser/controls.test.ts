@@ -106,7 +106,7 @@ test("shared font size control supports presets, custom sizes and persistence ac
   await bootDetail(page, `${url}#/font/${id}/`);
   await input.fill("22.5");
   await input.blur();
-  await page.waitForFunction(() => window.location.hash.includes("22.5"));
+  await page.waitForFunction(() => window.location.search.includes("22.5"));
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await input.inputValue(), "22.5");

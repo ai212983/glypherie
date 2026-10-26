@@ -430,7 +430,7 @@ test("font cards are not clickable; variants are real child links", { skip: !bro
   assert.deepEqual(await cardVariantNames(page, id), ["Variant 1"]);
 
   const link = page.locator(`[data-variant-link="${variantId}"]`);
-  assert.ok(((await link.getAttribute("href")) ?? "").includes(`#/font/${id}/variant/${variantId}/`));
+  assert.ok(((await link.getAttribute("href")) ?? "").includes(`/preview/font/${id}/variant/${variantId}/`));
   assert.equal(await link.getAttribute("aria-label"), "Variant 1");
   await link.focus();
   await page.keyboard.press("Enter");
@@ -505,7 +505,7 @@ test("variant sidebar shares specimen rows and supports switching, adding and de
   await list.locator('[aria-current="page"]').waitFor();
   const third = (await list.locator('[aria-current="page"]').getAttribute("data-variant-link"))!;
   await list.locator(`[data-delete-variant="${third}"]`).click();
-  await page.waitForFunction((expected) => location.hash.includes(`/variant/${expected}/`) && document.querySelector("[data-variant-name]") !== null, first);
+  await page.waitForFunction((expected) => location.pathname.includes(`/variant/${expected}/`) && document.querySelector("[data-variant-name]") !== null, first);
   await waitEditor(page);
   assert.equal(await page.locator("[data-variant-name]").inputValue(), "First variant", "deleting the active variant selects another saved variant");
   await list.locator(`[data-delete-variant="${first}"]`).click();

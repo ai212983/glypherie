@@ -1,15 +1,16 @@
+import { readRoutePath } from "./navigation/location";
 import { userError } from "./user-error";
 import * as React from "react";
 import type { StoredFont } from "./fonts/storage.js";
 import type { RendererRole } from "./renderer/renderer-types.js";
 import { DisplayPreferencesProvider, useDisplayPreferences } from "./shell/DisplayPreferences";
 import {
-  canonicalHashFor,
+  canonicalPathFor,
   hasPendingSnapshotWrite,
-  readHashSearch,
+  readRouteSearch,
   readInitialSnapshot,
   readRoleParam,
-  replaceCanonicalHash,
+  replaceCanonicalPath,
   scheduleSnapshotWrite,
   cancelSnapshotWrite,
   writeRoleParam,
@@ -26,7 +27,7 @@ import {
   buildMetas,
   metaForFont,
 } from "./features/preview/state/family-meta";
-import { indexHash, palettesHash, resolveRoute, splitHash, variantHashKeeping } from "./navigation/router";
+import { indexPath, palettesPath, resolveRoute, variantPathKeeping } from "./navigation/router";
 import { useFontLibrary } from "./fonts/useFontLibrary";
 import { displayName } from "./fonts/metadata";
 import { createVariant } from "./variants/repository.js";
@@ -56,7 +57,7 @@ function AppContent(): React.JSX.Element {
   const [page, setPage] = React.useState<Page | null>(null);
   const [snapshot, setSnapshot] = React.useState<PreviewSnapshot | null>(null);
   const [role, setRole] = React.useState<RendererRole>(() => {
-    const inner = splitHash(window.location.hash).search;
+    const inner = readRouteSearch();
     return readRoleParam(inner || window.location.search);
   });
   const [previewStatus, setPreviewStatus] = React.useState("");
@@ -96,16 +97,16 @@ function AppContent(): React.JSX.Element {
     applySnapshot({ ...current, ...patch }, immediate);
   }, [applySnapshot]);
 
-  const pushHash = React.useCallback((hash: string): void => {
+  const pushPath = React.useCallback((path: string): void => {
     // History entries carry identity only. Saved variant settings always
     // come from IndexedDB, never from history state, so Back cannot restore
     // stale settings over the database.
-    window.history.pushState(null, "", `${window.location.pathname}${window.location.search}${hash}`);
+    window.history.pushState(null, "", path);
     handledHref.current = window.location.href;
   }, []);
 
   const migrationBase = (): string => {
-    const inner = readHashSearch();
+    const inner = readRouteSearch();
     return inner || window.location.search;
   };
 
@@ -130,8 +131,8 @@ function AppContent(): React.JSX.Element {
     setPreviewStatus("");
     setDetailNotice("");
     setSaveVariantError("");
-    pushHash(canonicalHashFor({ page: "font", font: id }, next, list.map((font) => font.id), migrationBase()));
-  }, [pushHash]);
+    pushPath(canonicalPathFor({ page: "font", font: id }, next, list.map((font) => font.id), migrationBase()));
+  }, [pushPath]);
 
   const openVariantId = React.useCallback((fontId: string, variantId: string) => {
     cancelSnapshotWrite();
@@ -140,8 +141,8 @@ function AppContent(): React.JSX.Element {
     setPreviewStatus("");
     setDetailNotice("");
     setSaveVariantError("");
-    pushHash(variantHashKeeping(fontId, variantId, migrationBase()));
-  }, [pushHash]);
+    pushPath(variantPathKeeping(fontId, variantId, migrationBase()));
+  }, [pushPath]);
 
   const openIndex = React.useCallback((message = "") => {
     cancelSnapshotWrite();
@@ -150,8 +151,8 @@ function AppContent(): React.JSX.Element {
     setPreviewStatus("");
     setDetailNotice("");
     setSaveVariantError("");
-    pushHash(indexHash(migrationBase()));
-  }, [pushHash]);
+    pushPath(indexPath(migrationBase()));
+  }, [pushPath]);
 
   const openPalettes = React.useCallback(() => {
     cancelSnapshotWrite();
@@ -160,14 +161,14 @@ function AppContent(): React.JSX.Element {
     setPreviewStatus("");
     setDetailNotice("");
     setSaveVariantError("");
-    pushHash(palettesHash(migrationBase()));
-  }, [pushHash]);
+    pushPath(palettesPath(migrationBase()));
+  }, [pushPath]);
 
   const primaryNav = (active: "fonts" | "palettes"): React.JSX.Element => (
     <PrimaryNav
       active={active}
-      fontsHref={indexHash(migrationBase())}
-      palettesHref={palettesHash(migrationBase())}
+      fontsHref={indexPath(migrationBase())}
+      palettesHref={palettesPath(migrationBase())}
       onFonts={() => openIndex()}
       onPalettes={openPalettes}
     />
@@ -175,14 +176,14 @@ function AppContent(): React.JSX.Element {
 
   React.useEffect(() => {
     if (pageRef.current === null) {
-      const probe = resolveRoute(window.location.hash, window.location.search, []);
+      const probe = resolveRoute(readRoutePath(), window.location.search, []);
       if (probe.page === "palettes") {
         const metas = buildMetas([]);
         const snap = readInitialSnapshot(metas);
         setPage({ name: "palettes" });
         setNotice("");
-        const inner = readHashSearch();
-        replaceCanonicalHash(probe, snap, [], inner || window.location.search);
+        const inner = readRouteSearch();
+        replaceCanonicalPath(probe, snap, [], inner || window.location.search);
         setSnapshot(snap);
       }
     }
@@ -190,8 +191,9 @@ function AppContent(): React.JSX.Element {
     if (pageRef.current !== null) return;
     const list = library.fonts;
     const metas = buildMetas(list);
-    const route = resolveRoute(window.location.hash, window.location.search, list.map((font) => font.id));
+    const route = resolveRoute(readRoutePath(), window.location.search, list.map((font) => font.id));
     if (route.page === "variant") {
+      window.history.replaceState(null, "", variantPathKeeping(route.font, route.variant, migrationBase()));
       setPage({ name: "variant", font: route.font, variant: route.variant });
       setNotice("");
       return;
@@ -215,8 +217,8 @@ function AppContent(): React.JSX.Element {
       setPage({ name: "index" });
       setNotice(route.notice ?? "");
     }
-    const inner = readHashSearch();
-    replaceCanonicalHash(
+    const inner = readRouteSearch();
+    replaceCanonicalPath(
       route.page === "index" ? { page: "index" } : route,
       snap,
       list.map((font) => font.id),
@@ -232,30 +234,31 @@ function AppContent(): React.JSX.Element {
       const libraryPending = fontsRef.current === null;
       const list = fontsRef.current ?? [];
       const metas = buildMetas(list);
-      const route = resolveRoute(window.location.hash, window.location.search, list.map((font) => font.id));
-      const inner = readHashSearch();
+      const route = resolveRoute(readRoutePath(), window.location.search, list.map((font) => font.id));
+      const inner = readRouteSearch();
       setRole(readRoleParam(inner || window.location.search));
       setPreviewStatus("");
       setDetailNotice("");
       setSaveVariantError("");
       const order = list.map((font) => font.id);
-      const base = readHashSearch() || window.location.search;
+      const base = readRouteSearch() || window.location.search;
       if (route.page === "palettes") {
         // The palettes lab is font-independent, so it resolves with no fonts
         // at all. Canonicalize to drop stale font snapshot params without
         // disturbing pending library state.
         const current = snapshotRef.current ?? readInitialSnapshot(metas);
-        replaceCanonicalHash(route, current, order, base);
+        replaceCanonicalPath(route, current, order, base);
         if (!snapshotRef.current) setSnapshot(current);
         setPage({ name: "palettes" });
         setNotice("");
       } else if (libraryPending) {
         return;
       } else if (route.page === "variant") {
+        window.history.replaceState(null, "", variantPathKeeping(route.font, route.variant, base));
         setPage({ name: "variant", font: route.font, variant: route.variant });
         setNotice("");
       } else if (route.page === "font") {
-        const { search } = splitHash(window.location.hash);
+        const search = readRouteSearch();
         const params = new URLSearchParams(search);
         if (params.get("v") === "1") {
           let snap = parseUrlSnapshot(search, "", metas, {
@@ -263,7 +266,7 @@ function AppContent(): React.JSX.Element {
           }) ?? readInitialSnapshot(metas);
           if (!metas.some((meta) => meta.id === snap.font)) snap = { ...snap, font: metas[0]?.id ?? "" };
           snap = { ...snap, font: route.font };
-          replaceCanonicalHash({ page: "font", font: route.font }, snap, order, base);
+          replaceCanonicalPath({ page: "font", font: route.font }, snap, order, base);
           setSnapshot(snap);
         } else {
           const current = snapshotRef.current;
@@ -275,12 +278,12 @@ function AppContent(): React.JSX.Element {
               const meta = metas.find((entry) => entry.id === route.font);
               if (meta) next.families = { ...next.families, [route.font]: defaultFamilySnapshot(meta) };
             }
-            replaceCanonicalHash({ page: "font", font: route.font }, next, order, base);
+            replaceCanonicalPath({ page: "font", font: route.font }, next, order, base);
             setSnapshot(next);
           } else {
             let snap = readInitialSnapshot(metas);
             snap = { ...snap, font: route.font };
-            replaceCanonicalHash({ page: "font", font: route.font }, snap, order, base);
+            replaceCanonicalPath({ page: "font", font: route.font }, snap, order, base);
             setSnapshot(snap);
           }
         }
@@ -288,7 +291,7 @@ function AppContent(): React.JSX.Element {
         setNotice("");
       } else {
         const current = snapshotRef.current;
-        if (current) replaceCanonicalHash({ page: "index" }, current, order, base);
+        if (current) replaceCanonicalPath({ page: "index" }, current, order, base);
         setPage({ name: "index" });
         setNotice(route.notice ?? "");
       }
@@ -401,7 +404,7 @@ function AppContent(): React.JSX.Element {
   }, [library.fonts, openVariantId, page, role, savingVariant, snapshot]);
 
   const showPalettes = page?.name === "palettes"
-    || (page === null && resolveRoute(window.location.hash, window.location.search, []).page === "palettes");
+    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "palettes");
   if (showPalettes) {
     return (
       <>
@@ -519,7 +522,7 @@ function AppContent(): React.JSX.Element {
             <h2>Font not found</h2>
             <p>
               <NavLink
-                href={`${window.location.pathname}#/`}
+                href={indexPath(migrationBase())}
                 data-all-fonts
                 onNavigate={() => openIndex()}
               >

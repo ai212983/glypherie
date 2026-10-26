@@ -1,42 +1,42 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  palettesHash,
-  parseHashRoute,
+  palettesPath,
+  parseRoute,
   resolveRoute,
-  splitHash,
-  variantHash,
-  variantHashKeeping,
+  splitRoute,
+  variantPath,
+  variantPathKeeping,
 } from "../../src/app/navigation/router.ts";
 
 const IDS = ["aaa", "bbb"];
 
 test("hash parts split path from inner query", () => {
-  assert.deepEqual(splitHash("#/font/aaa/?v=1&role=baseline"), { path: "/font/aaa/", search: "v=1&role=baseline" });
-  assert.deepEqual(splitHash("#/"), { path: "/", search: "" });
-  assert.deepEqual(splitHash(""), { path: "", search: "" });
-  assert.deepEqual(splitHash("#/font/aaa"), { path: "/font/aaa", search: "" });
+  assert.deepEqual(splitRoute("#/font/aaa/?v=1&role=baseline"), { path: "/font/aaa/", search: "v=1&role=baseline" });
+  assert.deepEqual(splitRoute("#/"), { path: "/", search: "" });
+  assert.deepEqual(splitRoute(""), { path: "", search: "" });
+  assert.deepEqual(splitRoute("#/font/aaa"), { path: "/font/aaa", search: "" });
 });
 
 test("hash routes parse the library and font paths", () => {
-  assert.deepEqual(parseHashRoute("#/"), { name: "index" });
-  assert.deepEqual(parseHashRoute(""), { name: "index" });
-  assert.deepEqual(parseHashRoute("#"), { name: "index" });
-  assert.deepEqual(parseHashRoute("#/font/aaa/"), { name: "font", font: "aaa" });
-  assert.deepEqual(parseHashRoute("#/font/aaa"), { name: "font", font: "aaa" });
-  assert.deepEqual(parseHashRoute("#/font/aaa/?v=1"), { name: "font", font: "aaa" });
-  assert.deepEqual(parseHashRoute("#/font/aaa/variant/vvv/"), { name: "variant", font: "aaa", variant: "vvv" });
-  assert.deepEqual(parseHashRoute("#/font/aaa/variant/vvv"), { name: "variant", font: "aaa", variant: "vvv" });
+  assert.deepEqual(parseRoute("#/"), { name: "index" });
+  assert.deepEqual(parseRoute(""), { name: "index" });
+  assert.deepEqual(parseRoute("#"), { name: "index" });
+  assert.deepEqual(parseRoute("#/font/aaa/"), { name: "font", font: "aaa" });
+  assert.deepEqual(parseRoute("#/font/aaa"), { name: "font", font: "aaa" });
+  assert.deepEqual(parseRoute("#/font/aaa/?v=1"), { name: "font", font: "aaa" });
+  assert.deepEqual(parseRoute("#/font/aaa/variant/vvv/"), { name: "variant", font: "aaa", variant: "vvv" });
+  assert.deepEqual(parseRoute("#/font/aaa/variant/vvv"), { name: "variant", font: "aaa", variant: "vvv" });
   assert.deepEqual(
-    parseHashRoute("#/font/aaa/variant/vvv/?utm=keep"),
+    parseRoute("#/font/aaa/variant/vvv/?utm=keep"),
     { name: "variant", font: "aaa", variant: "vvv" },
   );
-  assert.equal(parseHashRoute("#/nope"), null);
-  assert.equal(parseHashRoute("#/font/"), null);
-  assert.equal(parseHashRoute("#/font/aaa/extra"), null);
-  assert.equal(parseHashRoute("#/font/aaa/variant/"), null);
-  assert.equal(parseHashRoute("#/font/aaa/variant/vvv/extra"), null);
-  assert.equal(parseHashRoute("#family-aaa"), null);
+  assert.equal(parseRoute("#/nope"), null);
+  assert.equal(parseRoute("#/font/"), null);
+  assert.equal(parseRoute("#/font/aaa/extra"), null);
+  assert.equal(parseRoute("#/font/aaa/variant/"), null);
+  assert.equal(parseRoute("#/font/aaa/variant/vvv/extra"), null);
+  assert.equal(parseRoute("#family-aaa"), null);
 });
 
 test("bare roots resolve to the library", () => {
@@ -69,11 +69,11 @@ test("variant hashes resolve to the variant page for known fonts", () => {
     resolveRoute("#/font/bbb/variant/vvv/?utm=keep", "", IDS),
     { page: "variant", font: "bbb", variant: "vvv" },
   );
-  assert.equal(variantHash("bbb", "vvv"), "#/font/bbb/variant/vvv/");
-  assert.equal(variantHashKeeping("bbb", "vvv", ""), "#/font/bbb/variant/vvv/");
+  assert.equal(variantPath("bbb", "vvv"), "/font/bbb/variant/vvv/");
+  assert.equal(variantPathKeeping("bbb", "vvv", ""), "/font/bbb/variant/vvv/");
   assert.equal(
-    variantHashKeeping("bbb", "vvv", "v=1&font=bbb&profile=gray_3bit&role=baseline&utm=keep"),
-    "#/font/bbb/variant/vvv/?utm=keep",
+    variantPathKeeping("bbb", "vvv", "v=1&font=bbb&profile=gray_3bit&role=baseline&utm=keep"),
+    "/font/bbb/variant/vvv/?utm=keep",
   );
 });
 
@@ -106,9 +106,9 @@ test("versioned snapshots without a font stay on the library", () => {
 });
 
 test("palettes hashes parse with or without a trailing slash or query", () => {
-  assert.deepEqual(parseHashRoute("#/palettes/"), { name: "palettes" });
-  assert.deepEqual(parseHashRoute("#/palettes"), { name: "palettes" });
-  assert.deepEqual(parseHashRoute("#/palettes/?utm=keep"), { name: "palettes" });
+  assert.deepEqual(parseRoute("#/palettes/"), { name: "palettes" });
+  assert.deepEqual(parseRoute("#/palettes"), { name: "palettes" });
+  assert.deepEqual(parseRoute("#/palettes/?utm=keep"), { name: "palettes" });
 });
 
 test("palettes resolves without fonts and wins over stale font queries", () => {
@@ -121,9 +121,9 @@ test("palettes resolves without fonts and wins over stale font queries", () => {
 });
 
 test("palettes links drop snapshot state and keep foreign params", () => {
-  assert.equal(palettesHash(""), "#/palettes/");
-  assert.equal(palettesHash("v=1&font=aaa&profile=gray_3bit"), "#/palettes/");
-  assert.equal(palettesHash("v=1&font=aaa&utm=keep"), "#/palettes/?utm=keep");
+  assert.equal(palettesPath(""), "/palettes/");
+  assert.equal(palettesPath("v=1&font=aaa&profile=gray_3bit"), "/palettes/");
+  assert.equal(palettesPath("v=1&font=aaa&utm=keep"), "/palettes/?utm=keep");
 });
 
 test("unknown ids and malformed routes recover on the library with a notice", () => {
@@ -142,4 +142,14 @@ test("unknown ids and malformed routes recover on the library with a notice", ()
   const malformed = resolveRoute("#/nope", "", IDS);
   assert.equal(malformed.page, "index");
   assert.match((malformed as { notice?: string }).notice ?? "", /Page not found/);
+});
+
+test("clean paths resolve the library, previews, variants and palette lab", () => {
+  assert.deepEqual(resolveRoute("/", "", IDS), { page: "index" });
+  assert.deepEqual(resolveRoute("/font/bbb/", "?v=1&font=aaa", IDS), { page: "font", font: "bbb" });
+  assert.deepEqual(resolveRoute("/font/bbb/variant/vvv/", "", IDS), { page: "variant", font: "bbb", variant: "vvv" });
+  assert.deepEqual(resolveRoute("/palettes/", "?font=aaa", []), { page: "palettes" });
+  assert.match((resolveRoute("/unknown/", "?font=aaa", IDS) as { notice: string }).notice, /Page not found/);
+  assert.equal(parseRoute("/font/%zz/"), null);
+  assert.equal(variantPath("a/b", "v?x"), "/font/a%2Fb/variant/v%3Fx/");
 });

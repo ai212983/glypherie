@@ -66,10 +66,13 @@ jobs:
         working-directory: tools/web
       - name: Build preview WASM renderer
         run: WASM_SIMD128=1 tools/wasm/build.sh web preview
+      - uses: actions/configure-pages@v5
+        id: pages
       - name: Build browser app
         run: npm run build
         working-directory: tools/web
-      - uses: actions/configure-pages@v5
+        env:
+          FONT_PREVIEW_BASE: ${{ steps.pages.outputs.base_path }}/
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:

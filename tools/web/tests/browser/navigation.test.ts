@@ -112,7 +112,7 @@ test("direct hash edits switch variants without a reload", { skip: !browserAvail
   page.once("load", () => { reloaded = true; });
   const first = await openNewVariant(page, ids[0]!);
   const home = page.getByRole("link", { name: "Glypherie", exact: true });
-  assert.equal(await home.getAttribute("href"), "#/");
+  assert.equal(await home.getAttribute("href"), "/preview/");
   await home.focus();
   await home.press("Enter");
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
@@ -223,4 +223,47 @@ test("variant reload keeps the variant and its saved settings", { skip: !browser
   assert.equal(await page.locator(`#heading-${ids[source]!}`).innerText(), names[source]);
   assert.equal(await hashPath(page), `/font/${ids[source]}/variant/${variantId}/`);
   assert.equal(await hashParam(page, "font"), null, "no redundant font query");
+});
+
+test("Pages clean deep links boot and reload without a service worker", { skip: !browserAvailable }, async (t) => {
+  const output = await buildApp(t);
+  const url = await servePrefix(t, output);
+  const browser = await launch(t);
+  const context = await browser.newContext({ serviceWorkers: "block" });
+  const page = await context.newPage();
+  const documents: Array<{ path: string; status: number }> = [];
+  page.on("response", (response) => {
+    if (response.request().resourceType() === "document") {
+      documents.push({ path: new URL(response.url()).pathname, status: response.status() });
+    }
+  });
+  const foreign = "Héllo & + ? # / ~and~";
+  await page.goto(`${url}palettes/?utm=${encodeURIComponent(foreign)}`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.querySelector('main section[aria-label="Grayscale preview"]') !== null);
+  assert.equal(await hashPath(page), "/palettes/");
+  assert.equal(new URL(page.url()).hash, "");
+  assert.equal(await hashParam(page, "utm"), foreign);
+  assert.deepEqual(documents.slice(0, 2), [
+    { path: "/preview/palettes/", status: 404 },
+    { path: "/preview/", status: 200 },
+  ], "Pages 404 redirects to the actual entry document");
+
+  await page.getByRole("link", { name: "Fonts", exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
+  const ids = await cardIds(page);
+  const settings = JSON.stringify({ [ids[0]!]: { size: 23.5, text: foreign } });
+  await page.goto(`${url}font/${ids[0]}/?v=1&families=${encodeURIComponent(settings)}`, { waitUntil: "networkidle" });
+  await page.waitForFunction(canvasRendered);
+  assert.equal(await page.locator("[data-text]").inputValue(), foreign);
+  assert.equal(await page.getByRole("spinbutton", { name: "Size", exact: true }).inputValue(), "23.5");
+  assert.equal(new URL(page.url()).hash, "");
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForFunction(canvasRendered);
+  assert.equal(await page.locator("[data-text]").inputValue(), foreign);
+  assert.equal(await hashPath(page), `/font/${ids[0]}/`);
+
+  await page.goto(`${url}unknown/`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.querySelector("[data-route-notice]") !== null);
+  assert.match(await page.locator("[data-route-notice]").textContent() ?? "", /Page not found/);
+  assert.equal(await hashPath(page), "/");
 });

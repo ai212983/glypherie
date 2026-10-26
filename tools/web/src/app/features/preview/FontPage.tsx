@@ -10,8 +10,8 @@ import { FontEditor } from "./FontEditor";
 import { Button } from "../../../components/ui/button";
 import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectDisplay, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
-import { indexHash } from "../../navigation/router.js";
-import { readHashSearch } from "../../navigation/snapshot";
+import { indexPath } from "../../navigation/router.js";
+import { readRouteSearch } from "../../navigation/snapshot";
 import { NavLink } from "../../../components/NavLink";
 import { SiteHeader } from "../../shell/SiteHeader";
 
@@ -47,8 +47,8 @@ export function FontPage({
   const fontLoadError = library.loadStatus(font.id).state === "error"
     ? library.loadStatus(font.id).error
     : "";
-  const base = readHashSearch() || window.location.search;
-  const indexHref = `${window.location.pathname}${indexHash(base)}`;
+  const base = readRouteSearch() || window.location.search;
+  const indexHref = indexPath(base);
   if (!family) return (
     <main id="main" className="mx-auto my-12 w-[min(100%-3rem,1440px)] max-w-[45rem] leading-[1.6]">
       <section className="content-state" role="alert">

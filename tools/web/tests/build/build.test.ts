@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { runInNewContext } from "node:vm";
 import { buildApp, fontDir, repoRoot, sha256 } from "../helpers/spa-helpers.ts";
 
 async function filesByExtension(root: string, extension: string): Promise<string[]> {
@@ -72,8 +73,45 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
   assert.ok(css.includes(":focus-visible"), "focus styling reaches the stylesheet");
   assert.doesNotMatch(css, /bg-oklch\(/, "no unresolved raw color utilities");
 
-  assert.ok(html.includes("./assets/") || html.includes("assets/"), "relative asset URLs work beneath a prefix");
+  assert.ok(html.includes("/preview/assets/"), "asset URLs use the configured hosting prefix");
+  await fs.access(path.join(output, "404.html"));
   assert.doesNotMatch(html, /src=["']\/(?!preview)/, "no root-absolute asset URLs");
   await fs.access(path.join(output, "manifest.webmanifest"));
   await fs.access(path.join(output, "sw.js"));
+});
+
+
+test("Pages transport preserves URLs beneath root and project hosting prefixes", async (t) => {
+  for (const base of ["/", "/preview/"]) {
+    const output = await buildApp(t, base);
+    const index = await fs.readFile(path.join(output, "index.html"), "utf8");
+    const fallback = await fs.readFile(path.join(output, "404.html"), "utf8");
+    const restore = index.match(/<script>([\s\S]*?__pages_route[\s\S]*?)<\/script>/)?.[1];
+    const redirect = fallback.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    assert.ok(restore);
+    assert.ok(redirect);
+    const original = new URL(`https://example.test${base}font/a/variant/b/?v=1&text=%26%2B%3F%23&literal=~and~#anchor`);
+    let redirected = "";
+    runInNewContext(redirect, { location: {
+      pathname: original.pathname, search: original.search, hash: original.hash,
+      replace: (url: string) => { redirected = url; },
+    }, encodeURIComponent });
+    const entry = new URL(redirected, original.origin);
+    assert.equal(entry.pathname, base);
+    let restored = "";
+    runInNewContext(restore, {
+      location: entry, URL, URLSearchParams,
+      history: { replaceState: (_state: unknown, _title: string, url: string) => { restored = url; } },
+    });
+    assert.equal(restored, original.pathname + original.search + original.hash);
+    // A forged transport query must not navigate outside this app's origin or prefix.
+    for (const target of ["https://elsewhere.test/", "//elsewhere.test/"]) {
+      restored = "";
+      runInNewContext(restore, {
+        location: new URL(`${original.origin}${base}?__pages_route=${encodeURIComponent(target)}`), URL, URLSearchParams,
+        history: { replaceState: () => { restored = "unexpected"; } },
+      });
+      assert.equal(restored, "");
+    }
+  }
 });
