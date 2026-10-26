@@ -1,3 +1,5 @@
+<!-- cspell:words unhinted -->
+
 # Bitmap spacing in the preview
 
 The preview uses bitmap placement, with **Kerning** and **Tracking (px)** controls in **Layout**. Historical reference
@@ -11,10 +13,12 @@ sparse whole-pixel pair adjustments, shared by preview, native specimens and bit
 refit the glyph or change its bitmap. The exact rules belong to the
 [generator spacing API](../tools/generator/API.md#live-spacing-api).
 
-Adjusted advances and bearing-rounding residuals serve different purposes. Layout uses the adjusted advances and can
-apply residuals as additional pair compensation, but current captures provide no residuals. The
+Adjusted advances and bearing-rounding residuals serve different purposes. Layout uses the adjusted advances and applies
+available residuals as additional pair compensation, exactly once per pair. Candidate automatic-Mono captures carry the
+fitter's residuals identically on both scan converters; independent reference, native, unhinted, Gray and non-Mono
+captures carry none. The
 [fitting-compensation investigation](revisions/001/03-spacing-kerning.md#fitting-bearing-compensation-investigation)
-explains the missing information and why bitmap bounds cannot replace it.
+explains why bitmap bounds cannot replace residuals.
 
 Whole-pixel pen positions keep a pair's relative placement independent of preceding text. Fixed-pitch cells and
 source-tabular digits retain their advance relationships. Signed pair adjustments preserve intentional overhang without

@@ -257,8 +257,8 @@ fn font_hints_evaluation_checks_raster_and_engine_metadata() {
         .iter()
         .any(|f| f.invariant == "monochrome scanner identity inconsistent"));
 
-    // Recompute a valid coverage-only bitmap: raster reproduction alone
-    // must not permit the candidate to silently drop the overlap policy.
+    // Coverage capture of the same fitting is supported; raster
+    // reproduction alone must not drop the declared scan policy.
     let mut coverage_only = candidate.clone();
     let commands = coverage_only.records[0].fitted_commands.clone();
     replace_outline(&mut coverage_only, commands);
@@ -266,10 +266,7 @@ fn font_hints_evaluation_checks_raster_and_engine_metadata() {
     assert!(evaluate(&source, &upstream, &coverage_only)
         .hard_failures
         .iter()
-        .any(|failure| {
-            failure.invariant
-                == "font-hints candidate requires FreeType mono without horizontal correction metadata"
-        }));
+        .any(|failure| { failure.invariant == "monochrome scan settings on a coverage raster" }));
 
     // A valid plain-dropout bitmap must not satisfy the font-hints candidate
     // either: only the pinned monochrome scanner is accepted.
@@ -798,6 +795,75 @@ fn fitted_side_bearing_deltas_require_mono_target_and_auto_engine() {
         &evaluate(&source, &upstream, &engine),
         SIDEBEARING_INVARIANT
     ));
+}
+
+#[test]
+#[cfg(feature = "candidate")]
+fn fitted_side_bearing_deltas_follow_x_axis_ownership() {
+    use font_generator::reference::SelectiveFittingCapture;
+    let (source, upstream, base) = font_hints_reports();
+    let mut allowed = base.clone();
+    allowed.records[0].selected_engine = "auto".into();
+    allowed.records[0].target = "mono".into();
+    allowed.records[0].side_bearing_deltas_26_6 = Some([10, -10]);
+    assert!(
+        !has_invariant(
+            &evaluate(&source, &upstream, &allowed),
+            SIDEBEARING_INVARIANT
+        ),
+        "auto X on mono must accept residuals"
+    );
+    for (engine, axes) in [
+        ("auto_x_native_y", [false, true]),
+        ("auto_with_native_scan", [false, false]),
+    ] {
+        let mut record = base.clone();
+        record.records[0].selected_engine = engine.into();
+        record.records[0].target = "mono".into();
+        record.records[0].side_bearing_deltas_26_6 = Some([10, -10]);
+        record.records[0].selective_fitting = Some(SelectiveFittingCapture {
+            native_axes: axes,
+            native_commands: vec![],
+            automatic_commands: vec![],
+        });
+        assert!(
+            !has_invariant(
+                &evaluate(&source, &upstream, &record),
+                SIDEBEARING_INVARIANT
+            ),
+            "{engine} with X-automatic capture must accept residuals"
+        );
+    }
+    // Native X keeps no residuals even with a capture present, and an
+    // X-auto label without its capture proves nothing.
+    let mut native_x = base.clone();
+    native_x.records[0].selected_engine = "native_x_auto_y".into();
+    native_x.records[0].target = "mono".into();
+    native_x.records[0].side_bearing_deltas_26_6 = Some([10, -10]);
+    native_x.records[0].selective_fitting = Some(SelectiveFittingCapture {
+        native_axes: [true, false],
+        native_commands: vec![],
+        automatic_commands: vec![],
+    });
+    assert!(
+        has_invariant(
+            &evaluate(&source, &upstream, &native_x),
+            SIDEBEARING_INVARIANT
+        ),
+        "native X must reject residuals"
+    );
+    let mut unproven = base.clone();
+    unproven.records[0].selected_engine = "auto_x_native_y".into();
+    unproven.records[0].target = "mono".into();
+    unproven.records[0].side_bearing_deltas_26_6 = Some([10, -10]);
+    unproven.records[0].selective_fitting = None;
+    assert!(
+        has_invariant(
+            &evaluate(&source, &upstream, &unproven),
+            SIDEBEARING_INVARIANT
+        ),
+        "X-auto label without capture must reject residuals"
+    );
 }
 
 #[test]

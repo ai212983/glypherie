@@ -194,15 +194,12 @@ fn pair_placement_is_prefix_invariant_with_and_without_kerning() {
                     "pair {pair:?} steps differ by prefix: {values:?} bits={output_bits}"
                 );
             }
-            // With kerning disabled, only a fitting correction may remain;
-            // these captures supply none, so the AV step is the advance.
             let unkerned = generate_bitmap_font(
                 &data,
                 &config(20.0, axes.clone(), "AV", output_bits, false),
                 *strategy,
             )
             .unwrap();
-            assert!(unkerned.kerning.is_empty(), "bits={output_bits}");
             let (placed, _) = origins(&unkerned, "AV");
             let advance_a = unkerned
                 .glyphs
@@ -210,10 +207,35 @@ fn pair_placement_is_prefix_invariant_with_and_without_kerning() {
                 .find(|glyph| glyph.codepoint == u32::from('A'))
                 .unwrap()
                 .advance_26_6;
-            assert_eq!(placed[1] - placed[0], i64::from(advance_a));
+            let correction = unkerned
+                .kerning
+                .iter()
+                .find(|pair| pair.left == u32::from('A') && pair.right == u32::from('V'))
+                .map(|pair| i64::from(pair.adjustment_26_6))
+                .unwrap_or(0);
+            assert_eq!(
+                placed[1] - placed[0],
+                i64::from(advance_a) + correction,
+                "bits={output_bits}"
+            );
+            // Pure extraction draws no outlines, so carries no compensation.
+            let source_kern_av = font_generator::ascii_kerning_pairs(&data, 20.0, &axes)
+                .unwrap()
+                .pairs
+                .iter()
+                .find(|pair| pair.left == u32::from('A') && pair.right == u32::from('V'))
+                .map(|pair| pair.adjustment_26_6)
+                .unwrap_or(0);
+            let (kerned_placed, _) = origins(&exported, "AV");
+            assert_eq!(
+                kerned_placed[1] - kerned_placed[0] - (placed[1] - placed[0]),
+                i64::from(font_generator::layout_spacing::quantize_26_6(
+                    source_kern_av
+                )),
+                "kerning on/off difference must equal quantized source kern, bits={output_bits}"
+            );
             // Kerning must actually move this witness pair, otherwise the
             // prefix check above could pass with kerning silently dropped.
-            let (kerned_placed, _) = origins(&exported, "AV");
             assert_ne!(
                 kerned_placed[1] - kerned_placed[0],
                 i64::from(advance_a),

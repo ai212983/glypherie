@@ -1,6 +1,6 @@
 # Monochrome geometry and spacing
 
-<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL -->
+<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit afloader rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL -->
 
 Combine native and automatic Mono fitting on independent axes, with each upstream policy retained as a control. Assess
 binary continuity, feature balance and reading rhythm with pixel-aligned display and source kerning inspection. The
@@ -155,12 +155,14 @@ glyph-specific fallback. Source-tabular digits retain the common quantized sourc
 loader, which preserves a common rounded advance for equal-width digits and zeroes their bearing deltas; fixed-pitch
 fonts use the rounded source advance for every glyph so equal source cells stay equal when hinted advances differ, and
 likewise carry no bearing deltas. Source kerning and any available fitted bearing correction are resolved once into an
-integer pair adjustment. Captures that supply no bearing deltas contribute no correction, and none is invented: current
-captures record no such deltas. Quantization is to the nearest whole pixel with ties away from zero, so a negated
-adjustment quantizes to its negation. Retaining HarfRust's source pair extraction and choosing its pixel quantization
-are project adaptations of FreeType's integer bearing correction and grid-fitted kerning, not a claim of complete
-FreeType layout parity. The invariant is that the same bitmap pair has the same relative placement irrespective of
-preceding text; this does not impose equal white gaps on different pairs, and no optical rekerning or projected-gap
+integer pair adjustment. Captures that supply no bearing deltas contribute no correction, and none is invented.
+Candidate automatic-Mono captures now record the fitter's residuals (see
+[runtime adoption](#compensated-spacing-runtime-adoption-open-iteration)); independent reference, native, unhinted, Gray
+and non-Mono captures still record none. Quantization is to the nearest whole pixel with ties away from zero, so a
+negated adjustment quantizes to its negation. Retaining HarfRust's source pair extraction and choosing its pixel
+quantization are project adaptations of FreeType's integer bearing correction and grid-fitted kerning, not a claim of
+complete FreeType layout parity. The invariant is that the same bitmap pair has the same relative placement irrespective
+of preceding text; this does not impose equal white gaps on different pairs, and no optical rekerning or projected-gap
 shaping is performed. Signed adjustments and intentional overhang are preserved, with no blank-column floor at neutral
 tracking.
 
@@ -184,36 +186,53 @@ error. Perceived diagonal separation remains pending optical assessment.
 
 #### Fitting-bearing compensation investigation
 
-**Confirmed metadata limitation; optical consequence pending:** the candidate uses the fitter's adjusted advance, but
-current captures provide no left/right bearing-rounding residuals (`side_bearing_deltas_26_6` is `None`). Layout can
-apply those residuals once, independently of source kerning. Their absence has not been shown to cause a visual defect.
+Candidate automatic-Mono captures record the snapshot fitter's left/right bearing-rounding residuals
+(`side_bearing_deltas_26_6`); selective fitting carries them with the owner of X metrics, and layout applies source
+kerning plus compensation exactly once into whole-pixel pair adjustments. FreeTypeMono and Coverage captures of the same
+fitting carry identical residuals: scanner choice changes delivered pixels only, never fitting or layout. Independent
+reference, native, unhinted, Gray and non-Mono captures record none, and none is invented.
 
 [FreeType's integer-positioning example](https://freetype.org/freetype2/docs/reference/ft2-glyph_retrieval.html#ft_glyphslotrec)
 compares the preceding right residual with the current left residual and adjusts placement by one pixel at its
 documented half-pixel boundaries. The
-[pinned automatic loader](https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L420)
+[pinned automatic loader](https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L462)
 defines each residual as the rounded metric point minus its pre-rounding value, after small-bearing adjustments.
 Fixed-pitch glyphs and source-tabular digits have zero residuals.
 
 Skrifa 0.48.0 follows this metric-point fitting sequence, but
 [`AdjustedMetrics`](https://docs.rs/skrifa/0.48.0/skrifa/outline/struct.AdjustedMetrics.html) exposes only overlap
-state, an optional adjusted left bearing and a rounded advance. The automatic path supplies no adjusted left bearing and
-discards the pre-rounding values; the scan-metadata snapshot has the same limitation. Finished outlines, bitmap bounds
-and rounded advances cannot uniquely recover that rounding error. FreeType's embedded interpreter does not provide these
-automatic-hinting residuals either.
+state, an optional adjusted left bearing and a rounded advance; the registry automatic path discards the pre-rounding
+values, and the integrated snapshot retains them instead. Finished outlines, bitmap bounds and rounded advances cannot
+uniquely recover that rounding error. FreeType's embedded interpreter does not provide these automatic-hinting residuals
+either.
 
-Independent FreeType 2.14.3 controls cover the four bundled upright families at 12/14/16/18/20/24 px, weight 400,
-default remaining axes and Mono/Normal targets. All 48 forced-automatic cases contain nonzero residuals; none of the 48
-controls with automatic fitting disabled do. This shows that the reference quantity is active at relevant sizes, without
-measuring Skrifa residuals or establishing renderer parity. Detailed captures are retained under
-`out/diagnostics/fitting-compensation-20261026/`.
+Independent FreeType 2.14.3 controls demonstrate nonzero automatic-fitting residuals in the sampled fonts and sizes;
+captures remain under `out/diagnostics/fitting-compensation-20261026/`. Skrifa scales the space advance through the
+rounded-phantom fallback on the empty outline, while FreeType 2.14.3 skips phantom rounding for outline-less glyphs (`if
+( slot->outline.n_points == 0 ) goto Hint_Metrics;`, `afloader.c:403-405`); advances agree with identical glyph IDs,
+with no integer placement effect at the approved setting. Literata reports 27 unsupported ASCII kern pairs under the
+maintained strict shaping error, so its kerning-on tables stay unavailable while kerning-off stays fully supported.
+Earlier probe, space and matrix packets stay retained under `out/diagnostics/fitting-compensation-{probe,space,matrix}/`
+without maintained regeneration.
 
-The next diagnostic should capture residuals from the exact automatic fitter that produced each glyph, preserving its
-arithmetic, outline translation and advance. Compare with independent FreeType at matched size, axes and target, while
-retaining engine differences. Verify correction boundaries, fixed-pitch and tabular exclusions, kerning and prefix
-independence, and preview/export placement parity. Pure embedded fitting contributes no automatic residual; selective
-fitting carries residuals with the owner of X metrics. Geometry overlays need explicit provenance rather than residuals
-inferred from bitmap bounds. Assess metadata capture separately from its placement effect before adoption.
+#### Compensated-spacing runtime adoption (open iteration)
+
+The compensated-spacing integration is adopted into the maintained runtime as described above. Human approval scope is
+exactly the approved proof: Roboto 16 px, wght 400, wdth 100, forced automatic Mono with the FreeTypeMono scanner,
+diagonal fitting on, source kerning on, zero tracking. The broader multi-font and multi-size mechanical checks are not
+optical acceptance; optical assessment beyond the approved proof remains open, and the iteration stays open.
+
+#### Browser comparison for optical assessment (question, not a verdict)
+
+The isolated review packet under `out/diagnostics/fitting-compensation-review/` freezes the matrix cases with three arms
+(original, recovered Skrifa residuals, FreeType-vector substitution on identical glyphs, advances and bitmaps). The
+[primary proof-kerning-on packet](../../../out/diagnostics/fitting-compensation-review/www/proof-kerning-on/index.html)
+holds the approved-setting sheet, following the ArrowType spacing control strings and proofing corpora (not its UI) at
+revision `bfb554a31fdcc7b5c45bdeb60f75b1a2df041c2e`; see the
+[rework proposal](../../../out/diagnostics/fitting-compensation-review/rework-proposal.md). Older proof-v1 and
+proof-diagonals-on packets stay frozen as diagnostics. In the primary proof, lines identical across arms stay hidden
+with context kept; the page is view-only with feedback in chat and no persisted assessments. Decision boundary: canvas
+agreement with the packet is a mechanical gate, and no canvas comparison establishes optical improvement or regression.
 
 #### Proposed optical pair-spacing experiment
 

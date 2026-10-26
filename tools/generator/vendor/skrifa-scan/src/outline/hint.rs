@@ -450,6 +450,7 @@ impl HintingInstance {
                             scaled_outline.adjusted_advance_width().round().to_f32(),
                         ),
                         scan_conversion,
+                        autohint_deltas_26_6: None,
                     })
                 })
             }
@@ -463,6 +464,7 @@ impl HintingInstance {
                     lsb: None,
                     advance_width,
                     scan_conversion: None,
+                    autohint_deltas_26_6: None,
                 })
             }
             (HinterKind::Varc, OutlineKind::Varc(varc, outline)) => {

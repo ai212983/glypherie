@@ -64,6 +64,7 @@ pub(crate) fn render(
     {
         return Err(fail("selective fitting repertoire changed"));
     }
+    let mut used_automatic_x = false;
     for ((native, auto), raw) in report
         .records
         .iter_mut()
@@ -126,6 +127,7 @@ pub(crate) fn render(
             native.hinted_advance_width = auto.hinted_advance_width;
             native.hinted_lsb = auto.hinted_lsb;
             native.side_bearing_deltas_26_6 = auto.side_bearing_deltas_26_6;
+            used_automatic_x = true;
         }
         let output = crate::mono::rasterize_with_scan_state(
             &commands,
@@ -152,6 +154,17 @@ pub(crate) fn render(
         native.top = output.top;
         native.width = output.width;
         native.height = output.height;
+    }
+    if used_automatic_x {
+        // Automatic-X residuals come from the snapshot fitter; record
+        // provenance even with no native scan state.
+        report.fork = true;
+        if !report.implementation.contains(":scan-metadata:") {
+            report.implementation.push_str(&format!(
+                ":scan-metadata:{}",
+                crate::font_scan::SOURCE_SHA256
+            ));
+        }
     }
     Ok(report)
 }

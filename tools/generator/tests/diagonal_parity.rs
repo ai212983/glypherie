@@ -167,6 +167,70 @@ fn bytes(value: &Value) -> Vec<u8> {
         .collect()
 }
 
+fn font_file(family: &str) -> &'static str {
+    match family {
+        "Roboto" => "Roboto.ttf",
+        "SourceSans3" => "SourceSans3.ttf",
+        other => panic!("frozen selective family without font mapping: {other}"),
+    }
+}
+
+fn capture_native_scans(
+    family: &str,
+    size: f32,
+    weight: f32,
+    codepoints: &[u32],
+) -> BTreeMap<u32, FontScanState> {
+    let file = font_file(family);
+    let data = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../fonts/{file}")),
+    )
+    .unwrap_or_else(|err| panic!("fixture font {file} unreadable: {err}"));
+    let text: String = codepoints
+        .iter()
+        .map(|&codepoint| {
+            char::from_u32(codepoint)
+                .unwrap_or_else(|| panic!("frozen codepoint is not a scalar: U+{codepoint:04X}"))
+        })
+        .collect();
+    let mut axes = BTreeMap::new();
+    axes.insert("wght".to_string(), weight);
+    axes.insert("wdth".to_string(), 100.0);
+    let report = font_generator::candidate::render(
+        &data,
+        &font_generator::reference::ReferenceRequest {
+            profile: "mono_1bit".into(),
+            extensions: "font-hints-01".into(),
+            settings: font_generator::Config {
+                characters: text,
+                size_px: size,
+                axes,
+                hinting: font_generator::Hinting::AutoFallback,
+                mono_raster: font_generator::MonoRasterSettings {
+                    font_instructions: true,
+                    include_stubs: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        },
+    )
+    .unwrap_or_else(|err| panic!("{family} {size} {weight}: fresh native capture errors: {err}"));
+    report
+        .records
+        .into_iter()
+        .map(|record| {
+            let scan = record.font_scan.unwrap_or_else(|| {
+                panic!(
+                    "fresh native capture lacks scan state for U+{:04X}",
+                    record.codepoint
+                )
+            });
+            (record.codepoint, scan)
+        })
+        .collect()
+}
+
 #[test]
 fn fixture_covers_both_families_and_modes() {
     let root = fixture();
@@ -236,7 +300,35 @@ fn diagonal_width_port_parity() {
     let root = fixture();
     let references = root["references"].as_object().unwrap();
     assert_eq!(references.len(), 12, "one shared reference per cell");
-    for case in root["cases"].as_array().unwrap() {
+    let cases = root["cases"].as_array().unwrap();
+    let mut native_scans: BTreeMap<(String, u32, u32), BTreeMap<u32, FontScanState>> =
+        BTreeMap::new();
+    {
+        let mut groups: BTreeMap<(String, u32, u32), Vec<u32>> = BTreeMap::new();
+        for case in cases {
+            if !case["font_scan"].is_null() {
+                let family = case["family"].as_str().unwrap().to_string();
+                let size = case["size_px"].as_f64().unwrap() as f32;
+                let weight = case["weight"].as_f64().unwrap() as f32;
+                groups
+                    .entry((family, size.to_bits(), weight.to_bits()))
+                    .or_default()
+                    .push(case["codepoint"].as_u64().unwrap() as u32);
+            }
+        }
+        for ((family, size_bits, weight_bits), codepoints) in &groups {
+            native_scans.insert(
+                (family.clone(), *size_bits, *weight_bits),
+                capture_native_scans(
+                    family,
+                    f32::from_bits(*size_bits),
+                    f32::from_bits(*weight_bits),
+                    codepoints,
+                ),
+            );
+        }
+    }
+    for case in cases {
         let id = case["id"].as_str().unwrap();
         let source = parse_commands(&case["source"]);
         let upstream = parse_commands(&case["upstream"]);
@@ -275,7 +367,43 @@ fn diagonal_width_port_parity() {
             .collect();
         assert_eq!(got, want, "{id}: exact command bits");
         let config = config_for(case);
-        let scan = parse_scan(&case["font_scan"]);
+        // Frozen geometry/pixels replayed; identity swapped after the
+        // current native scan agrees on semantics.
+        // Fixture scan identity predates the snapshot revision.
+        let scan = parse_scan(&case["font_scan"]).map(|frozen| {
+            let family = case["family"].as_str().unwrap();
+            let size = case["size_px"].as_f64().unwrap() as f32;
+            let weight = case["weight"].as_f64().unwrap() as f32;
+            let codepoint = case["codepoint"].as_u64().unwrap() as u32;
+            let current = native_scans
+                .get(&(family.to_string(), size.to_bits(), weight.to_bits()))
+                .and_then(|group| group.get(&codepoint))
+                .unwrap_or_else(|| panic!("{id}: no fresh native scan for compatibility check"));
+            assert_eq!(
+                current.enabled, frozen.enabled,
+                "{id}: scan enablement drifted"
+            );
+            assert_eq!(
+                current.scan_type, frozen.scan_type,
+                "{id}: scan type drifted"
+            );
+            assert_eq!(
+                current.contour_modes, frozen.contour_modes,
+                "{id}: contour modes drifted"
+            );
+            assert_eq!(
+                current.hinting_axes, frozen.hinting_axes,
+                "{id}: axis ownership drifted"
+            );
+            assert_ne!(
+                current.source_sha256, frozen.source_sha256,
+                "{id}: fixture already carries the current snapshot identity"
+            );
+            FontScanState {
+                source_sha256: current.source_sha256.clone(),
+                ..frozen
+            }
+        });
         let raster = rasterize_candidate(
             &upstream,
             &fit.commands,

@@ -204,6 +204,18 @@ pub struct AdjustedMetrics {
     /// Executed dropout metadata. `Some` only for the hinted TrueType
     /// interpreter path; all other draws leave this as `None`.
     pub scan_conversion: Option<ScanConversion>,
+    /// Retained automatic-fitting bearing residuals in 26.6 pixels:
+    /// `[rounded pp1x minus pre-rounding pp1x, rounded pp2x minus
+    /// pre-rounding pp2x]` after the small-bearing adjustments, zeroed
+    /// where the loader forces the advance (fixed pitch or same-width
+    /// digits), never zeroed on the light path.
+    /// <https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L462>
+    /// <https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L540>
+    /// <https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L552>
+    /// `Some` only for the automatic-hint draw; all other draws leave
+    /// this as `None`. Recording reads computed phantom points without
+    /// changing fitting arithmetic, outline translation or advances.
+    pub autohint_deltas_26_6: Option<[i32; 2]>,
 }
 
 /// Options that define how a [glyph](OutlineGlyph) is drawn to a
@@ -485,6 +497,7 @@ impl<'a> OutlineGlyph<'a> {
                         lsb: Some(lsb),
                         advance_width: Some(advance_width),
                         scan_conversion,
+                        autohint_deltas_26_6: None,
                     })
                 })
             }
@@ -496,6 +509,7 @@ impl<'a> OutlineGlyph<'a> {
                     lsb: None,
                     advance_width,
                     scan_conversion: None,
+                    autohint_deltas_26_6: None,
                 })
             }
             OutlineKind::Varc(varc, outline) => {

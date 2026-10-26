@@ -151,6 +151,61 @@ fn selective_corpus_reconstructs_against_independent_source_and_auto() {
 }
 
 #[test]
+fn auto_x_without_font_instructions_keeps_snapshot_provenance() {
+    let data = font("Roboto");
+    let hybrid = render_with_rasterization(
+        &data,
+        &ReferenceRequest {
+            profile: "mono_1bit".into(),
+            extensions: "font-hints-auto-01".into(),
+            settings: Config {
+                characters: "itflnh".into(),
+                size_px: 16.0,
+                hinting: Hinting::AutoFallback,
+                mono_raster: font_generator::MonoRasterSettings {
+                    font_instructions: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        },
+        Rasterization::FreeTypeMono,
+    )
+    .unwrap();
+    assert!(
+        hybrid.records.iter().any(|record| {
+            record
+                .selective_fitting
+                .as_ref()
+                .is_some_and(|capture| !capture.native_axes[0])
+                && record.side_bearing_deltas_26_6.is_some()
+        }),
+        "expected an automatic-X record with snapshot residuals"
+    );
+    assert!(hybrid.fork, "automatic X must mark the snapshot fork");
+    assert!(
+        hybrid.implementation.contains(":scan-metadata:"),
+        "automatic X must record the snapshot source hash, got {:?}",
+        hybrid.implementation
+    );
+    let mut source_request = ReferenceRequest {
+        profile: "mono_1bit".into(),
+        extensions: "none".into(),
+        settings: Config {
+            characters: "itflnh".into(),
+            size_px: 16.0,
+            hinting: Hinting::None,
+            ..Default::default()
+        },
+    };
+    let source = font_generator::reference::reference(&data, &source_request).unwrap();
+    source_request.settings.hinting = Hinting::Auto;
+    let upstream = font_generator::reference::reference(&data, &source_request).unwrap();
+    let result = font_generator::evaluation::evaluate(&source, &upstream, &hybrid);
+    assert!(result.hard_invariants_pass, "{:?}", result.hard_failures);
+}
+
+#[test]
 fn selective_capture_rejects_corrupt_axis_ownership() {
     let data = font("Roboto");
     let mut request = ReferenceRequest {

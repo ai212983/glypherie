@@ -99,11 +99,13 @@ preceding fitted outline. The [fitting design](../../docs/hobby-fitting.md#appro
 model and gates. Modified captures identify `diagonal-shape-04` and retain the original upstream outline, donor
 reference and unrounded feature source for independent replay; the preference does not change metrics or layout. Fitting
 owns engine selection and returned advances; rasterization consumes the fitted outline without changing geometry or
-metrics. Both scanners use the same bitmap layout below, with uniform extra tracking defaulting to zero. In 1-bit
-output, coverage is Zeno Alpha quantized using `mono_threshold`; FreeType uses the scan controls below. Coverage rejects
-non-default `mono_raster` settings. In 2-, 3- or 4-bit output, only automatic fitting (`upstream_mono`) with `coverage`
-is valid; this uses Normal fitting. Invalid combinations fail even for blank text. Historical role APIs remain available
-with their original fitting, rasterization and layout policies.
+metrics. The automatic fitter's returned metrics, advances and bearing residuals alike, are identical on every
+rasterization; scanner choice changes only delivered pixels. Both scanners use the same bitmap layout below, with
+uniform extra tracking defaulting to zero. In 1-bit output, coverage is Zeno Alpha quantized using `mono_threshold`;
+FreeType uses the scan controls below. Coverage rejects non-default `mono_raster` settings. In 2-, 3- or 4-bit output,
+only automatic fitting (`upstream_mono`) with `coverage` is valid; this uses Normal fitting. Invalid combinations fail
+even for blank text. Historical role APIs remain available with their original fitting, rasterization and layout
+policies.
 
 Candidate Mono uses Skrifa 0.48.0 `Target::Mono` on runtime font bytes, including user-provided fonts:
 

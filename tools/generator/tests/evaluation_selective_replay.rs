@@ -247,7 +247,11 @@ fn selective_all_native_axes_rejected() {
     let evaluation = evaluate(&source, &upstream, &candidate);
     assert_eq!(
         invariants(&evaluation),
-        vec!["selective fitting does not reproduce from captured inputs"]
+        vec![
+            "invalid monochrome side bearing deltas",
+            "selective fitting does not reproduce from captured inputs",
+            "font-hints candidate requires FreeType mono without horizontal correction metadata"
+        ]
     );
 }
 
@@ -282,6 +286,8 @@ fn selective_transposed_replay_passes_identity_fails() {
     assert_eq!(
         invariants(&evaluation),
         vec![
+            "invalid monochrome side bearing deltas",
+            "font-hints candidate requires FreeType mono without horizontal correction metadata",
             "source outline identity changed",
             "selective automatic input identity changed"
         ]
@@ -367,7 +373,6 @@ fn selective_wrong_raster_policy_accumulates_scan_and_raster_faults() {
             "monochrome scan settings on a coverage raster",
             "font scan state on an incompatible render policy",
             "stored raster does not reproduce from fitted outline",
-            "font-hints candidate requires FreeType mono without horizontal correction metadata",
             "source outline identity changed"
         ]
     );
@@ -474,7 +479,11 @@ fn selective_wrong_engine_fails_reproduction() {
     let evaluation = evaluate(&source, &upstream, &candidate);
     assert_eq!(
         invariants(&evaluation),
-        vec!["selective fitting does not reproduce from captured inputs"]
+        vec![
+            "invalid monochrome side bearing deltas",
+            "selective fitting does not reproduce from captured inputs",
+            "font-hints candidate requires FreeType mono without horizontal correction metadata"
+        ]
     );
 }
 

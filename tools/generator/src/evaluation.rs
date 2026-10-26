@@ -309,17 +309,21 @@ pub fn evaluate(
                 push(name, Some(codepoint), "glyph render policy changed");
             }
         }
-        // Both candidate Mono strategies share the pinned scan converter.
         if font_hints_candidate || mono_width_candidate {
             let kind = if font_hints_candidate {
                 "font-hints"
             } else {
                 "mono-width"
             };
+            let residuals_allowed = residuals_allowed(fitted);
+            // Fitting and raster stages are independent: the Coverage
+            // capture of the same fitting carries the same residuals.
             if !matches!(
                 fitted.raster_policy,
-                RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
-            ) || fitted.side_bearing_deltas_26_6.is_some()
+                RasterPolicy::FreeTypeMono
+                    | RasterPolicy::FreeTypeMonoTerminals
+                    | RasterPolicy::Coverage
+            ) || (fitted.side_bearing_deltas_26_6.is_some() && !residuals_allowed)
                 || fitted.diagonal_pairs.is_some()
             {
                 push(
@@ -573,14 +577,28 @@ fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
     }
 }
 
+// Bearing corrections are allowed only where the automatic fitter
+// owns the X axis on the Mono target: `auto` records, and selective
+// records whose capture proves X stayed automatic. Native X,
+// fallback, Gray and reference records must carry none.
+fn residuals_allowed(record: &ReferenceRecord) -> bool {
+    record.target == "mono"
+        && match record.selected_engine.as_str() {
+            "auto" => true,
+            "auto_x_native_y" | "auto_with_native_scan" => record
+                .selective_fitting
+                .as_ref()
+                .is_some_and(|selective| !selective.native_axes[0]),
+            _ => false,
+        }
+}
+
 fn metric_failures(record: &ReferenceRecord) -> Vec<&'static str> {
     let mut failures = Vec::new();
     // Each pinned phantom-point rounding residual is at most half a pixel;
     // the inherited positive-bearing guard can add at most one more pixel.
     if record.side_bearing_deltas_26_6.is_some_and(|deltas| {
-        record.target != "mono"
-            || record.selected_engine != "auto"
-            || deltas.iter().any(|delta| i64::from(*delta).abs() > 96)
+        !residuals_allowed(record) || deltas.iter().any(|delta| i64::from(*delta).abs() > 96)
     }) {
         failures.push("invalid monochrome side bearing deltas");
     }

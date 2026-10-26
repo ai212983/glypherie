@@ -21,6 +21,35 @@ dependency supports the upstream unit suite plus the scan tests below.
 
 ## Patch surface (metadata only; no fitting, control-flow, or geometry change)
 
+## Retained automatic-fitting bearing residuals
+
+- `src/outline/mod.rs`: `AdjustedMetrics` gains
+  `autohint_deltas_26_6: Option<[i32; 2]>`, documented with the
+  autofit loader anchors. All non-autohint constructions set `None`.
+- `src/outline/autohint/instance.rs`: `draw` retains `[rounded pp1x
+  minus pre-rounding pp1x, rounded pp2x minus pre-rounding pp2x]`
+  after the small-bearing adjustments, zeroed where the loader
+  forces the advance (fixed pitch or same-width digits), never
+  zeroed on the light path, and returns them in
+  `autohint_deltas_26_6`. The values are read from already-computed
+  phantom points; fitting arithmetic, outline translation and the
+  returned advance are untouched.
+- Foundation: the same autofit loader accounting as the validated
+  diagnostic probe (rounded point minus pre-rounding value;
+  fixed-advance zeroing):
+  <https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L462>
+  <https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L540>
+  <https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L552>
+- Limits: residuals describe the automatic hinter only. Every draw
+  through `HinterKind::Auto` (explicit `Engine::Auto`, whatever the
+  outline format) reports them, including CFF/CFF2 outlines, which the
+  autohint instance draws directly. Native-hinted draws report `None`:
+  the TrueType interpreter and the PostScript interpreter (native
+  CFF/CFF2 under fallback or interpreter selection), plus unhinted,
+  VARC, HarfBuzz and scan-conversion draws. Consumers must apply the
+  project fixed-pitch/tabular exclusions and engine/target gates; this
+  field is a faithful reading, not a placement decision.
+
 - `src/outline/mod.rs`: new public `ScanControl { enabled, scan_type: u16 }`
   and `ScanConversion { control, contour_modes: Vec<Option<u8>> }`;
   `AdjustedMetrics` gains `scan_conversion: Option<ScanConversion>` and

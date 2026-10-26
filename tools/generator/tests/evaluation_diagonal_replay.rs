@@ -208,7 +208,6 @@ fn incompatible_policy_accumulates_scan_and_raster_faults() {
             "diagonal capture inconsistent",
             "monochrome scan settings on a coverage raster",
             "stored raster does not reproduce from fitted outline",
-            "font-hints candidate requires FreeType mono without horizontal correction metadata",
             "source outline identity changed",
         ]
     );
@@ -460,12 +459,22 @@ fn terminal_scan_settings_fail_independently_per_field() {
             (
                 "candidate",
                 Some(cp),
+                "invalid monochrome side bearing deltas"
+            ),
+            (
+                "candidate",
+                Some(cp),
                 "terminal scan settings or identity inconsistent"
             ),
             (
                 "candidate",
                 Some(cp),
                 "record and report policy inconsistent"
+            ),
+            (
+                "candidate",
+                Some(cp),
+                "font-hints candidate requires FreeType mono without horizontal correction metadata"
             ),
             ("candidate", Some(cp), "selected hinting engine changed")
         ]

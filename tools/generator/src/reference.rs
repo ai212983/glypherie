@@ -425,9 +425,7 @@ impl CaptureSession<'_> {
                 .ok_or_else(|| fail(format!("missing advance U+{:04X}", drawn.codepoint)))?;
             let advance_26_6 = fixed(advance, config.metric_rounding);
             Ok(ReferenceRecord {
-                // Source-layout policy deliberately omits fitted phantom-bearing
-                // corrections, independently of how the selected hinter moves X.
-                side_bearing_deltas_26_6: None,
+                side_bearing_deltas_26_6: drawn.side_bearing_deltas,
                 raster_policy: if policy.mono_scanner {
                     RasterPolicy::FreeTypeMono
                 } else if policy.dropout {
@@ -540,6 +538,7 @@ struct DrawnOutline {
     has_overlaps: bool,
     lsb: Option<f32>,
     advance_width: Option<f32>,
+    side_bearing_deltas: Option<[i32; 2]>,
 }
 
 struct OutlineBatch<R> {
@@ -621,6 +620,12 @@ fn draw_with_policy<R>(
         selected
     }
     .to_string();
+    // Snapshot path serves candidate automatic Mono only: the reference
+    // stays independent and scanner choice never selects the fitter.
+    #[cfg(feature = "candidate")]
+    let snapshot_auto_mono = matches!(&engine, Some(Engine::Auto(_)))
+        && policy.target_name == "mono"
+        && policy.extensions != EXTENSIONS_NONE;
     let hinting = match engine {
         Some(engine) => Some(
             HintingInstance::new(
@@ -641,6 +646,12 @@ fn draw_with_policy<R>(
         } else {
             None
         };
+    #[cfg(feature = "candidate")]
+    let auto_fitter = if snapshot_auto_mono {
+        crate::font_scan::AutoFitter::new(data, config)?
+    } else {
+        None
+    };
     let metrics = font.metrics(size, &location);
     if metrics.units_per_em == 0 {
         return Err(fail("font has invalid units per em"));
@@ -676,23 +687,50 @@ fn draw_with_policy<R>(
             None => DrawSettings::unhinted(size, &location),
         };
         #[cfg(feature = "candidate")]
-        let (adjusted, font_scan) = if let Some(fitter) = &scan_fitter {
-            fitter.draw(scalar.glyph_id, &mut pen)?
-        } else {
-            (
-                outline
+        let (has_overlaps, lsb, advance_width, font_scan, side_bearing_deltas) =
+            if let Some(fitter) = &auto_fitter {
+                let metrics = fitter.draw(scalar.glyph_id, &mut pen)?;
+                (
+                    metrics.has_overlaps,
+                    metrics.lsb,
+                    metrics.advance_width,
+                    None,
+                    metrics.autohint_deltas_26_6,
+                )
+            } else if let Some(fitter) = &scan_fitter {
+                let (adjusted, scan) = fitter.draw(scalar.glyph_id, &mut pen)?;
+                (
+                    adjusted.has_overlaps,
+                    adjusted.lsb,
+                    adjusted.advance_width,
+                    scan,
+                    None,
+                )
+            } else {
+                let adjusted = outline
                     .draw(settings, &mut pen)
-                    .map_err(|e| fail(format!("outline U+{:04X}: {e}", ch as u32)))?,
+                    .map_err(|e| fail(format!("outline U+{:04X}: {e}", ch as u32)))?;
+                (
+                    adjusted.has_overlaps,
+                    adjusted.lsb,
+                    adjusted.advance_width,
+                    None,
+                    None,
+                )
+            };
+        #[cfg(not(feature = "candidate"))]
+        let (has_overlaps, lsb, advance_width, font_scan, side_bearing_deltas) = {
+            let adjusted = outline
+                .draw(settings, &mut pen)
+                .map_err(|e| fail(format!("outline U+{:04X}: {e}", ch as u32)))?;
+            (
+                adjusted.has_overlaps,
+                adjusted.lsb,
+                adjusted.advance_width,
+                None,
                 None,
             )
         };
-        #[cfg(not(feature = "candidate"))]
-        let (adjusted, font_scan) = (
-            outline
-                .draw(settings, &mut pen)
-                .map_err(|e| fail(format!("outline U+{:04X}: {e}", ch as u32)))?,
-            None,
-        );
         let fitted = pen.into_commands();
         records.push(record(
             DrawnOutline {
@@ -701,9 +739,10 @@ fn draw_with_policy<R>(
                 commands: fitted,
                 selected_engine: selected.clone(),
                 font_scan,
-                has_overlaps: adjusted.has_overlaps,
-                lsb: adjusted.lsb,
-                advance_width: adjusted.advance_width,
+                has_overlaps,
+                lsb,
+                advance_width,
+                side_bearing_deltas,
             },
             advances.advance_width(gid),
         )?);
@@ -714,7 +753,7 @@ fn draw_with_policy<R>(
     Ok(OutlineBatch {
         requested,
         #[cfg(feature = "candidate")]
-        uses_scan_fitter: scan_fitter.is_some(),
+        uses_scan_fitter: scan_fitter.is_some() || auto_fitter.is_some(),
         metrics: FontMetrics {
             ascent_26_6: fixed(metrics.ascent, config.metric_rounding),
             descent_26_6: fixed(metrics.descent, config.metric_rounding),

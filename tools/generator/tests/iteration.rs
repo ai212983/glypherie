@@ -81,7 +81,16 @@ fn direct(
 fn assert_direct(data: &[u8], req: &ReferenceRequest, engine: Engine) {
     let result = render(data, req).unwrap();
     assert_eq!(result.target, "mono");
-    assert!(!result.fork);
+    let automatic = matches!(engine, Engine::Auto(_));
+    assert_eq!(
+        result.fork, automatic,
+        "snapshot provenance follows the automatic fitter"
+    );
+    assert_eq!(
+        result.implementation.contains(":scan-metadata:"),
+        automatic,
+        "snapshot source hash follows the automatic fitter"
+    );
     for r in &result.records {
         let (commands, pixels) = direct(data, req, r, engine.clone());
         assert_eq!(r.fitted_commands, commands, "outline U+{:04X}", r.codepoint);
@@ -93,7 +102,12 @@ fn assert_direct(data: &[u8], req: &ReferenceRequest, engine: Engine) {
         );
         assert_eq!(r.raster_policy, RasterPolicy::FreeTypeMono);
         assert_eq!(r.diagonal_pairs, None);
-        assert_eq!(r.side_bearing_deltas_26_6, None);
+        assert_eq!(
+            r.side_bearing_deltas_26_6.is_some(),
+            automatic,
+            "residual metadata U+{:04X}",
+            r.codepoint
+        );
     }
 }
 #[test]

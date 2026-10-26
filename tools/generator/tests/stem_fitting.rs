@@ -178,7 +178,10 @@ fn mono_strategy_geometry_matches_independent_upstream_mono() {
         assert_eq!(record.glyph_id, baseline.glyph_id);
         assert_eq!(record.advance_26_6, baseline.advance_26_6);
         assert_eq!(record.raster_policy, RasterPolicy::FreeTypeMono);
-        assert_eq!(record.side_bearing_deltas_26_6, None);
+        assert!(
+            record.side_bearing_deltas_26_6.is_some(),
+            "U+{codepoint:04X}: automatic fitting carries its residuals",
+        );
         assert_eq!(record.diagonal_pairs, None);
     }
 }

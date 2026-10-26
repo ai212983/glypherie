@@ -129,7 +129,12 @@ impl Instance {
         let mut pp1x = 0;
         let mut pp2x = fixed_mul(h_advance, hinted_metrics.x_scale);
         let is_light = self.target.is_light() || self.target.preserve_linear_metrics();
+        // Retained bearing residuals: rounded phantom point minus its
+        // pre-rounding value after the small-bearing adjustments above.
+        // <https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L462>
         // <https://gitlab.freedesktop.org/freetype/freetype/-/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L422>
+        let mut lsb_delta = 0;
+        let mut rsb_delta = 0;
         if !is_light {
             if let (true, Some(edge_metrics)) = (
                 !scale.flags.contains(ScaleFlags::NO_ADVANCE),
@@ -154,13 +159,35 @@ impl Instance {
                 if pp2x <= edge_metrics.right_pos && old_rsb > 0 {
                     pp2x += 64;
                 }
+                // Forced advance absorbs both residuals; the light path
+                // below never zeroes.
+                // <https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L540>
+                // <https://github.com/freetype/freetype/blob/57617782464411201ce7bbc93b086c1b4d7d84a5/src/autofit/afloader.c#L552>
+                if !(self.is_fixed_width
+                    || (metrics.digits_have_same_width && style.is_digit()))
+                {
+                    lsb_delta = pp1x - pp1x_uh;
+                    rsb_delta = pp2x - pp2x_uh;
+                }
             } else {
+                let pp1x_uh = pp1x;
+                let pp2x_uh = pp2x;
                 pp1x = pix_round(pp1x);
                 pp2x = pix_round(pp2x);
+                if !(self.is_fixed_width
+                    || (metrics.digits_have_same_width && style.is_digit()))
+                {
+                    lsb_delta = pp1x - pp1x_uh;
+                    rsb_delta = pp2x - pp2x_uh;
+                }
             }
         } else {
+            let pp1x_uh = pp1x;
+            let pp2x_uh = pp2x;
             pp1x = pix_round(pp1x);
             pp2x = pix_round(pp2x);
+            lsb_delta = pp1x - pp1x_uh;
+            rsb_delta = pp2x - pp2x_uh;
         }
         if pp1x != 0 {
             for point in &mut outline.points {
@@ -182,6 +209,7 @@ impl Instance {
             lsb: None,
             advance_width: Some(F26Dot6::from_bits(pix_round(advance)).to_f32()),
             scan_conversion: None,
+            autohint_deltas_26_6: Some([lsb_delta, rsb_delta]),
         })
     }
 }
