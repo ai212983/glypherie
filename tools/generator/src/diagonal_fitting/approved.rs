@@ -49,6 +49,27 @@ pub fn fit(
     reference: &Reference,
     native_axes: [bool; 2],
 ) -> Result<FitResult, Error> {
+    if let Some(raw) = raw {
+        if let Ok(mut fit) = super::coupled::fit(raw, upstream, size_px, reference, native_axes) {
+            if fit.applied {
+                fit.diagnostics["stage"] = serde_json::json!("coupled");
+                fit.reason = format!("coupled:{}", fit.reason);
+                return Ok(fit);
+            }
+        }
+    }
+    fit_pre_coupled(raw, source, upstream, size_px, reference, native_axes)
+}
+
+/// Retained replay authority for captures made by the preceding sequence.
+pub(crate) fn fit_pre_coupled(
+    raw: Option<&SourceOutline>,
+    source: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size_px: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+) -> Result<FitResult, Error> {
     // The reviewed sequence replaces earlier deliveries, using original
     // inputs for attached/crossing solves. Evaluate that priority lazily:
     // work whose entire result would be overwritten has no authority.

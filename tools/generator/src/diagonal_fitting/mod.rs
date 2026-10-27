@@ -13,6 +13,7 @@
 
 pub mod approved;
 pub mod attached;
+pub mod coupled;
 pub mod crossing;
 pub mod curve_model;
 pub mod curves;
@@ -23,6 +24,7 @@ pub(crate) mod geometry;
 pub mod intervals;
 pub mod joint;
 pub(crate) mod numeric;
+pub(crate) mod partition;
 pub(crate) mod qp;
 pub(crate) mod reuse;
 pub mod terminal;

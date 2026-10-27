@@ -1,4 +1,4 @@
-<!-- cspell:words nullspace underdetermined CGAL Shene's Forsgren nondegenerate linearization SLSQP nalgebra Ogita Oishi Mattingley autovectorization reassoc stationarity -->
+<!-- cspell:words nullspace underdetermined CGAL Shene's Casteljau Forsgren nondegenerate linearization SLSQP nalgebra Ogita Oishi Mattingley autovectorization reassoc stationarity -->
 
 ## Completed diagonal-fit reuse experiment
 
@@ -901,6 +901,91 @@ Earlier endpoint-only controls damaged Source Sans `h` and `m` attachments even 
 controls remain excluded. The local whole-curve attachment boundary must be assessed against these cases and Roboto
 Flex's reported `s`, across nearby sizes and axes. Retaining every Y coordinate also limits normal-width changes where
 the stroke runs nearly horizontally; this slice does not introduce a two-dimensional grid-placement solve.
+
+### Source-feature correspondence probe
+
+The source-only correspondence study asks whether geometric events and opposing-border contacts identify the controls
+and dependencies needed for mixed straight/curve width fitting without assigning semantic terminal labels. It follows
+Shamir's [outline-point and feature classification, section 3.3](references/papers/2003-shamir/) and Hobby sections 3.2
+and 6 for boundary contact and curve correspondence. Geometric extrema, corners and tangent transitions describe the
+boundary; they do not by themselves distinguish a stroke end from a join. Shared-control dependency reporting is a
+project adaptation, not a new terminal detector.
+
+Inputs are source outlines without hinting, with font-byte and axis identity, plus synthetic rectangles, curved ends,
+seams, joins, holes and overlapping contours. Roboto and Source Sans `c h m o` supply the initial font controls.
+Analytic characteristic events, existing certified width contacts, current attachment pins and ambiguous shared
+ownership are reported separately. Reversal, translation, uniform scaling and exact subdivision check whether
+correspondence depends on geometry or encoding. Unsupported primitives, ambiguous contacts and representation-dependent
+matches remain explicit limitations rather than being repaired with glyph-specific rules.
+
+This probe neither changes coordinates nor authorizes control movement. It uses no StrokeStyles output, fitting solve,
+raster target or preview selection. A useful result must expose actual contact provenance and ownership conflicts; empty
+or unsupported results cannot establish readiness. Solver continuation requires stable source correspondence and an
+independently justified ownership/extent rule. Optical assessment of the reported terminal imbalance remains open.
+
+The initial 2026-10-27 run retains six isolated extrema on Roboto `c` across reversal, changed contour starts,
+translation, uniform scaling and exact subdivision. All four Roboto controls retain their isolated extrema under exact
+subdivision; Source Sans coordinates require rounding, so that check explicitly abstains. These checks do not establish
+complete feature classification: flat regions are reported separately, without a canonical extent, and arithmetic
+describes the stored binary coordinates. The certified Roboto `c` curve samples change from eight to twenty-four under
+subdivision. Individual measurements remain useful, but raw primitive counts are not stable feature identities or
+justified fitting weights. The reused recognizers abstain on the tested multi-contour outlines and fail the substitution
+certificate on Source Sans single-contour controls. No automatic ownership rule or moving region has been established;
+see the [iteration finding](revisions/001/03-spacing-kerning.md#roboto-c-source-correspondence).
+
+### Coupled whole-outline widths
+
+The adopted model uses shared straight/curve X variables to restore source-relative width balance while retaining
+upstream Y, fitted upright references, cap heights, closure and continuous joins. Hobby sections 3.1, 3.2, 3.6 and 6
+supply integrated shape distortion, normal width relationships and shared curve variables; Hersch section 2 supplies the
+Bernstein and endpoint derivative identities. The model does not require semantic terminal labels. Its broader variable
+ownership, exact polynomial reassembly and aperture constraints are project adaptations, not results established by
+those papers.
+
+At an angular line/curve corner whose straight border is axis-aligned, retain the upstream curve tangent direction using
+Hersch section 2's endpoint derivative. Retaining the cross-product magnitude between the line and curve would instead
+couple cap length to fixed vertical coordinates while allowing the curve direction to rotate. The tangent constraint
+preserves that direction and leaves width available to the shared solve. Smooth joins retain their existing
+shared-tangent equations; other angular joins retain their preceding conservative constraint.
+
+Straight-site white-space features use exterior fill membership and empty-disk clearance against the true source
+boundary, following Hobby section 3.2. Their fixed affine projected gaps are hard equalities in the native-Y solve; this
+is a stronger project constraint than the paper's finite width penalty. Candidate contacts must still certify outside
+the filled shape. These features do not cover every curved aperture or counter. Missing certified white features, failed
+source correspondence or incompatible constraints cause abstention.
+
+Equivalent subdivisions must have equivalent fitting influence before any optical comparison. Analytically identical
+adjacent quadratic pieces can be reassembled using exact de Casteljau identities, jointly verified on source and
+upstream outlines. Shape and width terms operate on that common representation; output is expanded through the original
+partition. Nonidentical polynomials, incompatible upstream partitions and reconstructions requiring rounding are
+explicit limitations. No tolerance merges distinct curves. The initial slice admits single closed line/quadratic
+contours; multi-contour and uncertified geometry retain the preceding result.
+
+Controls cover exact subdivision and reversed/changed contour starts, source contrast, straight-to-curve joins, fixed
+uprights, native-axis conflicts, collapsed edges and openings. Roboto `c` at 12/14/16/18/20 px is the initial reported
+case; Source Sans `h`/`m`, Roboto Flex `k` and synthetic joins are falsification controls. Existing contact, movement,
+curvature and independent topology checks remain required. Aperture relations need explicit geometric correspondence;
+topological identity alone does not preserve an opening's width. No coefficient or region is selected from rendered
+pixels or glyph identity.
+
+The maintained generator owns the model, shared with WASM. The approved comparison and diagnostic evidence remain under
+`out/diagnostics/coupled-outline-20261027/`. Success requires a useful delivered change with retained source contrast
+and attachments; unchanged or invalid results are reported as limits rather than a correction.
+
+The initial candidate narrows the reported default Roboto `c` end regions while retaining its fitted upright, end
+directions, vertical coordinates and certified opening. The
+[iteration assessment](revisions/001/03-spacing-kerning.md#coupled-whole-outline-widths) records visible and unchanged
+cases. Reassembly supplies the same normalized source/upstream system under exact paired subdivision, and scanning keeps
+that common partition through grid conversion. Expansion into the original partition remains exact-only; unrepresentable
+expanded controls abstain. The single-contour and straight-site white-feature limits prevent this model from
+establishing general join ownership.
+
+The [revision index](revisions/001/README.md) owns the adopted renderer identity and approval status. Runtime never
+imports experiment code or diagnostic data. The adopted slice requires native Y with automatic X, one closed
+line/quadratic contour, exact polynomial reconstruction and source values representable without loss in the native
+command format. Unsupported cases retain the preceding reviewed sequence. The existing diagonal-fitting preference
+controls selection. Verification compares the port against the approved 58-case packet and checks broader native/WASM
+behavior; approval does not remove the recorded geometric limits.
 
 ### Attached diagonal and curve constraints
 

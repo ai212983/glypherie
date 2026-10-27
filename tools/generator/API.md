@@ -95,17 +95,17 @@ Current native preview clients use `surface::render_text_with_pipeline(font_byte
 `rasterization` (`free_type_mono`, `free_type_mono_terminals` or `coverage`). It requires the `candidate` feature.
 Optional `diagonal_fitting` defaults to `false`; `true` requires 1-bit FreeType scan conversion with `font_hints_auto`
 or `upstream_mono`. Its fixed donor reference is independent of the requested text. Unsupported geometry retains the
-preceding fitted outline. The [fitting design](../../docs/hobby-fitting.md#approved-fitting-sequence-adoption) owns the
-model and gates. Modified captures identify `diagonal-shape-04` and retain the original upstream outline, donor
-reference and unrounded feature source for independent replay; the preference does not change metrics or layout. Fitting
-owns engine selection and returned advances; rasterization consumes the fitted outline without changing geometry or
-metrics. The automatic fitter's returned metrics, advances and bearing residuals alike, are identical on every
-rasterization; scanner choice changes only delivered pixels. Both scanners use the same bitmap layout below, with
-uniform extra tracking defaulting to zero. In 1-bit output, coverage is Zeno Alpha quantized using `mono_threshold`;
-FreeType uses the scan controls below. Coverage rejects non-default `mono_raster` settings. In 2-, 3- or 4-bit output,
-only automatic fitting (`upstream_mono`) with `coverage` is valid; this uses Normal fitting. Invalid combinations fail
-even for blank text. Historical role APIs remain available with their original fitting, rasterization and layout
-policies.
+preceding fitted outline. The [fitting sequence](../../docs/hobby-fitting.md#approved-fitting-sequence-adoption) and its
+[coupled extension](../../docs/hobby-fitting.md#coupled-whole-outline-widths) own the model and gates. Modified captures
+identify `diagonal-shape-05` and retain the original upstream outline, donor reference and unrounded feature source for
+independent replay; the preference does not change metrics or layout. Fitting owns engine selection and returned
+advances; rasterization consumes the fitted outline without changing geometry or metrics. The automatic fitter's
+returned metrics, advances and bearing residuals alike, are identical on every rasterization; scanner choice changes
+only delivered pixels. Both scanners use the same bitmap layout below, with uniform extra tracking defaulting to zero.
+In 1-bit output, coverage is Zeno Alpha quantized using `mono_threshold`; FreeType uses the scan controls below.
+Coverage rejects non-default `mono_raster` settings. In 2-, 3- or 4-bit output, only automatic fitting (`upstream_mono`)
+with `coverage` is valid; this uses Normal fitting. Invalid combinations fail even for blank text. Historical role APIs
+remain available with their original fitting, rasterization and layout policies.
 
 Explicit 1-bit `font_hints_auto` and `upstream_mono` pipelines apply source-defined x-height alignment before optional
 stroke fitting. Changed records carry `top_alignment` (`top-align-02`) with the preceding outline, reference heights,

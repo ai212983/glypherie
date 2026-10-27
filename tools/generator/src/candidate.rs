@@ -178,7 +178,7 @@ fn apply_diagonal_fitting(
         };
         let Ok(raster) = raster else { continue };
         record.diagonal_fitting = Some(crate::reference::DiagonalFittingCapture {
-            model: "diagonal-shape-04".into(),
+            model: "diagonal-shape-05".into(),
             raw_source: raw_features
                 .as_ref()
                 .and_then(|r| serde_json::to_value(r).ok()),
@@ -200,7 +200,7 @@ fn apply_diagonal_fitting(
         applied_any = true;
     }
     if applied_any {
-        report.implementation.push_str(":diagonal-shape-04");
+        report.implementation.push_str(":diagonal-shape-05");
     }
     Ok(())
 }

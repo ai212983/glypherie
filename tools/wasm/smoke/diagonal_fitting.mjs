@@ -33,7 +33,7 @@ const [shardIndex, shardCount] = (process.env.DIAGONAL_SHARD ?? "0/1").split("/"
 assert.ok(Number.isInteger(shardIndex) && Number.isInteger(shardCount)
   && shardCount > 0 && shardIndex >= 0 && shardIndex < shardCount, "invalid DIAGONAL_SHARD index/count");
 const TEXT = corpus ? Array.from({ length: 95 }, (_, i) => String.fromCodePoint(i + 32)).join(" ")
-  : "kyxzvAW sX2 M^ We walked by the river.";
+  : "cC kyxzvAW sX2 M^ We walked by the river.";
 const CHARACTERS = [...new Set(TEXT)].join("");
 const SIZES = defaults ? [16] : corpus ? [12, 14, 16, 18, 20, 24] : [12, 16, 24];
 const WEIGHTS = defaults ? [400] : [300, 400, 700];

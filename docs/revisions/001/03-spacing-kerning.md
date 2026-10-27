@@ -58,6 +58,66 @@ of the changed `5 G J S U c s` and mixed-outline cases remains open. The approve
 matrix and default-off preference retain their existing scope. Retaining Y can limit the achievable correction through
 nearly horizontal stroke portions; a joint two-dimensional grid-placement solve is outside this slice.
 
+### Roboto c source correspondence
+
+**Pending assessment, existing weight imbalance:** default Roboto 400/16 `c` has heavier ends than its upright. The
+2026-10-26 capture attributes the imbalance to the upstream fitted geometry; the current curve stage retains the
+adjacent attachment polynomials. Same-outline scanner controls reproduce the ends without dropout rescue. This is an
+existing concern, not a change introduced by the source-only probe.
+
+The [source-feature correspondence study](../../hobby-fitting.md#source-feature-correspondence-probe) asks whether
+analytic geometric events and certified opposing borders expose shared control dependencies before fitting changes. It
+uses the original font outlines and existing contact recognizers, without StrokeStyles. The input and diagnostic
+identities live under `out/diagnostics/source-correspondence-20261027/`; the preceding capture and paper-based
+feasibility report remain under `out/diagnostics/roboto-c-20261026/` and
+`out/diagnostics/roboto-c-terminal-model-20261026/`.
+
+**Measured model limitations:** the corrected probe finds six isolated extrema and eight certified curve contacts on the
+source Roboto `c`. Exact subdivision preserves those extrema while changing the contact count to twenty-four. This does
+not invalidate the contacts; it prevents treating raw primitive counts as canonical feature identities or fitting
+weights. Contact/control provenance and shared tangent/closure dependencies are retained. Source Sans single-contour
+controls fail the substitution certificate; the reused recognizers abstain on all tested multi-contour controls. The
+recorded thirty-six-test probe run, independent source capture and transformed event checks establish the study's
+measured behavior, without establishing an ownership rule or optical acceptance. No fitted coordinates, renderer
+settings or preview selection changed in that source-only study. Solver continuation still needs justified feature
+extent, shared-control ownership and aperture relationships; the existing attachment pins cannot simply be released.
+
+Subdivision uses exact rational averages and abstains if the resulting coordinates cannot be represented in the
+diagnostic's binary format. The four Source Sans controls hit that limitation; their earlier rounded subdivision results
+do not establish exact geometric invariance. This precision boundary is reported rather than hidden by a tolerance or an
+optical acceptance claim.
+
+### Coupled whole-outline widths
+
+The [coupled model](../../hobby-fitting.md#coupled-whole-outline-widths) lets adjoining straight and curve controls
+participate in the same source-relative X solve. Fitted uprights and all upstream Y coordinates remain fixed;
+axis-aligned angular line/curve corners preserve their curve tangent directions. Certified exterior straight-site gaps
+add hard white-space constraints. Exact polynomial reassembly removes equivalent subdivision from the fitting input. The
+user approved the separate 58-glyph comparison on 2026-10-27 and requested adoption in the working renderer. The
+maintained slice requires native Y with automatic X, one closed line/quadratic contour, exact paired reassembly and
+lossless representation in the native command format. Unsupported inputs retain the preceding fitting sequence.
+
+**Accepted deviation, thinning:** Roboto 400/16 `c` has narrower end-region normal widths and horizontal cap spans of
+about 1.05 and 0.95 px, compared with 1.44 px at both preceding caps. Its upright stays 1 px wide, the certified opening
+stays 3 px high, and the four end tangent directions retain their preceding values. The delivered bitmap removes six
+pixels, including the heavy ends. The reviewed comparison against `e`, `o` and `s` supports the retained end shape,
+curvature and weight within this scope; geometric and raster checks alone do not establish that assessment.
+
+| Scope               | Delivered change and assessment question                                                                                                       |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Roboto 400/12 `c`   | Removes one pixel. Inspect end continuity and retained curve weight at native size.                                                            |
+| Roboto 400/16 `C`   | Removes four pixels. Inspect the larger opening and curve-to-end balance.                                                                      |
+| Roboto 400/18 `C c` | Mixed additions and removals. Inspect end placement, stepping and retained source contrast rather than interpreting the net count as thinning. |
+| Roboto 400/20 `c`   | Removes two pixels. Inspect end shape and weight against the upright.                                                                          |
+
+Regular 14 px and the tested 16 px weights 300/700 retain their delivered bitmaps despite geometric changes. Those are
+unchanged-output findings, not demonstrated visual improvements. Every changed case retains one eight-neighbor ink
+component; this is a diagnostic observation, not a continuity proof. The Source Sans `h`/`m` and Roboto Flex `k`/`s`
+controls abstain under the current correspondence/certification limits. Their unchanged output does not establish that
+the broader moving-join problem is solved. Multi-contour shapes and unrecognized curved white features remain outside
+the supported slice. The approved comparison supports adoption of this model; it does not resolve those broader join and
+white-feature limitations or close the iteration.
+
 ### Fast-math visual assessment
 
 The [arithmetic experiment](../../hobby-fitting.md#global-fast-math-experiment) changes delivered Mono pixels while

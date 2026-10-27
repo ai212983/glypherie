@@ -30,6 +30,9 @@ use super::{
 use crate::{fail, probe::FittedCommand, Error};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+/// Coupled whole-outline X solve (Hobby 3.1, 3.2, 3.6, 6; Hersch 2).
+mod coupled;
+
 /// Dyadic substitution depths tried in order (prototype `DEPTHS`).
 const DEPTHS: [usize; 3] = [2, 3, 4];
 /// Curve shape quadrature intervals (prototype `curve_intervals=16`).
@@ -915,6 +918,110 @@ fn cross_of_seg(
     cross_of(coords, j, leg_vertex(prev, false), leg_vertex(seg, true))
 }
 
+/// Hersch section 2: preserve the curve tangent at an axis-aligned line/quad corner.
+/// A cross product also scales with leg lengths, so it cannot preserve the angle
+/// while widths change. Constrain control-minus-joint displacement along the
+/// upstream normal instead; leave width to the shared solve.
+pub(super) fn axis_corner_tangent(
+    source: &[[f64; 2]],
+    upstream: &[[f64; 2]],
+    j: usize,
+    prev: SegRef,
+    seg: SegRef,
+) -> Option<Vec<f64>> {
+    let (a, b) = match (prev, seg) {
+        (SegRef::Line { a, b }, SegRef::Quad { .. })
+        | (SegRef::Quad { .. }, SegRef::Line { a, b }) => (a, b),
+        _ => return None,
+    };
+    let axis = if source[a][0] == source[b][0] {
+        0
+    } else if source[a][1] == source[b][1] {
+        1
+    } else {
+        return None;
+    };
+    if source[a] == source[b]
+        || upstream[a][axis] != upstream[b][axis]
+        || upstream[a] == upstream[b]
+    {
+        return None;
+    }
+    let control = match if matches!(prev, SegRef::Quad { .. }) {
+        prev
+    } else {
+        seg
+    } {
+        SegRef::Quad { off, .. } => off,
+        SegRef::Line { .. } => return None,
+    };
+    let leg = [
+        upstream[control][0] - upstream[j][0],
+        upstream[control][1] - upstream[j][1],
+    ];
+    let length = leg[0].hypot(leg[1]);
+    if !(length > 0.0) {
+        return None;
+    }
+    let normal = [-leg[1] / length, leg[0] / length];
+    let mut row = vec![0.0; 2 * upstream.len()];
+    row[2 * control] = normal[0];
+    row[2 * control + 1] = normal[1];
+    row[2 * j] = -normal[0];
+    row[2 * j + 1] = -normal[1];
+    Some(row)
+}
+
+/// Linear row's 26.6 error envelope, with aliases sharing one rounding.
+///
+/// Closure-alias columns fold into their canonical column before summing,
+/// since duplicates carry one rounding (prototype `_rounding_reserve`).
+/// Only raw-moved coordinates err, at most half a 26.6 quantum per axis.
+pub(super) fn rounding_reserve(
+    row: &[f64],
+    cols: &[(usize, usize)],
+    raw: &[[f64; 2]],
+    upstream: &[[f64; 2]],
+    weld: &HashMap<usize, usize>,
+) -> f64 {
+    let n = upstream.len();
+    let mut coef = row.to_vec();
+    let mut dups: Vec<usize> = weld.keys().copied().collect();
+    dups.sort();
+    for dup in dups {
+        let canon = weld[&dup];
+        if dup < n && canon < n && dup * 2 + 1 < coef.len() && canon * 2 + 1 < coef.len() {
+            coef[2 * canon] += coef[2 * dup];
+            coef[2 * canon + 1] += coef[2 * dup + 1];
+        }
+    }
+    cols.iter()
+        .filter(|(v, axis)| raw[*v][*axis] != upstream[*v][*axis])
+        .map(|(v, axis)| coef[2 * v + axis].abs() * ROUND_HALF)
+        .sum()
+}
+
+/// Fixed affine gap sample on two straight borders (prototype
+/// `width_constraints` entry: line samples with a fitted normal).
+#[derive(Clone, Debug)]
+pub(super) struct WhiteSpec {
+    pub(super) a0: usize,
+    pub(super) a1: usize,
+    pub(super) ta: f64,
+    pub(super) b0: usize,
+    pub(super) b1: usize,
+    pub(super) tb: f64,
+    pub(super) normal: [f64; 2],
+}
+
+/// Projected gap row for one white feature: Hobby (5),(31) fixed affine
+/// boundary correspondence, zero displacement in the coupled solve.
+fn white_projected_row(n: usize, spec: &WhiteSpec) -> Vec<f64> {
+    let ba = basis_row(&[(spec.a0, 1.0 - spec.ta), (spec.a1, spec.ta)], n);
+    let bb = basis_row(&[(spec.b0, 1.0 - spec.tb), (spec.b1, spec.tb)], n);
+    projected_row(&ba, spec.normal, Some(&bb), n)
+}
+
 /// Unit chord direction between the true pair contacts on the source.
 pub(super) fn pair_normal(
     source: &[FittedCommand],
@@ -998,6 +1105,10 @@ enum RowKind {
     Shape,
     Joint,
     Ink,
+    /// Caller-certified straight-site white gap kept at zero displacement
+    /// (Hobby (5),(31) fixed affine correspondence; prototype
+    /// `white-preserve`). Hard in the native-Y solve, like joints.
+    White,
 }
 
 fn projected_row(basis: &[f64], dir: [f64; 2], other: Option<&[f64]>, n: usize) -> Vec<f64> {
@@ -1555,6 +1666,9 @@ struct JointRow {
     occ_seg: SegRef,
     joint: usize,
     smooth: bool,
+    /// Hersch section 2 axis-corner tangent row replacing the cross row;
+    /// `None` keeps the shared-tangent or defect cross behavior.
+    tangent: Option<Vec<f64>>,
 }
 
 struct PairWork {
@@ -1587,6 +1701,10 @@ fn assemble(
     owned: &[usize],
     frozen_in: &HashSet<usize>,
     hard: bool,
+    fixed_x: &HashSet<usize>,
+    couple_all: bool,
+    white: &[WhiteSpec],
+    axis_corners: bool,
 ) -> Result<SolveCtx, String> {
     let no = parsed.oncurve.len();
     let base: Vec<[f64; 2]> = parsed
@@ -1612,6 +1730,10 @@ fn assemble(
             involved_set.insert(v);
         }
     }
+    // Ink pairs define the width objective even when all X controls may move.
+    if couple_all {
+        involved_set.extend(0..base.len());
+    }
     let mut frozen: HashSet<usize> = frozen_in.clone();
     let map = joints(parsed);
     let mut joint_parts: Vec<(Vec<f64>, f64, JointRow)> = Vec::new();
@@ -1631,6 +1753,15 @@ fn assemble(
             if [j, iv, ov].iter().all(|v| frozen.contains(v)) {
                 continue;
             }
+            // With Y retained and every X pinned, this joint has no free coordinate.
+            if axis_corners
+                && owned.contains(&1)
+                && [j, iv, ov]
+                    .iter()
+                    .all(|v| owned.contains(&0) || fixed_x.contains(v))
+            {
+                continue;
+            }
             if occ.degenerate {
                 frozen.insert(j);
                 frozen.insert(iv);
@@ -1639,6 +1770,26 @@ fn assemble(
                 involved_set.insert(iv);
                 involved_set.insert(ov);
                 continue;
+            }
+            // Hersch section 2: preserve the upstream tangent at an axis corner.
+            if axis_corners && !occ.smooth {
+                if let Some(tangent) = axis_corner_tangent(&base, upstream, j, occ.prev, occ.seg) {
+                    joint_parts.push((
+                        tangent.clone(),
+                        0.0,
+                        JointRow {
+                            occ_prev: occ.prev,
+                            occ_seg: occ.seg,
+                            joint: j,
+                            smooth: occ.smooth,
+                            tangent: Some(tangent),
+                        },
+                    ));
+                    involved_set.insert(j);
+                    involved_set.insert(iv);
+                    involved_set.insert(ov);
+                    continue;
+                }
             }
             let Some((row, constant)) = g1_row(upstream, j, occ.prev, occ.seg, size_px, occ.smooth)
             else {
@@ -1652,6 +1803,7 @@ fn assemble(
                     occ_seg: occ.seg,
                     joint: j,
                     smooth: occ.smooth,
+                    tangent: None,
                 },
             ));
             involved_set.insert(j);
@@ -1700,6 +1852,12 @@ fn assemble(
         joint_rows.push(jr);
         rows.push((RowKind::Joint, row, constant));
     }
+    // Hobby (5),(31): caller-certified white features use fixed affine
+    // boundary correspondence. Zero displacement preserves their fitted
+    // projected gap in the same solve as the width objective.
+    for spec in white {
+        rows.push((RowKind::White, white_projected_row(base.len(), spec), 0.0));
+    }
     let mut pair_work = Vec::new();
     for pair in pairs {
         let Some((error, _, tangent)) = pair_error(&base, pair) else {
@@ -1744,6 +1902,11 @@ fn assemble(
     for &v in &involved {
         for axis in 0..2 {
             if owned.contains(&axis) || frozen.contains(&v) {
+                continue;
+            }
+            // Pinned upright X stays at the fitted value while Y ownership
+            // is handled above (prototype `fixed_x`).
+            if axis == 0 && fixed_x.contains(&v) {
                 continue;
             }
             cols.push((v, axis));
@@ -1867,6 +2030,23 @@ fn attempt(
             }
         }
     }
+    // Hobby (5),(31): a certified white gap keeps zero displacement
+    // through quantization; the envelope folds closure aliases before
+    // summing (prototype `_rounding_reserve` on `white-preserve` rows).
+    for (_, row, _) in ctx.rows.iter().filter(|(k, _, _)| *k == RowKind::White) {
+        let mut raw_error = 0.0;
+        let mut rounded_error = 0.0;
+        for v in 0..n {
+            for axis in 0..2 {
+                raw_error += row[2 * v + axis] * (raw[v][axis] - ctx.upstream[v][axis]);
+                rounded_error += row[2 * v + axis] * (cand[v][axis] - ctx.upstream[v][axis]);
+            }
+        }
+        let allowance = rounding_reserve(row, &ctx.cols, &raw, &ctx.upstream, weld);
+        if raw_error.abs() > 1e-9 || rounded_error.abs() > allowance + 1e-9 {
+            return Err(fail("white-width-constraint", serde_json::json!({})));
+        }
+    }
     for verts in degenerate {
         if verts.iter().any(|v| cand[*v] != ctx.upstream[*v]) {
             return Err(fail(
@@ -1895,35 +2075,71 @@ fn attempt(
         let legs_ok = li_c[0].hypot(li_c[1]) > 0.0 && lo_c[0].hypot(lo_c[1]) > 0.0;
         let (_, sli, slo) = cross_of_seg(&ctx.base, jr.joint, jr.occ_prev, jr.occ_seg);
         let cross_s = sli[0] * slo[1] - sli[1] * slo[0];
-        let (ok, allowed, defect) = if jr.smooth {
-            let fwd = li_c[0] * lo_c[0] + li_c[1] * lo_c[1] > 0.0;
-            let allowed = if ctx.hard {
-                qb
-            } else {
-                (cross_s - cross_u).abs() + qb
+        // Hersch section 2: the axis-corner tangent row keeps the upstream
+        // curve-leg direction through quantization instead of the cross
+        // defect (prototype `axis_corner_row` branch).
+        let tangent_check = jr.tangent.as_ref().map(|tangent| {
+            let dot = |coords: &[[f64; 2]]| {
+                tangent
+                    .iter()
+                    .enumerate()
+                    .map(|(k, c)| c * (coords[k / 2][k % 2] - ctx.upstream[k / 2][k % 2]))
+                    .sum::<f64>()
             };
-            let defect = cross_c.abs();
-            (
-                legs_ok && fwd && defect <= allowed && (raw_ok || !ctx.hard),
-                allowed,
-                defect,
-            )
-        } else {
-            let allowed = (cross_s - cross_u).abs() + qb;
-            let defect = (cross_c - cross_u).abs();
+            let raw_error = dot(&raw).abs();
+            let error = dot(&cand).abs();
+            let allowed = rounding_reserve(tangent, &ctx.cols, &raw, &ctx.upstream, weld);
             let fwd = li_c[0] * li_u[0] + li_c[1] * li_u[1] > 0.0
                 && lo_c[0] * lo_u[0] + lo_c[1] * lo_u[1] > 0.0;
-            let mut sign_ok = cross_u == 0.0 || cross_c * cross_u >= 0.0;
-            if ctx.hard {
-                sign_ok = raw_ok;
-            }
             (
-                legs_ok && fwd && sign_ok && defect <= allowed,
+                legs_ok && fwd && raw_error <= 1e-9 && error <= allowed + 1e-9,
                 allowed,
-                defect,
+                error,
+                raw_error,
             )
-        };
-        continuity.push(serde_json::json!({
+        });
+        let (ok, allowed, defect, constraint, raw_tangent_error) =
+            if let Some((ok, allowed, defect, raw_error)) = tangent_check {
+                (
+                    ok,
+                    allowed,
+                    defect,
+                    Some("axis-corner-tangent"),
+                    Some(raw_error),
+                )
+            } else if jr.smooth {
+                let fwd = li_c[0] * lo_c[0] + li_c[1] * lo_c[1] > 0.0;
+                let allowed = if ctx.hard {
+                    qb
+                } else {
+                    (cross_s - cross_u).abs() + qb
+                };
+                let defect = cross_c.abs();
+                (
+                    legs_ok && fwd && defect <= allowed && (raw_ok || !ctx.hard),
+                    allowed,
+                    defect,
+                    None,
+                    None,
+                )
+            } else {
+                let allowed = (cross_s - cross_u).abs() + qb;
+                let defect = (cross_c - cross_u).abs();
+                let fwd = li_c[0] * li_u[0] + li_c[1] * li_u[1] > 0.0
+                    && lo_c[0] * lo_u[0] + lo_c[1] * lo_u[1] > 0.0;
+                let mut sign_ok = cross_u == 0.0 || cross_c * cross_u >= 0.0;
+                if ctx.hard {
+                    sign_ok = raw_ok;
+                }
+                (
+                    legs_ok && fwd && sign_ok && defect <= allowed,
+                    allowed,
+                    defect,
+                    None,
+                    None,
+                )
+            };
+        let mut entry = serde_json::json!({
             "joint": jr.joint,
             "smooth": jr.smooth,
             "cross_up": cross_u,
@@ -1933,7 +2149,16 @@ fn attempt(
             "raw_cross": raw_cross,
             "raw_target": raw_target,
             "ok": ok,
-        }));
+        });
+        // Tangent-governed corners report their own constraint and error
+        // (prototype `axis-corner-tangent` continuity record); the default
+        // cross records keep their existing shape exactly.
+        if let (Some(label), Some(tangent_error)) = (constraint, raw_tangent_error) {
+            entry["constraint"] = serde_json::json!(label);
+            entry["raw_tangent_error"] = serde_json::json!(tangent_error);
+            entry["raw_target"] = serde_json::Value::Null;
+        }
+        continuity.push(entry);
         if !ok {
             return Err(fail(
                 "joint-continuity-failed",
@@ -2104,6 +2329,173 @@ fn attachment_controls(parsed: &geometry::Parsed) -> HashSet<usize> {
     frozen
 }
 
+/// Keep joint and white-gap rows exact within the movement box while minimizing
+/// width error over free columns. A zero-norm row with a nonzero target means
+/// incompatible pins.
+fn hard_solve(
+    mat: &[Vec<f64>],
+    rhs: &[f64],
+    kinds: &[RowKind],
+    bound: f64,
+    ncols: usize,
+) -> Result<(Vec<f64>, f64, Option<QpInfo>), String> {
+    let bounds = vec![bound; ncols];
+    let mut a_free = Vec::new();
+    let mut b_free = Vec::new();
+    let mut g = Vec::new();
+    let mut h = Vec::new();
+    for (i, kind) in kinds.iter().enumerate() {
+        if matches!(*kind, RowKind::Joint | RowKind::White) {
+            g.push(mat[i].clone());
+            h.push(rhs[i]);
+        } else {
+            a_free.push(mat[i].clone());
+            b_free.push(rhs[i]);
+        }
+    }
+    let mut gz = Vec::new();
+    let mut hz = Vec::new();
+    for (row, val) in g.iter().zip(h.iter()) {
+        if row.iter().map(|x| x * x).sum::<f64>().sqrt() > 1e-12 {
+            gz.push(row.clone());
+            hz.push(*val);
+        } else if val.abs() > 1e-10 {
+            return Err("joint-pins-incompatible".to_string());
+        }
+    }
+    if gz.is_empty() {
+        return Err("joint-bounds-incompatible".to_string());
+    }
+    match bounded_equalities(&a_free, &b_free, &gz, &hz, &bounds) {
+        Some((s, info)) => {
+            let peak = s.iter().map(|x| x.abs()).fold(0.0, f64::max);
+            Ok((s, peak, Some(info)))
+        }
+        None => Err("joint-bounds-incompatible".to_string()),
+    }
+}
+
+/// Failed prefix search with the tried fractions and gate detail.
+struct PrefixFail {
+    reason: String,
+    tried: Vec<f64>,
+    extra: serde_json::Value,
+}
+
+/// Convex-prefix search over the least-squares step.
+///
+/// The quadratic objective decreases from upstream, so smaller prefixes trade
+/// correction for gate headroom without changing direction. Recheck every gate;
+/// the hard native-Y solve takes only the full step.
+#[allow(clippy::too_many_arguments)]
+fn run_prefixes(
+    ctx: &SolveCtx,
+    sol: &[f64],
+    weld: &HashMap<usize, usize>,
+    owned: &[usize],
+    degenerate: &[[usize; 3]],
+    parsed: &geometry::Parsed,
+    upstream_cmds: &[FittedCommand],
+    parsed_up: &geometry::Parsed,
+) -> Result<AttemptOk, PrefixFail> {
+    let mut tried = Vec::new();
+    let mut frac = 1.0;
+    let mut done: Option<AttemptOk> = None;
+    let mut last_err: (String, serde_json::Value) =
+        ("no-feasible-prefix".to_string(), serde_json::json!({}));
+    for _ in 0..PREFIX_ATTEMPTS {
+        tried.push(frac);
+        match attempt(
+            ctx,
+            sol,
+            frac,
+            weld,
+            owned,
+            degenerate,
+            parsed,
+            upstream_cmds,
+            parsed_up,
+        ) {
+            Ok(ok) => {
+                done = Some(ok);
+                break;
+            }
+            Err((reason, extra)) => {
+                last_err = (reason.clone(), extra.clone());
+                if ctx.hard || reason == "native-violated" {
+                    break;
+                }
+                let mut probe = ctx.upstream.clone();
+                for ((v, axis), d) in ctx.cols.iter().zip(sol.iter()) {
+                    if *d != 0.0 {
+                        probe[*v][*axis] = ctx.upstream[*v][*axis] + frac * d;
+                    }
+                }
+                let mut identical = true;
+                for (v, axis) in &ctx.cols {
+                    let mut pv = probe[*v][*axis];
+                    if pv != ctx.upstream[*v][*axis] {
+                        pv = geometry::round_26_6(pv);
+                    }
+                    if pv != ctx.upstream[*v][*axis] {
+                        identical = false;
+                        break;
+                    }
+                }
+                if identical {
+                    last_err = ("no-effective-move".to_string(), extra);
+                    break;
+                }
+                frac /= 2.0;
+            }
+        }
+    }
+    match done {
+        Some(ok) => Ok(ok),
+        None => Err(PrefixFail {
+            reason: last_err.0,
+            tried,
+            extra: last_err.1,
+        }),
+    }
+}
+
+/// Prefix-failure diagnostics: tried fractions plus the carried gate
+/// detail keys.
+fn prefix_diag(mut diag: serde_json::Value, fail: &PrefixFail) -> serde_json::Value {
+    diag["tried_prefixes"] = serde_json::json!(fail.tried);
+    if let Some(extra) = fail.extra.as_object() {
+        for key in [
+            "continuity",
+            "clearance_stage",
+            "interval_ctrl",
+            "joint",
+            "topology_certificates",
+        ] {
+            if let Some(v) = extra.get(key) {
+                diag[key] = v.clone();
+            }
+        }
+    }
+    diag
+}
+
+/// Chord-direction X effectibility on each width record (prototype
+/// `effectibility_x` in `fit_glyph`).
+pub(super) fn with_effectibility(
+    source: &[FittedCommand],
+    pairs: &[CurvePair],
+    widths: &mut [serde_json::Value],
+) {
+    for (row, pair) in widths.iter_mut().zip(pairs.iter()) {
+        let n = pair_normal(source, pair.a_ctrl, pair.a_t, pair.b_ctrl, pair.b_t);
+        row["effectibility_x"] = match n {
+            Some(v) => serde_json::json!(v[0].abs()),
+            None => serde_json::Value::Null,
+        };
+    }
+}
+
 /// Horizontal completion retaining the fitted Y grid and straight attachments.
 /// Turner/Lemberg axis separation; Hersch sections 2 and 5: local width
 /// completion retains existing alignment and attachment curves.
@@ -2188,7 +2580,18 @@ pub fn fit_horizontal(
     frozen.extend(weld.keys().copied());
     let hard = !retained[0];
     let ctx = match assemble(
-        &parsed, &up_global, &pairs, reference, size_px, &owned, &frozen, hard,
+        &parsed,
+        &up_global,
+        &pairs,
+        reference,
+        size_px,
+        &owned,
+        &frozen,
+        hard,
+        &HashSet::new(),
+        false,
+        &[],
+        false,
     ) {
         Ok(c) => c,
         Err(reason) => {
@@ -2201,52 +2604,13 @@ pub fn fit_horizontal(
     };
     let _ = fitted;
     let (mat, rhs, kinds) = restricted_matrix(&ctx, &weld);
-    let ncols = ctx.cols.len();
-    let bounds = vec![ctx.bound; ncols];
     let (sol, peak, qp): (Vec<f64>, f64, Option<QpInfo>) = if hard {
-        let mut a_free = Vec::new();
-        let mut b_free = Vec::new();
-        let mut g = Vec::new();
-        let mut h = Vec::new();
-        for (i, kind) in kinds.iter().enumerate() {
-            if *kind == RowKind::Joint {
-                g.push(mat[i].clone());
-                h.push(rhs[i]);
-            } else {
-                a_free.push(mat[i].clone());
-                b_free.push(rhs[i]);
-            }
-        }
-        let mut gz = Vec::new();
-        let mut hz = Vec::new();
-        for (row, val) in g.iter().zip(h.iter()) {
-            if row.iter().map(|x| x * x).sum::<f64>().sqrt() > 1e-12 {
-                gz.push(row.clone());
-                hz.push(*val);
-            } else if val.abs() > 1e-10 {
+        match hard_solve(&mat, &rhs, &kinds, ctx.bound, ctx.cols.len()) {
+            Ok(done) => done,
+            Err(reason) => {
                 return Ok(abstain(
                     preferred,
-                    "joint-pins-incompatible",
-                    serde_json::json!({ "size_px": size_px }),
-                ));
-            }
-        }
-        if gz.is_empty() {
-            return Ok(abstain(
-                preferred,
-                "joint-bounds-incompatible",
-                serde_json::json!({ "size_px": size_px }),
-            ));
-        }
-        match bounded_equalities(&a_free, &b_free, &gz, &hz, &bounds) {
-            Some((s, info)) => {
-                let peak = s.iter().map(|x| x.abs()).fold(0.0, f64::max);
-                (s, peak, Some(info))
-            }
-            None => {
-                return Ok(abstain(
-                    preferred,
-                    "joint-bounds-incompatible",
+                    &reason,
                     serde_json::json!({ "size_px": size_px }),
                 ));
             }
@@ -2256,97 +2620,29 @@ pub fn fit_horizontal(
         let (s, peak) = scale_to_bound(&raw, &ctx.cols, ctx.bound);
         (s, peak, None)
     };
-    let paired: HashSet<([usize; 3], [usize; 3])> = pairs
-        .iter()
-        .map(|p| {
-            if p.a_ctrl < p.b_ctrl {
-                (p.a_ctrl, p.b_ctrl)
-            } else {
-                (p.b_ctrl, p.a_ctrl)
-            }
-        })
-        .collect();
-    let _ = paired;
     let map = joints(&parsed);
     let degenerate: Vec<[usize; 3]> = degenerate_triples(&map);
-    let _ = frozen;
-    let mut tried = Vec::new();
-    let mut frac = 1.0;
-    let mut done: Option<AttemptOk> = None;
-    let mut last_err: (String, serde_json::Value) =
-        ("no-feasible-prefix".to_string(), serde_json::json!({}));
-    for _ in 0..PREFIX_ATTEMPTS {
-        tried.push(frac);
-        match attempt(
-            &ctx,
-            &sol,
-            frac,
-            &weld,
-            &owned,
-            &degenerate,
-            &parsed,
-            preferred,
-            &fitted,
-        ) {
-            Ok(ok) => {
-                done = Some(ok);
-                break;
-            }
-            Err((reason, extra)) => {
-                last_err = (reason.clone(), extra.clone());
-                if hard || reason == "native-violated" {
-                    break;
-                }
-                let mut probe = ctx.upstream.clone();
-                for ((v, axis), d) in ctx.cols.iter().zip(sol.iter()) {
-                    if *d != 0.0 {
-                        probe[*v][*axis] = ctx.upstream[*v][*axis] + frac * d;
-                    }
-                }
-                let mut identical = true;
-                for (v, axis) in &ctx.cols {
-                    let mut pv = probe[*v][*axis];
-                    if pv != ctx.upstream[*v][*axis] {
-                        pv = geometry::round_26_6(pv);
-                    }
-                    if pv != ctx.upstream[*v][*axis] {
-                        identical = false;
-                        break;
-                    }
-                }
-                if identical {
-                    last_err = ("no-effective-move".to_string(), extra);
-                    break;
-                }
-                frac /= 2.0;
-            }
+    let ok = match run_prefixes(
+        &ctx,
+        &sol,
+        &weld,
+        &owned,
+        &degenerate,
+        &parsed,
+        preferred,
+        &fitted,
+    ) {
+        Ok(ok) => ok,
+        Err(fail) => {
+            return Ok(abstain(
+                preferred,
+                &fail.reason,
+                prefix_diag(serde_json::json!({ "recognition": recognition }), &fail),
+            ));
         }
-    }
-    let Some(ok) = done else {
-        let mut diag = serde_json::json!({ "tried_prefixes": tried, "recognition": recognition });
-        if let Some(extra) = last_err.1.as_object() {
-            for key in [
-                "continuity",
-                "clearance_stage",
-                "interval_ctrl",
-                "joint",
-                "topology_certificates",
-            ] {
-                if let Some(v) = extra.get(key) {
-                    diag[key] = v.clone();
-                }
-            }
-        }
-        return Ok(abstain(preferred, &last_err.0, diag));
     };
     let mut widths = ok.widths;
-    for (row, pair) in widths.iter_mut().zip(pairs.iter()) {
-        let n = pair_normal(source, pair.a_ctrl, pair.a_t, pair.b_ctrl, pair.b_t);
-        row["effectibility_x"] = match n {
-            Some(v) => serde_json::json!(v[0].abs()),
-            None => serde_json::Value::Null,
-        };
-    }
+    with_effectibility(source, &pairs, &mut widths);
     let mean = |key: &str| {
         widths
             .iter()
@@ -2378,6 +2674,19 @@ pub fn fit_horizontal(
             "reference": reference_meta(reference),
         }),
     })
+}
+
+/// Coupled X completion for one closed quadratic contour with exactly
+/// f32-representable canonical source points. Requires native Y and automatic X;
+/// see `coupled` for the Hobby/Hersch model and project adaptations.
+pub fn fit_coupled(
+    source: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+) -> Result<FitResult, Error> {
+    coupled::fit_coupled(source, upstream, size, reference, native_axes)
 }
 
 #[cfg(test)]

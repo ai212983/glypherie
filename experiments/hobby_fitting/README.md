@@ -2,11 +2,11 @@
 
 <!-- cspell:words Hobby's NumPy strokestyles fonttools itfl Inhkyxzv CGAL MPFR -->
 
-Isolated research prototype for the coupled geometric system described in the
-[Hobby fitting model](../../docs/hobby-fitting.md). It operates on synthetic supplied features, without loading fonts or
-changing the generator. The [equation audit](../../docs/references/papers/1993-hobby/audit.md) records checked notation,
-report-version discrepancies and remaining source uncertainties. See [experiment guidance](../AGENTS.md) for placement
-and verification routing.
+Isolated research prototypes and diagnostics for the coupled geometric system described in the
+[Hobby fitting model](../../docs/hobby-fitting.md). The
+[equation audit](../../docs/references/papers/1993-hobby/audit.md) records checked notation, report-version
+discrepancies and remaining source uncertainties. See [experiment guidance](../AGENTS.md) for placement and verification
+routing.
 
 ## Run
 

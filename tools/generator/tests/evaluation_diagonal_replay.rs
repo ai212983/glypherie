@@ -122,7 +122,7 @@ fn applied_diagonal_replay_accepts() {
     );
     let index = applied_index(&candidate);
     let diagonal = candidate.records[index].diagonal_fitting.as_ref().unwrap();
-    assert_eq!(diagonal.model, "diagonal-shape-04");
+    assert_eq!(diagonal.model, "diagonal-shape-05");
     assert_eq!(diagonal.reason, "curve:fitted");
     assert!(!diagonal.upstream_commands.is_empty());
     assert_ne!(
@@ -136,6 +136,64 @@ fn applied_diagonal_replay_accepts() {
         "{:?}",
         evaluation.hard_failures
     );
+}
+
+#[test]
+fn preceding_shape_capture_still_replays_with_its_original_authority() {
+    let (source, upstream) = source_and_upstream("s");
+    let mut candidate = diagonal_candidate("s");
+    let index = applied_index(&candidate);
+    // This unsupported coupled contour retains the preceding local curve
+    // model, so an 04 capture remains independently reproducible.
+    let capture = candidate.records[index].diagonal_fitting.as_mut().unwrap();
+    assert_eq!(capture.reason, "curve:fitted");
+    capture.model = "diagonal-shape-04".into();
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(
+        evaluation.hard_invariants_pass,
+        "{:?}",
+        evaluation.hard_failures
+    );
+}
+
+#[test]
+fn coupled_native_y_capture_replays_and_requires_its_scan_policy() {
+    let data = std::fs::read(format!(
+        "{}/../../fonts/Roboto.ttf",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    let request = pipeline_request("c");
+    let upstream = candidate::render_with_pipeline(&data, &request, pipeline(false)).unwrap();
+    let independent_upstream = reference(&data, &base_request("c", Hinting::Auto)).unwrap();
+    let source = reference(&data, &base_request("c", Hinting::None)).unwrap();
+    let mut candidate = candidate::render_with_pipeline(&data, &request, pipeline(true)).unwrap();
+    let old = &upstream.records[0];
+    let new = &candidate.records[0];
+    let capture = new
+        .diagonal_fitting
+        .as_ref()
+        .expect("reviewed native-Y curve fits");
+    assert_eq!(capture.model, "diagonal-shape-05");
+    assert_eq!(capture.reason, "coupled:fitted");
+    assert_eq!(capture.native_axes, [false, true]);
+    assert_eq!(capture.upstream_commands, old.fitted_commands);
+    assert_ne!(old.fitted_commands, new.fitted_commands);
+    assert_eq!(new.advance_26_6, old.advance_26_6);
+    assert_eq!(new.hinted_advance_width, old.hinted_advance_width);
+    assert_eq!(new.font_scan, old.font_scan);
+    assert_eq!(new.raster_policy, RasterPolicy::FreeTypeMono);
+    let evaluation = evaluate(&source, &independent_upstream, &candidate);
+    assert!(
+        evaluation.hard_invariants_pass,
+        "{:?}",
+        evaluation.hard_failures
+    );
+    candidate.records[0].raster_policy = RasterPolicy::FreeTypeMonoTerminals;
+    let evaluation = evaluate(&source, &independent_upstream, &candidate);
+    assert!(invariants(&evaluation)
+        .iter()
+        .any(|failure| failure.contains("coupled fit requires")));
 }
 
 #[test]
@@ -254,7 +312,7 @@ fn invalid_raw_source_returns_before_later_guards() {
     let mut candidate = diagonal_candidate("s");
     let index = applied_index(&candidate);
     let diagonal = candidate.records[index].diagonal_fitting.as_mut().unwrap();
-    assert_eq!(diagonal.model, "diagonal-shape-04");
+    assert_eq!(diagonal.model, "diagonal-shape-05");
     diagonal.raw_source = Some(serde_json::json!(5));
     candidate.records[index].pixels[0] ^= 1;
     let evaluation = evaluate(&source, &upstream, &candidate);

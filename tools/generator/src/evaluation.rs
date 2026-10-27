@@ -549,7 +549,10 @@ fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
                 return DiagonalReplay::Abort("diagonal reference does not deserialize");
             }
         };
-    let replay = if diagonal.model == "diagonal-shape-04" {
+    let replay = if matches!(
+        diagonal.model.as_str(),
+        "diagonal-shape-04" | "diagonal-shape-05"
+    ) {
         let raw: Option<crate::fitting_source::SourceOutline> = match diagonal
             .raw_source
             .clone()
@@ -561,7 +564,18 @@ fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
                 return DiagonalReplay::Abort("diagonal raw source does not deserialize");
             }
         };
-        crate::diagonal_fitting::approved::fit(
+        if diagonal.model == "diagonal-shape-05"
+            && diagonal.reason.starts_with("coupled:")
+            && record.raster_policy != RasterPolicy::FreeTypeMono
+        {
+            return DiagonalReplay::Flaw("coupled fit requires recorded FreeType mono policy");
+        }
+        let fit = if diagonal.model == "diagonal-shape-04" {
+            crate::diagonal_fitting::approved::fit_pre_coupled
+        } else {
+            crate::diagonal_fitting::approved::fit
+        };
+        fit(
             raw.as_ref(),
             source,
             &diagonal.upstream_commands,
