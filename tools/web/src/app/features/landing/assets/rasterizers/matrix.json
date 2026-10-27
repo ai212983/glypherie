@@ -663,31 +663,31 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/literata-16-c9df2fa41f6e/repo.png"
+          "file": "samples/literata-16-c359ba3d256c/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/literata-16-c9df2fa41f6e/pdfontconv.png"
+          "file": "samples/literata-16-c359ba3d256c/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/literata-16-c9df2fa41f6e/tophat.png"
+          "file": "samples/literata-16-c359ba3d256c/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/literata-16-c9df2fa41f6e/lvgl.png"
+          "file": "samples/literata-16-c359ba3d256c/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/literata-16-c9df2fa41f6e/adafruit.png"
+          "file": "samples/literata-16-c359ba3d256c/adafruit.png"
         }
       ]
     },

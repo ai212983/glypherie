@@ -86,6 +86,8 @@ pub struct ReferenceRecord {
     // source/upstream rather than reusing `width_fitting`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagonal_fitting: Option<DiagonalFittingCapture>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_alignment: Option<TopAlignmentCapture>,
     pub coverage: Vec<u8>,
     pub coverage_sha256: String,
     pub left: i32,
@@ -103,6 +105,21 @@ pub struct ReferenceRecord {
 pub struct SourceWidthCapture {
     pub size_px: f32,
     pub upstream_commands: Vec<FittedCommand>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct TopAlignmentCapture {
+    pub model: String,
+    pub size_px: f32,
+    pub source_ref_px: f64,
+    pub target_px: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cap_height_px: Option<f64>,
+    pub upstream_commands: Vec<FittedCommand>,
+    pub contours: Vec<usize>,
+    pub excess_px: f64,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mark_translations: Vec<(usize, f64)>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -465,6 +482,7 @@ impl CaptureSession<'_> {
                 source_commands: None,
                 width_fitting: None,
                 selective_fitting: None,
+                top_alignment: None,
                 diagonal_fitting: None,
                 coverage_sha256: format!("{:x}", Sha256::digest(&output.coverage)),
                 coverage: output.coverage,

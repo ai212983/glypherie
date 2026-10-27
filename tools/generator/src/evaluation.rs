@@ -342,7 +342,8 @@ pub fn evaluate(
             ) || (fitted.raster_policy != RasterPolicy::FreeTypeMonoTerminals
                 && fitted.width_fitting.is_none()
                 && fitted.selective_fitting.is_none()
-                && fitted.diagonal_fitting.is_none()))
+                && fitted.diagonal_fitting.is_none()
+                && fitted.top_alignment.is_none()))
                 || *commands != raw.fitted_commands
             {
                 push(
@@ -368,6 +369,18 @@ pub fn evaluate(
                     "candidate",
                     Some(codepoint),
                     "width fitting input identity changed",
+                );
+            }
+        }
+        if let Some(top) = &fitted.top_alignment {
+            if top.size_px != candidate.size_px
+                || (fitted.width_fitting.is_none()
+                    && top.upstream_commands != baseline.fitted_commands)
+            {
+                push(
+                    "candidate",
+                    Some(codepoint),
+                    "top alignment input identity changed",
                 );
             }
         }
@@ -774,7 +787,8 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
         && !(record.raster_policy == RasterPolicy::FreeTypeMono
             && (record.width_fitting.is_some()
                 || record.selective_fitting.is_some()
-                || record.diagonal_fitting.is_some()))
+                || record.diagonal_fitting.is_some()
+                || record.top_alignment.is_some()))
     {
         failures.push("source outline on an incompatible raster policy");
     }
@@ -807,15 +821,60 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
             failures.push("width source outline missing");
             return failures;
         };
-        // Post-diagonal records reproduce the pre-diagonal outline.
+        let expected: &[crate::probe::FittedCommand] = record
+            .top_alignment
+            .as_ref()
+            .map(|top| top.upstream_commands.as_slice())
+            .or_else(|| {
+                record
+                    .diagonal_fitting
+                    .as_ref()
+                    .map(|diagonal| diagonal.upstream_commands.as_slice())
+            })
+            .unwrap_or(record.fitted_commands.as_slice());
+        match crate::source_width::fit(source, &width.upstream_commands, width.size_px) {
+            Ok(fit) if fit.applied && fit.commands == expected => {}
+            _ => failures.push("width fitting does not reproduce from captured inputs"),
+        }
+    }
+    #[cfg(feature = "candidate")]
+    if let Some(top) = &record.top_alignment {
+        if record.selected_engine != "auto"
+            || !matches!(
+                record.raster_policy,
+                RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+            )
+            || top.model != crate::top_alignment::MODEL
+        {
+            failures.push("top alignment on an incompatible render policy");
+        }
+        let Some(source) = &record.source_commands else {
+            failures.push("top alignment source outline missing");
+            return failures;
+        };
         let expected: &[crate::probe::FittedCommand] = record
             .diagonal_fitting
             .as_ref()
             .map(|diagonal| diagonal.upstream_commands.as_slice())
             .unwrap_or(record.fitted_commands.as_slice());
-        match crate::source_width::fit(source, &width.upstream_commands, width.size_px) {
-            Ok(fit) if fit.applied && fit.commands == expected => {}
-            _ => failures.push("width fitting does not reproduce from captured inputs"),
+        let zone = crate::top_alignment::Zone {
+            source_ref: top.source_ref_px,
+            target: top.target_px,
+        };
+        match crate::top_alignment::fit(
+            source,
+            &top.upstream_commands,
+            &zone,
+            top.cap_height_px,
+            top.size_px,
+        ) {
+            Ok(fit)
+                if fit.applied
+                    && fit.commands == expected
+                    && fit.contours == top.contours
+                    && fit.excess_px == top.excess_px
+                    && fit.mark_translations == top.mark_translations => {}
+            _ => failures.push("top alignment does not reproduce from captured inputs"),
         }
     }
     reproduce_raster(record, &config, &mut failures);

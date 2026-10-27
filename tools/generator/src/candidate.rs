@@ -35,9 +35,7 @@ pub fn render(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceReport
 /// Frozen width-only diagonal reference donors; never the request text.
 const DIAGONAL_DONORS: &str = "itflInhkyxzvAVW";
 
-/// Explicit-pipeline capture with optional reviewed stroke
-/// fitting. `diagonal_fitting=false` is identity with
-/// `render_with_rasterization`; export and preview both route here once.
+/// Explicit preview stages shared by rendering and export.
 pub fn render_with_pipeline(
     data: &[u8],
     request: &ReferenceRequest,
@@ -59,6 +57,15 @@ pub(crate) fn render_with_pipeline_in_session(
     }
     let mut report =
         render_with_rasterization_in_session(session, request, pipeline.rasterization)?;
+    if request.settings.output_bits == 1
+        && matches!(
+            pipeline.fitting,
+            StemFittingStrategy::FontHintsAuto | StemFittingStrategy::UpstreamMono
+        )
+        && pipeline.rasterization != crate::renderer::Rasterization::Coverage
+    {
+        apply_top_alignment(session, request, pipeline.rasterization, &mut report)?;
+    }
     if !pipeline.diagonal_fitting {
         return Ok(report);
     }
@@ -386,6 +393,124 @@ pub(crate) fn render_with_rasterization_in_session(
         StemFittingStrategy::UpstreamMono => "auto",
     };
     session.capture(&effective, selected, &policy)
+}
+
+fn apply_top_alignment(
+    session: &CaptureSession<'_>,
+    request: &ReferenceRequest,
+    rasterization: crate::renderer::Rasterization,
+    report: &mut ReferenceReport,
+) -> Result<(), Error> {
+    if !report
+        .records
+        .iter()
+        .any(|r| r.selected_engine == "auto" && r.font_scan.is_none())
+    {
+        return Ok(());
+    }
+    let (seed, cap) = crate::top_alignment::zone_refs(session.data, &request.settings)?;
+    let Some(seed) = seed else { return Ok(()) };
+    let mut source_request = request.clone();
+    source_request.extensions = "none".into();
+    source_request.settings.hinting = Hinting::None;
+    source_request.settings.mono_raster = Default::default();
+    let source = session.source(&source_request)?;
+
+    // Fixed LATN x-height donors from FreeType's generated_autohint_styles.rs.
+    let mut donor_request = source_request.clone();
+    donor_request.settings.characters = "uvxzoesc".into();
+    donor_request.settings.missing_glyphs = crate::MissingGlyphs::Skip;
+    let Ok(donor_source) = session.source(&donor_request) else {
+        return Ok(());
+    };
+    donor_request.settings.hinting = Hinting::Auto;
+    let Ok(donor_fitted) = session.reference(&donor_request) else {
+        return Ok(());
+    };
+    let donor_pairs: Vec<_> = donor_source
+        .records
+        .iter()
+        .filter_map(|raw| {
+            donor_fitted
+                .records
+                .iter()
+                .find(|fitted| fitted.codepoint == raw.codepoint && fitted.glyph_id == raw.glyph_id)
+                .map(|fitted| {
+                    (
+                        raw.fitted_commands.as_slice(),
+                        fitted.fitted_commands.as_slice(),
+                    )
+                })
+        })
+        .collect();
+    let Some(zone) = crate::top_alignment::zone(&donor_pairs, seed, request.settings.size_px)
+    else {
+        return Ok(());
+    };
+    let mut applied_any = false;
+    for record in &mut report.records {
+        if record.selected_engine != "auto" || record.font_scan.is_some() {
+            continue;
+        }
+        let Some(raw) = source
+            .records
+            .iter()
+            .find(|r| r.codepoint == record.codepoint && r.glyph_id == record.glyph_id)
+        else {
+            continue;
+        };
+        let Ok(fit) = crate::top_alignment::fit(
+            &raw.fitted_commands,
+            &record.fitted_commands,
+            &zone,
+            cap,
+            request.settings.size_px,
+        ) else {
+            continue;
+        };
+        if !fit.applied {
+            continue;
+        }
+        let raster = if rasterization == crate::renderer::Rasterization::FreeTypeMonoTerminals {
+            rasterize_terminals(&raw.fitted_commands, &fit.commands, &request.settings)
+        } else {
+            crate::mono::rasterize_with_scan_state(
+                &fit.commands,
+                &request.settings,
+                record.font_scan.as_ref(),
+            )
+        };
+        let Ok(raster) = raster else {
+            continue;
+        };
+        record.top_alignment = Some(crate::reference::TopAlignmentCapture {
+            model: crate::top_alignment::MODEL.into(),
+            size_px: request.settings.size_px,
+            source_ref_px: zone.source_ref,
+            target_px: zone.target,
+            cap_height_px: cap,
+            upstream_commands: record.fitted_commands.clone(),
+            contours: fit.contours,
+            excess_px: fit.excess_px,
+            mark_translations: fit.mark_translations,
+        });
+        record.source_commands = Some(raw.fitted_commands.clone());
+        record.fitted_commands = fit.commands;
+        record.coverage_sha256 = format!("{:x}", sha2::Sha256::digest(&raster.coverage));
+        record.coverage = raster.coverage;
+        record.pixels = raster.pixels;
+        record.left = raster.left;
+        record.top = raster.top;
+        record.width = raster.width;
+        record.height = raster.height;
+        applied_any = true;
+    }
+    if applied_any {
+        report
+            .implementation
+            .push_str(&format!(":{}", crate::top_alignment::MODEL));
+    }
+    Ok(())
 }
 
 fn render_source_width(

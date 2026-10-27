@@ -922,6 +922,40 @@ Broader assessment of changed glyphs, weights, counters and spacing remains pend
 intentionally retain the native result, even if a remaining optical imbalance exists; semantic feature-level completion
 is outside this slice.
 
+#### Source-defined x-height alignment
+
+The current explicit Mono pipelines recover missed source top-zone associations before optional stroke fitting.
+[FreeType blue zones](https://freetype.org/autohinting/blues.html) supply shared height references and association
+ranges; [Hobby §3.3](../../references/papers/1993-hobby/paper.md#33-fitting-verticals-and-horizontals-to-the-pixel-grid)
+supplies interpolation between retained references. Literata's light sloped serifs can miss the automatic hinter's
+horizontal direction test, leaving their body tops above the fitted x-height.
+
+The project adaptation captures FreeType's fixed Latin x-height donor set independently of the requested text. The
+font's variation-aware x-height seeds source association; agreeing grid-aligned donor tops supply the actual fitted
+height, preserving automatic x-height scaling. A straight source top must span at least one pixel and lie wholly inside
+the upstream association band. The one-pixel segment requirement is a conservative transposition of upstream edge
+eligibility to top regions. A demonstrated excess of at least half a pixel permits a monotone contraction toward the
+shared reference. Baseline-crossing curve hulls, lower geometry and X coordinates retain their preceding values.
+Overlapping contour bounds, conflicting donors and missing references abstain.
+
+Detached marks follow the corrected body through a source-derived white-distance constraint, adapting
+[TrueType relative-distance movement](https://learn.microsoft.com/en-us/typography/opentype/spec/tt_instructions#move-direct-relative-point)
+and [Shamir §3.2](../../references/papers/2003-shamir/paper.md#32-constraints-and-point-relations). The project
+recognizes one isolated mark above one baseline-reaching body with a shared horizontal projection in the source,
+preceding fit and corrected outline. Its lower source and fitted extrema must be attained on-curve; multiple marks or
+possible owners keep the whole preceding glyph. The original white gap is rounded to the pixel grid and the whole mark
+translates relative to the corrected body, preserving its fitted shape. A preceding gap outside the half-pixel
+nearest-rounding allowance, a collapsed gap or a collision also keeps the preceding glyph. This does not introduce
+component resizing or a glyph-specific offset.
+
+**Confirmed geometric correction; broader optical assessment pending:** Literata at 16 px, `wght=252.22`, `opsz=16`,
+starts the `i` and `j` bodies on the same row as `n`, including single-glyph previews. The earlier body-only correction
+left the dots fixed and enlarged their white gap from two rows to three, a confirmed placement regression. Relative mark
+positioning restores two blank rows from the 1.92 px source gap while retaining dot shape and the corrected body height.
+The default axes at 16/20 px and inspected neighboring sizes retain their height decisions. Native-owned axes, Gray,
+historical controls, spacing and the separate baseline remain independent. This scoped correction does not establish
+optical acceptance across families, weights, counters, serifs or size transitions.
+
 #### Remaining stroke balance
 
 The [joint placement and smooth curve study](../../hobby-fitting.md#joint-placement-and-smooth-curve-continuation) owns

@@ -107,6 +107,13 @@ only automatic fitting (`upstream_mono`) with `coverage` is valid; this uses Nor
 even for blank text. Historical role APIs remain available with their original fitting, rasterization and layout
 policies.
 
+Explicit 1-bit `font_hints_auto` and `upstream_mono` pipelines apply source-defined x-height alignment before optional
+stroke fitting. Changed records carry `top_alignment` (`top-align-02`) with the preceding outline, reference heights,
+size, corrected body contours, body-height excess and indexed mark Y translations for independent replay. Advances and
+spacing are unchanged. The
+[open iteration](../../docs/revisions/001/03-spacing-kerning.md#source-defined-x-height-alignment) owns eligibility and
+assessment; historical rendering entry points retain their previous output.
+
 Candidate Mono uses Skrifa 0.48.0 `Target::Mono` on runtime font bytes, including user-provided fonts:
 
 | Strategy                     | Extension            | Engine                                                                                                                                    |

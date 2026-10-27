@@ -50,6 +50,8 @@ pub mod stem_fitting;
 pub mod surface;
 #[cfg(feature = "candidate")]
 pub mod terminal_caps;
+#[cfg(feature = "candidate")]
+pub(crate) mod top_alignment;
 
 use production_skrifa::{
     instance::Size,
