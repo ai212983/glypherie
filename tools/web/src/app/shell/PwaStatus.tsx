@@ -121,7 +121,6 @@ export function PwaStatus({ version, online, children }: { version: string; onli
     : needRefresh ? ""
     : !online ? ""
     : activity === "checking" ? "Checking for updates…"
-    : activity === "downloading" ? "Downloading update…"
     : activity === "current" ? "Up to date"
     : "";
   return (
@@ -130,7 +129,7 @@ export function PwaStatus({ version, online, children }: { version: string; onli
         <Button type="button" size="xs" variant="ghost"
           className="site-footer__version-button"
           data-app-version
-          aria-label={needRefresh ? undefined : `Version ${version}: check for updates`}
+          aria-label={needRefresh || activity === "downloading" ? undefined : `Version ${version}: check for updates`}
           disabled={needRefresh ? activity === "updating" : pending || !online || (!registration && activity !== "error")}
           onClick={() => {
             if (needRefresh) void apply();
@@ -138,7 +137,8 @@ export function PwaStatus({ version, online, children }: { version: string; onli
             else void check();
           }}>
           <RefreshCw aria-hidden="true" className={pending ? "motion-safe:animate-spin" : undefined} />
-          {needRefresh ? activity === "updating" ? "Updating…" : "Update" : version}
+          <span aria-live="polite">{needRefresh ? activity === "updating" ? "Updating…" : "Update"
+            : activity === "downloading" ? "Downloading..." : version}</span>
         </Button>
       </TooltipHint>
       {children}
