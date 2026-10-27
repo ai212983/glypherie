@@ -11,6 +11,11 @@ const images = import.meta.glob<string>("./assets/rasterizers/samples/*/*.png", 
   eager: true, query: "?url", import: "default",
 });
 const defaultSample = matrix.cases.find((entry) => entry.family_id === "roboto" && entry.size_px === 16) ?? matrix.cases[0]!;
+const googleFontsUrls: Record<string, string> = {
+  roboto: "https://fonts.google.com/specimen/Roboto",
+  "roboto-italic": "https://fonts.google.com/specimen/Roboto",
+  literata: "https://fonts.google.com/specimen/Literata",
+};
 
 export function RasterizerComparison(): React.JSX.Element {
   const [family, setFamily] = React.useState(defaultSample.family_id);
@@ -26,7 +31,9 @@ export function RasterizerComparison(): React.JSX.Element {
       <div className="landing__comparison-heading">
         <div className="landing__section-heading">
           <h2 id="rasterizer-comparison-title">Compare font converters</h2>
-          <p className="landing__active-specimen" role="status">Active specimen: <strong>{sampleDescription}</strong></p>
+          <p className="landing__active-specimen" role="status">
+            <a href={googleFontsUrls[family]}><strong>{sampleDescription}</strong></a>
+          </p>
         </div>
         <div className="landing__specimen-controls">
           <Select value={family} onValueChange={setFamily}>
