@@ -59,6 +59,9 @@ this default; pointing it at regular Chrome can bring back the Dock flashes. Oth
 
 - `FONT_PREVIEW_BASE`: absolute hosting URL prefix for the app build (default `/`), for example `/font_generator/`. The
   GitHub Pages workflow sets it from the Pages configuration.
+- `FONT_PREVIEW_SITE_URL`: optional public HTTP(S) base URL, including the hosting prefix, for canonical and social
+  metadata (for example `https://example.com/font_generator/`). Its path must match `FONT_PREVIEW_BASE`. The GitHub
+  Pages workflow supplies this automatically. Without it, builds omit canonical URLs and absolute social image URLs.
 - `FONT_WASM_PREVIEW_DIR`: preview renderer package (default `tools/wasm/pkg-web-preview-simd128`, built by
   `WASM_SIMD128=1 tools/wasm/build.sh web preview` from the repository root). The default requires browser WebAssembly
   SIMD support. For a scalar build, run `WASM_SIMD128=0 tools/wasm/build.sh web preview`, then set this variable to that

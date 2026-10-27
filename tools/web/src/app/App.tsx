@@ -41,6 +41,8 @@ import { NavLink } from "../components/NavLink";
 import { PrimaryNav } from "./shell/PrimaryNav";
 import { SiteHeader } from "./shell/SiteHeader";
 import { SkipLink } from "./shell/SkipLink";
+import { PageMetadata, PublicPageMetadata } from "./shell/PageMetadata";
+import { PREVIEW_DESCRIPTION } from "./shell/page-metadata";
 
 type Page =
   | { name: "home" }
@@ -100,9 +102,7 @@ function AppContent(): React.JSX.Element {
   }, [applySnapshot]);
 
   const pushPath = React.useCallback((path: string): void => {
-    // History entries carry identity only. Saved variant settings always
-    // come from IndexedDB, never from history state, so Back cannot restore
-    // stale settings over the database.
+    // History carries identity; IndexedDB owns saved settings so Back cannot restore stale edits.
     window.history.pushState(null, "", path);
     handledHref.current = window.location.href;
   }, []);
@@ -112,9 +112,6 @@ function AppContent(): React.JSX.Element {
     return inner || window.location.search;
   };
 
-  // Unsaved per-font preview. Legacy outer queries and family fragments land
-  // here. Navigation is plain route identity; the database owns variant
-  // settings, so leaving an editor needs no flush gate.
   const openPreview = React.useCallback((id: string, knownFont?: StoredFont) => {
     const list = fontsRef.current ?? [];
     const target = knownFont ?? list.find((font) => font.id === id);
@@ -338,8 +335,6 @@ function AppContent(): React.JSX.Element {
         setImportStatus(`Importing ${file.name}…`);
         try {
           const { saved } = await library.importUpload(file);
-          // Imports land on the library with the imported card; no variant is
-          // created automatically.
           results.push(`Imported ${saved.name}.`);
         } catch (error) {
           results.push(userError(error, `Couldn’t import ${file.name}.`));
@@ -372,8 +367,6 @@ function AppContent(): React.JSX.Element {
     })();
   };
 
-  // Add variant creates the default saved variant first, then navigates only
-  // after the write commits.
   const onAddVariant = React.useCallback(async (target: StoredFont): Promise<void> => {
     const created = await createVariant(target.id);
     openVariantId(created.fontId, created.id);
@@ -407,6 +400,7 @@ function AppContent(): React.JSX.Element {
     return (
       <>
         <SkipLink />
+        <PublicPageMetadata page="home" />
         <LandingPage nav={primaryNav(null)} fontsHref={indexPath(migrationBase())} onFonts={() => openIndex()} />
       </>
     );
@@ -417,15 +411,18 @@ function AppContent(): React.JSX.Element {
     return (
       <>
         <SkipLink />
+        <PublicPageMetadata page="palettes" />
         <div className="flex flex-col lg:h-dvh lg:overflow-hidden">
           <div className="sticky top-0 z-40 shrink-0">
             <SiteHeader
               title="Glypherie"
+              titleAs="div"
               variant="brand"
               nav={primaryNav("palettes")}
             />
           </div>
           <main id="main" className="w-full flex-1 lg:flex lg:min-h-0 lg:flex-col">
+            <h1 className="sr-only">Palettes</h1>
             <GrayscalePage embedded baseSize={indexBaseSize} />
           </main>
         </div>
@@ -436,8 +433,10 @@ function AppContent(): React.JSX.Element {
   if (library.fonts === null || page === null) {
     return (
       <>
-        <SiteHeader title="Glypherie" variant="brand" nav={primaryNav("fonts")} />
+        <PageMetadata title={`${library.bootError ? "Couldn’t load font library" : "Loading font library"} — Glypherie`} description={PREVIEW_DESCRIPTION} />
+        <SiteHeader title="Glypherie" titleAs="div" variant="brand" nav={primaryNav("fonts")} />
         <main id="main" className="mx-auto my-12 w-[min(100%-3rem,1440px)] leading-[1.6]">
+          <h1 className="sr-only">Font library</h1>
           {library.bootError ? (
             <p role="alert" data-library-error>
               {library.bootError}{" "}
@@ -459,6 +458,7 @@ function AppContent(): React.JSX.Element {
     return (
       <>
         <SkipLink />
+        <PublicPageMetadata page="fonts" />
         <LibraryPage
           nav={primaryNav("fonts")}
           fonts={fonts}
@@ -509,8 +509,10 @@ function AppContent(): React.JSX.Element {
   if (snapshot === null) {
     return (
       <>
-        <SiteHeader title="Glypherie" variant="brand" nav={primaryNav("fonts")} />
+        <PageMetadata title="Loading font preview — Glypherie" description={PREVIEW_DESCRIPTION} />
+        <SiteHeader title="Glypherie" titleAs="div" variant="brand" nav={primaryNav("fonts")} />
         <main id="main" className="mx-auto my-12 w-[min(100%-3rem,1440px)] leading-[1.6]">
+          <h1 className="sr-only">Font preview</h1>
           <p role="status">Loading font preview…</p>
         </main>
       </>
@@ -525,7 +527,8 @@ function AppContent(): React.JSX.Element {
       <SkipLink />
       {!active || !activeMeta ? (
         <main id="main" className="mx-auto my-12 w-[min(100%-3rem,1440px)] max-w-[45rem] leading-[1.6]">
-          <h1 className="m-0 text-[clamp(1.8rem,3vw,2.25rem)] font-[650] tracking-[-.035em]">Font preview</h1>
+          <PageMetadata title="Font not found — Glypherie" description={PREVIEW_DESCRIPTION} />
+          <h1 className="m-0 text-[clamp(1.8rem,3vw,2.25rem)] font-[650] tracking-[-.035em]">Font not found</h1>
           <section className="content-state my-12 leading-[1.6]" role="alert">
             <h2>Font not found</h2>
             <p>

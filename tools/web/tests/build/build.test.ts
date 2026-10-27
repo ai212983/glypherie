@@ -93,15 +93,29 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
   const manifest = JSON.parse(await fs.readFile(path.join(output, "manifest.webmanifest"), "utf8"));
   assert.equal(manifest.start_url, "./fonts/", "installed app opens the font library");
   assert.equal(manifest.id, "./", "installed app identity stays stable");
+  assert.equal(manifest.name, "Glypherie");
+  assert.equal(manifest.short_name, "Glypherie");
+  assert.equal(manifest.theme_color, "#f6f7f5");
+  assert.doesNotMatch(html, /rel="canonical"|property="og:url"/, "unconfigured builds do not invent a public URL");
   await fs.access(path.join(output, "sw.js"));
 });
 
 
 test("Pages transport preserves URLs beneath root and project hosting prefixes", async (t) => {
   for (const base of ["/", "/preview/"]) {
-    const output = await buildApp(t, base);
+    const output = await buildApp(t, base, `https://example.test${base}/`);
     const index = await fs.readFile(path.join(output, "index.html"), "utf8");
     const fallback = await fs.readFile(path.join(output, "404.html"), "utf8");
+    for (const [route, title] of [["", "Glypherie — Bitmap fonts for low-resolution displays"], ["fonts/", "Font library — Glypherie"], ["palettes/", "Palettes — Glypherie"]]) {
+      const page = await fs.readFile(path.join(output, route!, "index.html"), "utf8");
+      assert.equal((page.match(/<title\b/g) ?? []).length, 1);
+      assert.ok(page.includes(`>${title}</title>`));
+      assert.ok(page.includes(`rel="canonical" href="https://example.test${base}${route}"`));
+      assert.ok(page.includes(`property="og:image" content="https://example.test${base}icons/icon-512.png"`));
+      assert.ok(page.includes(`href="${base}manifest.webmanifest"`));
+    }
+    assert.match(fallback, /Page not found — Glypherie/);
+    assert.match(fallback, /noindex,follow/);
     const restore = index.match(/<script>([\s\S]*?__pages_route[\s\S]*?)<\/script>/)?.[1];
     const redirect = fallback.match(/<script>([\s\S]*?)<\/script>/)?.[1];
     assert.ok(restore);
@@ -129,5 +143,11 @@ test("Pages transport preserves URLs beneath root and project hosting prefixes",
       });
       assert.equal(restored, "");
     }
+  }
+});
+
+test("public metadata rejects unsafe URLs and mismatched deployment paths", async (t) => {
+  for (const url of ["https://example.test/elsewhere/", "https://user:secret@example.test/preview/", "https://example.test/preview/?tracking=1", "javascript:alert(1)"]) {
+    await assert.rejects(buildApp(t, "/preview/", url), /FONT_PREVIEW_SITE_URL/);
   }
 });

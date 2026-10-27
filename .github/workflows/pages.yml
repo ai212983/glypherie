@@ -73,6 +73,7 @@ jobs:
         working-directory: tools/web
         env:
           FONT_PREVIEW_BASE: ${{ steps.pages.outputs.base_path }}/
+          FONT_PREVIEW_SITE_URL: ${{ steps.pages.outputs.base_url }}
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:

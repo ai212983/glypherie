@@ -77,12 +77,14 @@ export function LibraryPage({
       <div className="sticky top-0 z-40 shrink-0">
         <SiteHeader
           title="Glypherie"
+          titleAs="div"
           variant="brand"
           nav={nav}
           search={<QuickFilter value={filter} onChange={onFilter} />}
         />
       </div>
       <main id="main" className="w-full flex-1 lg:flex lg:min-h-0 lg:flex-col">
+        <h1 className="sr-only">Font library</h1>
         {notice && (
           <p className="mx-6 mt-5 max-w-[45rem] text-[.875rem] leading-[1.55]" role="alert" data-route-notice>
             {notice}

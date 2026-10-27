@@ -15,6 +15,7 @@ test("footer stays visible across pages, exposes build details and fits small sc
   assert.equal(await footer.locator("[data-connection]").count(), 0, "production hides the online indicator");
   assert.equal(await footer.locator(".site-footer__development").count(), 0, "production renders no dev HMR UI");
   assert.equal(await footer.locator("[data-hmr-status]").count(), 0);
+  await footer.locator("[data-app-version]").filter({ hasText: /^0\.1\.0(?:-dev)?$/ }).waitFor();
   assert.match(await footer.locator("[data-app-version]").innerText(), /^0\.1\.0(?:-dev)?$/);
   await context.setOffline(true);
   const offline = footer.getByRole("img", { name: "Offline", exact: true });

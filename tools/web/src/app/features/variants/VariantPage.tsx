@@ -13,6 +13,9 @@ import { indexPath, variantPath } from "../../navigation/router.js";
 import { readRouteSearch } from "../../navigation/snapshot";
 import { NavLink } from "../../../components/NavLink";
 import { SiteHeader } from "../../shell/SiteHeader";
+import { PageMetadata } from "../../shell/PageMetadata";
+import { VARIANT_DESCRIPTION } from "../../shell/page-metadata";
+import { displayName } from "../../fonts/metadata";
 import { useLiveVariant } from "../../variants/useFontVariants.js";
 import { useVariantDraft } from "../../variants/useVariantDraft.js";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
@@ -41,10 +44,7 @@ interface VariantEditorProps {
   rootSampleText: string;
 }
 
-// Hydrated editor, keyed by variant id so each variant owns its draft and
-// view state. The persisted domain is the FontVariant row edited through the
-// shared FontEditor; cross-tab changes surface as an ordinary save error with
-// an explicit reload that discards local edits.
+// Keyed by variant ID so drafts and view state cannot leak between variants.
 function VariantEditor({ font, variant, library, sidebar, rootSampleText }: VariantEditorProps): React.JSX.Element {
   const { draft, status, error, update, retry, reload } = useVariantDraft(variant);
   const [previewStatus, setPreviewStatus] = React.useState("");
@@ -59,6 +59,7 @@ function VariantEditor({ font, variant, library, sidebar, rootSampleText }: Vari
 
   const sidebarHead = (
     <Card className="gap-5 p-4 sm:p-6">
+      <h1 className="sr-only">{draft.name.trim() || "Untitled variant"} — {displayName(font)}</h1>
       <CardHeader>
         <CardTitle asChild>
           <Label htmlFor={`variant-name-${variant.id}`}><Type aria-hidden="true" className="size-3 shrink-0" />Name</Label>
@@ -107,29 +108,29 @@ function VariantEditor({ font, variant, library, sidebar, rootSampleText }: Vari
   );
 
   return (
-    <FontEditor
-      appearance="studio"
-      sidebarHead={sidebarHead}
-      sidebarStart={sidebar}
-      font={font}
-      settings={draft.settings}
-      sampleText={draft.inheritSampleText ? rootSampleText : draft.sampleText}
-      specimenInheritance={{ active: !!draft.inheritSampleText, onInherit: () => update({ inheritSampleText: true }) }}
-      onSettings={(settings) => update({ settings })}
-      onSampleText={(sampleText) => update({ sampleText, inheritSampleText: false })}
-      onReset={() => update({ inheritSampleText: true })}
-      resetDisabled={!!draft.inheritSampleText}
-      fontReady={ready}
-      fontLoadError={fontLoadError}
-      previewStatus={previewStatus}
-      onStatus={setPreviewStatus}
-    />
+    <>
+      <PageMetadata title={`${draft.name.trim() || "Untitled variant"} — ${displayName(font)} — Glypherie`} description={VARIANT_DESCRIPTION} />
+      <FontEditor
+        appearance="studio"
+        sidebarHead={sidebarHead}
+        sidebarStart={sidebar}
+        font={font}
+        settings={draft.settings}
+        sampleText={draft.inheritSampleText ? rootSampleText : draft.sampleText}
+        specimenInheritance={{ active: !!draft.inheritSampleText, onInherit: () => update({ inheritSampleText: true }) }}
+        onSettings={(settings) => update({ settings })}
+        onSampleText={(sampleText) => update({ sampleText, inheritSampleText: false })}
+        onReset={() => update({ inheritSampleText: true })}
+        resetDisabled={!!draft.inheritSampleText}
+        fontReady={ready}
+        fontLoadError={fontLoadError}
+        previewStatus={previewStatus}
+        onStatus={setPreviewStatus}
+      />
+    </>
   );
 }
 
-// Thin route host: loading, error, missing, and wrong-font recovery around
-// the keyed editor. Navigation is plain route identity; the database owns the
-// settings, so leaving never needs a flush gate.
 function VariantRoute({
   nav, font, variantId, baseSize, rootSampleText, library, onIndex, onOpenVariantId, onVariantDeleted, onAddVariant, listText, onListText,
 }: VariantPageProps & { listText: string; onListText: (text: string) => void }): React.JSX.Element {
@@ -145,16 +146,19 @@ function VariantRoute({
     <div className="sticky top-0 z-40 shrink-0">
       <SiteHeader
         title="Glypherie"
+        titleAs="div"
         variant="brand"
         nav={nav}
 
       />
     </div>
   );
-  const recovery = (content: React.JSX.Element): React.JSX.Element => (
+  const recovery = (title: string, content: React.JSX.Element): React.JSX.Element => (
     <div className="variant-studio flex flex-col lg:h-dvh lg:overflow-hidden">
+      <PageMetadata title={`${title} — Glypherie`} description={VARIANT_DESCRIPTION} />
       {header()}
       <main id="main" className="w-full flex-1 lg:min-h-0 lg:overflow-y-auto">
+        <h1 className="sr-only">{title}</h1>
         <div className="mx-auto my-12 w-[min(100%-3rem,1440px)] max-w-[45rem] leading-[1.6]">
           <Card>
             <CardContent>
@@ -168,6 +172,7 @@ function VariantRoute({
 
   if (!font) {
     return recovery(
+      "Font not found",
       <section className="content-state my-12 leading-[1.6]" role="alert" data-variant-missing>
         <h2>Font not found</h2>
         <p>
@@ -179,12 +184,14 @@ function VariantRoute({
 
   if (live.status === "loading") {
     return recovery(
+      "Loading variant",
       <p role="status" data-variant-editor={variantId}>Loading variant…</p>,
     );
   }
 
   if (live.status === "error") {
     return recovery(
+      "Couldn’t load variant",
       <section className="content-state my-12 leading-[1.6]" role="alert" data-variant-error={variantId}>
         <h2>Couldn’t load variant.</h2>
         <p>{live.message}{" "}
@@ -200,6 +207,7 @@ function VariantRoute({
 
   if (live.status === "missing") {
     return recovery(
+      "Variant not found",
       <section className="content-state my-12 leading-[1.6]" role="alert" data-variant-deleted={variantId}>
         <h2>Variant not found</h2>
         <p>
@@ -212,6 +220,7 @@ function VariantRoute({
   const saved = live.variant;
   if (saved.fontId !== font.id) {
     return recovery(
+      "Variant belongs to another font",
       <section className="content-state my-12 leading-[1.6]" role="alert" data-variant-wrong-font={variantId}>
         <h2>Variant belongs to another font.</h2>
         <p>
@@ -250,8 +259,7 @@ function VariantRoute({
   );
 }
 
-// Keep the list's comparison text across variant switches; route hydration and
-// editor drafts still remount for each variant identity.
+// Keep comparison text across switches while the keyed editor remounts.
 export function VariantPage(props: VariantPageProps): React.JSX.Element {
   const [listText, setListText] = React.useState("Aa 0123");
   return <VariantRoute key={props.variantId} {...props} listText={listText} onListText={setListText} />;

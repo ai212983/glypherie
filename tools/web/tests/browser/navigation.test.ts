@@ -243,17 +243,21 @@ test("Pages clean deep links boot and reload without a service worker", { skip: 
   assert.equal(await hashPath(page), "/palettes/");
   assert.equal(new URL(page.url()).hash, "");
   assert.equal(await hashParam(page, "utm"), foreign);
-  assert.deepEqual(documents.slice(0, 2), [
-    { path: "/preview/palettes/", status: 404 },
-    { path: "/preview/", status: 200 },
-  ], "Pages 404 redirects to the actual entry document");
+  assert.deepEqual(documents, [
+    { path: "/preview/palettes/", status: 200 },
+  ], "the public palette page has its own HTML entry");
 
   await page.getByRole("link", { name: "Fonts", exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   const ids = await cardIds(page);
   const settings = JSON.stringify({ [ids[0]!]: { size: 23.5, text: foreign } });
+  documents.length = 0;
   await page.goto(`${url}font/${ids[0]}/?v=1&families=${encodeURIComponent(settings)}`, { waitUntil: "networkidle" });
   await page.waitForFunction(canvasRendered);
+  assert.deepEqual(documents, [
+    { path: `/preview/font/${ids[0]}/`, status: 404 },
+    { path: "/preview/", status: 200 },
+  ], "browser-local preview routes still use the Pages fallback");
   assert.equal(await page.locator("[data-text]").inputValue(), foreign);
   assert.equal(await page.getByRole("spinbutton", { name: "Size", exact: true }).inputValue(), "23.5");
   assert.equal(new URL(page.url()).hash, "");

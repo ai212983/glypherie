@@ -528,7 +528,7 @@ test("saved variant page uses the studio layout with every control reachable", {
   await openNewVariant(page, id);
   await waitEditor(page);
 
-  assert.match(await page.locator("[data-site-header] h1").innerText(), /^Glypherie$/i);
+  assert.match(await page.getByRole("banner").getByRole("link", { name: "Glypherie", exact: true }).innerText(), /^Glypherie$/i);
   assert.equal(await page.locator("[data-site-header] [data-all-fonts]").count(), 0, "duplicate back link is removed");
   assert.equal(await page.getByRole("link", { name: "Glypherie", exact: true }).count(), 1);
   const mainControls = page.getByRole("group", { name: "Variant controls", exact: true });
@@ -586,7 +586,7 @@ test("saved variant page uses the studio layout with every control reachable", {
   await page.reload();
   await waitEditor(page);
   assert.equal(await page.locator("[data-size-px]").inputValue(), "28", "sidebar edits autosave across reload");
-  assert.match(await page.locator("[data-site-header] h1").innerText(), /^Glypherie$/i, "studio chrome survives reload");
+  assert.match(await page.getByRole("banner").getByRole("link", { name: "Glypherie", exact: true }).innerText(), /^Glypherie$/i, "studio chrome survives reload");
 
   const desktopLayout = await page.evaluate(() => ({
     height: window.innerHeight,

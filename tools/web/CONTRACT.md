@@ -10,7 +10,8 @@ Paths below are relative to the repository root.
   unchanged. Missing preview renderer artifacts fail the production build. The default renderer requires WebAssembly
   SIMD support; `FONT_WASM_PREVIEW_DIR` may select a scalar preview package for a separate compatible build.
 - Published files include `index.html`, `404.html`, hashed JS/CSS/renderer/font/license assets, `manifest.webmanifest`,
-  and the service worker (`sw.js`, scope `./`).
+  and the service worker (`sw.js`, scope `./`). `/fonts/` and `/palettes/` also have static HTML entries with public
+  page metadata. `FONT_PREVIEW_SITE_URL`, when set, must have the configured hosting prefix as its path.
 - Routes use paths relative to the configured hosting prefix: `/` shows the introduction, `/fonts/` shows the font
   library, `/font/<content-id>/?v=1…` shows that font's unsaved preview with its versioned settings, and
   `/font/<content-id>/variant/<variant-id>/` shows one saved variant whose settings live in the browser-local database,

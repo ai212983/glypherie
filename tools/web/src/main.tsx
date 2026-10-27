@@ -9,6 +9,8 @@ import "./index.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("App root element is missing.");
+// Transfer the static fallback to React's single metadata owner.
+document.head.querySelectorAll("[data-page-metadata]").forEach((element) => element.remove());
 createRoot(root).render(
   <ThemeProvider>
     <TooltipProvider>

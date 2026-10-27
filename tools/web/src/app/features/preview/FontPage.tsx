@@ -14,6 +14,8 @@ import { indexPath } from "../../navigation/router.js";
 import { readRouteSearch } from "../../navigation/snapshot";
 import { NavLink } from "../../../components/NavLink";
 import { SiteHeader } from "../../shell/SiteHeader";
+import { PageMetadata } from "../../shell/PageMetadata";
+import { PREVIEW_DESCRIPTION } from "../../shell/page-metadata";
 
 interface FontPageProps {
   nav?: React.ReactNode;
@@ -36,7 +38,6 @@ interface FontPageProps {
   saveVariantError: string;
 }
 
-// Legacy unsaved URL preview host.
 export function FontPage({
   nav, font, meta, snapshot, role, previewStatus, notice, library,
   onSnapshot, onPatch, onRole, onStatus, onOpenFont, onIndex, onDelete,
@@ -51,6 +52,8 @@ export function FontPage({
   const indexHref = indexPath(base);
   if (!family) return (
     <main id="main" className="mx-auto my-12 w-[min(100%-3rem,1440px)] max-w-[45rem] leading-[1.6]">
+      <PageMetadata title="Preview settings unavailable — Glypherie" description={PREVIEW_DESCRIPTION} />
+      <h1 className="sr-only">Font preview</h1>
       <section className="content-state" role="alert">
         <h2>This font has no preview settings yet.</h2>
         <p><NavLink href={indexHref} data-all-fonts onNavigate={onIndex}>All fonts</NavLink></p>
@@ -84,12 +87,15 @@ export function FontPage({
   };
   return (
     <>
+      <PageMetadata title={`${displayName(font)} — Preview — Glypherie`} description={PREVIEW_DESCRIPTION} />
       <SiteHeader
         title="Glypherie"
+        titleAs="div"
         variant="brand"
         nav={nav}
       />
       <main id="main" className="mx-auto w-[min(100%-3rem,1440px)]">
+      <h1 className="sr-only">{displayName(font)} — Preview</h1>
       <section className="content-state my-6 max-w-[45rem] leading-[1.6]" aria-label="Unsaved preview" data-unsaved-preview>
         <h2 className="text-[1rem]">Unsaved preview.</h2>
         <div className="mt-3 flex flex-wrap items-center gap-2">

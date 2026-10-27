@@ -639,7 +639,8 @@ test("empty-library history navigation leaves palettes for the index", { skip: !
     () => document.querySelector("main")?.textContent?.includes("No fonts") === true,
   );
   assert.equal(await hashPath(page), "/fonts/");
-  assert.equal(await page.locator("main h1").count(), 0, "palettes unmounts on the index route");
+  assert.equal(await page.locator('main section[aria-label="Grayscale preview"]').count(), 0, "palettes unmounts on the index route");
+  assert.equal(await page.getByRole("heading", { level: 1 }).innerText(), "Font library");
 
   await page.goBack();
   await grayscaleReady(page);

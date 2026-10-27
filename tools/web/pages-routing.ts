@@ -29,7 +29,7 @@ export function pagesRoutingPlugin(): Plugin {
     },
     generateBundle() {
       this.emitFile({ type: "asset", fileName: "404.html", source: `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Font preview</title></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,follow"><title>Page not found — Glypherie</title></head>
 <body><p>Page not found. <a href="${base}">Open Glypherie</a></p>
 <script>
 (() => {

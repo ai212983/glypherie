@@ -15,10 +15,10 @@ export const fontDir: string = path.join(repoRoot, "fonts");
 export const sha256 = (bytes: Uint8Array | string): string =>
   createHash("sha256").update(bytes).digest("hex");
 
-export async function buildApp(t: TestContext, base = "/preview/"): Promise<string> {
+export async function buildApp(t: TestContext, base = "/preview/", siteUrl = ""): Promise<string> {
   const output = await fs.mkdtemp(path.join(os.tmpdir(), "font-spa-"));
   t.after(() => fs.rm(output, { recursive: true, force: true }));
-  execFileSync("npm", ["run", "build", "--", "--outDir", output], { cwd: webRoot, stdio: "pipe", env: { ...process.env, FONT_PREVIEW_BASE: base } });
+  execFileSync("npm", ["run", "build", "--", "--outDir", output], { cwd: webRoot, stdio: "pipe", env: { ...process.env, FONT_PREVIEW_BASE: base, FONT_PREVIEW_SITE_URL: siteUrl } });
   return output;
 }
 

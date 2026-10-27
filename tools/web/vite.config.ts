@@ -6,6 +6,7 @@ import { fontPwaPlugin } from "./pwa.js";
 import { landingCaptureGuardPlugin } from "./scripts/landing-capture-guard.ts";
 import uiConfig from "./vite.ui.js";
 import { createBuildInfo } from "./scripts/build-info.ts";
+import { pageMetadataPlugin } from "./scripts/page-metadata.ts";
 
 // Assets, history routes and the Pages fallback share the configured hosting prefix.
 export default defineConfig(({ command }) => mergeConfig(uiConfig, defineConfig({
@@ -40,7 +41,7 @@ export default defineConfig(({ command }) => mergeConfig(uiConfig, defineConfig(
     emptyOutDir: true,
     assetsInlineLimit: 0,
   },
-  plugins: [pagesRoutingPlugin(), fontPwaPlugin(),
+  plugins: [pagesRoutingPlugin(), fontPwaPlugin(), pageMetadataPlugin(),
     // Production only: dev/preview serve the checked-in captures as-is.
     ...(command === "build" ? [landingCaptureGuardPlugin(path.resolve(import.meta.dirname, "../.."))] : []),
     {
