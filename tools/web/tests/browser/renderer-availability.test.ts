@@ -36,7 +36,7 @@ test("stored library stays accessible when the renderer is unavailable", { skip:
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(url, { waitUntil: "networkidle" });
+  await page.goto(`${url}fonts/`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0, null, {
     timeout: 30000,
   });

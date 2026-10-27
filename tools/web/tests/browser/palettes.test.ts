@@ -165,7 +165,7 @@ test("primary nav switches between fonts and palettes with active state", { skip
 
   await page.goBack();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
-  assert.equal(await hashPath(page), "/");
+  assert.equal(await hashPath(page), "/fonts/");
   assert.equal(await fontsNav.getAttribute("aria-current"), "page");
 
   await page.goForward();
@@ -178,8 +178,8 @@ test("primary nav switches between fonts and palettes with active state", { skip
   assert.ok(await fontsNav.isVisible(), "fonts nav stays usable at mobile width");
   assert.ok(await palettesNav.isVisible(), "palettes nav stays usable at mobile width");
   await page.getByRole("link", { name: "Glypherie", exact: true }).click();
-  await page.locator("[data-font-card]").first().waitFor();
-  assert.equal(await hashPath(page), "/", "brand link returns to the library from palettes");
+  await page.locator("[data-landing]").waitFor();
+  assert.equal(await hashPath(page), "/", "brand link returns to the landing page from palettes");
 });
 
 test("palettes loads directly and drops stale font snapshot params", { skip: !browserAvailable }, async (t) => {
@@ -638,7 +638,7 @@ test("empty-library history navigation leaves palettes for the index", { skip: !
   await page.waitForFunction(
     () => document.querySelector("main")?.textContent?.includes("No fonts") === true,
   );
-  assert.equal(await hashPath(page), "/");
+  assert.equal(await hashPath(page), "/fonts/");
   assert.equal(await page.locator("main h1").count(), 0, "palettes unmounts on the index route");
 
   await page.goBack();

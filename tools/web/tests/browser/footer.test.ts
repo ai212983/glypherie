@@ -106,7 +106,7 @@ test("footer stays visible across pages, exposes build details and fits small sc
   await page.locator("#main").waitFor();
   assert.equal((await footer.boundingBox())?.y, 864);
   await page.setViewportSize({ width: 375, height: 812 });
-  await page.goto(url);
+  await page.goto(`${url}fonts/`);
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   await footer.scrollIntoViewIfNeeded();
   assert.equal(await footer.isVisible(), true);

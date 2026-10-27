@@ -17,6 +17,7 @@ import {
 import {
   detailPath,
   indexPath,
+  homePath,
   isRoutePath,
   palettesPath,
   parseRoute,
@@ -157,6 +158,7 @@ export function canonicalPathFor(
     return `${detailPath(route.font)}?${encodeHashSearch(snapshot, baseSearch, familyOrder).toString()}`;
   }
   if (route.page === "palettes") return palettesPath(baseSearch);
+  if (route.page === "home") return homePath(baseSearch);
   return indexPath(baseSearch);
 }
 

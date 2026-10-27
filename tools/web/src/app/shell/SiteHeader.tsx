@@ -6,12 +6,13 @@ import { ZoomControl } from "../renderer/ZoomControl";
 import { useDisplayPreferences } from "./DisplayPreferences";
 import { cn } from "utils";
 import { ThemeToggle } from "../../components/theme/ThemeToggle";
-import { indexPath } from "../navigation/router";
+import { homePath } from "../navigation/router";
 import "./SiteHeader.css";
 
 interface SiteHeaderProps {
   eyebrow?: React.ReactNode;
   title: string;
+  titleAs?: "h1" | "div";
   variant?: "default" | "brand";
   sub?: React.ReactNode;
   controls?: React.ReactNode;
@@ -21,7 +22,7 @@ interface SiteHeaderProps {
   displayControls?: boolean;
 }
 
-export function SiteHeader({ eyebrow, title, sub, controls, search, actions, nav, displayControls = true, variant = "default" }: SiteHeaderProps): React.JSX.Element {
+export function SiteHeader({ eyebrow, title, titleAs: Title = "h1", sub, controls, search, actions, nav, displayControls = true, variant = "default" }: SiteHeaderProps): React.JSX.Element {
   const { zoom, onZoom } = useDisplayPreferences();
   const brand = variant === "brand";
   return (
@@ -31,15 +32,15 @@ export function SiteHeader({ eyebrow, title, sub, controls, search, actions, nav
       <div className="site-header__inner">
         <div className="site-header__identity">
           {eyebrow && <div className="site-header__eyebrow">{eyebrow}</div>}
-          <h1 className={cn("m-0 truncate", brand
+          <Title className={cn("m-0 truncate", brand
             ? "font-display text-[16px] leading-6 font-bold tracking-[1.6px] text-studio-foreground uppercase"
             : "font-[650] text-[clamp(1.2rem,2.4vw,1.5rem)] tracking-[-.035em]")}>
             {title === "Glypherie" ? (
-              <NavLink href={indexPath(readRouteSearch())} onNavigate={() => navigateTo(indexPath(readRouteSearch()))} className="text-inherit no-underline">
+              <NavLink href={homePath(readRouteSearch())} onNavigate={() => navigateTo(homePath(readRouteSearch()))} className="text-inherit no-underline">
                 {title}
               </NavLink>
             ) : title}
-          </h1>
+          </Title>
           {sub}
         </div>
         {nav && <div className="site-header__nav">{nav}</div>}

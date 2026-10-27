@@ -1,7 +1,7 @@
 import { NavLink } from "../../components/NavLink";
 
 interface PrimaryNavProps {
-  active: "fonts" | "palettes";
+  active: "fonts" | "palettes" | null;
   fontsHref: string;
   palettesHref: string;
   onFonts: () => void;

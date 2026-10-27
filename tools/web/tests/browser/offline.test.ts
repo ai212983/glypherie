@@ -59,7 +59,7 @@ test("installed app shell reloads offline beneath the hosting prefix", { skip: !
   );
   await direct.waitForFunction(canvasRendered, null, { timeout: 20000 });
   const catalog = await context.newPage();
-  await catalog.goto(url, { waitUntil: "domcontentloaded" });
+  await catalog.goto(`${url}fonts/`, { waitUntil: "domcontentloaded" });
   await catalog.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0, null, {
     timeout: 20000,
   });

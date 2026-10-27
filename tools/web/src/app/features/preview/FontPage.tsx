@@ -85,7 +85,8 @@ export function FontPage({
   return (
     <>
       <SiteHeader
-        title={displayName(font)}
+        title="Glypherie"
+        variant="brand"
         nav={nav}
       />
       <main id="main" className="mx-auto w-[min(100%-3rem,1440px)]">

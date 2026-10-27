@@ -55,7 +55,7 @@ test("Playdate downloads run through the real worker, include kerning, and recov
   assert.equal(await optimize.isDisabled(), true);
   assert.equal(await page.getByRole("textbox", { name: "0 characters", exact: true }).count(), 1);
   // Saved variants use the same export surface and honor their current settings.
-  await page.goto(url);
+  await page.goto(`${url}fonts/`);
   await openNewVariant(page, id);
   await page.locator("[data-export-characters]").fill(" AVToj");
   const variantDownload = page.waitForEvent("download");

@@ -207,9 +207,9 @@ test("palettes links keep foreign params while dropping snapshot state", () => {
 
 test("detail links name the font and index links drop snapshot state", () => {
   assert.equal(detailPath("beta"), "/font/beta/");
-  assert.equal(indexPath("?v=1&font=beta&profile=mono_1bit&utm=keep"), "/?utm=keep");
-  assert.equal(indexPath("?v=1&font=beta"), "/");
-  assert.equal(indexPath(""), "/");
+  assert.equal(indexPath("?v=1&font=beta&profile=mono_1bit&utm=keep"), "/fonts/?utm=keep");
+  assert.equal(indexPath("?v=1&font=beta"), "/fonts/");
+  assert.equal(indexPath(""), "/fonts/");
 });
 
 test("hash search carries versioned state without the font identity", () => {
@@ -233,7 +233,7 @@ test("historical URLs resolve to current controls", () => {
   assert.equal(historical?.rasterization, "coverage");
   assert.equal(parseUrlSnapshot("?v=1&font=alpha&role=baseline", "", METAS, DEFAULTS)?.rasterization, "free_type_mono");
   assert.equal(defaultSnapshot(METAS, DEFAULTS).rasterization, "free_type_mono");
-  assert.equal(indexPath("?v=1&raster=coverage&utm=keep"), "/?utm=keep");
+  assert.equal(indexPath("?v=1&raster=coverage&utm=keep"), "/fonts/?utm=keep");
 });
 
  test("old zoom and scan overrides are ignored and removed from shared links", () => {

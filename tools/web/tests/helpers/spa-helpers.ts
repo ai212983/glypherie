@@ -101,7 +101,7 @@ export async function canvasPixels(page: Page): Promise<{ width: number; height:
  * already carries the full catalog.
  */
 export async function bootLibrary(page: Page, url: string): Promise<void> {
-  await page.goto(url, { waitUntil: "networkidle" });
+  await page.goto(`${url}fonts/`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
 }
 

@@ -215,7 +215,7 @@ test("a cold missing variant route recovers with a working library link", { skip
   });
   await page.locator("[data-variant-deleted] [data-all-fonts]").click();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
-  assert.equal(await hashPath(page), "/");
+  assert.equal(await hashPath(page), "/fonts/");
 });
 
 test("denied storage shows a query error with Retry instead of hanging", { skip: !browserAvailable }, async (t) => {
@@ -231,7 +231,7 @@ test("denied storage shows a query error with Retry instead of hanging", { skip:
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(url, { waitUntil: "networkidle" });
+  await page.goto(`${url}fonts/`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.querySelector("[data-library-error]") !== null, null, {
     timeout: 20000,
   });
@@ -510,7 +510,7 @@ test("variant sidebar shares specimen rows and supports switching, adding and de
   assert.equal(await page.locator("[data-variant-name]").inputValue(), "First variant", "deleting the active variant selects another saved variant");
   await list.locator(`[data-delete-variant="${first}"]`).click();
   await page.locator("[data-font-card]").first().waitFor();
-  assert.equal(await hashPath(page), "/", "deleting the last variant returns to Fonts");
+  assert.equal(await hashPath(page), "/fonts/", "deleting the last variant returns to Fonts");
   assert.deepEqual(await cardVariantIds(page, id), []);
   await page.getByRole("link", { name: "Palettes", exact: true }).click();
   assert.deepEqual(await page.locator("[data-specimen-list-text]").evaluate(comparisonStyle), variantTextStyle,

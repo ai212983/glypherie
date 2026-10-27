@@ -76,7 +76,9 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
   assert.ok(html.includes("/preview/assets/"), "asset URLs use the configured hosting prefix");
   await fs.access(path.join(output, "404.html"));
   assert.doesNotMatch(html, /src=["']\/(?!preview)/, "no root-absolute asset URLs");
-  await fs.access(path.join(output, "manifest.webmanifest"));
+  const manifest = JSON.parse(await fs.readFile(path.join(output, "manifest.webmanifest"), "utf8"));
+  assert.equal(manifest.start_url, "./fonts/", "installed app opens the font library");
+  assert.equal(manifest.id, "./", "installed app identity stays stable");
   await fs.access(path.join(output, "sw.js"));
 });
 

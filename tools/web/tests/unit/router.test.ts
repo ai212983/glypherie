@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   palettesPath,
+  homePath,
+  indexPath,
   parseRoute,
   resolveRoute,
   splitRoute,
@@ -19,9 +21,9 @@ test("hash parts split path from inner query", () => {
 });
 
 test("hash routes parse the library and font paths", () => {
-  assert.deepEqual(parseRoute("#/"), { name: "index" });
-  assert.deepEqual(parseRoute(""), { name: "index" });
-  assert.deepEqual(parseRoute("#"), { name: "index" });
+  assert.deepEqual(parseRoute("#/"), { name: "home" });
+  assert.deepEqual(parseRoute(""), { name: "home" });
+  assert.deepEqual(parseRoute("#"), { name: "home" });
   assert.deepEqual(parseRoute("#/font/aaa/"), { name: "font", font: "aaa" });
   assert.deepEqual(parseRoute("#/font/aaa"), { name: "font", font: "aaa" });
   assert.deepEqual(parseRoute("#/font/aaa/?v=1"), { name: "font", font: "aaa" });
@@ -39,12 +41,12 @@ test("hash routes parse the library and font paths", () => {
   assert.equal(parseRoute("#family-aaa"), null);
 });
 
-test("bare roots resolve to the library", () => {
-  assert.deepEqual(resolveRoute("", "", IDS), { page: "index" });
+test("bare roots resolve to the landing and legacy library hashes migrate", () => {
+  assert.deepEqual(resolveRoute("", "", IDS), { page: "home" });
   assert.deepEqual(resolveRoute("#/", "", IDS), { page: "index" });
   assert.deepEqual(resolveRoute("#/", "?utm=keep", IDS), { page: "index" });
-  assert.deepEqual(resolveRoute("", "?profile=gray_3bit&zoom=3", IDS), { page: "index" });
-  assert.deepEqual(resolveRoute("#main", "", IDS), { page: "index" });
+  assert.deepEqual(resolveRoute("", "?profile=gray_3bit&zoom=3", IDS), { page: "home" });
+  assert.deepEqual(resolveRoute("#main", "", IDS), { page: "home" });
 });
 
 test("canonical font hashes select known fonts", () => {
@@ -145,11 +147,23 @@ test("unknown ids and malformed routes recover on the library with a notice", ()
 });
 
 test("clean paths resolve the library, previews, variants and palette lab", () => {
-  assert.deepEqual(resolveRoute("/", "", IDS), { page: "index" });
+  assert.deepEqual(resolveRoute("/", "", IDS), { page: "home" });
   assert.deepEqual(resolveRoute("/font/bbb/", "?v=1&font=aaa", IDS), { page: "font", font: "bbb" });
   assert.deepEqual(resolveRoute("/font/bbb/variant/vvv/", "", IDS), { page: "variant", font: "bbb", variant: "vvv" });
   assert.deepEqual(resolveRoute("/palettes/", "?font=aaa", []), { page: "palettes" });
   assert.match((resolveRoute("/unknown/", "?font=aaa", IDS) as { notice: string }).notice, /Page not found/);
   assert.equal(parseRoute("/font/%zz/"), null);
   assert.equal(variantPath("a/b", "v?x"), "/font/a%2Fb/variant/v%3Fx/");
+});
+
+
+test("library paths are explicit and ignore stale font query state", () => {
+  for (const path of ["/fonts/", "/fonts", "#/fonts/"]) {
+    assert.deepEqual(parseRoute(path), { name: "index" });
+    assert.deepEqual(resolveRoute(path, "?v=1&font=bbb", []), { page: "index" });
+  }
+  assert.equal(indexPath("?v=1&font=bbb&utm=keep"), "/fonts/?utm=keep");
+  assert.equal(homePath("?v=1&font=bbb&utm=keep"), "/?utm=keep");
+  assert.deepEqual(resolveRoute("/", "?utm=keep", []), { page: "home" });
+  assert.deepEqual(resolveRoute("/", "?font=bbb&v=1", IDS), { page: "font", font: "bbb" });
 });

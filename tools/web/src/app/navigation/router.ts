@@ -1,6 +1,7 @@
 import { appBase } from "./location.ts";
 
 export type Route =
+  | { page: "home" }
   | { page: "index"; notice?: string }
   | { page: "font"; font: string }
   | { page: "variant"; font: string; variant: string }
@@ -19,6 +20,7 @@ export function splitRoute(hash: string): RouteParts {
 }
 
 export type ParsedRoute =
+  | { name: "home" }
   | { name: "index" }
   | { name: "font"; font: string }
   | { name: "variant"; font: string; variant: string }
@@ -27,7 +29,8 @@ export type ParsedRoute =
 
 export function parseRoute(hash: string): ParsedRoute {
   const { path } = splitRoute(hash ?? "");
-  if (path === "" || path === "/") return { name: "index" };
+  if (path === "" || path === "/") return { name: "home" };
+  if (/^\/fonts\/?$/.test(path)) return { name: "index" };
   if (/^\/palettes\/?$/.test(path)) return { name: "palettes" };
   const variant = path.match(/^\/font\/([^/]+)\/variant\/([^/]+)\/?$/);
   if (variant) {
@@ -94,11 +97,12 @@ export function resolveRoute(
   // The palettes lab is font-independent: it resolves without fonts and wins
   // over stale legacy outer font queries or snapshot params on the way in.
   if (parsed?.name === "palettes") return { page: "palettes" };
+  if (parsed?.name === "index") return { page: "index" };
   if (parsed === null) {
     if (isRoutePath(hash ?? "")) {
       return { page: "index", notice: "Page not found. Showing all fonts." };
     }
-  } else if (hash === "#/" || splitRoute(hash ?? "").search) {
+  } else if ((hash ?? "").startsWith("#/") && parsed.name === "home") {
     return { page: "index" };
   }
   const params = outerParams(outerSearch ?? "");
@@ -112,7 +116,7 @@ export function resolveRoute(
   const selected = font ?? hashId;
   if (selected && known.has(selected)) return { page: "font", font: selected };
   if (selected) return { page: "index", notice: unknownFontNotice() };
-  return { page: "index" };
+  return { page: "home" };
 }
 
 // Query parameters owned by the versioned preview snapshot codec. Route
@@ -163,8 +167,16 @@ export function palettesPath(baseSearch: string | URLSearchParams): string {
   return text ? `${appBase}palettes/?${text}` : `${appBase}palettes/`;
 }
 
-/** Canonical library URL, keeping foreign params (e.g. role, utm) while dropping snapshot state. */
 export function indexPath(baseSearch: string | URLSearchParams): string {
+  return sectionPath("fonts/", baseSearch);
+}
+
+export function homePath(baseSearch: string | URLSearchParams): string {
+  return sectionPath("", baseSearch);
+}
+
+// Section links keep foreign query parameters and discard preview settings.
+function sectionPath(section: string, baseSearch: string | URLSearchParams): string {
   const base = outerParams(baseSearch ?? "");
   const owned = new Set(OWNED_PARAMS);
   const result = new URLSearchParams();
@@ -172,5 +184,5 @@ export function indexPath(baseSearch: string | URLSearchParams): string {
     if (!owned.has(key)) result.append(key, value);
   }
   const text = result.toString();
-  return text ? `${appBase}?${text}` : appBase;
+  return `${appBase}${section}${text ? `?${text}` : ""}`;
 }

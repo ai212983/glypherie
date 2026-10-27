@@ -26,7 +26,7 @@ const EXPECTED = [
   { pattern: /^Source Sans 3/, license: "OFL-SourceSans3.txt", axes: ["wght"] },
 ];
 
-test("bare root loads the catalog with five font cards and zero variants", { skip: !browserAvailable }, async (t) => {
+test("fonts route loads the catalog with five font cards and zero variants", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
   const url = await servePrefix(t, output);
   const browser = await launch(t);

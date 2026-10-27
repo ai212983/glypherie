@@ -122,7 +122,10 @@ test("index boots cleanly and the first variant renders through the worker", { s
   const failed: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("response", (response) => {
-    if (response.status() >= 400 && !response.url().endsWith("favicon.ico")) failed.push(response.url());
+    const libraryRedirect = response.status() === 404
+      && response.request().resourceType() === "document"
+      && new URL(response.url()).pathname === "/preview/fonts/";
+    if (response.status() >= 400 && !libraryRedirect && !response.url().endsWith("favicon.ico")) failed.push(response.url());
   });
   await bootLibrary(page, url);
   const names = await cardNames(page);
@@ -240,7 +243,7 @@ test("palette selection and keyboard focus are visible", { skip: !browserAvailab
     "the selected preset has a fill",
   );
   await page.keyboard.press("Escape");
-  await page.locator("h1").click();
+  await page.locator('.family h2[id^="heading-"]').click();
   for (let i = 0; i < 120; i += 1) {
     const focused = await page.evaluate(
       () => document.activeElement?.getAttribute("role") === "combobox"

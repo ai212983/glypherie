@@ -39,7 +39,7 @@ test("back and forward move between catalog and variant with settings kept", { s
 
   await page.goBack();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length === 5);
-  assert.equal(await hashPath(page), "/");
+  assert.equal(await hashPath(page), "/fonts/");
 
   await page.goForward();
   await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
@@ -111,8 +111,8 @@ test("direct hash edits switch variants without a reload", { skip: !browserAvail
   let reloaded = false;
   page.once("load", () => { reloaded = true; });
   const first = await openNewVariant(page, ids[0]!);
-  const home = page.getByRole("link", { name: "Glypherie", exact: true });
-  assert.equal(await home.getAttribute("href"), "/preview/");
+  const home = page.getByRole("link", { name: "Fonts", exact: true });
+  assert.equal(await home.getAttribute("href"), "/preview/fonts/");
   await home.focus();
   await home.press("Enter");
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
@@ -143,7 +143,7 @@ test("a debounced preview write cannot undo navigation to the catalog", { skip: 
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   await page.waitForTimeout(600);
   assert.equal(await page.locator("[data-font-cards]").count(), 1);
-  assert.equal(await hashPath(page), "/");
+  assert.equal(await hashPath(page), "/fonts/");
   assert.equal(await hashParam(page, "v"), null);
 });
 
@@ -197,7 +197,7 @@ test("unknown variant urls recover visibly without creating data", { skip: !brow
     (settled ?? "").includes("not found in this library"),
     `recovery notice survives paired route events, got: ${settled}`,
   );
-  assert.equal(await hashPath(page), "/", "unknown id canonicalizes to the library with its notice");
+  assert.equal(await hashPath(page), "/fonts/", "unknown id canonicalizes to the library with its notice");
 });
 
 test("variant reload keeps the variant and its saved settings", { skip: !browserAvailable }, async (t) => {
@@ -265,5 +265,5 @@ test("Pages clean deep links boot and reload without a service worker", { skip: 
   await page.goto(`${url}unknown/`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.querySelector("[data-route-notice]") !== null);
   assert.match(await page.locator("[data-route-notice]").textContent() ?? "", /Page not found/);
-  assert.equal(await hashPath(page), "/");
+  assert.equal(await hashPath(page), "/fonts/");
 });

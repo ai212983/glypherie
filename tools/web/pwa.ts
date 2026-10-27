@@ -13,7 +13,7 @@ export function fontPwaPlugin(): Plugin[] {
       short_name: "Font Preview",
       description: "Preview font renderings and inspect type metadata, offline.",
       scope: "./",
-      start_url: "./",
+      start_url: "./fonts/",
       display: "standalone",
       background_color: "#ffffff",
       theme_color: "#111827",

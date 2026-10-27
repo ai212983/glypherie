@@ -80,7 +80,7 @@ test("new uploads appear in the library, persist, and delete cleanly", { skip: !
   await page.locator(`[data-delete-font="${robotXId}"]`).click();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length === 5);
   assert.deepEqual(await cardNames(page), before, "deletion returns the library to five fonts");
-  assert.equal(await hashPath(page), "/", "delete returns to the library route");
+  assert.equal(await hashPath(page), "/fonts/", "delete returns to the library route");
 
   await page.reload({ waitUntil: "networkidle" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);

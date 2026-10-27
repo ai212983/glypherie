@@ -22,7 +22,7 @@ async function freePort(): Promise<number> {
 }
 
 test("switching a cached production app to dev retires its worker and preserves variants", { skip: !browserAvailable }, async (t) => {
-  const output = await buildApp(t);
+  const output = await buildApp(t, "/");
   const port = await freePort();
   const configFile = path.join(webRoot, "vite.config.ts");
   const nodeEnv = process.env.NODE_ENV;

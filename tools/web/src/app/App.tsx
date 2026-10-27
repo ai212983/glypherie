@@ -32,6 +32,7 @@ import { useFontLibrary } from "./fonts/useFontLibrary";
 import { displayName } from "./fonts/metadata";
 import { createVariant } from "./variants/repository.js";
 import { GrayscalePage } from "./features/grayscale/GrayscalePage";
+import { LandingPage } from "./features/landing/LandingPage";
 import { LibraryPage } from "./features/library/LibraryPage";
 import { readStoredLibraryPreferences, writeStoredLibraryPreferences, type LibraryPreferences } from "./features/library/preferences";
 import { FontPage } from "./features/preview/FontPage";
@@ -42,10 +43,11 @@ import { SiteHeader } from "./shell/SiteHeader";
 import { SkipLink } from "./shell/SkipLink";
 
 type Page =
+  | { name: "home" }
+  | { name: "palettes" }
   | { name: "index" }
   | { name: "preview"; font: string }
-  | { name: "variant"; font: string; variant: string }
-  | { name: "palettes" };
+  | { name: "variant"; font: string; variant: string };
 
 export function App(): React.JSX.Element {
   return <DisplayPreferencesProvider><AppContent /></DisplayPreferencesProvider>;
@@ -164,7 +166,7 @@ function AppContent(): React.JSX.Element {
     pushPath(palettesPath(migrationBase()));
   }, [pushPath]);
 
-  const primaryNav = (active: "fonts" | "palettes"): React.JSX.Element => (
+  const primaryNav = (active: "fonts" | "palettes" | null): React.JSX.Element => (
     <PrimaryNav
       active={active}
       fontsHref={indexPath(migrationBase())}
@@ -177,10 +179,10 @@ function AppContent(): React.JSX.Element {
   React.useEffect(() => {
     if (pageRef.current === null) {
       const probe = resolveRoute(readRoutePath(), window.location.search, []);
-      if (probe.page === "palettes") {
+      if (probe.page === "palettes" || probe.page === "home") {
         const metas = buildMetas([]);
         const snap = readInitialSnapshot(metas);
-        setPage({ name: "palettes" });
+        setPage(probe.page === "home" ? { name: "home" } : { name: "palettes" });
         setNotice("");
         const inner = readRouteSearch();
         replaceCanonicalPath(probe, snap, [], inner || window.location.search);
@@ -210,8 +212,8 @@ function AppContent(): React.JSX.Element {
       }
       setPage({ name: "preview", font: route.font });
       setNotice("");
-    } else if (route.page === "palettes") {
-      setPage({ name: "palettes" });
+    } else if (route.page === "palettes" || route.page === "home") {
+      setPage(route.page === "home" ? { name: "home" } : { name: "palettes" });
       setNotice("");
     } else {
       setPage({ name: "index" });
@@ -242,14 +244,11 @@ function AppContent(): React.JSX.Element {
       setSaveVariantError("");
       const order = list.map((font) => font.id);
       const base = readRouteSearch() || window.location.search;
-      if (route.page === "palettes") {
-        // The palettes lab is font-independent, so it resolves with no fonts
-        // at all. Canonicalize to drop stale font snapshot params without
-        // disturbing pending library state.
+      if (route.page === "palettes" || route.page === "home") {
         const current = snapshotRef.current ?? readInitialSnapshot(metas);
         replaceCanonicalPath(route, current, order, base);
         if (!snapshotRef.current) setSnapshot(current);
-        setPage({ name: "palettes" });
+        setPage(route.page === "home" ? { name: "home" } : { name: "palettes" });
         setNotice("");
       } else if (libraryPending) {
         return;
@@ -403,9 +402,18 @@ function AppContent(): React.JSX.Element {
     })();
   }, [library.fonts, openVariantId, page, role, savingVariant, snapshot]);
 
-  const showPalettes = page?.name === "palettes"
-    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "palettes");
-  if (showPalettes) {
+  if (page?.name === "home"
+    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "home")) {
+    return (
+      <>
+        <SkipLink />
+        <LandingPage nav={primaryNav(null)} fontsHref={indexPath(migrationBase())} onFonts={() => openIndex()} />
+      </>
+    );
+  }
+
+  if (page?.name === "palettes"
+    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "palettes")) {
     return (
       <>
         <SkipLink />
