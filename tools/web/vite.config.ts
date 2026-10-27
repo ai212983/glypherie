@@ -20,6 +20,8 @@ export default defineConfig(({ command }) => mergeConfig(uiConfig, defineConfig(
   server: {
     port: 8903,
     strictPort: true,
+    // Use fs.watch: fsevents can miss changes on macOS.
+    watch: process.platform === "darwin" ? { useFsEvents: false, usePolling: false } : undefined,
     fs: {
       allow: [
         import.meta.dirname,
