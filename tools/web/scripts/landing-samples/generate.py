@@ -54,9 +54,48 @@ def execute(args, directory, name):
     return result.stdout
 
 
+def fetch_pinned_font(url, digest, destination):
+    if not isinstance(digest, str) or not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise ValueError('font_sha256 must be a 64-character lowercase hex digest')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with urlopen(url, timeout=120) as response:
+        data = response.read()
+    if sha(data) != digest:
+        raise ValueError(f'Downloaded font identity mismatch: {url}')
+    destination.write_bytes(data)
+
+
+def resolve_renderer_policy(case):
+    """Resolve explicit overrides; absent/None values inherit the shared policy."""
+    bridge = SCRIPT / 'preview-policy-bridge.ts'
+    declared = {key: case[key] for key in ['fitting', 'rasterization', 'diagonal_fitting', 'dropout', 'include_stubs', 'font_instructions'] if case.get(key) is not None}
+    try:
+        completed = subprocess.run(['node', str(bridge)], input=json.dumps(declared), capture_output=True, text=True, cwd=ROOT)
+    except OSError as error:
+        raise ValueError(f'renderer policy bridge failed: {error}')
+    if completed.returncode:
+        detail = (completed.stderr or completed.stdout or '').strip()
+        raise ValueError(f'renderer policy rejected: {detail or "unknown bridge error"}')
+    try:
+        resolved = json.loads(completed.stdout)
+        policy, fingerprint = resolved['policy'], resolved['fingerprint']
+    except (ValueError, KeyError, TypeError):
+        raise ValueError('renderer policy bridge returned invalid JSON')
+    if not isinstance(policy, dict) or not isinstance(fingerprint, str) or not re.fullmatch(r'[0-9a-f]{64}', fingerprint):
+        raise ValueError('renderer policy bridge returned invalid policy or fingerprint')
+    return declared, policy, fingerprint
+
+
+# Include shared policy dependencies in the mid-capture source-change check.
+SHARED_RENDERER_SOURCES = ['tools/web/src/app/renderer/preview-policy.ts', 'tools/web/scripts/policy-fingerprint.ts']
+
+
 def source_state():
     paths = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', 'tools/generator', str(SCRIPT.relative_to(ROOT))], cwd=ROOT).decode().split('\0')
-    return {p: sha((ROOT / p).read_bytes()) for p in sorted(set(paths)) if p and (ROOT / p).is_file()}
+    state = {p: sha((ROOT / p).read_bytes()) for p in sorted(set(paths)) if p and (ROOT / p).is_file()}
+    for extra in SHARED_RENDERER_SOURCES:
+        state[extra] = sha((ROOT / extra).read_bytes())
+    return state
 
 
 def prepare_tools(cache):
@@ -235,6 +274,15 @@ def compose(glyphs, text, canvas, origin, baselines, pair_adjustments=None):
     return image
 
 
+def glypherie_request(text, size, policy):
+    """Use native advances and fitted pairs without source kerning or extra tracking."""
+    return {
+        'config': {'size_px': size, 'axes': {}, 'hinting': policy['hinting'], 'output_bits': policy['output_bits'], 'mono_threshold': policy['mono_threshold'], 'gray_gamma': policy['gray_gamma'], 'characters': ''.join(sorted(set(text.replace('\n', '') + 'HIl'))), 'missing_glyphs': policy['missing_glyphs'], 'kerning': False, 'metric_rounding': policy['metric_rounding'], 'mono_raster': policy['mono_raster']},
+        'pipeline': {'fitting': policy['fitting'], 'rasterization': policy['rasterization'], 'diagonal_fitting': policy['diagonal_fitting']},
+        'letter_spacing_px': 0,
+    }
+
+
 def generate_case(case, directory, binaries, source_snapshot):
     from PIL import ImageChops
     directory.mkdir()
@@ -255,11 +303,8 @@ def generate_case(case, directory, binaries, source_snapshot):
     inputs = dict(family=family, size_px=size, source_font=str(case['font']), source_font_sha256=sha(Path(case['font']).read_bytes()), font_sha256=sha(font.read_bytes()), source_axes=axes, text=text, text_sha256=sha(text.encode()), canvas=canvas, origin_x=origin, baselines_y=baselines, source_kerning=False, threshold=case['threshold'], spacing='Each converter retains native advances. Glypherie retains fitted pair corrections with source kerning disabled and neutral tracking.')
     inputs.update(family_id=case.get('family_id'), stem_calibration=calibration)
     write_json(directory / 'inputs.json', inputs)
-    request = {
-        'config': {'size_px': size, 'axes': {}, 'hinting': 'auto_fallback', 'output_bits': 1, 'mono_threshold': 128, 'gray_gamma': 1, 'characters': ''.join(sorted(set(text.replace('\n', '') + 'HIl'))), 'missing_glyphs': 'error', 'kerning': False, 'metric_rounding': 'subpixel', 'mono_raster': {'dropout': case['dropout'], 'include_stubs': case['include_stubs'], 'font_instructions': case['font_instructions']}},
-        'pipeline': {'fitting': case['fitting'], 'rasterization': case['rasterization'], 'diagonal_fitting': case['diagonal_fitting']},
-        'letter_spacing_px': 0,
-    }
+    declared, policy, fingerprint = resolve_renderer_policy(case)
+    request = glypherie_request(text, size, policy)
     write_json(directory / 'request.json', request)
     print(f"Generating {case['id']}: {family}, {size} px, {axes}", flush=True)
     execute(['node', SCRIPT / 'capture.mjs', directory, font, directory / 'inputs.json'], directory, 'browser-capture')
@@ -307,7 +352,7 @@ def generate_case(case, directory, binaries, source_snapshot):
             from stems import native_widths
             verification[tool]['principal_stem_runs'] = native_widths(glyphs[tool], calibration)
         samples.append({'id': tool, 'label': label, 'source_url': url, 'output': output, 'file': f'{tool}.png', 'original': f'{tool}/paragraph.png', 'sha256': sha((directory / tool / 'paragraph.png').read_bytes()), 'display_sha256': sha((directory / f'{tool}.png').read_bytes()), 'capture': browser['samples'].get(tool), 'export_verification': verification[tool]})
-    manifest = {'inputs': inputs, 'display_crop': crop, 'display_size': [crop[2] - crop[0], crop[3] - crop[1]], 'display_lines': bands, 'display_line_gap': 2, 'glypherie_pipeline': request['pipeline'], 'glypherie_scan': request['config']['mono_raster'], 'samples': samples, 'source_snapshot_sha256': sha(json.dumps(source_snapshot, sort_keys=True).encode()), 'source_run': str(directory.relative_to(ROOT)) if directory.is_relative_to(ROOT) else str(directory), 'updated_at': datetime.now(timezone.utc).isoformat(), 'assessment': 'Pending optical assessment. Native converter output; no quality ranking.', 'browser': browser['browser'], 'platform': browser['platform'], 'source_files': browser['sources']}
+    manifest = {'inputs': inputs, 'display_crop': crop, 'display_size': [crop[2] - crop[0], crop[3] - crop[1]], 'display_lines': bands, 'display_line_gap': 2, 'glypherie_pipeline': request['pipeline'], 'glypherie_scan': request['config']['mono_raster'], 'renderer_inputs': declared, 'renderer_policy': policy, 'renderer_fingerprint': fingerprint, 'samples': samples, 'source_snapshot_sha256': sha(json.dumps(source_snapshot, sort_keys=True).encode()), 'source_run': str(directory.relative_to(ROOT)) if directory.is_relative_to(ROOT) else str(directory), 'updated_at': datetime.now(timezone.utc).isoformat(), 'assessment': 'Pending optical assessment. Native converter output; no quality ranking.', 'browser': browser['browser'], 'platform': browser['platform'], 'source_files': browser['sources']}
     write_json(directory / 'capture.json', manifest)
     return manifest
 
@@ -356,8 +401,8 @@ def publish_matrix(output, manifests, destination):
         cases.append({'id': case_id, 'family_id': family, 'family_label': inputs['family'], 'size_px': inputs['size_px'], 'axes': inputs['source_axes'], 'display_size': manifest['display_size'], 'display_lines': manifest['display_lines'], 'display_line_gap': manifest['display_line_gap'], 'samples': [{key: sample[key] for key in ['id', 'label', 'source_url']} | {'file': f'{relative}/{sample["file"]}'} for sample in manifest['samples']]})
     sizes = sorted({case['size_px'] for case in cases})
     pairs = {(case['family_id'], case['size_px']) for case in cases}
-    if len(pairs) != len(cases) or pairs != {(family, size) for family in families for size in sizes}:
-        raise ValueError('Matrix publication requires every family at every size exactly once')
+    if not cases or len(pairs) != len(cases):
+        raise ValueError('Matrix publication requires unique family/size cases')
     matrix = {'families': [{'id': key, 'label': label} for key, label in families.items()], 'sizes': sizes, 'cases': cases}
     temporary = destination / 'matrix.json.tmp'
     write_json(temporary, matrix)
@@ -372,12 +417,13 @@ def arguments():
     parser.add_argument('--text', default=DEFAULT_TEXT, help='Sample text; LF separates lines')
     parser.add_argument('--text-file', type=Path)
     parser.add_argument('--threshold', type=int, default=128, help='Hosted converter alpha threshold, 1..254')
-    parser.add_argument('--fitting', choices=['font_hints_auto', 'font_hints_first', 'source_relative', 'upstream_mono'], default='font_hints_auto')
-    parser.add_argument('--rasterization', choices=['free_type_mono', 'free_type_mono_terminals'], default='free_type_mono_terminals')
-    parser.add_argument('--diagonal-fitting', action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument('--dropout', choices=['smart', 'simple', 'off'], default='smart')
-    parser.add_argument('--include-stubs', action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument('--font-instructions', action=argparse.BooleanOptionalAction, default=False)
+    # None distinguishes inherited policy from an explicit CLI override.
+    parser.add_argument('--fitting', choices=['font_hints_auto', 'font_hints_first', 'source_relative', 'upstream_mono'], default=None)
+    parser.add_argument('--rasterization', choices=['free_type_mono', 'free_type_mono_terminals'], default=None)
+    parser.add_argument('--diagonal-fitting', action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument('--dropout', choices=['smart', 'simple', 'off'], default=None)
+    parser.add_argument('--include-stubs', action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument('--font-instructions', action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument('--width', type=int, default=2400, help='Uncropped canvas width')
     parser.add_argument('--line-step', type=int, help='Baseline interval; default 3 × size')
     parser.add_argument('--config', type=Path, help='JSON array of cases; paths relative to this file')
@@ -398,7 +444,7 @@ def cases_from(args):
             raise ValueError(f'Duplicate axis {tag}')
         axes[tag] = float(value)
     defaults = {key: getattr(args, key) for key in ['threshold', 'fitting', 'rasterization', 'diagonal_fitting', 'dropout', 'include_stubs', 'font_instructions', 'width', 'line_step']}
-    defaults.update(font=str(args.font.resolve()), axes=axes, text=args.text_file.read_text() if args.text_file else args.text, stem_target_px=args.stem_target_px, family_id=None, family_label=None)
+    defaults.update(font=str(args.font.resolve()), axes=axes, text=args.text_file.read_text() if args.text_file else args.text, stem_target_px=args.stem_target_px, family_id=None, family_label=None, font_url=None, font_sha256=None)
     entries = json.loads(args.config.read_text()) if args.config else [{'id': f'size-{size}', 'size_px': size} for size in (args.size or [16])]
     if not isinstance(entries, list) or not entries:
         raise ValueError('Config must be a nonempty array of cases')
@@ -412,8 +458,23 @@ def cases_from(args):
         ids.add(case['id'])
         source = Path(case['font'])
         case['font'] = str(((args.config.resolve().parent / source) if args.config and not source.is_absolute() else source).resolve())
-        if not Path(case['font']).is_file():
-            raise ValueError(f'Font not found: {case["font"]}')
+        font_path, font_url, font_digest = Path(case['font']), case.get('font_url'), case.get('font_sha256')
+        if font_url is not None and (not isinstance(font_url, str) or not font_url.startswith(('https://', 'http://'))):
+            raise ValueError('font_url must be an http(s) URL')
+        if font_digest is not None and (not isinstance(font_digest, str) or not re.fullmatch(r'[0-9a-f]{64}', font_digest)):
+            raise ValueError('font_sha256 must be a 64-character lowercase hex digest')
+        if font_url is None and font_digest is None:
+            if not font_path.is_file():
+                raise ValueError(f'Font not found: {case["font"]}')
+        else:
+            if font_url is not None and font_digest is None:
+                raise ValueError('font_url requires a pinned font_sha256')
+            if font_path.is_file() and font_digest is not None and sha(font_path.read_bytes()) == font_digest:
+                pass
+            elif font_url is None:
+                raise ValueError(f'Font identity mismatch: {case["font"]}')
+            else:
+                fetch_pinned_font(font_url, font_digest, font_path)
         if type(case.get('size_px')) is not int or not 4 <= case['size_px'] <= 96:
             raise ValueError('size_px must be an integer in 4..96')
         if type(case['threshold']) is not int or not 1 <= case['threshold'] <= 254:
@@ -433,13 +494,13 @@ def cases_from(args):
         canvas_height = case['size_px'] * 6 + (len(case['text'].split('\n')) - 1) * (case['line_step'] or case['size_px'] * 3)
         if canvas_height * case['width'] > 16_777_216:
             raise ValueError('Uncropped canvas exceeds 16,777,216 pixels; reduce text, size, width or line_step')
+        # Validate the effective combination before building tools or capturing.
         for key in ['diagonal_fitting', 'include_stubs', 'font_instructions']:
-            if type(case[key]) is not bool:
+            if case[key] is not None and type(case[key]) is not bool:
                 raise ValueError(f'{key} must be boolean')
-        if case['fitting'] not in ['font_hints_auto', 'font_hints_first', 'source_relative', 'upstream_mono'] or case['rasterization'] not in ['free_type_mono', 'free_type_mono_terminals'] or case['dropout'] not in ['smart', 'simple', 'off']:
+        if (case['fitting'] is not None and case['fitting'] not in ['font_hints_auto', 'font_hints_first', 'source_relative', 'upstream_mono']) or (case['rasterization'] is not None and case['rasterization'] not in ['free_type_mono', 'free_type_mono_terminals']) or (case['dropout'] is not None and case['dropout'] not in ['smart', 'simple', 'off']):
             raise ValueError('Invalid Glypherie pipeline or scan settings')
-        if case['diagonal_fitting'] and case['fitting'] not in ['font_hints_auto', 'upstream_mono']:
-            raise ValueError('Diagonal fitting requires font_hints_auto or upstream_mono; use --no-diagonal-fitting')
+        resolve_renderer_policy(case)
         cases.append(case)
     if args.publish and len(cases) != 1:
         raise ValueError('--publish requires exactly one case')
@@ -466,7 +527,7 @@ def main():
         manifests = {case['id']: generate_case(case, output / case['id'], (lvgl, adafruit, generator), before) for case in cases}
         if before != source_state():
             raise ValueError('Generator source changed during capture; rerun against stable sources')
-        versions.update(fonttools=fontTools.__version__, pillow=PIL.__version__, python=sys.version, node=subprocess.check_output(['node', '--version'], text=True).strip(), adapter_sources={p.name: sha(p.read_bytes()) for p in SCRIPT.iterdir() if p.suffix in ['.py', '.mjs', '.txt']}, git_head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
+        versions.update(fonttools=fontTools.__version__, pillow=PIL.__version__, python=sys.version, node=subprocess.check_output(['node', '--version'], text=True).strip(), adapter_sources={p.name: sha(p.read_bytes()) for p in SCRIPT.iterdir() if p.suffix in ['.py', '.mjs', '.ts', '.txt']}, git_head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
         write_json(output / 'verification.json', {'complete': True, 'source_stable': True, 'versions': versions, 'cases': list(manifests)})
         write_gallery(output, manifests)
         if args.publish:

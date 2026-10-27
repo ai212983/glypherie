@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { defineConfig, mergeConfig } from "vite";
 import { pagesRoutingPlugin } from "./pages-routing.js";
 import { fontPwaPlugin } from "./pwa.js";
+import { landingCaptureGuardPlugin } from "./scripts/landing-capture-guard.ts";
 import uiConfig from "./vite.ui.js";
 import { createBuildInfo } from "./scripts/build-info.ts";
 
@@ -39,7 +40,10 @@ export default defineConfig(({ command }) => mergeConfig(uiConfig, defineConfig(
     emptyOutDir: true,
     assetsInlineLimit: 0,
   },
-  plugins: [pagesRoutingPlugin(), fontPwaPlugin(), {
+  plugins: [pagesRoutingPlugin(), fontPwaPlugin(),
+    // Production only: dev/preview serve the checked-in captures as-is.
+    ...(command === "build" ? [landingCaptureGuardPlugin(path.resolve(import.meta.dirname, "../.."))] : []),
+    {
     name: "hmr-status-handshake",
     configureServer(server) {
       server.hot.on("glypherie:hmr-ping", (_data, client) => {

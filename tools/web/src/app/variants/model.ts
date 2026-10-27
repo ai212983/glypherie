@@ -8,6 +8,7 @@ import type {
   StemFitting,
 } from "../renderer/renderer-types.ts";
 import { DEFAULT_MONO_RASTER, PREVIEW_MONO_RASTER, MAX_TEXT_LENGTH } from "../renderer/render-spec.ts";
+import { resolveWorkingPreviewPolicy } from "../renderer/preview-policy.ts";
 
 export type { MonoRaster };
 
@@ -20,7 +21,7 @@ export interface VariantSettings {
   paletteId?: number;
   kerning: boolean;
   stemFitting: StemFitting;
-  // New variants default on; historical rows without the flag stay off.
+  // New variants follow the working policy; historical rows without the flag stay off.
   diagonalFitting: boolean;
   monoRaster: MonoRaster;
   renderer: RendererRole;
@@ -97,6 +98,7 @@ export class VariantStorageError extends Error {
 // Every axis in the font's own metadata (hidden axes included) contributes
 // its default; static fonts (no axes) yield axes={}. No global axis list.
 export function defaultVariantSettings(font: StoredFont): VariantSettings {
+  const policy = resolveWorkingPreviewPolicy();
   const axes: Record<string, number> = {};
   for (const axis of font.metadata?.axes ?? []) {
     if (typeof axis.tag === "string" && Number.isFinite(axis.default)) {
@@ -110,8 +112,8 @@ export function defaultVariantSettings(font: StoredFont): VariantSettings {
     profile: "mono_1bit",
     paletteId: 0,
     kerning: true,
-    stemFitting: "font_hints_first",
-    diagonalFitting: true,
+    stemFitting: policy.fitting === "upstream_mono" ? "upstream_mono" : "font_hints_first",
+    diagonalFitting: policy.diagonal_fitting,
     monoRaster: { ...PREVIEW_MONO_RASTER },
     renderer: "candidate",
     rasterization: "free_type_mono",

@@ -1,0 +1,459 @@
+{
+  "inputs": {
+    "family": "Literata",
+    "size_px": 8,
+    "source_font": "/Users/dimitri/Documents/Code/personal/Inkplate/font_generator/fonts/Literata.ttf",
+    "source_font_sha256": "b41138c9373112f32abb589cc22e8674b06ed4048b0c513be922bdd26f274440",
+    "font_sha256": "69ebb2c6b90a03a0f35ec47982f707074b232a3100a32ee4e77dea52f5fe0fa7",
+    "source_axes": {
+      "opsz": 8,
+      "wght": 522.47
+    },
+    "text": "Pack my box with five dozen liquor jugs.\nThe quick brown fox jumps over the lazy dog.\nMinimum effort, maximum clarity: AVATAR To Wa 0123456789.",
+    "text_sha256": "42b5aacd850d8523bfa5a3b078d33dd18f6eee22ce4b95a819eb65abfb9dca0b",
+    "canvas": [
+      2400,
+      96
+    ],
+    "origin_x": 16,
+    "baselines_y": [
+      24,
+      48,
+      72
+    ],
+    "source_kerning": false,
+    "threshold": 128,
+    "spacing": "Each converter retains native advances. Glypherie retains fitted pair corrections with source kerning disabled and neutral tracking.",
+    "family_id": "literata",
+    "stem_calibration": {
+      "target_px": 1,
+      "reference_characters": "HIl",
+      "body_sections": [
+        0.6666666666666666,
+        0.75,
+        0.8333333333333334
+      ],
+      "source_horizontal_widths_px": [
+        0.992,
+        1.0,
+        0.992,
+        1.0,
+        0.992001856462442,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        0.9440000000000001,
+        0.9440000000000001,
+        0.9440000000000001
+      ],
+      "maximum_source_width_px": 1.0,
+      "median_source_width_px": 0.996000928231221,
+      "cap_height_px": 5.6,
+      "method": "One family-wide weight coordinate bounding reference source body widths by the target; no bitmap feedback."
+    }
+  },
+  "display_crop": [
+    8,
+    10,
+    306,
+    83
+  ],
+  "display_size": [
+    298,
+    73
+  ],
+  "display_lines": [
+    {
+      "top": 8,
+      "height": 9
+    },
+    {
+      "top": 32,
+      "height": 9
+    },
+    {
+      "top": 56,
+      "height": 9
+    }
+  ],
+  "display_line_gap": 2,
+  "glypherie_pipeline": {
+    "fitting": "font_hints_auto",
+    "rasterization": "free_type_mono_terminals",
+    "diagonal_fitting": true
+  },
+  "glypherie_scan": {
+    "dropout": "smart",
+    "include_stubs": true,
+    "font_instructions": true
+  },
+  "renderer_inputs": {},
+  "renderer_policy": {
+    "fitting": "font_hints_auto",
+    "rasterization": "free_type_mono_terminals",
+    "diagonal_fitting": true,
+    "hinting": "auto_fallback",
+    "output_bits": 1,
+    "mono_threshold": 128,
+    "gray_gamma": 1,
+    "missing_glyphs": "error",
+    "metric_rounding": "subpixel",
+    "mono_raster": {
+      "dropout": "smart",
+      "include_stubs": true,
+      "font_instructions": true
+    }
+  },
+  "renderer_fingerprint": "a6d1bfff5881a45d7591208a2c8251daf4b3bfaec37905daddc6383ce89c15bd",
+  "samples": [
+    {
+      "id": "repo",
+      "label": "Glypherie",
+      "source_url": "https://github.com/ai212983/glypherie",
+      "output": "Playdate",
+      "file": "repo.png",
+      "original": "repo/paragraph.png",
+      "sha256": "e546db4e6485fdaa2cb010dac884379e1b2a92f6ee33da573e5b4495d59e46f2",
+      "display_sha256": "adc2761b954cd500c734e73a2e578f7d06783fcceb17f4b967a957be229b3055",
+      "capture": null,
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 1420,
+        "matches_browser_memory": null,
+        "applied_fitted_pair_count": 852,
+        "principal_stem_runs": {
+          "H": {
+            "native_cap_height_px": 5,
+            "body_rows_above_ink_baseline": [
+              3
+            ],
+            "run_width_counts_px": {
+              "1": 2
+            },
+            "rows_without_ink": []
+          },
+          "I": {
+            "native_cap_height_px": 5,
+            "body_rows_above_ink_baseline": [
+              3
+            ],
+            "run_width_counts_px": {
+              "1": 1
+            },
+            "rows_without_ink": []
+          },
+          "l": {
+            "native_cap_height_px": 5,
+            "body_rows_above_ink_baseline": [
+              3
+            ],
+            "run_width_counts_px": {
+              "1": 1
+            },
+            "rows_without_ink": []
+          }
+        }
+      }
+    },
+    {
+      "id": "pdfontconv",
+      "label": "pdfontconv",
+      "source_url": "https://pdfontconv.frozenfractal.com/",
+      "output": "Playdate",
+      "file": "pdfontconv.png",
+      "original": "pdfontconv/paragraph.png",
+      "sha256": "6caf2f3b06211534b1602fb386e7ee617511e64dba970978465518233d8cf1c7",
+      "display_sha256": "0e42a4aca176529cd0fb57a157870040f9c0388dfa1bd7955e6385403f7ee1f7",
+      "capture": {
+        "baseline": 7,
+        "threshold": 128,
+        "cell_width": 10,
+        "cell_height": 9,
+        "offset_x": 0,
+        "loaded_font_faces": [
+          {
+            "family": "pdfontconv",
+            "status": "loaded"
+          }
+        ],
+        "errors": []
+      },
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 1244,
+        "matches_browser_memory": true,
+        "applied_fitted_pair_count": 0,
+        "principal_stem_runs": {
+          "H": {
+            "native_cap_height_px": 6,
+            "body_rows_above_ink_baseline": [
+              4
+            ],
+            "run_width_counts_px": {
+              "1": 2
+            },
+            "rows_without_ink": []
+          },
+          "I": {
+            "native_cap_height_px": 6,
+            "body_rows_above_ink_baseline": [
+              4
+            ],
+            "run_width_counts_px": {
+              "1": 1
+            },
+            "rows_without_ink": []
+          },
+          "l": {
+            "native_cap_height_px": 6,
+            "body_rows_above_ink_baseline": [
+              4
+            ],
+            "run_width_counts_px": {
+              "1": 1
+            },
+            "rows_without_ink": []
+          }
+        }
+      }
+    },
+    {
+      "id": "tophat",
+      "label": "Tophat",
+      "source_url": "https://kaasiand.cool/tophat/",
+      "output": "Playdate",
+      "file": "tophat.png",
+      "original": "tophat/paragraph.png",
+      "sha256": "6caf2f3b06211534b1602fb386e7ee617511e64dba970978465518233d8cf1c7",
+      "display_sha256": "0e42a4aca176529cd0fb57a157870040f9c0388dfa1bd7955e6385403f7ee1f7",
+      "capture": {
+        "baseline": 7,
+        "threshold": 128,
+        "cell_width": 10,
+        "cell_height": 9,
+        "version": "v0.9.9",
+        "loaded_font_faces": [
+          {
+            "family": "TopHatOutlineFnt0",
+            "status": "loaded"
+          },
+          {
+            "family": "TopHatOutlineFnt1",
+            "status": "loaded"
+          }
+        ],
+        "errors": []
+      },
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 1244,
+        "matches_browser_memory": true,
+        "applied_fitted_pair_count": 0,
+        "principal_stem_runs": {
+          "H": {
+            "native_cap_height_px": 6,
+            "body_rows_above_ink_baseline": [
+              4
+            ],
+            "run_width_counts_px": {
+              "1": 2
+            },
+            "rows_without_ink": []
+          },
+          "I": {
+            "native_cap_height_px": 6,
+            "body_rows_above_ink_baseline": [
+              4
+            ],
+            "run_width_counts_px": {
+              "1": 1
+            },
+            "rows_without_ink": []
+          },
+          "l": {
+            "native_cap_height_px": 6,
+            "body_rows_above_ink_baseline": [
+              4
+            ],
+            "run_width_counts_px": {
+              "1": 1
+            },
+            "rows_without_ink": []
+          }
+        }
+      }
+    },
+    {
+      "id": "lvgl",
+      "label": "LVGL Font Converter",
+      "source_url": "https://github.com/lvgl/lv_font_conv",
+      "output": "LVGL",
+      "file": "lvgl.png",
+      "original": "lvgl/paragraph.png",
+      "sha256": "32955c2d561cebc9ccb34f03b66ac04eb1ef647f34fcc171062770ab5ea33bb4",
+      "display_sha256": "102ebddd3df6c577d23a67f73e92afde5285dd733f6e3b52ae2ee35ea387c1ad",
+      "capture": null,
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 1267,
+        "matches_browser_memory": null,
+        "applied_fitted_pair_count": 0,
+        "principal_stem_runs": {
+          "H": {
+            "native_cap_height_px": 5,
+            "body_rows_above_ink_baseline": [
+              3
+            ],
+            "run_width_counts_px": {
+              "1": 2
+            },
+            "rows_without_ink": []
+          },
+          "I": {
+            "native_cap_height_px": 5,
+            "body_rows_above_ink_baseline": [
+              3
+            ],
+            "run_width_counts_px": {
+              "1": 1
+            },
+            "rows_without_ink": []
+          },
+          "l": {
+            "native_cap_height_px": 5,
+            "body_rows_above_ink_baseline": [
+              3
+            ],
+            "run_width_counts_px": {
+              "1": 1
+            },
+            "rows_without_ink": []
+          }
+        }
+      }
+    },
+    {
+      "id": "adafruit",
+      "label": "Adafruit Font Converter",
+      "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+      "output": "Adafruit GFX",
+      "file": "adafruit.png",
+      "original": "adafruit/paragraph.png",
+      "sha256": "8278de648c1f76e5dedbbcb9770011a2a1da4f80e46a6c0c180e4c8a8a137a48",
+      "display_sha256": "a47edb3a28fa56a7e53e18973fb913ab1db9b2a3b878a2e1ce7b1656b0e78de1",
+      "capture": null,
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 1259,
+        "matches_browser_memory": null,
+        "applied_fitted_pair_count": 0,
+        "principal_stem_runs": {
+          "H": {
+            "native_cap_height_px": 5,
+            "body_rows_above_ink_baseline": [
+              3
+            ],
+            "run_width_counts_px": {
+              "1": 2
+            },
+            "rows_without_ink": []
+          },
+          "I": {
+            "native_cap_height_px": 5,
+            "body_rows_above_ink_baseline": [
+              3
+            ],
+            "run_width_counts_px": {
+              "1": 1
+            },
+            "rows_without_ink": []
+          },
+          "l": {
+            "native_cap_height_px": 5,
+            "body_rows_above_ink_baseline": [
+              3
+            ],
+            "run_width_counts_px": {
+              "1": 1
+            },
+            "rows_without_ink": []
+          }
+        }
+      }
+    }
+  ],
+  "source_snapshot_sha256": "74b3b0c1a9a9cdab32fe6674847e6a420d36b9940e8870796e4ae8b481657272",
+  "source_run": "out/diagnostics/landing-samples/shared-preview-settings-20261027/literata-8",
+  "updated_at": "2026-10-27T15:36:37.928639+00:00",
+  "assessment": "Pending optical assessment. Native converter output; no quality ranking.",
+  "browser": "153.0.8010.12",
+  "platform": "darwin 25.6.0 arm64",
+  "source_files": [
+    {
+      "url": "https://pdfontconv.frozenfractal.com/",
+      "file": "pdfontconv/sources/59adbd9b3c6471f9bfce9b726c637ee65de6c7227e468874c7a2a3c68ff4bfbe.source",
+      "sha256": "59adbd9b3c6471f9bfce9b726c637ee65de6c7227e468874c7a2a3c68ff4bfbe"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/style.css",
+      "file": "pdfontconv/sources/3a54003d150a0f19aad38ed458bca18d223f9d6abf3aa91a115860abd4d809bb.source",
+      "sha256": "3a54003d150a0f19aad38ed458bca18d223f9d6abf3aa91a115860abd4d809bb"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/main.js",
+      "file": "pdfontconv/sources/0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8.source",
+      "sha256": "0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/",
+      "file": "pdfontconv/sources/59adbd9b3c6471f9bfce9b726c637ee65de6c7227e468874c7a2a3c68ff4bfbe.source",
+      "sha256": "59adbd9b3c6471f9bfce9b726c637ee65de6c7227e468874c7a2a3c68ff4bfbe"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/style.css",
+      "file": "pdfontconv/sources/3a54003d150a0f19aad38ed458bca18d223f9d6abf3aa91a115860abd4d809bb.source",
+      "sha256": "3a54003d150a0f19aad38ed458bca18d223f9d6abf3aa91a115860abd4d809bb"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/main.js",
+      "file": "pdfontconv/sources/0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8.source",
+      "sha256": "0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/",
+      "file": "tophat/sources/a575842cb787fcb756e5f11333896caf0814879c86df039f875c0737ffd1eff8.source",
+      "sha256": "a575842cb787fcb756e5f11333896caf0814879c86df039f875c0737ffd1eff8"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/names.js",
+      "file": "tophat/sources/17fe3bb25943f5dff300fc5af3f0c665666596a0d513a96d3646d26d367400f6.source",
+      "sha256": "17fe3bb25943f5dff300fc5af3f0c665666596a0d513a96d3646d26d367400f6"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/tophat.css",
+      "file": "tophat/sources/8d58a802cb78f18d9072743a4558ccd24072920dcf722e1cd05b69f3d67b2c19.source",
+      "sha256": "8d58a802cb78f18d9072743a4558ccd24072920dcf722e1cd05b69f3d67b2c19"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/groups.js",
+      "file": "tophat/sources/dcef23746af629a1d766098029d5a2942d69d5e563877943dbf58cc1f9850bc3.source",
+      "sha256": "dcef23746af629a1d766098029d5a2942d69d5e563877943dbf58cc1f9850bc3"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/tophat.js",
+      "file": "tophat/sources/656da810c8f7a7e165f1ea8a93c4e14222dc467b812c2a9d170e32c30fdb0202.source",
+      "sha256": "656da810c8f7a7e165f1ea8a93c4e14222dc467b812c2a9d170e32c30fdb0202"
+    },
+    {
+      "url": "https://cdn.jsdelivr.net/npm/opentype.js@latest/dist/opentype.min.js",
+      "file": "tophat/sources/b39d7bf9661481cec5c118a0d92b02951171d99c30d4d11252a72ecb0285439e.source",
+      "sha256": "b39d7bf9661481cec5c118a0d92b02951171d99c30d4d11252a72ecb0285439e"
+    }
+  ]
+}

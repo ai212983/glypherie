@@ -914,6 +914,29 @@ imbalance unchanged; the separate source-relative correction below addresses tha
 source-identity validation and reconstruction tests cover the new stage; optical closure remains with this open
 iteration.
 
+#### Landing comparison scan parity
+
+**Confirmed correction, 2026-10-27:** Rouge Script Regular, 20 px, Mono in the landing comparison lost the `t` upper
+tip/crossbar and the `d` upper bowl attachment because its capture disabled stub rescue. Enabling rescue alone restores
+three `t` pixels and two `d` pixels with identical fitted outlines, coverage, bounds and advances. Disabling diagonal
+fitting or terminal suppression leaves the defects unchanged. The landing capture now follows the live preview's
+[scan settings](../../../tools/web/src/app/renderer/render-spec.ts); no fitting model or approved baseline changes.
+
+The existing four-family, four-size landing matrix was regenerated. All 16 requests match the live preview's resolved
+pipeline and scan settings; font instances, axes, advances, pair corrections and the other converters' paragraph pixels
+remain unchanged. Other changed glyphs remain **pending optical assessment** for continuity, local weight and terminal
+shape, including mixed ink redistribution in Literata 16 px and Rouge Script 8–16 px. Repeated-export, input-identity
+and crop checks pass. Captures and the before/after comparison are in
+`out/diagnostics/landing-samples/preview-scan-correction-20261027/`.
+
+**Shared-policy adoption, 2026-10-27:** the live preview, new-preview/variant defaults and landing generator now use the
+shared working-preview policy; the [web contract](../../../tools/web/CONTRACT.md) owns capture compatibility and build
+rejection. The refactor retains all 432 captured live-request cases. A fresh 16-case run produces byte-identical native
+font exports and all 80 paragraph/display images against the corrected landing baseline, with unchanged input fonts,
+axes and layout. This is **unchanged output**, not a new optical acceptance. Policy checks, request compatibility and
+capture comparisons are recorded in `out/diagnostics/shared-preview-settings-20261027/`; real captures are in
+`out/diagnostics/landing-samples/shared-preview-settings-20261027/`.
+
 #### Source-relative straight-stroke correction
 
 The `1` investigation applies [Hobby's coupled-width model](../../hobby-fitting.md#valid-straight-medial-intervals) to

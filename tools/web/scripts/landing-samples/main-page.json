@@ -130,5 +130,16 @@
       "opsz": 20
     },
     "stem_target_px": 1
+  },
+  {
+    "id": "rouge-script-20",
+    "font": "../../../../out/diagnostics/landing-samples/_fonts/RougeScript-Regular.ttf",
+    "font_url": "https://raw.githubusercontent.com/google/fonts/main/ofl/rougescript/RougeScript-Regular.ttf",
+    "font_sha256": "99de0ca969d9898687305a36f7e6dde6d30806ab7a463ebb4068dd9dd2a54fd6",
+    "family_id": "rouge-script",
+    "family_label": "Rouge Script",
+    "size_px": 20,
+    "axes": {},
+    "text": "Pack my box with five dozen liquor jugs.\nThe quick brown fox jumps over the lazy dog."
   }
 ]

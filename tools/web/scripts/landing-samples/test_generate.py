@@ -15,6 +15,97 @@ samples = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(samples)
 
 
+class _PinnedDownload:
+    def __init__(self, data):
+        self._data = data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self):
+        return self._data
+
+
+class RendererPolicyChecks(unittest.TestCase):
+    def default_case(self):
+        return {'fitting': 'font_hints_auto', 'rasterization': 'free_type_mono_terminals', 'diagonal_fitting': True, 'dropout': 'smart', 'include_stubs': True, 'font_instructions': True}
+
+    def test_bridge_resolves_shared_working_preview_policy(self):
+        declared, policy, fingerprint = samples.resolve_renderer_policy(self.default_case())
+        self.assertEqual(declared, self.default_case())
+        self.assertEqual(policy['fitting'], 'font_hints_auto')
+        self.assertEqual(policy['rasterization'], 'free_type_mono_terminals')
+        self.assertEqual(policy['hinting'], 'auto_fallback')
+        self.assertEqual(policy['mono_raster'], {'dropout': 'smart', 'include_stubs': True, 'font_instructions': True})
+        self.assertRegex(fingerprint, r'^[0-9a-f]{64}$')
+
+    def test_bridge_matches_live_preview_request(self):
+        import subprocess
+        script = """
+import { toRenderSpec } from './tools/web/src/app/renderer/render-spec.ts';
+console.log(JSON.stringify(toRenderSpec({text:'AV',sizePx:16,axes:{},profile:'mono_1bit',
+    width:300,height:100,rasterization:'free_type_mono',diagonalFitting:true})));
+"""
+        recorded = json.loads(subprocess.check_output(['node', '--input-type=module', '-e', script], cwd=samples.ROOT, text=True))
+        _, policy, _ = samples.resolve_renderer_policy({})
+        for key in ['hinting', 'output_bits', 'mono_threshold', 'gray_gamma', 'missing_glyphs', 'metric_rounding', 'mono_raster']:
+            self.assertEqual(policy[key], recorded[key])
+        self.assertEqual(recorded['pipeline'], {'fitting': policy['fitting'], 'rasterization': policy['rasterization'], 'diagonal_fitting': policy['diagonal_fitting']})
+
+    def test_bridge_rejects_invalid_combinations(self):
+        bad = dict(self.default_case(), fitting='source_relative')
+        with self.assertRaisesRegex(ValueError, 'Diagonal fitting requires'):
+            samples.resolve_renderer_policy(bad)
+
+    def test_bridge_failures_and_forged_output_raise(self):
+        import subprocess
+        bad_output = json.dumps({'policy': {'fitting': 'x'}, 'fingerprint': 'not-a-digest'})
+        with patch.object(subprocess, 'run', return_value=type('Result', (), {'returncode': 0, 'stdout': bad_output, 'stderr': ''})()):
+            with self.assertRaisesRegex(ValueError, 'invalid policy or fingerprint'):
+                samples.resolve_renderer_policy(self.default_case())
+        with patch.object(subprocess, 'run', return_value=type('Result', (), {'returncode': 1, 'stdout': '', 'stderr': 'preview-policy-bridge: boom'})()):
+            with self.assertRaisesRegex(ValueError, 'renderer policy rejected'):
+                samples.resolve_renderer_policy(self.default_case())
+
+    def test_glypherie_request_keeps_comparison_kerning_policy(self):
+        _, policy, _ = samples.resolve_renderer_policy(self.default_case())
+        request = samples.glypherie_request('AV', 16, policy)
+        self.assertFalse(request['config']['kerning'])
+        self.assertEqual(request['letter_spacing_px'], 0)
+        self.assertEqual(request['pipeline'], {'fitting': 'font_hints_auto', 'rasterization': 'free_type_mono_terminals', 'diagonal_fitting': True})
+        self.assertEqual(request['config']['mono_raster'], policy['mono_raster'])
+        self.assertEqual(sorted(request['config']['characters']), sorted(set('AVHIl')))
+
+    def test_omitted_settings_follow_shared_defaults(self):
+        # Nothing declared means nothing forwarded: a shared-default change
+        # flows to landing without touching Python.
+        declared, policy, _ = samples.resolve_renderer_policy({})
+        self.assertEqual(declared, {})
+        _, explicit_policy, _ = samples.resolve_renderer_policy(self.default_case())
+        self.assertEqual(policy, explicit_policy)
+
+    def test_case_renderer_values_win_over_cli(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            config = Path(temporary) / 'cases.json'
+            config.write_text(json.dumps([
+                {'id': 'overridden', 'size_px': 16, 'dropout': 'off'},
+                {'id': 'inherited', 'size_px': 16},
+            ]))
+            with patch.object(sys, 'argv', ['generate.py', '--size', '16', '--dropout', 'simple', '--config', str(config)]):
+                cases = samples.cases_from(samples.arguments())
+            by_id = {case['id']: case for case in cases}
+            self.assertEqual(by_id['overridden']['dropout'], 'off')
+            self.assertEqual(by_id['inherited']['dropout'], 'simple')
+            with patch.object(sys, 'argv', ['generate.py', '--size', '16']):
+                cases = samples.cases_from(samples.arguments())
+            self.assertIsNone(cases[0]['dropout'])
+            declared, _, _ = samples.resolve_renderer_policy(cases[0])
+            self.assertNotIn('dropout', declared)
+
+
 class SampleChecks(unittest.TestCase):
     def options(self, *args):
         with patch.object(sys, 'argv', ['generate.py', *args]):
@@ -63,6 +154,9 @@ class SampleChecks(unittest.TestCase):
             samples.cases_from(self.options('--size', '16', '--size', '20', '--publish'))
         with self.assertRaisesRegex(ValueError, 'Diagonal fitting requires'):
             samples.cases_from(self.options('--fitting', 'source_relative'))
+        cases = samples.cases_from(self.options('--fitting', 'source_relative', '--no-diagonal-fitting'))
+        _, policy, _ = samples.resolve_renderer_policy(cases[0])
+        self.assertFalse(policy['diagonal_fitting'])
 
     def test_config_relative_paths_and_independent_axes(self):
         cases = samples.cases_from(self.options('--config', str(samples.SCRIPT / 'cases.example.json')))
@@ -106,6 +200,53 @@ class SampleChecks(unittest.TestCase):
             samples.publish_case(directory, manifest, destination)
             self.assertEqual((destination / 'repo.png').read_bytes(), b'new image')
             self.assertEqual(json.loads((destination / 'capture.json').read_text()), manifest)
+
+    def external_case(self, directory, name, font, digest):
+        config = Path(directory) / f'{name}.json'
+        config.write_text(json.dumps([{'id': name, 'size_px': 16, 'font': str(font),
+            'font_url': 'https://example.test/External.ttf', 'font_sha256': digest}]))
+        return self.options('--config', str(config))
+
+    def test_matching_external_cache_avoids_network(self):
+        data = b'cached font bytes'
+        with tempfile.TemporaryDirectory() as temporary:
+            font = Path(temporary) / 'External.ttf'
+            font.write_bytes(data)
+            with patch.object(samples, 'urlopen', side_effect=AssertionError('network')):
+                cases = samples.cases_from(self.external_case(temporary, 'external-16', font, samples.sha(data)))
+            self.assertEqual(Path(cases[0]['font']).read_bytes(), data)
+
+    def test_mismatched_download_leaves_cache_untouched(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            font = Path(temporary) / 'External.ttf'
+            font.write_bytes(b'stale bytes')
+            args = self.external_case(temporary, 'external-16', font, samples.sha(b'expected bytes'))
+            with patch.object(samples, 'urlopen', return_value=_PinnedDownload(b'other bytes')):
+                with self.assertRaisesRegex(ValueError, 'identity mismatch'):
+                    samples.cases_from(args)
+            self.assertEqual(font.read_bytes(), b'stale bytes')
+            missing = Path(temporary) / 'Missing.ttf'
+            args = self.external_case(temporary, 'missing-16', missing, samples.sha(b'expected bytes'))
+            with patch.object(samples, 'urlopen', return_value=_PinnedDownload(b'other bytes')):
+                with self.assertRaisesRegex(ValueError, 'identity mismatch'):
+                    samples.cases_from(args)
+            self.assertFalse(missing.exists())
+
+    def test_unpinned_or_malformed_digest_rejected_before_network(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            font = Path(temporary) / 'External.ttf'
+            extras = [{'font_url': 'https://example.test/External.ttf'},
+                {'font_url': 'https://example.test/External.ttf', 'font_sha256': 'not-a-digest'},
+                {'font_url': 'https://example.test/External.ttf', 'font_sha256': 123},
+                {'font_sha256': samples.sha(b'expected bytes')}]
+            for index, extra in enumerate(extras):
+                entry = {'id': f'external-{index}', 'size_px': 16, 'font': str(font), **extra}
+                config = Path(temporary) / f'cases-{index}.json'
+                config.write_text(json.dumps([entry]))
+                with patch.object(samples, 'urlopen', side_effect=AssertionError('network')), \
+                        self.assertRaises(ValueError):
+                    samples.cases_from(self.options('--config', str(config)))
+            self.assertFalse(font.exists())
 
 
 if __name__ == '__main__':

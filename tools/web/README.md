@@ -93,6 +93,10 @@ converters receive the same static font instance. Each output directory contains
 capture settings, source identities, logs and verification results. Open the printed gallery URL with `npm run dev`
 running. Runs write fresh directories by default; `--output PATH` must name a new directory.
 
+The main-page matrix also samples Rouge Script from an external input. Its canonical `RougeScript-Regular.ttf`
+([Google Fonts](https://github.com/google/fonts/tree/main/ofl/rougescript), SIL OFL) is downloaded automatically, pinned
+to the `font_url`/`font_sha256` in `main-page.json`, into the ignored `out/diagnostics/landing-samples/_fonts/` cache.
+
 ```sh
 # Repeat --size for a size sweep; --text-file reads UTF-8 sample text.
 just landing-samples --font fonts/Roboto.ttf --size 14 --size 18 --text-file sample.txt
@@ -107,12 +111,13 @@ python -m unittest discover -s tools/web/scripts/landing-samples -p 'test_*.py'
 
 Run `just landing-samples --help` for settings. JSON cases accept `id`, `font`, `size_px`, `axes`, `text`, `threshold`,
 `fitting`, `rasterization`, `diagonal_fitting`, `dropout`, `include_stubs`, `font_instructions`, `width`, `line_step`,
-`family_id`, `family_label` and `stem_target_px`. Omitted case settings inherit command-line values. Set
-`stem_target_px` (or `--stem-target-px`) without an explicit `wght` coordinate to select the family-wide weight from
-source stem geometry; other axes remain explicit or use font defaults. Native horizontal body-run measurements are saved
-separately in each capture. `--publish-matrix` requires every family at every size; `--publish` updates only the legacy
-single-case assets. `--threshold` affects the two hosted converters; Glypherie's selected FreeType scanner, LVGL and
-Adafruit retain their native monochrome settings. Source kerning is disabled; each converter retains its own advances,
-and Glypherie retains its exported fitted pair corrections. `--no-diagonal-fitting` is required with `--fitting
-font_hints_first` or `source_relative`. Generation checks do not establish optical acceptance; follow the
-[evaluation rules](../../docs/evaluation.md).
+`family_id`, `family_label` and `stem_target_px`. Omitted case settings inherit command-line values; omitted renderer
+settings follow the shared live-preview policy. Production builds reject stale captures until they are regenerated with
+the matrix command above. Set `stem_target_px` (or `--stem-target-px`) without an explicit `wght` coordinate to select
+the family-wide weight from source stem geometry; other axes remain explicit or use font defaults. Native horizontal
+body-run measurements are saved separately in each capture. `--publish-matrix` requires unique family/size cases;
+`--publish` updates only the legacy single-case assets. `--threshold` affects the two hosted converters; Glypherie's
+selected FreeType scanner, LVGL and Adafruit retain their native monochrome settings. Source kerning is disabled; each
+converter retains its own advances, and Glypherie retains its exported fitted pair corrections. `--no-diagonal-fitting`
+is required with `--fitting font_hints_first` or `source_relative`. Generation checks do not establish optical
+acceptance; follow the [evaluation rules](../../docs/evaluation.md).

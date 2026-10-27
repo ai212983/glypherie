@@ -19,6 +19,7 @@
 import type { MonoRaster, OutputProfile, Rasterization, RendererRole, StemFitting } from "../../../renderer/renderer-types.js";
 import type { VariantSettings } from "../../../variants/model.js";
 import { PREVIEW_MONO_RASTER } from "../../../renderer/render-spec.ts";
+import { resolveWorkingPreviewPolicy } from "../../../renderer/preview-policy.ts";
 import { OWNED_PARAMS, hashFamilyId } from "../../../navigation/router.ts";
 
 export const SNAPSHOT_VERSION = 1;
@@ -118,6 +119,7 @@ export function defaultSnapshot(
   metas: FamilyMeta[],
   defaults: GlobalDefaults,
 ): PreviewSnapshot {
+  const policy = resolveWorkingPreviewPolicy();
   const families: Record<string, FamilySnapshot> = {};
   for (const meta of metas) families[meta.id] = defaultFamilySnapshot(meta);
   return {
@@ -126,8 +128,8 @@ export function defaultSnapshot(
     profile: defaults.profile,
     paletteId: 0,
     pixelAccurate: true,
-    stemFitting: "font_hints_first",
-    diagonalFitting: true,
+    stemFitting: policy.fitting === "upstream_mono" ? "upstream_mono" : "font_hints_first",
+    diagonalFitting: policy.diagonal_fitting,
     monoRaster: { ...PREVIEW_MONO_RASTER },
     rasterization: defaults.profile === "mono_1bit" ? "free_type_mono" : "coverage",
     kerning: true,

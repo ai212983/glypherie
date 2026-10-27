@@ -13,6 +13,9 @@ import type {
   RGBA,
   StemFitting,
 } from "./renderer-types.js";
+import { WORKING_PREVIEW_DEFAULTS, resolveWorkingPreviewPolicy } from "./preview-policy.ts";
+
+export { WORKING_PREVIEW_DEFAULTS } from "./preview-policy.ts";
 
 export function profileBits(profile: OutputProfile): number {
   return profile === "mono_1bit" ? 1 : profile === "gray_2bit" ? 2 : profile === "gray_4bit" ? 4 : 3;
@@ -110,8 +113,12 @@ export function resolveRenderColors(
 const MONO_DROPOUTS: readonly MonoDropout[] = ["off", "simple", "smart"];
 
 export const DEFAULT_MONO_RASTER: MonoRaster = { dropout: "smart", includeStubs: false, fontInstructions: false };
-// Font instructions take precedence; automatic fitting uses this fallback.
-export const PREVIEW_MONO_RASTER: MonoRaster = { dropout: "smart", includeStubs: true, fontInstructions: true };
+// Font scan instructions take precedence over these fallback scan settings.
+export const PREVIEW_MONO_RASTER: MonoRaster = {
+  dropout: WORKING_PREVIEW_DEFAULTS.dropout,
+  includeStubs: WORKING_PREVIEW_DEFAULTS.includeStubs,
+  fontInstructions: WORKING_PREVIEW_DEFAULTS.fontInstructions,
+};
 
 // Manual scan-converter settings, restricted to candidate Mono like stem
 // fitting: other roles/profiles omit them so the native path keeps coverage.
@@ -145,8 +152,18 @@ export function toRenderSpec({
   const colors = resolveRenderColors(palette, profile);
   const separated = rasterization !== undefined;
   const effectiveRole = separated ? "candidate" : role;
+  const previewPolicy = separated && profile === "mono_1bit"
+    ? resolveWorkingPreviewPolicy({
+      fitting: stemFitting === "upstream_mono" ? "upstream_mono"
+        : stemFitting === "font_hints_first" ? "font_hints_auto" : undefined,
+      // URL omission preserves the historical diagonal-off preference.
+      diagonalFitting: diagonalFitting ?? false,
+    })
+    : null;
   const scan = effectiveRole === "candidate" && profile === "mono_1bit"
-    ? resolveMonoRaster(separated ? PREVIEW_MONO_RASTER : monoRaster)
+    ? previewPolicy !== null
+      ? { ...previewPolicy.mono_raster }
+      : resolveMonoRaster(monoRaster)
     : undefined;
   return {
     text,
@@ -155,14 +172,15 @@ export function toRenderSpec({
     size_px: sizePx,
     axes: { ...axes },
     letter_spacing_px: normalizedSpacing(letterSpacingPx, profile, effectiveRole),
-    hinting: effectiveRole === "candidate" && profile === "mono_1bit" && stemFitting !== "upstream_mono"
-      ? "auto_fallback" : "auto",
-    output_bits: profileBits(profile),
-    mono_threshold: monoThreshold ?? 128,
-    gray_gamma: grayGamma ?? 1.0,
-    missing_glyphs: "error",
+    hinting: previewPolicy?.hinting
+      ?? (effectiveRole === "candidate" && profile === "mono_1bit" && stemFitting !== "upstream_mono"
+        ? "auto_fallback" : "auto"),
+    output_bits: previewPolicy?.output_bits ?? profileBits(profile),
+    mono_threshold: monoThreshold ?? previewPolicy?.mono_threshold ?? 128,
+    gray_gamma: grayGamma ?? previewPolicy?.gray_gamma ?? 1.0,
+    missing_glyphs: previewPolicy?.missing_glyphs ?? "error",
     kerning: kerning ?? true,
-    metric_rounding: "subpixel",
+    metric_rounding: previewPolicy?.metric_rounding ?? "subpixel",
     wrap: "word",
     align: "left",
     foreground: colors.foreground,
@@ -170,10 +188,9 @@ export function toRenderSpec({
     ...(colors.palette !== undefined ? { palette: colors.palette } : {}),
     ...(!separated ? { renderer: role ?? "baseline" } : {}),
     ...(separated ? { pipeline: {
-      fitting: profile === "mono_1bit" && stemFitting !== "upstream_mono" ? "font_hints_auto" : "upstream_mono",
-      rasterization: profile === "mono_1bit" ? "free_type_mono_terminals" : "coverage",
-      // Mono-only opt-in; false stays omitted so the request shape is unchanged.
-      ...(diagonalFitting === true && profile === "mono_1bit" ? { diagonal_fitting: true as const } : {}),
+      fitting: previewPolicy !== null ? previewPolicy.fitting : "upstream_mono",
+      rasterization: previewPolicy !== null ? previewPolicy.rasterization : "coverage",
+      ...(previewPolicy?.diagonal_fitting ? { diagonal_fitting: true as const } : {}),
     } } : {}),
     ...(!separated && role === "candidate" && profile === "mono_1bit" && stemFitting ? { stem_fitting: stemFitting } : {}),
     ...(scan !== undefined ? { mono_raster: scan } : {}),

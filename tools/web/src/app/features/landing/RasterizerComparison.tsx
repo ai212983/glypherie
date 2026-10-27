@@ -15,12 +15,15 @@ const googleFontsUrls: Record<string, string> = {
   roboto: "https://fonts.google.com/specimen/Roboto",
   "roboto-italic": "https://fonts.google.com/specimen/Roboto",
   literata: "https://fonts.google.com/specimen/Literata",
+  "rouge-script": "https://fonts.google.com/specimen/Rouge+Script",
 };
 
 export function RasterizerComparison(): React.JSX.Element {
   const [family, setFamily] = React.useState(defaultSample.family_id);
   const [size, setSize] = React.useState(defaultSample.size_px);
-  const capture = matrix.cases.find((entry) => entry.family_id === family && entry.size_px === size)!;
+  const familyCases = matrix.cases.filter((entry) => entry.family_id === family);
+  const sizes = familyCases.map((entry) => entry.size_px).sort((a, b) => a - b);
+  const capture = familyCases.find((entry) => entry.size_px === size) ?? familyCases[0]!;
   const [sampleWidth, sampleHeight] = capture.display_size as [number, number];
   const sampleDescription = `${capture.family_label} · ${capture.size_px} px`;
   const { zoom, canvas: { palette, inverse } } = useDisplayPreferences();
@@ -36,7 +39,12 @@ export function RasterizerComparison(): React.JSX.Element {
           </p>
         </div>
         <div className="landing__specimen-controls">
-          <Select value={family} onValueChange={setFamily}>
+          <Select value={family} onValueChange={(value) => {
+            const next = matrix.cases.find((entry) => entry.family_id === value && entry.size_px === size)
+              ?? matrix.cases.find((entry) => entry.family_id === value)!;
+            setFamily(value);
+            setSize(next.size_px);
+          }}>
             <SelectTrigger aria-label="Sample font family" className="landing__family-select"
               icon={<img src={familyChevron} width="19.5" height="19.5" alt="" />}>
               <span className="landing__family-label" aria-hidden="true">Family:</span>
@@ -46,9 +54,9 @@ export function RasterizerComparison(): React.JSX.Element {
               {matrix.families.map((entry) => <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>)}
             </SelectContent>
           </Select>
-          <ToggleGroup type="single" value={String(size)} aria-label="Sample font size" className="landing__size-switcher"
+          <ToggleGroup type="single" value={String(capture.size_px)} aria-label="Sample font size" className="landing__size-switcher"
             onValueChange={(value) => { if (value) setSize(Number(value)); }}>
-            {matrix.sizes.map((sizePx) => <ToggleGroupItem key={sizePx} value={String(sizePx)} aria-label={`${sizePx} pixels`}
+            {sizes.map((sizePx) => <ToggleGroupItem key={sizePx} value={String(sizePx)} aria-label={`${sizePx} pixels`}
               onFocus={() => setSize(sizePx)}>
               {sizePx}px
             </ToggleGroupItem>)}
@@ -69,7 +77,7 @@ export function RasterizerComparison(): React.JSX.Element {
           </filter>
         </defs>
       </svg>
-      <div className="landing__comparison-grid" data-rasterizer-comparison data-family={family} data-size={size} data-expanded={zoom > 1}>
+      <div className="landing__comparison-grid" data-rasterizer-comparison data-family={family} data-size={capture.size_px} data-expanded={zoom > 1}>
         {capture.samples.map((sample) => (
           <figure key={sample.id} data-rasterizer={sample.id} className="landing__comparison-sample">
             <SpecimenFrame frame={frame} data-rasterizer-frame={sample.id}

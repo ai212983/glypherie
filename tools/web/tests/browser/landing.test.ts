@@ -285,6 +285,8 @@ test("comparison previews use the Fonts page colors, inverse mode, zoom and fram
 });
 
 test("landing switches all converter samples across families and native sizes", { skip: !browserAvailable }, async (t) => {
+  assert.deepEqual(sampleMatrix.families.map((family) => family.id), ["roboto", "roboto-italic", "literata", "rouge-script"]);
+  assert.deepEqual(sampleMatrix.sizes, [8, 12, 16, 20]);
   const output = await buildApp(t);
   const url = await servePrefix(t, output);
   const browser = await launch(t);
@@ -296,7 +298,11 @@ test("landing switches all converter samples across families and native sizes", 
   for (const family of sampleMatrix.families) {
     await page.getByRole("combobox", { name: "Sample font family", exact: true }).click();
     await page.getByRole("option", { name: family.label, exact: true }).click();
-    for (const size of [8, 12, 16, 20]) {
+    const sizes = family.id === "rouge-script" ? [20] : [8, 12, 16, 20];
+    assert.deepEqual(sampleMatrix.cases.filter((entry) => entry.family_id === family.id).map((entry) => entry.size_px), sizes);
+    await sizeControls.getByRole("radio").first().waitFor({ state: "visible" });
+    assert.equal(await sizeControls.getByRole("radio").count(), sizes.length);
+    for (const size of sizes) {
       const selected = sizeControls.getByRole("radio", { name: `${size} pixels`, exact: true });
       await selected.click();
       assert.equal(await selected.getAttribute("aria-checked"), "true");
@@ -306,6 +312,7 @@ test("landing switches all converter samples across families and native sizes", 
       assert.equal(await comparison.getAttribute("data-family"), family.id);
       assert.equal(await comparison.getAttribute("data-size"), String(size));
       const capture = sampleMatrix.cases.find((entry) => entry.family_id === family.id && entry.size_px === size)!;
+      assert.equal(capture.display_lines.length, family.id === "rouge-script" ? 2 : 3);
       await page.waitForFunction(({ width, height, count }) => {
         const images = [...document.querySelectorAll<HTMLImageElement>("[data-rasterizer] img")];
         return images.length === count && images.every((image) => image.complete && image.naturalWidth === width && image.naturalHeight === height);
@@ -316,6 +323,15 @@ test("landing switches all converter samples across families and native sizes", 
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     }
   }
+  await page.getByRole("combobox", { name: "Sample font family", exact: true }).click();
+  await page.getByRole("option", { name: "Roboto", exact: true }).click();
+  await sizeControls.getByRole("radio", { name: "8 pixels", exact: true }).click();
+  await page.getByRole("combobox", { name: "Sample font family", exact: true }).click();
+  await page.getByRole("option", { name: "Rouge Script", exact: true }).click();
+  assert.equal(await comparison.getAttribute("data-size"), "20", "unsupported size switches to a configured size");
+  assert.equal(await sizeControls.getByRole("radio", { name: "20 pixels", exact: true }).getAttribute("aria-checked"), "true");
+  await page.getByRole("combobox", { name: "Sample font family", exact: true }).click();
+  await page.getByRole("option", { name: "Roboto", exact: true }).click();
   const eight = sizeControls.getByRole("radio", { name: "8 pixels", exact: true });
   await eight.click();
   await eight.focus();

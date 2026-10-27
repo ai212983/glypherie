@@ -23,5 +23,12 @@ Paths below are relative to the repository root.
   `/fonts/`. GitHub Pages uses `404.html` to redirect direct route requests through `index.html`, preserving the path
   and query; this requires JavaScript and an extra request on a fresh deep link. Hosts with SPA rewrites can serve
   `index.html` directly for route requests. An unknown font id or route shows the library with a recovery notice.
+- Landing captures and the live working preview share the [renderer policy](src/app/renderer/preview-policy.ts).
+  Captures record explicit renderer overrides, the resolved policy, its fingerprint and the Glypherie pipeline/scan.
+  Production builds resolve the current [case configuration](scripts/landing-samples/main-page.json) through that policy
+  and reject missing or mismatched capture declarations, pipeline, scan, policy or fingerprint with a regeneration
+  command. Recorded family, size and axes must match the matrix and configured inputs; explicit sample text must match
+  its configuration. Referenced images must belong to the same package and match their capture checksums. Builds require
+  no network access or native rendering for these checks.
 - Unsaved preview snapshots encode optional diagonal fitting as `diagonals=1`; omission means disabled. Saved variants
   store the same preference in their settings. Rendering and export forward it through the shared pipeline contract.

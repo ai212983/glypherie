@@ -2,7 +2,7 @@
   "inputs": {
     "family": "Roboto",
     "size_px": 20,
-    "source_font": "/Users/dimitri/Documents/Code/personal/Inkplate/font_generator/out/diagnostics/landing-samples/rebuild-20261027T131824Z/renderer-snapshot/fonts/Roboto.ttf",
+    "source_font": "/Users/dimitri/Documents/Code/personal/Inkplate/font_generator/fonts/Roboto.ttf",
     "source_font_sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134",
     "font_sha256": "ce820cb0439648a18d83c267b9308c5a5064511ab84e7767d2401419c51c80a7",
     "source_axes": {
@@ -85,9 +85,27 @@
   },
   "glypherie_scan": {
     "dropout": "smart",
-    "include_stubs": false,
-    "font_instructions": false
+    "include_stubs": true,
+    "font_instructions": true
   },
+  "renderer_inputs": {},
+  "renderer_policy": {
+    "fitting": "font_hints_auto",
+    "rasterization": "free_type_mono_terminals",
+    "diagonal_fitting": true,
+    "hinting": "auto_fallback",
+    "output_bits": 1,
+    "mono_threshold": 128,
+    "gray_gamma": 1,
+    "missing_glyphs": "error",
+    "metric_rounding": "subpixel",
+    "mono_raster": {
+      "dropout": "smart",
+      "include_stubs": true,
+      "font_instructions": true
+    }
+  },
+  "renderer_fingerprint": "a6d1bfff5881a45d7591208a2c8251daf4b3bfaec37905daddc6383ce89c15bd",
   "samples": [
     {
       "id": "repo",
@@ -400,9 +418,9 @@
       }
     }
   ],
-  "source_snapshot_sha256": "891d4af9d083b1328522d9f139bc3f981260e7e79d2de47c3c9969d79cd45aea",
-  "source_run": "/Users/dimitri/Documents/Code/personal/Inkplate/font_generator/out/diagnostics/landing-samples/rebuild-20261027T131824Z/captures-final/roboto-20",
-  "updated_at": "2026-10-27T13:23:09.271426+00:00",
+  "source_snapshot_sha256": "74b3b0c1a9a9cdab32fe6674847e6a420d36b9940e8870796e4ae8b481657272",
+  "source_run": "out/diagnostics/landing-samples/shared-preview-settings-20261027/roboto-20",
+  "updated_at": "2026-10-27T15:35:12.120630+00:00",
   "assessment": "Pending optical assessment. Native converter output; no quality ranking.",
   "browser": "153.0.8010.12",
   "platform": "darwin 25.6.0 arm64",
@@ -428,14 +446,14 @@
       "sha256": "59adbd9b3c6471f9bfce9b726c637ee65de6c7227e468874c7a2a3c68ff4bfbe"
     },
     {
-      "url": "https://pdfontconv.frozenfractal.com/main.js",
-      "file": "pdfontconv/sources/0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8.source",
-      "sha256": "0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8"
-    },
-    {
       "url": "https://pdfontconv.frozenfractal.com/style.css",
       "file": "pdfontconv/sources/3a54003d150a0f19aad38ed458bca18d223f9d6abf3aa91a115860abd4d809bb.source",
       "sha256": "3a54003d150a0f19aad38ed458bca18d223f9d6abf3aa91a115860abd4d809bb"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/main.js",
+      "file": "pdfontconv/sources/0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8.source",
+      "sha256": "0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8"
     },
     {
       "url": "https://kaasiand.cool/tophat/",

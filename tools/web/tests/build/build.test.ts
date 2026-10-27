@@ -51,6 +51,20 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
       `${source} bytes unchanged from canonical fonts/`,
     );
   }
+  const emittedFonts = await filesByExtension(output, ".ttf");
+  const expectedStems = ["JetBrainsMono", "Literata", "Roboto", "Roboto-Italic", "RobotoFlex", "SourceSans3", "SpaceGrotesk"];
+  assert.equal(emittedFonts.length, expectedStems.length, "no more and no fewer bundled fonts");
+  for (const name of emittedFonts) {
+    assert.ok(
+      expectedStems.some((stem) => name === `${stem}.ttf` || name.startsWith(`${stem}-`)),
+      `${name} is a known bundled font`,
+    );
+    assert.notEqual(
+      sha256(await fs.readFile(path.join(output, "assets", name))),
+      "99de0ca969d9898687305a36f7e6dde6d30806ab7a463ebb4068dd9dd2a54fd6",
+      `${name} is not the external Rouge Script sample input`,
+    );
+  }
   const licenseSources = [...new Set(fontPackages.map(([, license]) => license))];
   for (const license of licenseSources) {
     const builtLicense = (await filesByExtension(output, ".txt")).find((name) => name.startsWith(license.replace(".txt", "-")));

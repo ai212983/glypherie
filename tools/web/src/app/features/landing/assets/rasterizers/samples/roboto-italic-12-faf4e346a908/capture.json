@@ -2,7 +2,7 @@
   "inputs": {
     "family": "Roboto Italic",
     "size_px": 12,
-    "source_font": "/Users/dimitri/Documents/Code/personal/Inkplate/font_generator/out/diagnostics/landing-samples/rebuild-20261027T131824Z/renderer-snapshot/fonts/Roboto-Italic.ttf",
+    "source_font": "/Users/dimitri/Documents/Code/personal/Inkplate/font_generator/fonts/Roboto-Italic.ttf",
     "source_font_sha256": "9725a847af6b460ffca162ae66d20dad48b01876137947180b42d7dcd7887182",
     "font_sha256": "ceefc86261b67f848b4e4a62c6f06b0cb8b93be98855ab7117a7d8d4fe802c2f",
     "source_axes": {
@@ -85,9 +85,27 @@
   },
   "glypherie_scan": {
     "dropout": "smart",
-    "include_stubs": false,
-    "font_instructions": false
+    "include_stubs": true,
+    "font_instructions": true
   },
+  "renderer_inputs": {},
+  "renderer_policy": {
+    "fitting": "font_hints_auto",
+    "rasterization": "free_type_mono_terminals",
+    "diagonal_fitting": true,
+    "hinting": "auto_fallback",
+    "output_bits": 1,
+    "mono_threshold": 128,
+    "gray_gamma": 1,
+    "missing_glyphs": "error",
+    "metric_rounding": "subpixel",
+    "mono_raster": {
+      "dropout": "smart",
+      "include_stubs": true,
+      "font_instructions": true
+    }
+  },
+  "renderer_fingerprint": "a6d1bfff5881a45d7591208a2c8251daf4b3bfaec37905daddc6383ce89c15bd",
   "samples": [
     {
       "id": "repo",
@@ -387,9 +405,9 @@
       }
     }
   ],
-  "source_snapshot_sha256": "891d4af9d083b1328522d9f139bc3f981260e7e79d2de47c3c9969d79cd45aea",
-  "source_run": "/Users/dimitri/Documents/Code/personal/Inkplate/font_generator/out/diagnostics/landing-samples/rebuild-20261027T131824Z/captures-final/roboto-italic-12",
-  "updated_at": "2026-10-27T13:23:26.661102+00:00",
+  "source_snapshot_sha256": "74b3b0c1a9a9cdab32fe6674847e6a420d36b9940e8870796e4ae8b481657272",
+  "source_run": "out/diagnostics/landing-samples/shared-preview-settings-20261027/roboto-italic-12",
+  "updated_at": "2026-10-27T15:35:31.959387+00:00",
   "assessment": "Pending optical assessment. Native converter output; no quality ranking.",
   "browser": "153.0.8010.12",
   "platform": "darwin 25.6.0 arm64",
@@ -435,14 +453,14 @@
       "sha256": "8d58a802cb78f18d9072743a4558ccd24072920dcf722e1cd05b69f3d67b2c19"
     },
     {
-      "url": "https://kaasiand.cool/tophat/names.js",
-      "file": "tophat/sources/17fe3bb25943f5dff300fc5af3f0c665666596a0d513a96d3646d26d367400f6.source",
-      "sha256": "17fe3bb25943f5dff300fc5af3f0c665666596a0d513a96d3646d26d367400f6"
-    },
-    {
       "url": "https://kaasiand.cool/tophat/groups.js",
       "file": "tophat/sources/dcef23746af629a1d766098029d5a2942d69d5e563877943dbf58cc1f9850bc3.source",
       "sha256": "dcef23746af629a1d766098029d5a2942d69d5e563877943dbf58cc1f9850bc3"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/names.js",
+      "file": "tophat/sources/17fe3bb25943f5dff300fc5af3f0c665666596a0d513a96d3646d26d367400f6.source",
+      "sha256": "17fe3bb25943f5dff300fc5af3f0c665666596a0d513a96d3646d26d367400f6"
     },
     {
       "url": "https://kaasiand.cool/tophat/tophat.js",
