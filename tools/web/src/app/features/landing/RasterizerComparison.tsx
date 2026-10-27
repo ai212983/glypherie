@@ -72,7 +72,8 @@ export function RasterizerComparison(): React.JSX.Element {
       <div className="landing__comparison-grid" data-rasterizer-comparison data-family={family} data-size={size} data-expanded={zoom > 1}>
         {capture.samples.map((sample) => (
           <figure key={sample.id} data-rasterizer={sample.id} className="landing__comparison-sample">
-            <SpecimenFrame frame={frame} data-rasterizer-frame={sample.id}>
+            <SpecimenFrame frame={frame} data-rasterizer-frame={sample.id}
+              style={sample.id === "repo" ? { borderColor: "var(--studio-accent)" } : undefined}>
               <div className="landing__preview-label">
                 <h3 style={{ color: frame.inkCss }}><a href={sample.source_url}>{sample.label}</a></h3>
               </div>

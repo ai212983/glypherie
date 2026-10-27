@@ -2,11 +2,63 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import sampleMatrix from "../../src/app/features/landing/assets/rasterizers/matrix.json" with { type: "json" };
 import {
-  browserAvailable, buildApp, cardIds, hashPath, launch, servePrefix, setZoom,
+  bootLibrary, browserAvailable, buildApp, cardIds, hashPath, launch, servePrefix, setZoom,
 } from "../helpers/spa-helpers.ts";
 
 const defaultCapture = sampleMatrix.cases.find((entry) => entry.family_id === "roboto" && entry.size_px === 16)!;
 const [defaultWidth, defaultHeight] = defaultCapture.display_size as [number, number];
+
+test("GitHub stars refresh when returning after starring the repository", { skip: !browserAvailable }, async (t) => {
+  const output = await buildApp(t);
+  const url = await servePrefix(t, output);
+  const browser = await launch(t);
+  const context = await browser.newContext({ serviceWorkers: "block" });
+  let stars = 0;
+  await context.route("https://api.github.com/repos/ai212983/glypherie", (route) =>
+    route.fulfill({ json: { stargazers_count: stars } }));
+  const page = await context.newPage();
+  await page.goto(url);
+  await page.getByRole("img", { name: "0 GitHub stars", exact: true }).waitFor();
+  stars = 1;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.getByRole("img", { name: "1 GitHub stars", exact: true }).waitFor({ timeout: 2000 });
+});
+
+test("GitHub button shows public stars and falls back when counts are unavailable", { skip: !browserAvailable }, async (t) => {
+  const output = await buildApp(t);
+  const url = await servePrefix(t, output);
+  const browser = await launch(t);
+  for (const sample of [
+    { status: 200, body: { stargazers_count: 0 }, label: "0 GitHub stars", text: "★ 0" },
+    { status: 200, body: { stargazers_count: 1270 }, label: "1,270 GitHub stars", text: "★ 1.3K" },
+    { status: 404, body: {}, label: "Star on GitHub", text: "★ Star" },
+    { status: 403, body: {}, label: "Star on GitHub", text: "★ Star" },
+    { status: 200, body: { stargazers_count: -1 }, label: "Star on GitHub", text: "★ Star" },
+  ]) {
+    const context = await browser.newContext({ serviceWorkers: "block", viewport: { width: 390, height: 844 } });
+    let requests = 0;
+    await context.route("https://api.github.com/repos/ai212983/glypherie", (route) => {
+      requests += 1;
+      return route.fulfill({ status: sample.status, contentType: "application/json", body: JSON.stringify(sample.body) });
+    });
+    const page = await context.newPage();
+    const response = page.waitForResponse("https://api.github.com/repos/ai212983/glypherie");
+    await page.goto(url);
+    await (await response).finished();
+    const source = page.getByRole("link", { name: /^GitHub/ });
+    assert.equal(await source.getAttribute("href"), "https://github.com/ai212983/glypherie");
+    const badge = source.getByRole("img", { name: sample.label, exact: true });
+    await badge.waitFor();
+    assert.equal(await badge.innerText(), sample.text);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.getByRole("link", { name: "Open font library", exact: false }).click();
+    await page.locator("[data-font-card]").first().waitFor();
+    await page.getByRole("banner").getByRole("link", { name: "Glypherie", exact: true }).click();
+    await badge.waitFor();
+    assert.equal(requests, 2, "returning to the homepage refreshes the count");
+    await context.close();
+  }
+});
 
 test("landing, library and brand links keep distinct destinations under a hosting prefix", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
@@ -91,6 +143,58 @@ test("landing, library and brand links keep distinct destinations under a hostin
   assert.deepEqual(errors, []);
 });
 
+test("clearing local cache confirms and resets all Glypherie data without clearing other apps", { skip: !browserAvailable }, async (t) => {
+  const output = await buildApp(t);
+  const url = await servePrefix(t, output);
+  const browser = await launch(t);
+  const page = await browser.newPage();
+  await bootLibrary(page, url);
+  await page.getByRole("banner").getByRole("link", { name: "Glypherie", exact: true }).click();
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+  await page.evaluate(async (scope) => {
+    localStorage.setItem("font-preview.reset-fixture", "saved settings");
+    sessionStorage.setItem("font-preview.reset-fixture", "saved session");
+    localStorage.setItem("other-app", "keep");
+    sessionStorage.setItem("other-app", "keep");
+    const names = await caches.keys();
+    const appCache = await caches.open(names.find((name) => name.endsWith(`-${scope}`))!);
+    await appCache.put(`${scope}reset-fixture`, new Response("old cached app"));
+    const otherCache = await caches.open(`workbox-precache-v2-${scope}other/`);
+    await otherCache.put(`${scope}other/fixture`, new Response("keep"));
+  }, url);
+  const clear = page.getByRole("button", { name: "Delete data", exact: true });
+  assert.equal(await clear.getAttribute("data-variant"), "destructive");
+  await clear.click();
+  const confirmation = page.getByRole("region", { name: "Delete all local data?", exact: true });
+  assert.match(await confirmation.innerText(), /imported fonts, saved variants, palettes, settings, and the app cache/);
+  assert.equal(await clear.count(), 0, "confirmation replaces the panel content");
+  assert.equal(await page.getByRole("button", { name: "Cancel", exact: true }).evaluate((button) => button === document.activeElement), true);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await clear.waitFor();
+  await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Delete data");
+  assert.equal(await page.evaluate(() => localStorage.getItem("font-preview.reset-fixture")), "saved settings", "cancelling keeps stored data");
+  assert.equal(await page.evaluate(async () => (await indexedDB.databases()).some((db) => db.name === "font-library")), true);
+  await clear.click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).press("Escape");
+  await clear.waitFor();
+  await clear.click();
+  await Promise.all([page.waitForEvent("load"), page.getByRole("button", { name: "Delete everything", exact: true }).click()]);
+  await page.locator("[data-landing]").waitFor();
+  assert.deepEqual(await page.evaluate(async () => ({
+    databaseExists: (await indexedDB.databases()).some((db) => db.name === "font-library"),
+    preference: localStorage.getItem("font-preview.reset-fixture"),
+    session: sessionStorage.getItem("font-preview.reset-fixture"),
+    otherPreference: localStorage.getItem("other-app"),
+    otherSession: sessionStorage.getItem("other-app"),
+    oldCacheEntry: Boolean(await caches.match(new URL("reset-fixture", location.href).href)),
+    otherCacheEntry: await (await caches.match(new URL("other/fixture", location.href).href))?.text(),
+  })), { databaseExists: false, preference: null, session: null, otherPreference: "keep", otherSession: "keep", oldCacheEntry: false, otherCacheEntry: "keep" });
+  await page.getByRole("link", { name: "Open font library", exact: false }).click();
+  await page.locator("[data-font-card]").first().waitFor();
+});
+
 test("the introduction stays usable when font storage and the renderer are unavailable", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t, "/");
   const url = await servePrefix(t, output, "/");
@@ -167,7 +271,7 @@ test("comparison previews use the Fonts page colors, inverse mode, zoom and fram
     const style = getComputedStyle(element);
     return { background: style.backgroundColor, border: style.borderColor, radius: style.borderRadius, padding: style.padding, shadow: style.boxShadow };
   };
-  const frame = await page.locator("[data-rasterizer-frame]").first().evaluate(styleOf);
+  const frame = await page.locator('[data-rasterizer-frame="pdfontconv"]').evaluate(styleOf);
   await page.getByRole("link", { name: "Fonts", exact: true }).click();
   await page.locator("[data-card-frame]").first().waitFor();
   assert.equal(await page.locator("[data-preview-zoom]").getAttribute("data-value"), "3");
@@ -177,7 +281,7 @@ test("comparison previews use the Fonts page colors, inverse mode, zoom and fram
   await page.reload();
   await page.locator("[data-rasterizer-frame]").first().waitFor();
   assert.equal(await page.locator("[data-preview-zoom]").getAttribute("data-value"), "3");
-  assert.deepEqual(await page.locator("[data-rasterizer-frame]").first().evaluate(styleOf), frame, "display preferences survive navigation and reload");
+  assert.deepEqual(await page.locator('[data-rasterizer-frame="pdfontconv"]').evaluate(styleOf), frame, "display preferences survive navigation and reload");
 });
 
 test("landing switches all converter samples across families and native sizes", { skip: !browserAvailable }, async (t) => {
