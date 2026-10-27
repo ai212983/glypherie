@@ -89,7 +89,7 @@ test("dev footer tracks real HMR connection independently of network status", { 
     transform(code: string, id: string): string | null {
       const file = id.split("?")[0] ?? id;
       if (!file.endsWith("src/app/shell/SiteFooter.tsx")) return null;
-      return code.replace("Dev server ·", `Dev server r${revision} ·`);
+      return code.replace("data-site-footer", `data-test-footer-revision="${revision}" data-site-footer`);
     },
   };
   let server: ViteDevServer | undefined;
@@ -161,8 +161,14 @@ test("dev footer tracks real HMR connection independently of network status", { 
   // The initial ws:connect fires before React subscribes; the ping/pong
   // handshake must still report the live connection after mount.
   await footer.locator('[data-hmr-status="connected"]').waitFor({ timeout: 30000 });
-  assert.match(await footer.locator(".site-footer__development").innerText(), /Dev server r1 · Live updates · Connected/);
-  const hmrDot = footer.getByRole("img", { name: "Live updates connected", exact: true });
+  assert.equal(await footer.getAttribute("data-test-footer-revision"), "1");
+  assert.equal(await footer.locator(".site-footer__development").innerText(), "", "connected dev status shows only its dot");
+  const hmrDot = footer.getByRole("img", { name: "Dev server connected", exact: true });
+  const identityBox = await footer.locator(".site-footer__identity").boundingBox();
+  const versionBox = await footer.locator("[data-app-version]").boundingBox();
+  const dotBox = await hmrDot.boundingBox();
+  assert.ok(identityBox && versionBox && dotBox && dotBox.x === identityBox.x && dotBox.x + dotBox.width < versionBox.x,
+    "dev status sits at the far left before the version and build info");
   assert.equal(await hmrDot.getAttribute("title"), null);
   assert.match(await tooltipText(page, hmrDot), /applies edits automatically/);
   assert.equal(await footer.locator("[data-connection]").count(), 0, "dev has no network dot");
@@ -196,11 +202,8 @@ test("dev footer tracks real HMR connection independently of network status", { 
   assert.ok(target, "SiteFooter module is loaded");
   const pointerListenersReady = await pointerListenerCount();
   await server.reloadModule(target);
-  await footer.locator(".site-footer__development", { hasText: "Dev server r2" }).waitFor({ timeout: 20000 });
-  assert.match(
-    await footer.locator(".site-footer__development").innerText(),
-    /Dev server r2 · Live updates · Connected/,
-  );
+  await page.locator('[data-site-footer][data-test-footer-revision="2"]').waitFor({ timeout: 20000 });
+  assert.equal(await footer.locator(".site-footer__development").innerText(), "");
   assert.equal(await page.evaluate(() => (window as unknown as { __hmrProbe?: string }).__hmrProbe), "kept");
   assert.equal(await footer.locator(".site-footer__info").isVisible(), true);
   assert.equal(await footer.locator('[data-hmr-status="connected"]').count(), 1);
@@ -216,7 +219,7 @@ test("dev footer tracks real HMR connection independently of network status", { 
   await server.close();
   server = undefined;
   await footer.locator('[data-hmr-status="disconnected"]').waitFor({ timeout: 20000 });
-  assert.match(await footer.locator(".site-footer__development").innerText(), /Dev server r2 · Live updates · Disconnected/);
-  const downDot = footer.getByRole("img", { name: "Live updates disconnected", exact: true });
+  assert.equal(await footer.locator(".site-footer__development").innerText(), "Disconnected");
+  const downDot = footer.getByRole("img", { name: "Dev server disconnected", exact: true });
   assert.match(await tooltipText(page, downDot), /reconnects automatically/);
 });

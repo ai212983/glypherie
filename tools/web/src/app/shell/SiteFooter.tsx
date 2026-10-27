@@ -8,19 +8,19 @@ import "./SiteFooter.css";
 const HMR_STATE: Record<HmrStatus, { dot: string; label: string; hint: string; text: string }> = {
   connecting: {
     dot: "bg-amber-500",
-    label: "Live updates connecting",
+    label: "Dev server connecting",
     hint: "Connecting to the dev server for live updates.",
     text: "Connecting…",
   },
   connected: {
     dot: "bg-green-500",
-    label: "Live updates connected",
-    hint: "Live updates connected. Vite applies edits automatically.",
-    text: "Connected",
+    label: "Dev server connected",
+    hint: "Dev server connected. Vite applies edits automatically.",
+    text: "",
   },
   disconnected: {
     dot: "bg-red-500",
-    label: "Live updates disconnected",
+    label: "Dev server disconnected",
     hint: "Dev server connection lost. Vite reconnects automatically.",
     text: "Disconnected",
   },
@@ -36,7 +36,7 @@ function DevHmrStatus(): React.JSX.Element {
           data-hmr-status={status}
           className={`site-footer__connection ${state.dot}`} />
       </TooltipHint>
-      <span>Dev server · Live updates · {state.text}</span>
+      {state.text && <span>{state.text}</span>}
     </span>
   );
 }
@@ -109,6 +109,7 @@ export function SiteFooter(): React.JSX.Element {
   return (
     <footer className="site-footer" data-site-footer>
       <div className="site-footer__identity">
+        {import.meta.env.DEV && <DevHmrStatus />}
         {import.meta.env.PROD && !online && (
           <TooltipHint content="Offline. Your library and previews still work on this device.">
             <span role="img" aria-label="Offline"
@@ -120,7 +121,6 @@ export function SiteFooter(): React.JSX.Element {
           <><span data-app-version>{info.version}</span><BuildDetails info={info} /></>
         )}
       </div>
-      {import.meta.env.DEV && <DevHmrStatus />}
     </footer>
   );
 }
