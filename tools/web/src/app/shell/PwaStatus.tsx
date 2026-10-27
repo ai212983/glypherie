@@ -126,28 +126,21 @@ export function PwaStatus({ version, online, children }: { version: string; onli
     : "";
   return (
     <div className="site-footer__updates" data-update-state={needRefresh ? "ready" : activity}>
-      <TooltipHint content="Check for updates">
+      <TooltipHint content={needRefresh ? "Apply downloaded update" : "Check for updates"}>
         <Button type="button" size="xs" variant="ghost"
           className="site-footer__version-button"
           data-app-version
-          aria-label={`Version ${version}: check for updates`}
-          disabled={pending || !online || (!registration && activity !== "error")}
+          aria-label={needRefresh ? undefined : `Version ${version}: check for updates`}
+          disabled={needRefresh ? activity === "updating" : pending || !online || (!registration && activity !== "error")}
           onClick={() => {
-            if (!registration) window.location.reload();
+            if (needRefresh) void apply();
+            else if (!registration) window.location.reload();
             else void check();
           }}>
-          <RefreshCw aria-hidden="true" className={activity === "checking" || activity === "downloading" ? "motion-safe:animate-spin" : undefined} />
-          {version}
+          <RefreshCw aria-hidden="true" className={pending ? "motion-safe:animate-spin" : undefined} />
+          {needRefresh ? activity === "updating" ? "Updating…" : "Update" : version}
         </Button>
       </TooltipHint>
-      {needRefresh && (
-        <Button type="button" size="xs" variant="ghost"
-          className="site-footer__update-button"
-          disabled={activity === "updating"}
-          onClick={() => { void apply(); }}>
-          {activity === "updating" ? "Updating…" : "Update"}
-        </Button>
-      )}
       {children}
       <span role="status" data-update-success={activity === "current" && message ? true : undefined}>{message}</span>
     </div>

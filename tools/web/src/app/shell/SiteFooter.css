@@ -47,7 +47,7 @@
 .site-footer__info dd { margin: 0; overflow-wrap: anywhere; }
 .site-footer__info [role="status"] { margin-left: 8px; }
 .site-footer__updates { flex-wrap: wrap; gap: 4px 12px; }
-.site-footer .site-footer__version-button, .site-footer .site-footer__update-button {
+.site-footer .site-footer__version-button {
   height: 22px;
   border: 1px solid var(--studio-border);
   border-radius: 9999px;

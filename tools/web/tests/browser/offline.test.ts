@@ -94,7 +94,10 @@ test("footer offers a checked update for an explicit click and prompts for backg
   const update = footer.getByRole("button", { name: "Update", exact: true });
   await update.waitFor();
   assert.equal(navigations, 0, "a manual check downloads the update without reloading");
-  assert.equal(await check.count(), 1, "the version control stays while an update is ready");
+  assert.equal(await check.count(), 0, "the version control becomes the Update action");
+  assert.equal(await footer.locator(".site-footer__version-button").innerText(), "Update");
+  assert.equal(await footer.locator(".site-footer__updates button:visible").count(), 1, "only one update control is shown");
+  assert.equal(await tooltipText(page, update), "Apply downloaded update");
   assert.equal(await footer.getByLabel("Build details").count(), 1, "build details stay while an update is ready");
   assert.equal(await footer.locator("time").getAttribute("datetime"), originalBuild);
   assert.equal(await footer.locator('[data-update-state="ready"]').count(), 1);
@@ -119,7 +122,8 @@ test("footer offers a checked update for an explicit click and prompts for backg
   await fs.appendFile(path.join(output, "sw.js"), "\n// Updated service worker for the background detection test.\n");
   await page.evaluate(async () => { await (await navigator.serviceWorker.ready).update(); });
   await update.waitFor();
-  assert.equal(await check.count(), 1, "the version control stays while a background update is ready");
+  assert.equal(await check.count(), 0, "the version control becomes Update for background updates");
+  assert.equal(await footer.locator(".site-footer__version-button").innerText(), "Update");
   assert.equal(await footer.getByLabel("Build details").count(), 1, "build details stay while a background update is ready");
   assert.equal(await footer.locator('.site-footer__updates > [role="status"]').innerText(), "");
   assert.ok(await page.evaluate(async () => (await navigator.serviceWorker.ready).waiting !== null));
@@ -160,8 +164,8 @@ test("footer recovers from a failed check and applies a ready update while offli
   await check.click();
   await footer.locator('[data-update-state="current"]').waitFor();
 
-  // Download an update, then lose connectivity: checking disables, but the
-  // downloaded update stays actionable.
+  // Download an update, then lose connectivity: the merged control keeps the
+  // downloaded update actionable.
   await fs.appendFile(swPath, "\n// Updated service worker for the offline apply test.\n");
   let navigations = 0;
   page.on("load", () => { navigations += 1; });
@@ -176,9 +180,9 @@ test("footer recovers from a failed check and applies a ready update while offli
   const hint = await tooltipText(page, offlineDot);
   assert.ok(/offline/i.test(hint) || /local work/i.test(hint), `the offline hint names the state, got: ${hint}`);
   assert.equal(await footer.locator('.site-footer__updates > [role="status"]').innerText(), "");
-  assert.equal(await check.isDisabled(), true, "checks disable while offline");
   assert.equal(await update.isEnabled(), true, "a downloaded update stays actionable offline");
-  assert.equal(await check.count(), 1, "the version control stays while an update is ready");
+  assert.equal(await check.count(), 0, "the version control becomes Update while offline");
+  assert.equal(await footer.locator(".site-footer__version-button").innerText(), "Update");
   assert.equal(await footer.getByLabel("Build details").count(), 1, "build details stay while an update is ready");
   await Promise.all([
     page.waitForEvent("load"),
