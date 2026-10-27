@@ -1,3 +1,6 @@
+# Keep quoted sample text and font paths intact when forwarding recipe arguments.
+set positional-arguments
+
 default:
     @just --list
 
@@ -83,6 +86,10 @@ web-typecheck:
 # Run the web tests.
 web-test:
     npm --prefix tools/web run test
+
+# Capture the five front-page converters; activate the sample-script environment first.
+landing-samples *args:
+    python3 tools/web/scripts/landing-samples/generate.py "$@"
 
 # Serve isolated web components with live reload.
 web-storybook:

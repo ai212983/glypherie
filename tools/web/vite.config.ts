@@ -26,6 +26,7 @@ export default defineConfig(({ command }) => mergeConfig(uiConfig, defineConfig(
       allow: [
         import.meta.dirname,
         path.resolve(import.meta.dirname, "..", "..", "fonts"),
+        path.resolve(import.meta.dirname, "..", "..", "out", "diagnostics"),
       ],
     },
   },

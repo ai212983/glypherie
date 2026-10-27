@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import sampleMatrix from "../../src/app/features/landing/assets/rasterizers/matrix.json" with { type: "json" };
 import {
   browserAvailable, buildApp, cardIds, hashPath, launch, servePrefix, setZoom,
 } from "../helpers/spa-helpers.ts";
+
+const defaultCapture = sampleMatrix.cases.find((entry) => entry.family_id === "roboto" && entry.size_px === 16)!;
+const [defaultWidth, defaultHeight] = defaultCapture.display_size as [number, number];
 
 test("landing, library and brand links keep distinct destinations under a hosting prefix", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
@@ -25,20 +29,20 @@ test("landing, library and brand links keep distinct destinations under a hostin
   assert.deepEqual(await comparison.locator("h3").allTextContents(), [
     "Glypherie", "pdfontconv", "Tophat", "LVGL Font Converter", "Adafruit Font Converter",
   ]);
-  await page.waitForFunction(() => {
+  await page.waitForFunction(({ width, height, count }) => {
     const images = [...document.querySelectorAll<HTMLImageElement>("[data-rasterizer] img")];
-    return images.length === 15 && images.every((image) => image.complete && image.naturalWidth === 468 && image.naturalHeight === 129);
-  });
+    return images.length === count && images.every((image) => image.complete && image.naturalWidth === width && image.naturalHeight === height);
+  }, { width: defaultWidth, height: defaultHeight, count: defaultCapture.display_lines.length * 5 });
   const sample = comparison.locator("img").first();
   const lines = comparison.locator("[data-rasterizer-lines]").first();
   assert.ok((await lines.boundingBox())!.height <= 72, "three text lines have no blank lines between them");
-  assert.equal((await sample.boundingBox())?.width, 468, "capture pixels are displayed at native scale");
+  assert.equal((await sample.boundingBox())?.width, defaultWidth, "capture pixels are displayed at native scale");
   assert.equal(await page.locator("[data-global-canvas]").count(), 1);
   assert.equal(await page.locator("[data-global-zoom]").count(), 1);
   await setZoom(page, "2");
-  assert.equal((await sample.boundingBox())?.width, 936, "enlargement uses an integer scale");
+  assert.equal((await sample.boundingBox())?.width, defaultWidth * 2, "enlargement uses an integer scale");
   await setZoom(page, "4");
-  assert.equal((await sample.boundingBox())?.width, 1872);
+  assert.equal((await sample.boundingBox())?.width, defaultWidth * 4);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, "enlarged samples scroll inside their frames");
   await setZoom(page, "1");
   const start = page.getByRole("link", { name: "Open font library", exact: false });
@@ -80,7 +84,7 @@ test("landing, library and brand links keep distinct destinations under a hostin
     assert.ok(await start.isVisible());
     const scrollFrame = comparison.getByRole("region").first();
     assert.equal(await scrollFrame.getAttribute("tabindex"), "0", "samples can be scrolled from the keyboard");
-    assert.equal((await sample.boundingBox())?.width, 468, "mobile keeps native capture scale");
+    assert.equal((await sample.boundingBox())?.width, defaultWidth, "mobile keeps native capture scale");
     assert.equal(await scrollFrame.evaluate((element) => element.scrollWidth > element.clientWidth), true, "mobile frames scroll instead of resampling images");
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, `${theme} mobile layout fits the viewport`);
   }
@@ -158,7 +162,7 @@ test("comparison previews use the Fonts page colors, inverse mode, zoom and fram
     }
   }
   await setZoom(page, "3");
-  assert.equal((await page.locator("[data-rasterizer-lines]").first().boundingBox())?.width, 1404, "3× is shared with captured previews");
+  assert.equal((await page.locator("[data-rasterizer-lines]").first().boundingBox())?.width, defaultWidth * 3, "3× is shared with captured previews");
   const styleOf = (element: Element) => {
     const style = getComputedStyle(element);
     return { background: style.backgroundColor, border: style.borderColor, radius: style.borderRadius, padding: style.padding, shadow: style.boxShadow };
@@ -174,4 +178,48 @@ test("comparison previews use the Fonts page colors, inverse mode, zoom and fram
   await page.locator("[data-rasterizer-frame]").first().waitFor();
   assert.equal(await page.locator("[data-preview-zoom]").getAttribute("data-value"), "3");
   assert.deepEqual(await page.locator("[data-rasterizer-frame]").first().evaluate(styleOf), frame, "display preferences survive navigation and reload");
+});
+
+test("landing switches all converter samples across families and native sizes", { skip: !browserAvailable }, async (t) => {
+  const output = await buildApp(t);
+  const url = await servePrefix(t, output);
+  const browser = await launch(t);
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.goto(url);
+  await setZoom(page, "1");
+  const comparison = page.locator("[data-rasterizer-comparison]");
+  const sizeControls = page.getByRole("radiogroup", { name: "Sample font size" });
+  for (const family of sampleMatrix.families) {
+    await page.getByRole("combobox", { name: "Sample font family", exact: true }).click();
+    await page.getByRole("option", { name: family.label, exact: true }).click();
+    for (const size of [8, 12, 16, 20]) {
+      const selected = sizeControls.getByRole("radio", { name: `${size} pixels`, exact: true });
+      await selected.click();
+      assert.equal(await selected.getAttribute("aria-checked"), "true");
+      // Clicking the selected size cannot leave the preview without a selection.
+      await selected.click();
+      assert.equal(await selected.getAttribute("aria-checked"), "true");
+      assert.equal(await comparison.getAttribute("data-family"), family.id);
+      assert.equal(await comparison.getAttribute("data-size"), String(size));
+      const capture = sampleMatrix.cases.find((entry) => entry.family_id === family.id && entry.size_px === size)!;
+      await page.waitForFunction(({ width, height, count }) => {
+        const images = [...document.querySelectorAll<HTMLImageElement>("[data-rasterizer] img")];
+        return images.length === count && images.every((image) => image.complete && image.naturalWidth === width && image.naturalHeight === height);
+      }, { width: capture.display_size[0]!, height: capture.display_size[1]!, count: capture.display_lines.length * 5 });
+      assert.equal(await comparison.locator("figure").count(), 5);
+      assert.equal((await comparison.locator("img").first().boundingBox())?.width, capture.display_size[0]);
+      assert.match(await comparison.locator("img").first().getAttribute("alt") ?? "", new RegExp(`${family.label} · ${size} px`));
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    }
+  }
+  const eight = sizeControls.getByRole("radio", { name: "8 pixels", exact: true });
+  await eight.click();
+  await eight.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => document.querySelector('[aria-label="12 pixels"]')?.getAttribute("aria-checked") === "true");
+  assert.equal(await sizeControls.getByRole("radio", { name: "12 pixels", exact: true }).getAttribute("aria-checked"), "true");
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, "controls wrap on narrow screens");
+  const chevron = page.getByRole("combobox", { name: "Sample font family", exact: true }).locator("img");
+  assert.deepEqual(await chevron.evaluate((image) => ({ width: image.getBoundingClientRect().width, height: image.getBoundingClientRect().height })), { width: 19.5, height: 19.5 });
 });

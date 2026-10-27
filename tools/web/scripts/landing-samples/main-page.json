@@ -1,0 +1,134 @@
+[
+  {
+    "id": "roboto-8",
+    "font": "../../../../fonts/Roboto.ttf",
+    "family_id": "roboto",
+    "family_label": "Roboto",
+    "size_px": 8,
+    "axes": {
+      "wdth": 100
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "roboto-12",
+    "font": "../../../../fonts/Roboto.ttf",
+    "family_id": "roboto",
+    "family_label": "Roboto",
+    "size_px": 12,
+    "axes": {
+      "wdth": 100
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "roboto-16",
+    "font": "../../../../fonts/Roboto.ttf",
+    "family_id": "roboto",
+    "family_label": "Roboto",
+    "size_px": 16,
+    "axes": {
+      "wdth": 100
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "roboto-20",
+    "font": "../../../../fonts/Roboto.ttf",
+    "family_id": "roboto",
+    "family_label": "Roboto",
+    "size_px": 20,
+    "axes": {
+      "wdth": 100
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "roboto-italic-8",
+    "font": "../../../../fonts/Roboto-Italic.ttf",
+    "family_id": "roboto-italic",
+    "family_label": "Roboto Italic",
+    "size_px": 8,
+    "axes": {
+      "wdth": 100
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "roboto-italic-12",
+    "font": "../../../../fonts/Roboto-Italic.ttf",
+    "family_id": "roboto-italic",
+    "family_label": "Roboto Italic",
+    "size_px": 12,
+    "axes": {
+      "wdth": 100
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "roboto-italic-16",
+    "font": "../../../../fonts/Roboto-Italic.ttf",
+    "family_id": "roboto-italic",
+    "family_label": "Roboto Italic",
+    "size_px": 16,
+    "axes": {
+      "wdth": 100
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "roboto-italic-20",
+    "font": "../../../../fonts/Roboto-Italic.ttf",
+    "family_id": "roboto-italic",
+    "family_label": "Roboto Italic",
+    "size_px": 20,
+    "axes": {
+      "wdth": 100
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "literata-8",
+    "font": "../../../../fonts/Literata.ttf",
+    "family_id": "literata",
+    "family_label": "Literata",
+    "size_px": 8,
+    "axes": {
+      "opsz": 8
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "literata-12",
+    "font": "../../../../fonts/Literata.ttf",
+    "family_id": "literata",
+    "family_label": "Literata",
+    "size_px": 12,
+    "axes": {
+      "opsz": 12
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "literata-16",
+    "font": "../../../../fonts/Literata.ttf",
+    "family_id": "literata",
+    "family_label": "Literata",
+    "size_px": 16,
+    "axes": {
+      "opsz": 16
+    },
+    "stem_target_px": 1
+  },
+  {
+    "id": "literata-20",
+    "font": "../../../../fonts/Literata.ttf",
+    "family_id": "literata",
+    "family_label": "Literata",
+    "size_px": 20,
+    "axes": {
+      "opsz": 20
+    },
+    "stem_target_px": 1
+  }
+]

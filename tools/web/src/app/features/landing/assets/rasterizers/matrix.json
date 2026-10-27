@@ -1,0 +1,756 @@
+{
+  "families": [
+    {
+      "id": "roboto",
+      "label": "Roboto"
+    },
+    {
+      "id": "roboto-italic",
+      "label": "Roboto Italic"
+    },
+    {
+      "id": "literata",
+      "label": "Literata"
+    }
+  ],
+  "sizes": [
+    8,
+    12,
+    16,
+    20
+  ],
+  "cases": [
+    {
+      "id": "roboto-8",
+      "family_id": "roboto",
+      "family_label": "Roboto",
+      "size_px": 8,
+      "axes": {
+        "wght": 520.23,
+        "wdth": 100
+      },
+      "display_size": [
+        248,
+        73
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 9
+        },
+        {
+          "top": 32,
+          "height": 9
+        },
+        {
+          "top": 56,
+          "height": 9
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/roboto-8-1f4171618914/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/roboto-8-1f4171618914/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/roboto-8-1f4171618914/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/roboto-8-1f4171618914/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/roboto-8-1f4171618914/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "roboto-12",
+      "family_id": "roboto",
+      "family_label": "Roboto",
+      "size_px": 12,
+      "axes": {
+        "wght": 367.07,
+        "wdth": 100
+      },
+      "display_size": [
+        367,
+        101
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 13
+        },
+        {
+          "top": 44,
+          "height": 13
+        },
+        {
+          "top": 80,
+          "height": 13
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/roboto-12-d46424c511ee/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/roboto-12-d46424c511ee/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/roboto-12-d46424c511ee/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/roboto-12-d46424c511ee/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/roboto-12-d46424c511ee/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "roboto-16",
+      "family_id": "roboto",
+      "family_label": "Roboto",
+      "size_px": 16,
+      "axes": {
+        "wght": 306.48,
+        "wdth": 100
+      },
+      "display_size": [
+        464,
+        129
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 17
+        },
+        {
+          "top": 56,
+          "height": 17
+        },
+        {
+          "top": 104,
+          "height": 17
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/roboto-16-d123d51c63bd/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/roboto-16-d123d51c63bd/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/roboto-16-d123d51c63bd/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/roboto-16-d123d51c63bd/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/roboto-16-d123d51c63bd/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "roboto-20",
+      "family_id": "roboto",
+      "family_label": "Roboto",
+      "size_px": 20,
+      "axes": {
+        "wght": 249.98,
+        "wdth": 100
+      },
+      "display_size": [
+        570,
+        157
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 21
+        },
+        {
+          "top": 68,
+          "height": 21
+        },
+        {
+          "top": 128,
+          "height": 21
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/roboto-20-a191f6f0235c/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/roboto-20-a191f6f0235c/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/roboto-20-a191f6f0235c/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/roboto-20-a191f6f0235c/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/roboto-20-a191f6f0235c/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "roboto-italic-8",
+      "family_id": "roboto-italic",
+      "family_label": "Roboto Italic",
+      "size_px": 8,
+      "axes": {
+        "wght": 543.96,
+        "wdth": 100
+      },
+      "display_size": [
+        238,
+        73
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 9
+        },
+        {
+          "top": 32,
+          "height": 9
+        },
+        {
+          "top": 56,
+          "height": 9
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/roboto-italic-8-0d7dc0a6e4a6/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/roboto-italic-8-0d7dc0a6e4a6/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/roboto-italic-8-0d7dc0a6e4a6/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/roboto-italic-8-0d7dc0a6e4a6/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/roboto-italic-8-0d7dc0a6e4a6/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "roboto-italic-12",
+      "family_id": "roboto-italic",
+      "family_label": "Roboto Italic",
+      "size_px": 12,
+      "axes": {
+        "wght": 372.63,
+        "wdth": 100
+      },
+      "display_size": [
+        349,
+        101
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 13
+        },
+        {
+          "top": 44,
+          "height": 13
+        },
+        {
+          "top": 80,
+          "height": 13
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/roboto-italic-12-faf4e346a908/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/roboto-italic-12-faf4e346a908/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/roboto-italic-12-faf4e346a908/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/roboto-italic-12-faf4e346a908/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/roboto-italic-12-faf4e346a908/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "roboto-italic-16",
+      "family_id": "roboto-italic",
+      "family_label": "Roboto Italic",
+      "size_px": 16,
+      "axes": {
+        "wght": 309.63,
+        "wdth": 100
+      },
+      "display_size": [
+        456,
+        129
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 17
+        },
+        {
+          "top": 56,
+          "height": 17
+        },
+        {
+          "top": 104,
+          "height": 17
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/roboto-italic-16-44156d809789/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/roboto-italic-16-44156d809789/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/roboto-italic-16-44156d809789/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/roboto-italic-16-44156d809789/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/roboto-italic-16-44156d809789/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "roboto-italic-20",
+      "family_id": "roboto-italic",
+      "family_label": "Roboto Italic",
+      "size_px": 20,
+      "axes": {
+        "wght": 253.69,
+        "wdth": 100
+      },
+      "display_size": [
+        554,
+        157
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 21
+        },
+        {
+          "top": 68,
+          "height": 21
+        },
+        {
+          "top": 128,
+          "height": 21
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/roboto-italic-20-77b348b4ab9c/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/roboto-italic-20-77b348b4ab9c/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/roboto-italic-20-77b348b4ab9c/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/roboto-italic-20-77b348b4ab9c/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/roboto-italic-20-77b348b4ab9c/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "literata-8",
+      "family_id": "literata",
+      "family_label": "Literata",
+      "size_px": 8,
+      "axes": {
+        "opsz": 8,
+        "wght": 522.47
+      },
+      "display_size": [
+        298,
+        73
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 9
+        },
+        {
+          "top": 32,
+          "height": 9
+        },
+        {
+          "top": 56,
+          "height": 9
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/literata-8-de4aa66278f4/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/literata-8-de4aa66278f4/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/literata-8-de4aa66278f4/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/literata-8-de4aa66278f4/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/literata-8-de4aa66278f4/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "literata-12",
+      "family_id": "literata",
+      "family_label": "Literata",
+      "size_px": 12,
+      "axes": {
+        "opsz": 12,
+        "wght": 336.73
+      },
+      "display_size": [
+        390,
+        100
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 12
+        },
+        {
+          "top": 44,
+          "height": 12
+        },
+        {
+          "top": 80,
+          "height": 12
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/literata-12-11fbeddaa551/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/literata-12-11fbeddaa551/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/literata-12-11fbeddaa551/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/literata-12-11fbeddaa551/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/literata-12-11fbeddaa551/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "literata-16",
+      "family_id": "literata",
+      "family_label": "Literata",
+      "size_px": 16,
+      "axes": {
+        "opsz": 16,
+        "wght": 252.22
+      },
+      "display_size": [
+        491,
+        129
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 17
+        },
+        {
+          "top": 56,
+          "height": 17
+        },
+        {
+          "top": 104,
+          "height": 17
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/literata-16-c9df2fa41f6e/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/literata-16-c9df2fa41f6e/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/literata-16-c9df2fa41f6e/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/literata-16-c9df2fa41f6e/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/literata-16-c9df2fa41f6e/adafruit.png"
+        }
+      ]
+    },
+    {
+      "id": "literata-20",
+      "family_id": "literata",
+      "family_label": "Literata",
+      "size_px": 20,
+      "axes": {
+        "opsz": 20,
+        "wght": 203.99
+      },
+      "display_size": [
+        597,
+        157
+      ],
+      "display_lines": [
+        {
+          "top": 8,
+          "height": 22
+        },
+        {
+          "top": 68,
+          "height": 22
+        },
+        {
+          "top": 128,
+          "height": 21
+        }
+      ],
+      "display_line_gap": 2,
+      "samples": [
+        {
+          "id": "repo",
+          "label": "Glypherie",
+          "source_url": "https://github.com/ai212983/glypherie",
+          "file": "samples/literata-20-7a0a85111e26/repo.png"
+        },
+        {
+          "id": "pdfontconv",
+          "label": "pdfontconv",
+          "source_url": "https://pdfontconv.frozenfractal.com/",
+          "file": "samples/literata-20-7a0a85111e26/pdfontconv.png"
+        },
+        {
+          "id": "tophat",
+          "label": "Tophat",
+          "source_url": "https://kaasiand.cool/tophat/",
+          "file": "samples/literata-20-7a0a85111e26/tophat.png"
+        },
+        {
+          "id": "lvgl",
+          "label": "LVGL Font Converter",
+          "source_url": "https://github.com/lvgl/lv_font_conv",
+          "file": "samples/literata-20-7a0a85111e26/lvgl.png"
+        },
+        {
+          "id": "adafruit",
+          "label": "Adafruit Font Converter",
+          "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+          "file": "samples/literata-20-7a0a85111e26/adafruit.png"
+        }
+      ]
+    }
+  ]
+}

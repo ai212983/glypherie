@@ -1,6 +1,6 @@
 # Monochrome geometry and spacing
 
-<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit afloader rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL -->
+<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit afloader rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL Adafruit pdfontconv Tophat -->
 
 Combine native and automatic Mono fitting on independent axes, with each upstream policy retained as a control. Assess
 binary continuity, feature balance and reading rhythm with pixel-aligned display and source kerning inspection. The
@@ -613,6 +613,30 @@ X alone does not preserve binary stem weight. A remedy needs a general Mono stem
 normal one-column strokes, joins and the source-related A geometry; per-glyph phase shifts, threshold tuning and
 thickening the normal stems are not justified by this finding. No fitting or raster behavior is changed by this
 investigation.
+
+##### Main-page source-stem calibration
+
+The [main-page sample selection](../../../tools/web/scripts/landing-samples/main-page.json) targets one native pixel for
+principal stems through one global weight coordinate per family and size. The project adaptation measures upper body
+sections in `H`, `I` and `l`, bounding the widest reference section in the serialized static source font by one pixel.
+All converters receive that same instance; source weight relationships, serif contrast and native converter behavior
+remain intact. This controls specimen inputs rather than changing fitting or scan conversion. It does not claim that
+every serif, join, diagonal or curved stroke is one pixel wide.
+
+Glypherie delivers one-pixel horizontal body runs in the three reference characters for every selected family and size,
+measured in each strike's fitted cap-height frame. The following Mono converter differences remain **pending
+assessment**, with native output retained:
+
+| Family        | Size | Axes                      | Converter                    | Witness                         |
+| ------------- | ---- | ------------------------- | ---------------------------- | ------------------------------- |
+| Roboto        | 12   | `wght=367.07`, `wdth=100` | pdfontconv, Tophat, Adafruit | `H` has one- and two-pixel runs |
+| Roboto Italic | 12   | `wght=372.63`, `wdth=100` | pdfontconv, Tophat           | `H` has one- and two-pixel runs |
+| Roboto Italic | 20   | `wght=253.69`, `wdth=100` | pdfontconv, Tophat, LVGL     | `H` has one- and two-pixel runs |
+| Literata      | 16   | `wght=252.22`, `opsz=16`  | pdfontconv, Tophat           | `H` and `I` have two-pixel runs |
+
+The inspection question is how native fitting and grid placement affect principal stroke weight and continuity against
+the shared source. These measurements establish a width difference, not damaged legibility or an optical quality
+ranking. No glyph pixels, individual-glyph settings or thresholds are adjusted to remove the differences.
 
 #### Coupled width geometry: research direction
 
