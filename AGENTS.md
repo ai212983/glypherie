@@ -14,8 +14,9 @@ Before tackling a problem, follow the [research workflow](docs/evaluation.md#res
   component or an external consumer of its inputs, outputs, published formats, routes, forwarded requests, or build
   outcomes, it belongs; if only a person viewing the page would notice, it belongs in code and tests, not the contract.
   That excludes presentation, layout, display modes, control behavior, and formats produced and consumed inside one
-  component. READMEs state setup, commands, and configuration only. Do not record implementation mechanics or change
-  history in either; link to owner documents rather than restating their rules.
+  component. The root README introduces the project's purpose, motivation and contents alongside development guidance.
+  Component READMEs state setup, commands and configuration only. Keep implementation mechanics and change history in
+  their owner documents; link rather than restating their rules.
 
 ## Code placement
 

@@ -1,5 +1,18 @@
 # Glypherie
 
+## What is this?
+
+A bitmap font rasterizer for small fonts on monochrome and grayscale displays.
+
+## Why not just use X?
+
+Existing tools are not optimized for small font sizes and behave badly on low-resolution monochrome or grayscale
+displays.
+
+## What does this repository contain?
+
+Multiple tools for font research and glyph generation.
+
 ## Development
 
 Prerequisites: Node.js (>= 22.18) with npm, Rust with rustfmt, and [Git LFS](https://git-lfs.com/). The recommended Node
