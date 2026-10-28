@@ -472,9 +472,13 @@ struct NormOther<'a> {
 ///
 /// Segment arithmetic keeps the direct paths' evaluation order; tags are
 /// borrowed so repeated queries over one prepared set clone no strings.
-fn norm_others<'a>(others: &'a [Border], o: Point, l0: f64) -> Vec<NormOther<'a>> {
+fn norm_others<'a>(
+    others: impl IntoIterator<Item = &'a Border>,
+    o: Point,
+    l0: f64,
+) -> Vec<NormOther<'a>> {
     others
-        .iter()
+        .into_iter()
         .map(|ob| NormOther {
             seg: norm_seg(ob.seg, o, l0),
             tag: ob.tag.as_str(),
@@ -482,25 +486,12 @@ fn norm_others<'a>(others: &'a [Border], o: Point, l0: f64) -> Vec<NormOther<'a>
         .collect()
 }
 
-/// Index-filtered borrowed view excluding two edge positions.
-///
-/// Preserves edge order and drops exactly the positions `ea` and `eb`,
-/// matching a caller-side filter over the same slice.
-fn norm_others_except<'a>(
-    all: &'a [Border],
-    o: Point,
-    l0: f64,
-    ea: usize,
-    eb: usize,
-) -> Vec<NormOther<'a>> {
+/// Exclude two edge positions while preserving competitor order.
+fn borders_except(all: &[Border], ea: usize, eb: usize) -> impl Iterator<Item = &Border> {
     all.iter()
         .enumerate()
-        .filter(|(i, _)| *i != ea && *i != eb)
-        .map(|(_, ob)| NormOther {
-            seg: norm_seg(ob.seg, o, l0),
-            tag: ob.tag.as_str(),
-        })
-        .collect()
+        .filter(move |(i, _)| *i != ea && *i != eb)
+        .map(|(_, border)| border)
 }
 
 /// Normalized medial contact at corridor parameter `t`.
@@ -753,15 +744,20 @@ pub fn contact(
     contact_prepared(&setup, t, others, loops)
 }
 
-/// Medial contact reusing a prepared pair setup.
-///
-/// Same guards, verdicts and floating-point evaluation order as
-/// [`contact`]; only the corridor/frame setup is shared instead of
-/// recomputed, and competitor tags are borrowed.
+/// [`contact`] with a prepared pair setup and borrowed competitor tags.
 pub(super) fn contact_prepared(
     setup: &PairSetup,
     t: f64,
     others: &[Border],
+    loops: Option<&[Vec<Point>]>,
+) -> ContactResult {
+    contact_core(setup, t, others, loops)
+}
+
+fn contact_core<'a>(
+    setup: &PairSetup,
+    t: f64,
+    others: impl IntoIterator<Item = &'a Border>,
     loops: Option<&[Vec<Point>]>,
 ) -> ContactResult {
     let (lo, hi, l0, o) = (setup.lo, setup.hi, setup.l0, setup.o);
@@ -1135,15 +1131,12 @@ impl CompetitorSet {
         loops: Option<&[Vec<Point>]>,
     ) -> Dominance {
         let (o, l0) = (setup.o, setup.l0);
-        let on = norm_others_except(&self.borders, o, l0, ea, eb);
+        let on = norm_others(borders_except(&self.borders, ea, eb), o, l0);
         let ln = loops.map(|lps| norm_loops(lps, o, l0));
         dominance_core(setup, &on, ln.as_deref())
     }
 
-    /// Contact of `setup` at `t` against every competitor except `ea`/`eb`.
-    ///
-    /// Same verdicts and floating-point evaluation order as [`contact`]
-    /// on the same pair with a caller-filtered slice.
+    /// [`contact`] with `setup`, excluding edge positions `ea` and `eb`.
     pub fn contact_for(
         &self,
         setup: &PairSetup,
@@ -1152,36 +1145,7 @@ impl CompetitorSet {
         eb: usize,
         loops: Option<&[Vec<Point>]>,
     ) -> ContactResult {
-        let (lo, hi, l0, o) = (setup.lo, setup.hi, setup.l0, setup.o);
-        if !(lo < t && t < hi) {
-            return ContactResult {
-                hit: None,
-                stage: "outside-overlap".to_string(),
-                tag: None,
-                status: "ok".to_string(),
-            };
-        }
-        let fr = setup.fr.clone();
-        let f = (t - lo) / (hi - lo);
-        let tn = setup.nlo + (setup.nhi - setup.nlo) * f;
-        let on = norm_others_except(&self.borders, o, l0, ea, eb);
-        let ln = loops.map(|lps| norm_loops(lps, o, l0));
-        let out = contact_eval(&fr, setup.lam_sig, setup.a, setup.b, tn, &on, ln.as_deref());
-        let hit = out.hit.map(|h| Contact {
-            center: [o[0] + l0 * h.center[0], o[1] + l0 * h.center[1]],
-            r: l0 * h.r,
-            width: l0 * h.width,
-            qa: [o[0] + l0 * h.qa[0], o[1] + l0 * h.qa[1]],
-            qb: [o[0] + l0 * h.qb[0], o[1] + l0 * h.qb[1]],
-            sa: h.sa,
-            sb: h.sb,
-        });
-        ContactResult {
-            hit,
-            stage: out.stage,
-            tag: out.tag,
-            status: "ok".to_string(),
-        }
+        contact_core(setup, t, borders_except(&self.borders, ea, eb), loops)
     }
 }
 
@@ -1881,6 +1845,69 @@ mod tests {
                         .collect()
                 }),
             });
+        }
+    }
+
+    #[test]
+    fn indexed_contact_values_and_diagnostics() {
+        let a = [[0.0, 0.0], [10.0, 0.0]];
+        let b = [[0.0, 2.0], [10.0, 2.0]];
+        let setup = prepare(a, b).expect("clear pair sets up");
+        let set = CompetitorSet::new(tagged_borders(&[a, b]));
+        let clear = set.contact_for(&setup, 5.0, 0, 1, None);
+        assert_eq!(
+            (clear.status.as_str(), clear.stage.as_str()),
+            ("ok", "clear")
+        );
+        assert_eq!(clear.tag, None);
+        let hit = clear.hit.expect("clear disk");
+        let actual = [
+            hit.center[0],
+            hit.center[1],
+            hit.qa[0],
+            hit.qa[1],
+            hit.qb[0],
+            hit.qb[1],
+            hit.r,
+            hit.width,
+            hit.sa,
+            hit.sb,
+        ];
+        let expected = [5.0_f64, 1.0, 5.0, 0.0, 5.0, 2.0, 1.0, 2.0, 0.5, 0.5];
+        assert_eq!(actual.map(f64::to_bits), expected.map(f64::to_bits));
+        for t in [
+            -1.0,
+            0.0,
+            10.0,
+            11.0,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            let result = set.contact_for(&setup, t, 0, 1, None);
+            assert_eq!(
+                (
+                    result.status.as_str(),
+                    result.stage.as_str(),
+                    result.tag.as_deref()
+                ),
+                ("ok", "outside-overlap", None),
+            );
+            assert!(result.hit.is_none());
+        }
+        for (segments, ea, eb, tag) in [([a, b, a, b], 0, 1, "e(2)"), ([a, a, b, b], 1, 2, "e(0)")]
+        {
+            let set = CompetitorSet::new(tagged_borders(&segments));
+            let result = set.contact_for(&setup, 5.0, ea, eb, None);
+            assert_eq!(
+                (
+                    result.status.as_str(),
+                    result.stage.as_str(),
+                    result.tag.as_deref()
+                ),
+                ("ok", "uncertain-clearance", Some(tag)),
+            );
+            assert!(result.hit.is_none());
         }
     }
 
