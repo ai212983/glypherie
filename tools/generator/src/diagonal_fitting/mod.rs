@@ -27,6 +27,7 @@ pub(crate) mod numeric;
 pub(crate) mod partition;
 pub(crate) mod qp;
 pub(crate) mod reuse;
+pub(crate) mod rows;
 pub mod terminal;
 pub mod topology;
 
@@ -220,45 +221,13 @@ impl System {
 
     /// Hobby (1)-(3), with directions/lengths from input geometry.
     fn edge(&mut self, i: usize, j: usize) -> Result<(), ()> {
-        let a = Sample::vertex(i);
-        let b = Sample::vertex(j);
-        let pa = a.point(&self.points);
-        let pb = b.point(&self.points);
-        let delta = [pb[0] - pa[0], pb[1] - pa[1]];
-        let length = delta[0].hypot(delta[1]);
-        if !(length > 0.0) {
-            return Err(());
-        }
-        let tangent = [delta[0] / length, delta[1] / length];
-        let normal = [-tangent[1], tangent[0]];
-        let alpha1 = 1000.0 / self.height.powi(3);
-        let ri = self.projected(&a, normal, None);
-        let rj = self.projected(&b, normal, None);
-        let sum: Vec<f64> = ri
-            .iter()
-            .zip(rj.iter())
-            .map(|(x, y)| (x + y) * (alpha1 * length / 4.0).sqrt())
-            .collect();
-        let diff: Vec<f64> = rj
-            .iter()
-            .zip(ri.iter())
-            .map(|(x, y)| (x - y) * (alpha1 * length / 12.0).sqrt())
-            .collect();
-        self.rows.push((RowGroup::Position, sum, 0.0));
-        self.rows.push((RowGroup::Position, diff, 0.0));
-        let scale = (25.0 * length / self.height).sqrt() / length;
-        let stretch: Vec<f64> = self
-            .projected(&b, tangent, Some(&a))
-            .iter()
-            .map(|x| x * scale)
-            .collect();
-        let bend: Vec<f64> = rj
-            .iter()
-            .zip(ri.iter())
-            .map(|(x, y)| (x - y) * scale)
-            .collect();
-        self.rows.push((RowGroup::Stretch, stretch, 0.0));
-        self.rows.push((RowGroup::Bend, bend, 0.0));
+        let built = rows::edge_rows(&self.points, self.height, i, j, |a, dir, b| {
+            self.projected(a, dir, b)
+        })?;
+        self.rows.push((RowGroup::Position, built.sum, 0.0));
+        self.rows.push((RowGroup::Position, built.diff, 0.0));
+        self.rows.push((RowGroup::Stretch, built.stretch, 0.0));
+        self.rows.push((RowGroup::Bend, built.bend, 0.0));
         Ok(())
     }
 
@@ -270,28 +239,9 @@ impl System {
         arc: f64,
         medial: [f64; 2],
     ) -> Result<(Vec<f64>, f64, [f64; 2]), ()> {
-        if !(arc.is_finite() && arc > 0.0) {
-            return Err(());
-        }
-        let pa = a.point(&self.points);
-        let pb = b.point(&self.points);
-        let chord = [pa[0] - pb[0], pa[1] - pb[1]];
-        let distance = chord[0].hypot(chord[1]);
-        if !(distance > 0.0) {
-            return Err(());
-        }
-        let width = 2.0 * (pa[0] - medial[0]).hypot(pa[1] - medial[1]);
-        let other = 2.0 * (pb[0] - medial[0]).hypot(pb[1] - medial[1]);
-        if !(width > 0.0) || (width - other).abs() > 1e-12 + 1e-10 * other.abs() {
-            return Err(());
-        }
-        let normal = [chord[0] / distance, chord[1] / distance];
-        let tangent = [-normal[1], normal[0]];
-        let mut error = self.projected(a, normal, Some(b));
-        for x in error.iter_mut() {
-            *x /= -width;
-        }
-        Ok((error, width, tangent))
+        rows::pair_residual(&self.points, a, b, arc, medial, |a, dir, b| {
+            self.projected(a, dir, b)
+        })
     }
 }
 
@@ -1520,5 +1470,127 @@ mod tests {
         let points = [[-4.0, 8.0], [12.0, -8.0]];
         assert_eq!(Sample::vertex(1).point(&points), points[1]);
         assert_eq!(Sample::affine(0, 0.25, 1, 0.75).point(&points), [8.0, -4.0]);
+    }
+}
+
+#[cfg(test)]
+mod rows_characterization_tests {
+    use super::*;
+
+    fn bits(v: &[f64]) -> Vec<u64> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    #[test]
+    fn system_edge_and_pair_rows_match_characterized_construction() {
+        let points = vec![[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]];
+        let mut system = System::new(points, 10.0);
+        system.edge(0, 1).expect("axis edge must build");
+        system.edge(1, 0).expect("axis edge must build");
+        let groups: Vec<u8> = system
+            .rows
+            .iter()
+            .map(|(g, _, _)| match g {
+                RowGroup::Position => 0,
+                RowGroup::Stretch => 1,
+                RowGroup::Bend => 2,
+                RowGroup::InkMatch => 3,
+            })
+            .collect();
+        assert_eq!(groups, vec![0, 0, 1, 2, 0, 0, 1, 2]);
+        for (_, _, constant) in &system.rows {
+            assert_eq!(constant.to_bits(), 0);
+        }
+        let neg_zero = (-0.0f64).to_bits();
+        let pos_zero = 0u64;
+        assert_eq!(
+            bits(&system.rows[0].1),
+            vec![
+                neg_zero,
+                0x3ff0000000000000,
+                neg_zero,
+                0x3ff0000000000000,
+                neg_zero,
+                pos_zero,
+                neg_zero,
+                pos_zero,
+            ]
+        );
+        assert_eq!(
+            bits(&system.rows[1].1),
+            vec![
+                pos_zero,
+                0xbfe279a74590331c,
+                pos_zero,
+                0x3fe279a74590331c,
+                pos_zero,
+                pos_zero,
+                pos_zero,
+                pos_zero,
+            ]
+        );
+        assert_eq!(
+            bits(&system.rows[2].1),
+            vec![
+                0xbfe94c583ada5b53,
+                pos_zero,
+                0x3fe94c583ada5b53,
+                pos_zero,
+                pos_zero,
+                pos_zero,
+                pos_zero,
+                pos_zero,
+            ]
+        );
+        assert_eq!(
+            bits(&system.rows[3].1),
+            vec![
+                pos_zero,
+                0xbfe94c583ada5b53,
+                pos_zero,
+                0x3fe94c583ada5b53,
+                pos_zero,
+                pos_zero,
+                pos_zero,
+                pos_zero,
+            ]
+        );
+        assert_eq!(
+            bits(&system.rows[4].1),
+            vec![
+                neg_zero,
+                0xbff0000000000000,
+                neg_zero,
+                0xbff0000000000000,
+                neg_zero,
+                neg_zero,
+                neg_zero,
+                neg_zero,
+            ]
+        );
+        assert_eq!(bits(&system.rows[5].1), bits(&system.rows[1].1));
+        assert_eq!(bits(&system.rows[6].1), bits(&system.rows[2].1));
+        assert_eq!(bits(&system.rows[7].1), bits(&system.rows[3].1));
+        let a = Sample::affine(0, 1.0, 1, 0.0);
+        let b = Sample::affine(0, 0.0, 1, 1.0);
+        let (error, width, tangent) = system
+            .pair(&a, &b, 2.0, [2.0, 0.0])
+            .expect("axis pair must build");
+        assert_eq!(width.to_bits(), 0x4010000000000000);
+        assert_eq!(tangent[0].to_bits(), neg_zero);
+        assert_eq!(tangent[1], -1.0);
+        assert_eq!(
+            bits(&error),
+            vec![
+                0x3fd0000000000000,
+                neg_zero,
+                0xbfd0000000000000,
+                neg_zero,
+                neg_zero,
+                neg_zero,
+                neg_zero,
+                neg_zero,
+            ]
+        );
     }
 }
