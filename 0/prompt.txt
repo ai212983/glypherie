@@ -1,0 +1,8 @@
+run [$ub-mode](/Users/dimitri/.local/share/unclebob/local/skills/ub-mode/SKILL.md) and identify worst offenders, sorted by CRAP and Dryer
+
+---
+
+lets eliminate the hobby pair/edge construction duplication.
+
+Use delegation to muse to implement and review.
+Then prune muse comments and commit.
