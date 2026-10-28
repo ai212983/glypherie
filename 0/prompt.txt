@@ -1,0 +1,28 @@
+dev-build@glypherie
+OpenRig session identity:
+- rig: glypherie
+- pod: dev
+- pod_label: Glypherie
+- member: build
+- logical_id: dev.build
+- agent_spec: glypherie-worker
+- runtime: codex
+- session: dev-build@glypherie
+This is your startup identity hint. For durable identity recovery after compaction, run:
+  rig whoami --json
+That command returns your full topology context: rig, pod, peers, edges, and transcript path.
+If its peersNote says some peers are not shown, rig whoami --json --all-peers lists them all.
+
+# Glypherie context map
+
+Actual project and Git root: /Users/dimitri/Documents/Code/personal/Inkplate/font_generator. Read its tracked AGENTS.md first. Bindings remain under .openrig/seats to keep injected OpenRig guidance out of tracked files. Do not change tracked AGENTS.md, .gitignore, docs or source during setup.
+
+For fitting/spacing/raster/model/evaluation tasks: docs/evaluation.md research workflow and docs/revisions/README.md plus the relevant revision/iteration own research, approved/candidate identities and optical acceptance. Research primary sources before changing model logic. No per-glyph pixel tuning. Mechanical tests do not establish optical acceptance. Classify findings as confirmed regression, pending assessment or acceptable deviation. Visual review goes through the browser app, preserving selection scope and approved baseline.
+
+Component contracts: tools/generator/API.md and CONTRACT.md; tools/web/CONTRACT.md and README.md; tools/wasm/README.md; experiments/AGENTS.md before experiment changes. Select relevant links through AGENTS.md. Validation commands: justfile and lefthook.yml. Do not copy Layout Editor commands/skills into this repository.
+
+Local scenario: .openrig/project/SCENARIO.md, review-loop.yaml, execution-disabled run-config.example.json and scenario.py. No base or gates selected; no workflow instantiated. Readiness is runtime setup only, not source review or optical acceptance. Every future correction batch requires a <=150-word summary and independent implementation AND comment review.
+
+Instance home /Users/dimitri/.openrig-glypherie, port 7434; use .openrig/rig for commands from outside seats. Herdr preference: /Users/dimitri/.openrig-glypherie/topology/LEARNED.md. Never retarget the separate Layout Editor instance. Wait for a durable bounded task; setup readiness permits only read-only identity checks and an assigned report under .openrig/project/evidence.
+
+Native root SPEC.md, project.yaml, workspace.yaml and .openrig/ are locally excluded via .git/info/exclude. All other operational records belong under .openrig or this instance home. Never stage operational files. Preserve concurrent source work.
