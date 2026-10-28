@@ -1,0 +1,1 @@
+Let's adjust font params (width?) for renderer so stems are mostly 1px
