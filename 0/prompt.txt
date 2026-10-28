@@ -1,0 +1,1 @@
+Remove live specimen. Also make sure examples generated has 1 px width stem. Make it with appropriate font width/weight settings.
