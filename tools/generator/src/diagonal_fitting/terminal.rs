@@ -371,29 +371,13 @@ fn eliminate_plain(
     fixed: &HashMap<(usize, usize), f64>,
     nvars: usize,
 ) -> (Vec<Vec<f64>>, Vec<f64>, Vec<usize>) {
-    let mut free = Vec::new();
-    for v in 0..nvars {
-        for c in 0..2 {
-            if !fixed.contains_key(&(v, c)) {
-                free.push(2 * v + c);
-            }
-        }
-    }
-    // Deterministic accumulation order: HashMap iteration is random, and
-    // float addition is not associative.
-    let mut keys: Vec<(usize, usize)> = fixed.keys().copied().collect();
-    keys.sort();
-    let mut matrix = Vec::with_capacity(rows.len());
-    let mut out = Vec::with_capacity(rows.len());
-    for (row, constant) in rows.iter().zip(consts.iter()) {
-        let mut adjusted = *constant;
-        for &(v, c) in &keys {
-            adjusted += row[2 * v + c] * fixed[&(v, c)];
-        }
-        matrix.push(row.clone());
-        out.push(adjusted);
-    }
-    (matrix, out, free)
+    super::eliminate_rows(
+        rows.iter()
+            .zip(consts.iter())
+            .map(|(row, constant)| (row, *constant)),
+        fixed,
+        nvars,
+    )
 }
 
 fn inf_norm(v: &DVector<f64>) -> f64 {
@@ -1401,5 +1385,69 @@ mod hard_solve_tests {
         for (got, want) in result.iter().zip([1.5, 1.5, 3.0, 4.0]) {
             assert!((got - want).abs() < 1e-9);
         }
+    }
+}
+
+#[cfg(test)]
+mod elimination_tests {
+    use super::*;
+
+    fn bits(values: &[f64]) -> Vec<u64> {
+        values.iter().map(|v| v.to_bits()).collect()
+    }
+
+    fn mixed_fixed() -> HashMap<(usize, usize), f64> {
+        HashMap::from([((0, 1), 2.0), ((1, 0), -3.0)])
+    }
+
+    #[test]
+    fn truncates_to_shorter_of_rows_or_consts() {
+        let fixed = mixed_fixed();
+        let rows = vec![vec![1.0, 2.0, 3.0, 4.0], vec![0.0, 0.0, 0.0, 5.0]];
+        let (matrix, constants, free) = eliminate_plain(&rows, &[10.0], &fixed, 2);
+        assert_eq!(matrix.len(), 1);
+        assert_eq!(bits(&matrix[0]), bits(&[1.0, 2.0, 3.0, 4.0]));
+        assert_eq!(constants.len(), 1);
+        assert_eq!(constants[0].to_bits(), 5.0f64.to_bits());
+        assert_eq!(free, vec![0, 3]);
+        let (matrix, constants, _) = eliminate_plain(&rows[..1], &[10.0, 20.0], &fixed, 2);
+        assert_eq!(matrix.len(), 1);
+        assert_eq!(constants, vec![5.0]);
+    }
+
+    #[test]
+    fn empty_and_fully_fixed_inputs_keep_free_enumeration() {
+        let fixed = mixed_fixed();
+        let (matrix, constants, free) = eliminate_plain(&[], &[], &fixed, 2);
+        assert!(matrix.is_empty());
+        assert!(constants.is_empty());
+        assert_eq!(free, vec![0, 3]);
+        let full = HashMap::from([((0, 0), 1.0), ((0, 1), -2.0), ((1, 0), 0.5), ((1, 1), 4.0)]);
+        let (matrix, constants, free) =
+            eliminate_plain(&[vec![1.0, 1.0, 1.0, 1.0]], &[0.0], &full, 2);
+        assert!(free.is_empty());
+        assert_eq!(matrix.len(), 1);
+        assert_eq!(constants[0].to_bits(), 3.5f64.to_bits());
+    }
+
+    #[test]
+    fn sorted_accumulation_is_insertion_independent() {
+        let mut fixed = HashMap::new();
+        fixed.insert((1, 0), 1.0);
+        fixed.insert((0, 0), 1e16);
+        fixed.insert((0, 1), -1e16);
+        let rows = vec![vec![1.0, 1.0, 1.0, 0.0]];
+        let snapshot = rows.clone();
+        let (matrix, constants, free) = eliminate_plain(&rows, &[0.0], &fixed, 2);
+        assert_eq!(free, vec![3]);
+        assert_eq!(bits(&matrix[0]), bits(&[1.0, 1.0, 1.0, 0.0]));
+        assert_eq!(constants[0].to_bits(), 1.0f64.to_bits());
+        assert_eq!(rows, snapshot);
+        let mut other = HashMap::new();
+        other.insert((0, 1), -1e16);
+        other.insert((0, 0), 1e16);
+        other.insert((1, 0), 1.0);
+        let (_, again, _) = eliminate_plain(&rows, &[0.0], &other, 2);
+        assert_eq!(bits(&again), bits(&constants));
     }
 }

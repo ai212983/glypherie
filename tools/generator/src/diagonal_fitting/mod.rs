@@ -281,9 +281,9 @@ fn min_norm_solve(
     x
 }
 
-/// Per-coordinate fixed-column elimination (`System.solve` form).
-fn eliminate(
-    rows: &[(RowGroup, Vec<f64>, f64)],
+/// Fixed-control substitution retaining full rows; see docs/hobby-fitting.md.
+fn eliminate_rows<'a>(
+    rows: impl Iterator<Item = (&'a Vec<f64>, f64)>,
     fixed: &HashMap<(usize, usize), f64>,
     nvars: usize,
 ) -> (Vec<Vec<f64>>, Vec<f64>, Vec<usize>) {
@@ -295,14 +295,14 @@ fn eliminate(
             }
         }
     }
-    let mut matrix = Vec::with_capacity(rows.len());
-    let mut constants = Vec::with_capacity(rows.len());
     // Deterministic accumulation order: HashMap iteration is random, and
     // float addition is not associative.
     let mut keys: Vec<(usize, usize)> = fixed.keys().copied().collect();
     keys.sort();
-    for (_, row, constant) in rows {
-        let mut adjusted = *constant;
+    let mut matrix = Vec::with_capacity(rows.size_hint().0);
+    let mut constants = Vec::with_capacity(rows.size_hint().0);
+    for (row, constant) in rows {
+        let mut adjusted = constant;
         for &(v, c) in &keys {
             adjusted += row[2 * v + c] * fixed[&(v, c)];
         }
@@ -310,6 +310,19 @@ fn eliminate(
         constants.push(adjusted);
     }
     (matrix, constants, free)
+}
+
+/// Per-coordinate fixed-column elimination (`System.solve` form).
+fn eliminate(
+    rows: &[(RowGroup, Vec<f64>, f64)],
+    fixed: &HashMap<(usize, usize), f64>,
+    nvars: usize,
+) -> (Vec<Vec<f64>>, Vec<f64>, Vec<usize>) {
+    eliminate_rows(
+        rows.iter().map(|(_, row, constant)| (row, *constant)),
+        fixed,
+        nvars,
+    )
 }
 
 fn solve_constrained(
@@ -1470,6 +1483,93 @@ mod tests {
         let points = [[-4.0, 8.0], [12.0, -8.0]];
         assert_eq!(Sample::vertex(1).point(&points), points[1]);
         assert_eq!(Sample::affine(0, 0.25, 1, 0.75).point(&points), [8.0, -4.0]);
+    }
+}
+
+#[cfg(test)]
+mod elimination_tests {
+    use super::*;
+
+    fn bits(values: &[f64]) -> Vec<u64> {
+        values.iter().map(|v| v.to_bits()).collect()
+    }
+
+    fn mixed_fixed() -> HashMap<(usize, usize), f64> {
+        HashMap::from([((0, 1), 2.0), ((1, 0), -3.0)])
+    }
+
+    #[test]
+    fn mixed_axes_adjust_constants_and_enumerate_free() {
+        let rows = vec![(RowGroup::Position, vec![1.0, 2.0, 3.0, 4.0], 10.0)];
+        let (matrix, constants, free) = eliminate(&rows, &mixed_fixed(), 2);
+        assert_eq!(free, vec![0, 3]);
+        assert_eq!(matrix.len(), 1);
+        assert_eq!(bits(&matrix[0]), bits(&[1.0, 2.0, 3.0, 4.0]));
+        assert_eq!(constants.len(), 1);
+        assert_eq!(constants[0].to_bits(), 5.0f64.to_bits());
+    }
+
+    #[test]
+    fn all_fixed_leaves_no_free_columns() {
+        let fixed = HashMap::from([((0, 0), 1.0), ((0, 1), -2.0), ((1, 0), 0.5), ((1, 1), 4.0)]);
+        let rows = vec![(RowGroup::Position, vec![1.0, 1.0, 1.0, 1.0], 0.0)];
+        let (matrix, constants, free) = eliminate(&rows, &fixed, 2);
+        assert!(free.is_empty());
+        assert_eq!(matrix.len(), 1);
+        assert_eq!(constants[0].to_bits(), 3.5f64.to_bits());
+    }
+
+    #[test]
+    fn no_fixed_keeps_constants_and_full_free_order() {
+        let rows = vec![(RowGroup::Position, vec![1.0, 2.0, 3.0, 4.0], -7.25)];
+        let (matrix, constants, free) = eliminate(&rows, &HashMap::new(), 2);
+        assert_eq!(free, vec![0, 1, 2, 3]);
+        assert_eq!(bits(&matrix[0]), bits(&[1.0, 2.0, 3.0, 4.0]));
+        assert_eq!(constants[0].to_bits(), (-7.25f64).to_bits());
+    }
+
+    #[test]
+    fn empty_rows_keep_free_enumeration() {
+        let rows: Vec<(RowGroup, Vec<f64>, f64)> = Vec::new();
+        let (matrix, constants, free) = eliminate(&rows, &mixed_fixed(), 2);
+        assert!(matrix.is_empty());
+        assert!(constants.is_empty());
+        assert_eq!(free, vec![0, 3]);
+    }
+
+    #[test]
+    fn sorted_keys_make_accumulation_insertion_independent() {
+        let mut fixed = HashMap::new();
+        fixed.insert((1, 0), 1.0);
+        fixed.insert((0, 0), 1e16);
+        fixed.insert((0, 1), -1e16);
+        let rows = vec![(RowGroup::Position, vec![1.0, 1.0, 1.0, 0.0], 0.0)];
+        let (matrix, constants, free) = eliminate(&rows, &fixed, 2);
+        assert_eq!(free, vec![3]);
+        assert_eq!(bits(&matrix[0]), bits(&[1.0, 1.0, 1.0, 0.0]));
+        assert_eq!(constants[0].to_bits(), 1.0f64.to_bits());
+        let mut other = HashMap::new();
+        other.insert((0, 1), -1e16);
+        other.insert((0, 0), 1e16);
+        other.insert((1, 0), 1.0);
+        let (_, again, _) = eliminate(&rows, &other, 2);
+        assert_eq!(bits(&again), bits(&constants));
+    }
+
+    #[test]
+    fn signed_zeros_and_inputs_are_preserved() {
+        let neg = (-0.0f64).to_bits();
+        let rows = vec![(RowGroup::Position, vec![-0.0, 0.0, 1.0, -1.0], 0.0)];
+        let fixed = HashMap::from([((0, 0), -0.0)]);
+        let (matrix, constants, free) = eliminate(&rows, &fixed, 2);
+        assert_eq!(free, vec![1, 2, 3]);
+        assert_eq!(
+            bits(&matrix[0]),
+            vec![neg, 0, 1.0f64.to_bits(), (-1.0f64).to_bits()]
+        );
+        assert_eq!(constants[0].to_bits(), 0);
+        assert_eq!(bits(&rows[0].1), bits(&matrix[0]));
+        assert_eq!(rows[0].2.to_bits(), 0);
     }
 }
 
