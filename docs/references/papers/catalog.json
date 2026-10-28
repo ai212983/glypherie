@@ -1,0 +1,95 @@
+{
+  "kelley-1998-display-reflectance": {
+    "folder": "1998-kelley",
+    "first_printed_page": 27,
+    "ocr": true,
+    "source": "https://tsapps.nist.gov/publication/get_pdf.cfm?pub_id=24685"
+  },
+  "darling-ferwerda-2012-reflective-surfaces": {
+    "folder": "2012-darling-ferwerda",
+    "first_printed_page": 135,
+    "page_labels": {
+      "1": "unnumbered author manuscript",
+      "2": "unnumbered author manuscript",
+      "3": "unnumbered author manuscript",
+      "4": "unnumbered author manuscript",
+      "5": "unnumbered author manuscript",
+      "6": "unnumbered author manuscript",
+      "7": "unnumbered author manuscript"
+    },
+    "ocr": true,
+    "source": "https://jamesferwerda.com/wp-content/uploads/2015/06/r19_darling12_cic.pdf"
+  },
+  "herle-2024-reflective-displays": {
+    "folder": "2024-herle",
+    "first_printed_page": 1,
+    "page_labels": {
+      "1": "020901-1",
+      "2": "020901-2",
+      "3": "020901-3",
+      "4": "020901-4",
+      "5": "020901-5",
+      "6": "020901-6",
+      "7": "020901-7",
+      "8": "020901-8",
+      "9": "020901-9",
+      "10": "020901-10",
+      "11": "020901-11",
+      "12": "020901-12",
+      "13": "020901-13",
+      "14": "020901-14",
+      "15": "020901-15",
+      "16": "020901-16",
+      "17": "020901-17",
+      "18": "020901-18",
+      "19": "020901-19",
+      "20": "020901-20",
+      "21": "020901-21",
+      "22": "020901-22",
+      "23": "020901-23",
+      "24": "020901-24",
+      "25": "020901-25",
+      "26": "020901-26",
+      "27": "020901-27",
+      "28": "020901-28",
+      "29": "020901-29",
+      "30": "020901-30",
+      "31": "020901-31",
+      "32": "020901-32",
+      "33": "020901-33",
+      "34": "020901-34"
+    },
+    "source": "https://infoscience.epfl.ch/server/api/core/bitstreams/bbef8e44-17de-4b0e-aa0b-649fe35f51b5/content"
+  },
+  "hobby-1993-automatically-tuned-bitmaps": {
+    "folder": "1993-hobby",
+    "first_printed_page": 0,
+    "ocr": true,
+    "enrich": true,
+    "page_batch_size": 6,
+    "page_labels": {
+      "1": "unnumbered abstract"
+    },
+    "source": "https://telecom.wiki/download/attachments/819301/CSTR%20148.pdf"
+  },
+  "hersch-1993-font-rasterization-survey": {
+    "folder": "1993-hersch",
+    "first_printed_page": 78,
+    "source": "https://lspwww.epfl.ch/publications/typography/frsa.pdf"
+  },
+  "shamir-2003-constraint-based-hinting": {
+    "folder": "2003-shamir",
+    "first_printed_page": 131,
+    "source": "https://dl.acm.org/doi/10.1145/636886.636887"
+  },
+  "turner-lemberg-2003-grid-fitting": {
+    "folder": "2003-turner-lemberg",
+    "first_printed_page": 430,
+    "source": "https://www.tug.org/TUGboat/tb24-3/lemberg.pdf"
+  },
+  "gallager-2006-quantization": {
+    "folder": "2006-gallager-quantization",
+    "first_printed_page": 63,
+    "source": "https://ocw.mit.edu/courses/6-450-principles-of-digital-communications-i-fall-2006/926689aaa62a0315473fa9b982de1b07_book_3.pdf"
+  }
+}

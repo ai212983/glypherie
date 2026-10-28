@@ -1,2 +1,0 @@
-docling==2.131.0
-pymupdf==1.28.2

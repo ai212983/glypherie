@@ -11,8 +11,8 @@ correspondences.
 
 The unchanged [stored CSTR report](paper.pdf) has SHA-256
 `c97bd9a7bcebfeda5ea3d62bce266372f59fbc3c466239e222cf9b8c2465ff87`. Its equation labels are used throughout this audit.
-PDF page numbers are one greater than printed body pages. Strict patches in
-[review.json](../../../../tools/paper_extract/review.json) reproduce the checked transcription.
+PDF page numbers are one greater than printed body pages. Strict patches in [review.json](../review.json) reproduce the
+checked transcription.
 
 The [author-hosted report](https://9p.io/who/hobby/89_2-17.pdf), linked from the author's
 [publication list](https://9p.io/who/hobby/pubs.html), was downloaded unchanged on 2026-10-15 as

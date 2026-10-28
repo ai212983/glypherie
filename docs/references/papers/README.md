@@ -1,6 +1,6 @@
 # Reference papers
 
-<!-- cspell:words Germer BRDF Ferwerda Herle -->
+<!-- cspell:words Germer BRDF Ferwerda Herle docling Tesseract -->
 
 Each folder contains the original PDF, agent-readable Markdown, figure images, extraction provenance, and copyright or
 license information. The [research corpus](CORPUS.md) groups research sources and supporting references by topic. Read
@@ -32,8 +32,8 @@ When a paper is needed for research or implementation:
    availability for download does not establish an open license. Do not apply the repository's code license to a paper.
 5. Convert the complete paper to `paper.md`: retain section and equation numbering, use LaTeX math, preserve tables and
    code, link figure crops in `figures/`, and retain PDF and printed-page references. Save extraction provenance in
-   `extraction.json`. The [extraction tool](../../../tools/paper_extract/) documents the local workflow; add a catalog
-   entry for a new paper when using it.
+   `extraction.json`. Regenerate via [Extraction](#extraction); add the new paper to [catalog.json](catalog.json) and
+   its corrections to [review.json](review.json) when using it.
 6. Check formulas, mathematical symbols, tables, code, reading order, and figure coverage against the original. Repair
    extraction errors and record corrections. Mark remaining uncertainties explicitly; distinguish transcription notes
    from the paper's own claims.
@@ -47,4 +47,26 @@ corrections, and uncertainties.
 
 Identify figures by their captions and printed numbers, rather than extraction filenames.
 
-See the [extraction tool](../../../tools/paper_extract/) for regeneration instructions.
+## Extraction
+
+Regenerate `paper.md`, `figures/` and `extraction.json` with the external `paper-extract` engine, run from the
+repository root with `PAPER_EXTRACT_ROOT` set to a `paper-extract` checkout (environment setup is in that checkout's
+README). Corpus-specific text normalization lives in [extraction_adapter.py](extraction_adapter.py).
+
+```sh
+"$PAPER_EXTRACT_ROOT/.venv/bin/python" "$PAPER_EXTRACT_ROOT/extract.py" \
+  --papers-dir docs/references/papers \
+  --catalog docs/references/papers/catalog.json \
+  --patches docs/references/papers/review.json \
+  --adapter docs/references/papers/extraction_adapter.py \
+  --review-guidance ../README.md#accuracy-and-review \
+  --cache ~/.cache/font-generator-docling/documents
+```
+
+Pass catalog keys to select papers; omit them to extract all catalog entries. `--reuse` regenerates from cached
+documents, `--enrich` enables neural formula and code recognition, `--ocr` uses full-page Tesseract OCR; the catalog
+selects OCR and enrichment per paper, and review patches must match the conversion mode. The `--cache` value reuses the
+existing conversion checkpoints.
+
+If an agent finds an extractor bug, it must flag the bug to the user and ask for a fix. Pause extraction until the user
+confirms how to proceed.
