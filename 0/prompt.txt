@@ -1,0 +1,1 @@
+I need to compare tools output rasterization. ImageMagick is just one option.
