@@ -1,0 +1,1 @@
+I want to create "readme" page, some kind of landing. But I am not sure how to align it with app root url. What would you propose?
