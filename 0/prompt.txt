@@ -1,0 +1,9 @@
+run [$ub-mode](/Users/dimitri/.local/share/unclebob/local/skills/ub-mode/SKILL.md)  dryer and suggest targets to focus on
+
+---
+
+lets target #2. do it and verify with Muse, then prune Muse comments.
+
+---
+
+commit this change
