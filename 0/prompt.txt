@@ -1,0 +1,1 @@
+Remove new lines between text lines
