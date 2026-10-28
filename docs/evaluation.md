@@ -94,7 +94,7 @@ Use the current Rust evaluator and tests alongside the project's browser preview
 through the browser app; do not present standalone images or local image links in chat. Only link rebuilt app content
 reflecting the current changes. Explain model behavior and tradeoffs before interpreting pixel changes, and state
 uncertainty and limitations. Select comparison inputs and preserve publication scope according to the
-[generator contract](../tools/generator/CONTRACT.md#generation-selection). Passing mechanical checks alone does not
+[generator contract](../crates/generator/CONTRACT.md#generation-selection). Passing mechanical checks alone does not
 establish optical acceptance; closure follows the [iteration lifecycle](revisions/README.md#iteration-lifecycle).
 
 ## Review questions and findings
@@ -130,8 +130,8 @@ Run from the repository root:
 
 ```sh
 mkdir -p out/diagnostics
-cargo run --locked --manifest-path tools/generator/Cargo.toml \
-  --bin font_evaluate -- tools/generator/specimens.json out/diagnostics/evaluation.json
+cargo run --locked --manifest-path crates/generator/Cargo.toml \
+  --bin font_evaluate -- crates/generator/specimens.json out/diagnostics/evaluation.json
 ```
 
 The command evaluates the configuration's latest selected variant across its existing size/axis/profile matrix,

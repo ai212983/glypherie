@@ -20,10 +20,10 @@ def prepare():
     dst = OUT / "instrumented"
     assert not dst.exists(), "Preserve an existing census; use its saved harness to rerun."
     dst.mkdir()
-    shutil.copytree(ROOT / "tools/generator/src", dst / "src")
+    shutil.copytree(ROOT / "crates/generator/src", dst / "src")
     for name in ["Cargo.toml", "Cargo.lock", "build.rs"]:
-        shutil.copyfile(ROOT / "tools/generator" / name, dst / name)
-    (dst / "vendor").symlink_to(ROOT / "tools/generator/vendor", target_is_directory=True)
+        shutil.copyfile(ROOT / "crates/generator" / name, dst / name)
+    (dst / "vendor").symlink_to(ROOT / "crates/generator/vendor", target_is_directory=True)
     lib = dst / "src/lib.rs"
     lib.write_text(lib.read_text() + "\npub mod certificate_observer;\n")
     p = dst / "src/diagonal_fitting/approved.rs"
@@ -75,7 +75,7 @@ edition="2021"
 font_generator={path="../instrumented"}
 serde_json="1"
 ''')
-    shutil.copyfile(ROOT / "tools/generator/Cargo.lock", harness / "Cargo.lock")
+    shutil.copyfile(ROOT / "crates/generator/Cargo.lock", harness / "Cargo.lock")
     (harness / "src/main.rs").write_text('''use std::io::{self,BufRead};
 fn main(){for line in io::stdin().lock().lines(){
 let row:serde_json::Value=serde_json::from_str(&line.unwrap()).unwrap();

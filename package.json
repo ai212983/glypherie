@@ -8,7 +8,7 @@
     "fmt:check": "dprint check",
     "hooks:install": "lefthook install",
     "spell:check": "cspell --no-progress --gitignore",
-    "test": "node --test tools/hooks/tests/*.test.ts",
+    "test": "node --test tests/tooling/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

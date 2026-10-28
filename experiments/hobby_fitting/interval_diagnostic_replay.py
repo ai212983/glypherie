@@ -21,7 +21,7 @@ edition="2021"
 serde={version="1",features=["derive"]}
 serde_json={version="1",features=["float_roundtrip"]}
 ''')
-    shutil.copyfile(ROOT / 'tools/generator/Cargo.lock', dst / 'Cargo.lock')
+    shutil.copyfile(ROOT / 'crates/generator/Cargo.lock', dst / 'Cargo.lock')
     adapter = '''
 pub fn replay(v:&serde_json::Value, explain:bool)->serde_json::Value {
  let setup:PairSetup=serde_json::from_value(v["setup"].clone()).unwrap();
@@ -54,7 +54,7 @@ for row in rows.as_array().unwrap(){for q in row["queries"].as_array().unwrap(){
  let mut selected=after::replay(q,false);assert!(selected["spans"].as_array().unwrap().is_empty());
  let mut expected=full;expected.as_object_mut().unwrap().remove("spans");selected.as_object_mut().unwrap().remove("spans");assert_eq!(bits(expected),bits(selected));count+=1;
 }}println!("{}",serde_json::json!({"queries":count,"full_mismatches":0,"search_mismatches":0}));}
-'''.replace('NUMERIC', json.dumps(str(ROOT / 'tools/generator/src/diagonal_fitting/numeric.rs'))))
+'''.replace('NUMERIC', json.dumps(str(ROOT / 'crates/generator/src/diagonal_fitting/numeric.rs'))))
     with (OUT / 'query-replay-build.log').open('w') as log:
         subprocess.run(['cargo', 'build', '--release', '--offline', '--manifest-path', str(dst / 'Cargo.toml')],
                        stdout=log, stderr=subprocess.STDOUT, check=True)

@@ -12,7 +12,7 @@ jobs:
           lfs: true
       - uses: dtolnay/rust-toolchain@stable
       - name: Rust generator and compatibility tests
-        run: cargo test --locked --manifest-path tools/generator/Cargo.toml
+        run: cargo test --locked --manifest-path crates/generator/Cargo.toml
 
   quality:
     runs-on: ubuntu-latest
@@ -33,7 +33,7 @@ jobs:
         run: |
           npm run fmt:check
           npm run spell:check
-          cargo fmt --manifest-path tools/generator/Cargo.toml --check
+          cargo fmt --manifest-path crates/generator/Cargo.toml --check
       - name: Hook behavior tests
         run: npm test
 
@@ -49,4 +49,4 @@ jobs:
           node-version-file: .node-version
       - run: npm ci --ignore-scripts
       - name: Validate new commit messages
-        run: node tools/hooks/check-commits.ts
+        run: node .github/scripts/check-commits.ts

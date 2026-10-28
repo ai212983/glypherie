@@ -113,7 +113,7 @@ Standard `simd128` is retained as a compiler target for existing numeric operati
 project adaptation enables standard vector instructions across Rust target dependencies, including solver loops, without
 enabling fast-math, relaxed SIMD or reassociation. Fitting rules, dependencies and runtime state stay unchanged. The
 direct WASM script retains scalar defaults for compatibility; SIMD packages have distinct names and require runtime SIMD
-support. Build configuration belongs in the [WASM README](../tools/wasm/README.md#build).
+support. Build configuration belongs in the [WASM README](../crates/wasm/README.md#build).
 
 Thirty-six ordinary Chrome browser sessions on an Apple M2 Max cover reversed identical-build controls, paired scalar
 and SIMD builds, default pangram/stress and varied size/axis requests. Both confirmation batches pooled, including an
@@ -131,7 +131,7 @@ iteration closure. Detailed identities, controls, limitations and verification b
 The web build now selects standard SIMD by default: its maintained preview recipe produces the SIMD package, and app
 staging consumes that package. Direct WASM script defaults stay scalar; a configured package override permits a separate
 scalar app build. This adopts the compiler feature without changing fitting selection or adding runtime fallback. Web
-compatibility and input paths belong to the [web contract](../tools/web/CONTRACT.md); adoption checks belong in
+compatibility and input paths belong to the [web contract](../apps/web/CONTRACT.md); adoption checks belong in
 `out/diagnostics/wasm-simd-adoption/`.
 
 Global fast-math remains disabled; the [separate diagnostic study](#global-fast-math-experiment) owns its numerical

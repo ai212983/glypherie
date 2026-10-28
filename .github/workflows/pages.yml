@@ -7,13 +7,13 @@ on:
       - .node-version
       - .gitattributes
       - fonts/**
-      - tools/generator/**
-      - tools/wasm/**
-      - tools/web/**
+      - crates/generator/**
+      - crates/wasm/**
+      - apps/web/**
       - '!**/*.md'
-      - '!tools/generator/tests/**'
-      - '!tools/wasm/tests/**'
-      - '!tools/web/tests/**'
+      - '!crates/generator/tests/**'
+      - '!crates/wasm/tests/**'
+      - '!apps/web/tests/**'
   workflow_dispatch:
 permissions:
   contents: read
@@ -55,22 +55,22 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            tools/wasm/target
-          key: ubuntu-24.04-${{ runner.arch }}-wasm-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('tools/wasm/Cargo.lock', 'tools/generator/Cargo.lock') }}
+            crates/wasm/target
+          key: ubuntu-24.04-${{ runner.arch }}-wasm-${{ steps.rust.outputs.cachekey }}-${{ hashFiles('crates/wasm/Cargo.lock', 'crates/generator/Cargo.lock') }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
-          cache-dependency-path: tools/web/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
       - run: npm ci --ignore-scripts
-        working-directory: tools/web
+        working-directory: apps/web
       - name: Build preview WASM renderer
-        run: WASM_SIMD128=1 tools/wasm/build.sh web preview
+        run: WASM_SIMD128=1 crates/wasm/build.sh web preview
       - uses: actions/configure-pages@v5
         id: pages
       - name: Build browser app
         run: npm run build
-        working-directory: tools/web
+        working-directory: apps/web
         env:
           FONT_PREVIEW_BASE: ${{ steps.pages.outputs.base_path }}/
           FONT_PREVIEW_SITE_URL: ${{ steps.pages.outputs.base_url }}

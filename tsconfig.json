@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["commitlint.config.ts", "tools/hooks/**/*.ts"]
+  "include": ["commitlint.config.ts", "tests/tooling/**/*.ts", ".github/scripts/**/*.ts"]
 }

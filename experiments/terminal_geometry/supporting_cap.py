@@ -4,7 +4,7 @@ Source: TrueType SCANTYPE Rules 5/6 (cap closure needs both borders to
 continue past the dropout scan line); pinned FreeType ftraster.c profile-pair
 stub test (same-contour successor/top-bottom checks); Hersch 1993 section 7
 (subpixel interior null-span rescue); 26.6 quantization
-(floor(x*64+0.5)) per tools/generator/src/mono.rs.
+(floor(x*64+0.5)) per crates/generator/src/mono.rs.
 Project hypothesis (owning design docs/revisions/001/03-spacing-kerning.md):
 a straight cap edge that is a supporting line of the WHOLE filled outline,
 with both adjacent stroke borders continuing into the filled half-plane and
@@ -16,7 +16,7 @@ Invariant: a certified cap is ELIGIBLE in both the source (unhinted) shape
 and the scanner-quantized 26.6 fitted shape at the same contour/edge index
 with the same filled side; pixel attribution uses fitted coordinates.
 Invariant: input coordinates must satisfy |v| <= 32768 and be finite
-(matching tools/generator/src/mono.rs bounds); quantized 26.6 values fit in
+(matching crates/generator/src/mono.rs bounds); quantized 26.6 values fit in
 +-2097152 and all cross/dot products below 2**45, exact in Python ints and
 i64-safe for the Rust port. Malformed input raises ValueError.
 Invariant: curve ownership uses the convex hull of control points (the hull
@@ -37,7 +37,7 @@ QBOUND = 2097152
 
 
 def q26(v):
-    # Source: tools/generator/src/mono.rs floor(x*64+0.5) 26.6 conversion.
+    # Source: crates/generator/src/mono.rs floor(x*64+0.5) 26.6 conversion.
     return floor(float(v) * 64.0 + 0.5)
 
 
@@ -323,7 +323,7 @@ def certified_caps(source_commands, fitted_commands):
     """Dual certification: ELIGIBLE in source shape and quantized fitted shape.
 
     Source: source (unhinted) outline; fitted (current) outline scanned at
-    26.6 per tools/generator/src/mono.rs. Requires identical op/contour/edge
+    26.6 per crates/generator/src/mono.rs. Requires identical op/contour/edge
     identity; any mismatch yields no caps. Returns (quantized, caps, info).
     """
     s_contours, s_struct = parse(source_commands)

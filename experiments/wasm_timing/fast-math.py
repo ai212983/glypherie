@@ -157,7 +157,7 @@ def build(label):
         env['CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS'] = '-Ctarget-feature=+simd128 -Cembed-bitcode=yes -Cno-prepopulate-passes'
         env['PATH'] = str(LLVM) + ':' + env['PATH']
         subprocess.run(['cargo', 'rustc', '--locked', '--offline', '--release', '--target', 'wasm32-unknown-unknown',
-                        '--manifest-path', str(SOURCE_ROOT / 'tools/wasm/Cargo.toml'), '--target-dir', str(OUT / 'target'),
+                        '--manifest-path', str(SOURCE_ROOT / 'crates/wasm/Cargo.toml'), '--target-dir', str(OUT / 'target'),
                         '--features', 'preview', '--lib', '--crate-type', 'cdylib', '--', '-Clto=fat', '-Ccodegen-units=1',
                         '--emit=llvm-ir,obj,link', '-Clinker-flavor=wasm-ld', '-Clinker=' + str(wrapper)], env=env, check=True)
     else:

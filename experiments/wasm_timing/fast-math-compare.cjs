@@ -92,7 +92,7 @@ try {
     }
   }
   // Consume the maintained general API matrix without changing its inputs.
-  const smoke = fs.readFileSync(path.join(root, 'tools/wasm/smoke/parity.mjs'), 'utf8');
+  const smoke = fs.readFileSync(path.join(root, 'crates/wasm/smoke/parity.mjs'), 'utf8');
   const general = vm.runInNewContext(smoke.slice(smoke.indexOf('const cases = [];'), smoke.indexOf('const native = spawnSync')) + '\ncases;', { root, path });
   general.forEach((row, i) => { if (i % shards === shard) compare(['general', row.id], row.font_file, row.spec); });
 } finally { for (const value of fonts.values()) value.free(); }

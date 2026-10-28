@@ -31,14 +31,14 @@ SHA-256: `c97bd9a7bcebfeda5ea3d62bce266372f59fbc3c466239e222cf9b8c2465ff87`.
 Prepared 2026-10-15 with full-page English OCR and formula recognition. The native attempt failed because the old Type 3
 font encoding produced missing prose, repeated fragments and corrupted numbers. The repaired extractor preserves OCR
 text, splits paragraphs by source character provenance and caches six-page batches so interruptions can be resumed. See
-the [extractor workflow](../../../../tools/paper_extract/README.md) for regeneration.
+the [extraction workflow](../README.md#extraction) for regeneration.
 
 The transcription covers all 43 PDF pages, all 41 numbered figures have checked source crops, and the 33 numbered
 equations retain their printed labels. The four algorithm figures (35, 36, 39 and 40) have manually checked text
 transcriptions alongside the images. The focused audit checks the bodies of equations (1)–(22), (31)–(33), their
 displayed definitions/weights and selected necessary inline definitions. Equation (26) also received a targeted check.
 Individual checks are recorded in `extraction.json` and strict regeneration patches in
-`tools/paper_extract/review.json`.
+`docs/references/papers/review.json`.
 
 This is not a fully proofread mathematical transcription. Other prose, inline notation and section 5 mathematics still
 require source checks. All 71 display-math blocks parse with KaTeX 0.16.22; that establishes syntax, not mathematical

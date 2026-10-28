@@ -79,10 +79,10 @@ Roboto Flex exposes thirteen axes in source order, read from the actual font's v
 | `YTDE` | -305    | -203    | -98     | yes    |
 | `YTFI` | 560     | 738     | 788     | yes    |
 
-The [specimen configuration](../tools/generator/specimens.json) explicitly selects weight 400. Literata optical size
+The [specimen configuration](../crates/generator/specimens.json) explicitly selects weight 400. Literata optical size
 follows the selected pixel size, as does Roboto Flex optical size; its configured `wght` 400, `wdth` 100 and `slnt` 0
 equal the embedded defaults, and remaining axes use those defaults. Source Sans 3's embedded default weight is 200, so
 omitted axes do not reproduce the configured specimens.
 
-Small original test fonts live in `tools/generator/tests/fixtures`. The generator verifies font hashes; it does not
+Small original test fonts live in `crates/generator/tests/fixtures`. The generator verifies font hashes; it does not
 download fonts or establish their original provenance.

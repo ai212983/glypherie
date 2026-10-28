@@ -970,7 +970,7 @@ def main(argv=None):
         binary = args.adapter
     else:
         default_adapter = os.path.join(
-            REPO, "tools/generator/target/debug/strokestyles-fit-adapter")
+            REPO, "crates/generator/target/debug/strokestyles-fit-adapter")
         if not os.path.isfile(default_adapter):
             fail("default adapter missing: %s" % default_adapter)
         binary = default_adapter

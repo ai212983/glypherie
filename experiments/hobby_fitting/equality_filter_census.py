@@ -56,7 +56,7 @@ edition="2021"
 serde={version="1",features=["derive"]}
 serde_json={version="1",features=["float_roundtrip"]}
 ''')
-    shutil.copyfile(ROOT / 'tools/generator/Cargo.lock', dst / 'Cargo.lock')
+    shutil.copyfile(ROOT / 'crates/generator/Cargo.lock', dst / 'Cargo.lock')
     original = (OUT / 'before/intervals.rs').read_text()
     original = original.replace('#[derive(Clone, Debug)]\npub(super) struct PairSetup',
                                 '#[derive(Clone, Debug, Serialize, Deserialize)]\npub(super) struct PairSetup')
@@ -87,7 +87,7 @@ fn main(){let rows:serde_json::Value=serde_json::from_str(&std::fs::read_to_stri
 for row in rows.as_array().unwrap(){let mut count=0;for q in row["queries"].as_array().unwrap(){
  let a=frozen::replay(q);let b=observed::replay(q);assert_eq!(bits(serde_json::to_value(a).unwrap()),bits(serde_json::to_value(b).unwrap()));count+=1;
 }println!("{}",serde_json::json!({"cell":row["cell"],"queries":count,"full_mismatches":0,"observed":observer::take()}));}}
-'''.replace('NUMERIC', json.dumps(str(ROOT / 'tools/generator/src/diagonal_fitting/numeric.rs'))))
+'''.replace('NUMERIC', json.dumps(str(ROOT / 'crates/generator/src/diagonal_fitting/numeric.rs'))))
     with (OUT / 'census-build.log').open('w') as log:
         subprocess.run(['cargo', 'build', '--release', '--offline', '--manifest-path', str(dst / 'Cargo.toml')],
                        stdout=log, stderr=subprocess.STDOUT, check=True)

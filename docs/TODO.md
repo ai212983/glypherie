@@ -52,7 +52,7 @@ forces compromises; this method does not guarantee optical quality or symmetric 
       Document sampling, weighting and cases where the measure is unavailable before changing behavior.
 - [ ] Prototype a general placement policy preserving the source optical target. Avoid glyph-specific kerning edits,
       family/size exceptions and parameters selected to equalize `AV` and `VA`.
-- [ ] Preserve the [shared spacing contracts](../tools/generator/README.md#live-spacing-api), including single kerning
+- [ ] Preserve the [shared spacing contracts](../crates/generator/README.md#live-spacing-api), including single kerning
       application and the bitmap-policy fallback for glyphs without fitted advances.
 - [ ] Compare straight, curved and diagonal pairs across fonts, sizes and axes. Use geometric checks and visual review
       under the [evaluation rules](evaluation.md); classify findings in the affected iteration before requesting review.

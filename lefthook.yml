@@ -23,7 +23,8 @@ pre-commit:
         - "AGENTS.md"
         - "fonts/**/*.md"
         - "docs/**/*.md"
-        - "tools/**/*.md"
+        - "apps/**/*.md"
+        - "crates/**/*.md"
         - "experiments/**/*.md"
       exclude:
         - "docs/references/VisualTrueType/**"
@@ -37,10 +38,10 @@ pre-commit:
       run: npx --no-install cspell --no-progress --gitignore --no-must-find-files {staged_files}
     - name: rust-formatting
       glob:
-        - "tools/generator/**/*.rs"
-        - "tools/generator/Cargo.toml"
-      exclude: "tools/generator/vendor/**"
-      run: cargo fmt --manifest-path tools/generator/Cargo.toml --check
+        - "crates/generator/**/*.rs"
+        - "crates/generator/Cargo.toml"
+      exclude: "crates/generator/vendor/**"
+      run: cargo fmt --manifest-path crates/generator/Cargo.toml --check
 
 commit-msg:
   jobs:

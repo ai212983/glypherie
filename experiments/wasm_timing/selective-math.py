@@ -51,8 +51,8 @@ SOLVE = '''    fn solve(&self, b: &DVector<f64>) -> DVector<f64> {
 def prepare():
     assert not SOURCE.exists(), 'Preserve frozen experiment source.'
     for name in ['generator', 'wasm']:
-        base = ROOT / 'tools' / name
-        target = SOURCE / 'tools' / name
+        base = ROOT / 'crates' / name
+        target = SOURCE / 'crates' / name
         target.mkdir(parents=True)
         for filename in ['Cargo.toml', 'Cargo.lock', 'build.rs']:
             if (base / filename).exists():
@@ -60,7 +60,7 @@ def prepare():
         shutil.copytree(base / 'src', target / 'src')
         if (base / 'vendor').exists():
             shutil.copytree(base / 'vendor', target / 'vendor')
-    qp = SOURCE / 'tools/generator/src/diagonal_fitting/qp.rs'
+    qp = SOURCE / 'crates/generator/src/diagonal_fitting/qp.rs'
     original = qp.read_text()
     needle = '    fn solve(&self, b: &DVector<f64>) -> DVector<f64> {'
     assert original.count(needle) == 1

@@ -31,8 +31,8 @@ python3 -m http.server --bind 127.0.0.1 --directory out/diagnostics/source-sans-
 
 This output directory must also be new; the native adapter and frozen comparison packets must already exist.
 
-Python 3.12 and the pinned NumPy dependency in [requirements.txt](requirements.txt) suffice; the existing
-paper-extraction environment also supplies it. From the repository root, with `uv`:
+Python 3.12 and the pinned NumPy dependency in [requirements.txt](requirements.txt) suffice. From the repository root,
+with `uv`:
 
 ```sh
 uv run --with-requirements experiments/hobby_fitting/requirements.txt python experiments/hobby_fitting/prototype.py
@@ -50,10 +50,10 @@ The explicit opt-in evaluator lives in [direct_diagonal_run.py](direct_diagonal_
 controls (upstream render only, no solver import); `--enable-direct-diagonals` adds the width-only and grid arms:
 
 ```sh
-CARGO_TARGET_DIR=tools/generator/target cargo build --locked --offline \
+CARGO_TARGET_DIR=crates/generator/target cargo build --locked --offline \
   --manifest-path experiments/strokestyles_fitting/native/Cargo.toml
 mkdir -p out/diagnostics/direct-diagonal
-tools/generator/target/debug/strokestyles-fit-adapter capture \
+crates/generator/target/debug/strokestyles-fit-adapter capture \
   --font fonts/Roboto.ttf --size 16 --axes '{"wght":400,"wdth":100}' \
   --chars itflInhkyxzvAVW --out out/diagnostics/direct-diagonal/captures.json
 uv run --python 3.10 --with numpy==1.26.4 --with fonttools==4.53.1 \
@@ -105,7 +105,7 @@ uv run --python 3.10 --with numpy==1.26.4 --with fonttools==4.53.1 \
   python3 experiments/hobby_fitting/text_review.py \
   --captures out/diagnostics/direct-diagonal/captures.json \
   --out out/diagnostics/direct-diagonal/text-review \
-  --adapter tools/generator/target/debug/strokestyles-fit-adapter \
+  --adapter crates/generator/target/debug/strokestyles-fit-adapter \
   --topology-binary out/diagnostics/direct-diagonal/exact-topology/bin/exact_topology
 python3 -m http.server --directory out/diagnostics/direct-diagonal/text-review 8125
 ```
@@ -128,7 +128,7 @@ uv run --python 3.10 --with numpy==1.26.4 --with fonttools==4.53.1 \
   python3 experiments/hobby_fitting/text_review.py \
   --captures out/diagnostics/direct-diagonal/captures.json \
   --out out/diagnostics/direct-diagonal/text-review \
-  --adapter tools/generator/target/debug/strokestyles-fit-adapter \
+  --adapter crates/generator/target/debug/strokestyles-fit-adapter \
   --topology-binary out/diagnostics/direct-diagonal/exact-topology/bin/exact_topology \
   --resume
 ```
@@ -140,7 +140,7 @@ uv run --python 3.10 --with numpy==1.26.4 --with fonttools==4.53.1 \
   python3 experiments/hobby_fitting/coverage_review.py \
   --family Roboto --size 16 --weight 400 \
   --out out/diagnostics/direct-diagonal/coverage-review \
-  --adapter tools/generator/target/debug/strokestyles-fit-adapter \
+  --adapter crates/generator/target/debug/strokestyles-fit-adapter \
   --topology-binary out/diagnostics/direct-diagonal/exact-topology/bin/exact_topology
 python3 -m http.server --directory out/diagnostics/direct-diagonal/coverage-review 8126
 ```
@@ -166,11 +166,11 @@ The native check consumes the existing `coverage-review/cells` and `text-review/
 `out/diagnostics/direct-diagonal/`:
 
 ```sh
-CARGO_TARGET_DIR=tools/generator/target cargo build --release --locked --offline \
+CARGO_TARGET_DIR=crates/generator/target cargo build --release --locked --offline \
   --manifest-path experiments/strokestyles_fitting/native/Cargo.toml --example diagonal_parity
 python3 experiments/hobby_fitting/native_parity.py \
-  --binary tools/generator/target/release/examples/diagonal_parity
-cargo test --manifest-path tools/generator/Cargo.toml --test diagonal_parity
+  --binary crates/generator/target/release/examples/diagonal_parity
+cargo test --manifest-path crates/generator/Cargo.toml --test diagonal_parity
 ```
 
 `--focus` selects default Roboto in both hint modes. `--out` overrides the default
@@ -338,7 +338,7 @@ criteria. Use `CAPTURE_OUTPUT_DIR` with `stage_capture.py` for full native compa
 
 ## Equality-event census
 
-Freeze `tools/generator/src/diagonal_fitting/intervals.rs` as
+Freeze `crates/generator/src/diagonal_fitting/intervals.rs` as
 `out/diagnostics/equality-filter-optimization/before/intervals.rs`, then supply an explicit normalized-query JSON
 capture:
 

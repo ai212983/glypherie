@@ -11,7 +11,7 @@ covers only the two Mono runtime strategies. Classified findings are recorded in
 From the repository root:
 
 ```sh
-cargo run --locked --manifest-path tools/generator/Cargo.toml --example stem_fitting_compare -- \
+cargo run --locked --manifest-path crates/generator/Cargo.toml --example stem_fitting_compare -- \
   out/diagnostics/stem-fitting/captures.json
 python experiments/stem_policy_comparison/view.py out/diagnostics/stem-fitting/captures.json \
   out/diagnostics/stem-fitting/web

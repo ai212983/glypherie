@@ -1,7 +1,7 @@
 """Synthetic and captured replay tests for supporting-cap certification.
 
 Source: SCANTYPE Rules 5/6; FreeType ftraster.c stub test; Hersch 1993
-section 7; 26.6 conversion per tools/generator/src/mono.rs. Captured
+section 7; 26.6 conversion per crates/generator/src/mono.rs. Captured
 oracles: corpus.json before/after fixed FreeType scans (same frames) plus
 source-controls.json source outlines; parent k-tip and R/6/9 findings.
 """
@@ -105,7 +105,7 @@ class ValidationTest(unittest.TestCase):
 
 class QuantizationTest(unittest.TestCase):
     def test_half_rounds_up(self):
-        # Source: floor(x*64+0.5) per tools/generator/src/mono.rs.
+        # Source: floor(x*64+0.5) per crates/generator/src/mono.rs.
         self.assertEqual(1, q26(1.0 / 64.0))
         self.assertEqual(0, q26(0.0))
         self.assertEqual(-1, q26(-1.0 / 64.0))

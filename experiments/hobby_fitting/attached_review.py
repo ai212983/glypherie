@@ -46,7 +46,7 @@ def build_cell(args):
     case = load(capture)[0]
     records = {r['codepoint']: r for r in case['modes'][args.hint]['records']}
     selected = set(map(ord, args.glyphs)) if args.glyphs else set(records)
-    binary = str(ROOT / 'tools/generator/target/debug/strokestyles-fit-adapter')
+    binary = str(ROOT / 'crates/generator/target/debug/strokestyles-fit-adapter')
     old_tiles, new_tiles, glyphs = {}, {}, []
     with tempfile.TemporaryDirectory() as scratch:
         for glyph in prior['glyphs']:

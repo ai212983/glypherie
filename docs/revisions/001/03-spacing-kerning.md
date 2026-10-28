@@ -140,7 +140,7 @@ assessment, not accepted improvements or glyph-specific fitting rules.
 Font previews reference browser-local palette presets, with Monochrome as the default. Presets define 2, 4, 8 or 16
 coverage colors. Gray uses the existing upstream Normal automatic fitting and Alpha scan conversion at the selected
 output depth; no glyph geometry or layout rule depends on the preset. Coverage indices select the corresponding preset
-entry verbatim under the [surface palette contract](../../../tools/wasm/README.md#render-spec-controls). Display
+entry verbatim under the [surface palette contract](../../../crates/wasm/README.md#render-spec-controls). Display
 paper/ink tinting is applied to the preset gray codes. This extends the existing quantized coverage representation,
 following [scalar quantization](../../references/papers/2006-gallager-quantization/paper.md), rather than introducing a
 fitting model. Palette-lab specimens retain their browser mask and nearest-level linear-light quantization; their pixels
@@ -413,7 +413,7 @@ Fractional browser composition can make equal native stems appear unequal.
 physical pixels; [CSS image rendering](https://drafts.csswg.org/css-images-3/#the-image-rendering) permits fractional
 resampling.
 
-The optional [display policy](../../../tools/web/CONTRACT.md#interactive-specimens) shows each native pixel as an equal
+The optional [display policy](../../../apps/web/src/app/renderer/display-scaling.ts) shows each native pixel as an equal
 integer block of physical pixels, aligning canvas origins and extents.
 [Chromium paint snapping](https://chromium.googlesource.com/chromium/src/+/main/third_party/blink/renderer/core/paint/html_canvas_painter.cc)
 makes alignment necessary beyond backing-resolution changes.
@@ -423,7 +423,7 @@ Controlled fractional composition reproduces unequal stems; the user's cause and
 ### Source-kerning inspection
 
 Expose authentic source pair adjustments independently of experimental spacing through the
-[WASM API](../../../tools/wasm/README.md#kerning-pairs).
+[WASM API](../../../crates/wasm/README.md#kerning-pairs).
 
 ### Coordinate-selected scalar glyphs
 
@@ -443,7 +443,7 @@ weight 400 and glyph 602 at weight 700, for slant 0 and -10. Classification: the
 capability limitation; selecting the required outline resolves it across rendering and kerning inspection. The selected
 outline matches independent source capture. This establishes glyph selection and metric consistency, not optical
 acceptance. Pair-context substitutions, glyph count/order changes and unrepresentable positioning remain unsupported
-under the [generator contract](../../../tools/generator/README.md#supported-input-and-output).
+under the [generator contract](../../../crates/generator/README.md#supported-input-and-output).
 
 ### Symmetry and grid placement
 
@@ -676,7 +676,7 @@ investigation.
 
 ##### Main-page source-stem calibration
 
-The [main-page sample selection](../../../tools/web/scripts/landing-samples/main-page.json) targets one native pixel for
+The [main-page sample selection](../../../apps/web/scripts/landing-samples/main-page.json) targets one native pixel for
 principal stems through one global weight coordinate per family and size. The project adaptation measures upper body
 sections in `H`, `I` and `l`, bounding the widest reference section in the serialized static source font by one pixel.
 All converters receive that same instance; source weight relationships, serif contrast and native converter behavior
@@ -717,7 +717,7 @@ remedy for the delivered Roboto glyphs or optical acceptance of a new fitting po
 #### Upstream Mono assessment
 
 The default **Font hints first** and the **Automatic Mono** control share one replaceable whole-outline boundary. The
-[generator API](../../../tools/generator/README.md#working-candidate-fitting) owns the policy/engine contract and the
+[generator API](../../../crates/generator/README.md#working-candidate-fitting) owns the policy/engine contract and the
 [comparison tool](../../../experiments/stem_policy_comparison/README.md) owns reproduction commands. The selected font,
 size and axis publication scope remains unchanged.
 
@@ -920,7 +920,7 @@ iteration.
 tip/crossbar and the `d` upper bowl attachment because its capture disabled stub rescue. Enabling rescue alone restores
 three `t` pixels and two `d` pixels with identical fitted outlines, coverage, bounds and advances. Disabling diagonal
 fitting or terminal suppression leaves the defects unchanged. The landing capture now follows the live preview's
-[scan settings](../../../tools/web/src/app/renderer/render-spec.ts); no fitting model or approved baseline changes.
+[scan settings](../../../apps/web/src/app/renderer/render-spec.ts); no fitting model or approved baseline changes.
 
 The existing four-family, four-size landing matrix was regenerated. All 16 requests match the live preview's resolved
 pipeline and scan settings; font instances, axes, advances, pair corrections and the other converters' paragraph pixels
@@ -930,7 +930,7 @@ and crop checks pass. Captures and the before/after comparison are in
 `out/diagnostics/landing-samples/preview-scan-correction-20261027/`.
 
 **Shared-policy adoption, 2026-10-27:** the live preview, new-preview/variant defaults and landing generator now use the
-shared working-preview policy; the [web contract](../../../tools/web/CONTRACT.md) owns capture compatibility and build
+shared working-preview policy; the [web contract](../../../apps/web/CONTRACT.md) owns capture compatibility and build
 rejection. The refactor retains all 432 captured live-request cases. A fresh 16-case run produces byte-identical native
 font exports and all 80 paragraph/display images against the corrected landing baseline, with unchanged input fonts,
 axes and layout. This is **unchanged output**, not a new optical acceptance. Policy checks, request compatibility and

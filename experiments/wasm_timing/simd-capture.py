@@ -30,10 +30,10 @@ crate-type=["cdylib"]
 font_generator={path=GENERATOR,default-features=false,features=["candidate"]}
 wasm-bindgen="=0.2.129"
 serde_json={version="1",features=["float_roundtrip"]}
-'''.replace('GENERATOR', json.dumps(str(ROOT / 'tools/generator'))))
+'''.replace('GENERATOR', json.dumps(str(ROOT / 'crates/generator'))))
     locked = (dst / 'Cargo.lock').exists()
     if not locked:
-        shutil.copyfile(ROOT / 'tools/wasm/Cargo.lock', dst / 'Cargo.lock')
+        shutil.copyfile(ROOT / 'crates/wasm/Cargo.lock', dst / 'Cargo.lock')
     (dst / 'src/lib.rs').write_text('''use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 pub fn capture(bytes:&[u8],request:&str,pipeline:&str)->String {
@@ -62,7 +62,7 @@ def run(compare_only=False):
     frozen = json.loads((REF / 'source-before.json').read_text())
     checked = 0
     for path, sha in frozen.items():
-        if path.startswith('tools/generator/'):
+        if path.startswith('crates/generator/'):
             assert hashlib.sha256((ROOT / path).read_bytes()).hexdigest() == sha, path
             checked += 1
     spec = importlib.util.spec_from_file_location('stage_capture', ROOT / 'experiments/hobby_fitting/stage_capture.py')

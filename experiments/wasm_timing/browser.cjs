@@ -7,9 +7,9 @@ const { stripTypeScriptTypes } = require('node:module');
 const root = path.resolve(__dirname, '../..');
 const output = path.resolve(process.env.OUTPUT_DIR ?? path.join(root, 'out/diagnostics/wasm-timing-investigation'));
 fs.mkdirSync(output, { recursive: true });
-const { chromium } = require(path.join(root, 'tools/web/node_modules/playwright-core'));
+const { chromium } = require(path.join(root, 'apps/web/node_modules/playwright-core'));
 const sha = b => crypto.createHash('sha256').update(b).digest('hex');
-const source = fs.readFileSync(path.join(root, 'tools/web/src/app/renderer/font-worker.ts'), 'utf8');
+const source = fs.readFileSync(path.join(root, 'apps/web/src/app/renderer/font-worker.ts'), 'utf8');
 const instrumented = source
   .replace('import initWasm, { Font } from "./wasm/font_wasm.js";', 'import initWasm, { Font } from "./packages/VARIANT/font_wasm.js";')
   .replace('import wasmBinaryUrl from "./wasm/font_wasm_bg.wasm?url";', 'const wasmBinaryUrl = new URL("./packages/VARIANT/font_wasm_bg.wasm", import.meta.url);')
@@ -21,7 +21,7 @@ assert.ok(instrumented.includes('const workerRenderMs'));
 const generated = stripTypeScriptTypes(instrumented, { mode: 'strip' });
 fs.writeFileSync(path.join(output, 'instrumented-app-worker.js'), generated);
 const packages = {
-  baseline: path.resolve(process.env.BASELINE_WEB_PACKAGE ?? path.join(root, 'tools/wasm/pkg-web-preview')),
+  baseline: path.resolve(process.env.BASELINE_WEB_PACKAGE ?? path.join(root, 'crates/wasm/pkg-web-preview')),
   sparse: path.resolve(process.env.CANDIDATE_WEB_PACKAGE ?? path.join(root, 'out/diagnostics/qp-objective-optimization/pkg-web-sparse-trial')),
 };
 const identities = Object.fromEntries(Object.entries(packages).map(([name, folder]) => [name, {
