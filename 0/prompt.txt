@@ -1,0 +1,1 @@
+We need to restructure the landing page. Comparison is not a technical detail, it's a primary selling point, it should go first. Also we should have warm cold neutral and zoom controls identical as on fonts page and all previews should respect it. Previews should look like previews on fonts page.
