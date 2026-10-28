@@ -1,0 +1,1 @@
+Use Muse delegation and verification and generate sample text for each of those options plus this repo result. Do it in non tracked folder.
