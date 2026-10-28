@@ -1,0 +1,3 @@
+add RougeScript to comparison images at main page. do not add it as bundled font.
+
+implement and verify with Muse, then prune comments
