@@ -206,6 +206,252 @@ fn check_report_identity(
     }
 }
 
+struct ReportRecords<'a> {
+    source: BTreeMap<u32, &'a ReferenceRecord>,
+    upstream: BTreeMap<u32, &'a ReferenceRecord>,
+    candidate: BTreeMap<u32, &'a ReferenceRecord>,
+}
+
+fn index_records<'a>(
+    name: &str,
+    report: &'a ReferenceReport,
+    selective_candidate: bool,
+    push: &mut impl FnMut(&str, Option<u32>, &str),
+) -> BTreeMap<u32, &'a ReferenceRecord> {
+    let mut index = BTreeMap::new();
+    for record in &report.records {
+        if index.insert(record.codepoint, record).is_some() {
+            push(name, Some(record.codepoint), "duplicate glyph record");
+        }
+        for invariant in validate_record(record) {
+            push(name, Some(record.codepoint), invariant);
+        }
+        if record.target != report.target
+            || (record.selected_engine != report.hinting_requested
+                && !(report.hinting_requested == "auto_fallback"
+                    && (matches!(record.selected_engine.as_str(), "auto" | "interpreter")
+                        || (name == "candidate"
+                            && selective_candidate
+                            && record.selective_fitting.is_some()))))
+            || record.smooth_mode != report.smooth_mode
+            || record.symmetric_rendering != report.symmetric_rendering
+            || record.preserve_linear_metrics != report.preserve_linear_metrics
+            || record.draw_pedantic != report.draw_pedantic
+            || record.zeno_version != report.zeno_version
+        {
+            push(
+                name,
+                Some(record.codepoint),
+                "record and report policy inconsistent",
+            );
+        }
+    }
+    index
+}
+
+/// Emits per-glyph failures in invariant order before producing diagnostics.
+struct GlyphComparison<'a> {
+    codepoint: u32,
+    source: &'a ReferenceRecord,
+    upstream: &'a ReferenceRecord,
+    candidate: &'a ReferenceRecord,
+    candidate_report: &'a ReferenceReport,
+    policy: &'a CandidateKind,
+}
+
+impl GlyphComparison<'_> {
+    fn compare(&self, push: &mut impl FnMut(&str, Option<u32>, &str)) -> GlyphDiagnostics {
+        for (name, record) in [("source", self.source), ("candidate", self.candidate)] {
+            self.check_baseline_identity(name, record, push);
+        }
+        self.check_candidate_policy(push);
+        self.check_source_outline(push);
+        self.check_width_input(push);
+        self.check_top_alignment_input(push);
+        self.check_selective_input(push);
+        self.check_engine(push);
+        self.check_gray_identity(push);
+        glyph_diagnostics(self.codepoint, self.source, self.upstream, self.candidate)
+    }
+
+    fn check_baseline_identity(
+        &self,
+        name: &str,
+        record: &ReferenceRecord,
+        push: &mut impl FnMut(&str, Option<u32>, &str),
+    ) {
+        // The spacing experiment explicitly replaces advance identity with
+        // equality to the actual scaler-returned advance. Linear, gray and
+        // disabled paths retain their original independent identity contract.
+        let expected_advance = if name == "candidate"
+            && self.candidate_report.advance_policy == crate::reference::AdvancePolicy::Hinted
+        {
+            record
+                .hinted_advance_width
+                .filter(|advance| advance.is_finite())
+                .map(|advance| (advance * 64.0).round() as i32)
+                .unwrap_or(self.upstream.advance_26_6)
+        } else {
+            self.upstream.advance_26_6
+        };
+        if record.glyph_id != self.upstream.glyph_id || record.advance_26_6 != expected_advance {
+            push(
+                name,
+                Some(self.codepoint),
+                "glyph mapping or advance changed",
+            );
+        }
+        let target_fields_changed = record.target != self.upstream.target
+            || record.smooth_mode != self.upstream.smooth_mode
+            || record.symmetric_rendering != self.upstream.symmetric_rendering
+            || record.preserve_linear_metrics != self.upstream.preserve_linear_metrics;
+        if target_fields_changed
+            || record.output_bits != self.upstream.output_bits
+            || record.mono_threshold != self.upstream.mono_threshold
+            || record.gray_gamma != self.upstream.gray_gamma
+            || record.zeno_format != self.upstream.zeno_format
+            || record.zeno_version != self.upstream.zeno_version
+            || record.draw_pedantic != self.upstream.draw_pedantic
+        {
+            push(name, Some(self.codepoint), "glyph render policy changed");
+        }
+    }
+
+    fn check_candidate_policy(&self, push: &mut impl FnMut(&str, Option<u32>, &str)) {
+        if self.policy.font_hints_candidate || self.policy.mono_width_candidate {
+            let kind = if self.policy.font_hints_candidate {
+                "font-hints"
+            } else {
+                "mono-width"
+            };
+            let residuals_allowed = residuals_allowed(self.candidate);
+            // Fitting and raster stages are independent: the Coverage
+            // capture of the same fitting carries the same residuals.
+            if !matches!(
+                self.candidate.raster_policy,
+                RasterPolicy::FreeTypeMono
+                    | RasterPolicy::FreeTypeMonoTerminals
+                    | RasterPolicy::Coverage
+            ) || (self.candidate.side_bearing_deltas_26_6.is_some() && !residuals_allowed)
+                || self.candidate.diagonal_pairs.is_some()
+            {
+                push(
+                    "candidate",
+                    Some(self.codepoint),
+                    &format!(
+                        "{kind} candidate requires FreeType mono without horizontal correction metadata"
+                    ),
+                );
+            }
+        }
+    }
+
+    fn check_source_outline(&self, push: &mut impl FnMut(&str, Option<u32>, &str)) {
+        if let Some(commands) = &self.candidate.source_commands {
+            if (!matches!(
+                self.candidate.raster_policy,
+                RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+            ) || (self.candidate.raster_policy != RasterPolicy::FreeTypeMonoTerminals
+                && self.candidate.width_fitting.is_none()
+                && self.candidate.selective_fitting.is_none()
+                && self.candidate.diagonal_fitting.is_none()
+                && self.candidate.top_alignment.is_none()))
+                || *commands != self.source.fitted_commands
+            {
+                push(
+                    "candidate",
+                    Some(self.codepoint),
+                    "source outline identity changed",
+                );
+            }
+        } else if self.candidate.raster_policy == RasterPolicy::FreeTypeMonoTerminals {
+            push(
+                "candidate",
+                Some(self.codepoint),
+                "terminal source outline missing",
+            );
+        }
+    }
+
+    fn check_width_input(&self, push: &mut impl FnMut(&str, Option<u32>, &str)) {
+        if let Some(width) = &self.candidate.width_fitting {
+            if !self.policy.source_width_candidate
+                || width.size_px != self.candidate_report.size_px
+                || (self.candidate.selected_engine == self.upstream.selected_engine
+                    && width.upstream_commands != self.upstream.fitted_commands)
+            {
+                push(
+                    "candidate",
+                    Some(self.codepoint),
+                    "width fitting input identity changed",
+                );
+            }
+        }
+    }
+
+    fn check_top_alignment_input(&self, push: &mut impl FnMut(&str, Option<u32>, &str)) {
+        if let Some(top) = &self.candidate.top_alignment {
+            if top.size_px != self.candidate_report.size_px
+                || (self.candidate.width_fitting.is_none()
+                    && top.upstream_commands != self.upstream.fitted_commands)
+            {
+                push(
+                    "candidate",
+                    Some(self.codepoint),
+                    "top alignment input identity changed",
+                );
+            }
+        }
+    }
+
+    fn check_selective_input(&self, push: &mut impl FnMut(&str, Option<u32>, &str)) {
+        if let Some(selective) = &self.candidate.selective_fitting {
+            if !self.policy.selective_candidate
+                || selective.automatic_commands != self.upstream.fitted_commands
+            {
+                push(
+                    "candidate",
+                    Some(self.codepoint),
+                    "selective automatic input identity changed",
+                );
+            }
+        }
+    }
+
+    fn check_engine(&self, push: &mut impl FnMut(&str, Option<u32>, &str)) {
+        if (self.policy.font_hints_candidate
+            && !matches!(
+                self.candidate.selected_engine.as_str(),
+                "auto" | "interpreter"
+            )
+            && !(self.policy.selective_candidate && self.candidate.selective_fitting.is_some()))
+            || (!self.policy.font_hints_candidate
+                && self.candidate.selected_engine != self.upstream.selected_engine)
+        {
+            push(
+                "candidate",
+                Some(self.codepoint),
+                "selected hinting engine changed",
+            );
+        }
+    }
+
+    fn check_gray_identity(&self, push: &mut impl FnMut(&str, Option<u32>, &str)) {
+        if self.candidate_report.profile == PROFILE_GRAY_3BIT
+            && (self.candidate.fitted_commands != self.upstream.fitted_commands
+                || self.candidate.coverage != self.upstream.coverage
+                || self.candidate.pixels != self.upstream.pixels
+                || placement(self.candidate) != placement(self.upstream))
+        {
+            push(
+                "candidate",
+                Some(self.codepoint),
+                "mono-only iteration changed gray output",
+            );
+        }
+    }
+}
+
 /// Evaluate reports for the same font/axes/size/profile/repertoire. Source must be
 /// unhinted and upstream must be independently captured with extensions disabled.
 /// Gray identity is a hard invariant of the current Mono fitting policies.
@@ -223,200 +469,44 @@ pub fn evaluate(
             invariant: invariant.into(),
         });
     };
-    let CandidateKind {
-        selective_candidate,
-        source_width_candidate,
-        font_hints_candidate,
-        mono_width_candidate,
-    } = check_report_identity(source, upstream, candidate, &mut push);
-    let mut indexes = Vec::new();
-    for (name, report) in [
-        ("source", source),
-        ("upstream", upstream),
-        ("candidate", candidate),
+    let policy = check_report_identity(source, upstream, candidate, &mut push);
+    let records = ReportRecords {
+        source: index_records("source", source, policy.selective_candidate, &mut push),
+        upstream: index_records("upstream", upstream, policy.selective_candidate, &mut push),
+        candidate: index_records(
+            "candidate",
+            candidate,
+            policy.selective_candidate,
+            &mut push,
+        ),
+    };
+    for (name, index) in [
+        ("source", &records.source),
+        ("candidate", &records.candidate),
     ] {
-        let mut index = BTreeMap::new();
-        for record in &report.records {
-            if index.insert(record.codepoint, record).is_some() {
-                push(name, Some(record.codepoint), "duplicate glyph record");
-            }
-            for invariant in validate_record(record) {
-                push(name, Some(record.codepoint), invariant);
-            }
-            if record.target != report.target
-                || (record.selected_engine != report.hinting_requested
-                    && !(report.hinting_requested == "auto_fallback"
-                        && (matches!(record.selected_engine.as_str(), "auto" | "interpreter")
-                            || (name == "candidate"
-                                && selective_candidate
-                                && record.selective_fitting.is_some()))))
-                || record.smooth_mode != report.smooth_mode
-                || record.symmetric_rendering != report.symmetric_rendering
-                || record.preserve_linear_metrics != report.preserve_linear_metrics
-                || record.draw_pedantic != report.draw_pedantic
-                || record.zeno_version != report.zeno_version
-            {
-                push(
-                    name,
-                    Some(record.codepoint),
-                    "record and report policy inconsistent",
-                );
-            }
-        }
-        indexes.push(index);
-    }
-    for (name, index) in [("source", &indexes[0]), ("candidate", &indexes[2])] {
-        if !index.keys().eq(indexes[1].keys()) {
+        if !index.keys().eq(records.upstream.keys()) {
             push(name, None, "glyph repertoire changed");
         }
     }
     let mut glyphs = Vec::new();
-    for (&codepoint, &baseline) in &indexes[1] {
-        let (Some(&raw), Some(&fitted)) = (indexes[0].get(&codepoint), indexes[2].get(&codepoint))
-        else {
+    for (&codepoint, &upstream_record) in &records.upstream {
+        let (Some(&source_record), Some(&candidate_record)) = (
+            records.source.get(&codepoint),
+            records.candidate.get(&codepoint),
+        ) else {
             continue;
         };
-        for (name, record) in [("source", raw), ("candidate", fitted)] {
-            // The spacing experiment explicitly replaces advance identity with
-            // equality to the actual scaler-returned advance. Linear, gray and
-            // disabled paths retain their original independent identity contract.
-            let expected_advance = if name == "candidate"
-                && candidate.advance_policy == crate::reference::AdvancePolicy::Hinted
-            {
-                record
-                    .hinted_advance_width
-                    .filter(|advance| advance.is_finite())
-                    .map(|advance| (advance * 64.0).round() as i32)
-                    .unwrap_or(baseline.advance_26_6)
-            } else {
-                baseline.advance_26_6
-            };
-            if record.glyph_id != baseline.glyph_id || record.advance_26_6 != expected_advance {
-                push(name, Some(codepoint), "glyph mapping or advance changed");
+        glyphs.push(
+            GlyphComparison {
+                codepoint,
+                source: source_record,
+                upstream: upstream_record,
+                candidate: candidate_record,
+                candidate_report: candidate,
+                policy: &policy,
             }
-            let target_fields_changed = record.target != baseline.target
-                || record.smooth_mode != baseline.smooth_mode
-                || record.symmetric_rendering != baseline.symmetric_rendering
-                || record.preserve_linear_metrics != baseline.preserve_linear_metrics;
-            if target_fields_changed
-                || record.output_bits != baseline.output_bits
-                || record.mono_threshold != baseline.mono_threshold
-                || record.gray_gamma != baseline.gray_gamma
-                || record.zeno_format != baseline.zeno_format
-                || record.zeno_version != baseline.zeno_version
-                || record.draw_pedantic != baseline.draw_pedantic
-            {
-                push(name, Some(codepoint), "glyph render policy changed");
-            }
-        }
-        if font_hints_candidate || mono_width_candidate {
-            let kind = if font_hints_candidate {
-                "font-hints"
-            } else {
-                "mono-width"
-            };
-            let residuals_allowed = residuals_allowed(fitted);
-            // Fitting and raster stages are independent: the Coverage
-            // capture of the same fitting carries the same residuals.
-            if !matches!(
-                fitted.raster_policy,
-                RasterPolicy::FreeTypeMono
-                    | RasterPolicy::FreeTypeMonoTerminals
-                    | RasterPolicy::Coverage
-            ) || (fitted.side_bearing_deltas_26_6.is_some() && !residuals_allowed)
-                || fitted.diagonal_pairs.is_some()
-            {
-                push(
-                    "candidate",
-                    Some(codepoint),
-                    &format!(
-                        "{kind} candidate requires FreeType mono without horizontal correction metadata"
-                    ),
-                );
-            }
-        }
-        if let Some(commands) = &fitted.source_commands {
-            if (!matches!(
-                fitted.raster_policy,
-                RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
-            ) || (fitted.raster_policy != RasterPolicy::FreeTypeMonoTerminals
-                && fitted.width_fitting.is_none()
-                && fitted.selective_fitting.is_none()
-                && fitted.diagonal_fitting.is_none()
-                && fitted.top_alignment.is_none()))
-                || *commands != raw.fitted_commands
-            {
-                push(
-                    "candidate",
-                    Some(codepoint),
-                    "source outline identity changed",
-                );
-            }
-        } else if fitted.raster_policy == RasterPolicy::FreeTypeMonoTerminals {
-            push(
-                "candidate",
-                Some(codepoint),
-                "terminal source outline missing",
-            );
-        }
-        if let Some(width) = &fitted.width_fitting {
-            if !source_width_candidate
-                || width.size_px != candidate.size_px
-                || (fitted.selected_engine == baseline.selected_engine
-                    && width.upstream_commands != baseline.fitted_commands)
-            {
-                push(
-                    "candidate",
-                    Some(codepoint),
-                    "width fitting input identity changed",
-                );
-            }
-        }
-        if let Some(top) = &fitted.top_alignment {
-            if top.size_px != candidate.size_px
-                || (fitted.width_fitting.is_none()
-                    && top.upstream_commands != baseline.fitted_commands)
-            {
-                push(
-                    "candidate",
-                    Some(codepoint),
-                    "top alignment input identity changed",
-                );
-            }
-        }
-        if let Some(selective) = &fitted.selective_fitting {
-            if !selective_candidate || selective.automatic_commands != baseline.fitted_commands {
-                push(
-                    "candidate",
-                    Some(codepoint),
-                    "selective automatic input identity changed",
-                );
-            }
-        }
-        if (font_hints_candidate
-            && !matches!(fitted.selected_engine.as_str(), "auto" | "interpreter")
-            && !(selective_candidate && fitted.selective_fitting.is_some()))
-            || (!font_hints_candidate && fitted.selected_engine != baseline.selected_engine)
-        {
-            push(
-                "candidate",
-                Some(codepoint),
-                "selected hinting engine changed",
-            );
-        }
-        if candidate.profile == PROFILE_GRAY_3BIT
-            && (fitted.fitted_commands != baseline.fitted_commands
-                || fitted.coverage != baseline.coverage
-                || fitted.pixels != baseline.pixels
-                || placement(fitted) != placement(baseline))
-        {
-            push(
-                "candidate",
-                Some(codepoint),
-                "mono-only iteration changed gray output",
-            );
-        }
-        glyphs.push(glyph_diagnostics(codepoint, raw, baseline, fitted));
+            .compare(&mut push),
+        );
     }
     Evaluation {
         schema_version: 1,

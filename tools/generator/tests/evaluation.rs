@@ -1266,3 +1266,210 @@ fn header_rasterizer_identity_fields_fail_individually() {
         );
     }
 }
+
+fn ordered_failures(
+    evaluation: &font_generator::evaluation::Evaluation,
+) -> Vec<(&str, Option<u32>, &str)> {
+    evaluation
+        .hard_failures
+        .iter()
+        .map(|failure| {
+            (
+                failure.report.as_str(),
+                failure.codepoint,
+                failure.invariant.as_str(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn missing_candidate_repertoire_skips_incomplete_triplet() {
+    let (mut source, mut upstream, mut candidate) = reports("mono_1bit");
+    for report in [&mut source, &mut upstream, &mut candidate] {
+        let mut extra = report.records[0].clone();
+        extra.codepoint += 1;
+        report.records.push(extra);
+    }
+    candidate.records.remove(0);
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    assert_eq!(
+        ordered_failures(&evaluation),
+        vec![("candidate", None, "glyph repertoire changed")]
+    );
+    assert_eq!(
+        evaluation
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.codepoint)
+            .collect::<Vec<_>>(),
+        vec![66],
+    );
+}
+
+#[test]
+fn missing_source_or_upstream_records_skip_incomplete_triplets() {
+    let (mut source, upstream, candidate) = reports("mono_1bit");
+    source.records.clear();
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    assert_eq!(
+        ordered_failures(&evaluation),
+        vec![("source", None, "glyph repertoire changed")]
+    );
+    assert!(evaluation.glyphs.is_empty());
+
+    let (source, mut upstream, candidate) = reports("mono_1bit");
+    upstream.records.clear();
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    assert_eq!(
+        ordered_failures(&evaluation),
+        vec![
+            ("source", None, "glyph repertoire changed"),
+            ("candidate", None, "glyph repertoire changed"),
+        ]
+    );
+    assert!(evaluation.glyphs.is_empty());
+}
+
+#[test]
+fn extra_source_or_candidate_records_keep_comparable_diagnostics() {
+    let (mut source, upstream, candidate) = reports("mono_1bit");
+    let mut extra = source.records[0].clone();
+    extra.codepoint += 1;
+    source.records.push(extra);
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    assert_eq!(
+        ordered_failures(&evaluation),
+        vec![("source", None, "glyph repertoire changed")]
+    );
+    assert_eq!(
+        evaluation
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.codepoint)
+            .collect::<Vec<_>>(),
+        vec![65]
+    );
+
+    let (source, upstream, mut candidate) = reports("mono_1bit");
+    let mut extra = candidate.records[0].clone();
+    extra.codepoint += 1;
+    candidate.records.push(extra);
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    assert_eq!(
+        ordered_failures(&evaluation),
+        vec![("candidate", None, "glyph repertoire changed")]
+    );
+    assert_eq!(
+        evaluation
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.codepoint)
+            .collect::<Vec<_>>(),
+        vec![65]
+    );
+}
+
+#[test]
+fn simultaneous_per_glyph_failures_keep_exact_order() {
+    let (mut source, upstream, mut candidate) = reports("mono_1bit");
+    source.records[0].advance_26_6 += 64;
+    candidate.records[0].advance_26_6 += 64;
+    candidate.records[0].zeno_format = "changed".into();
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    assert_eq!(
+        ordered_failures(&evaluation),
+        vec![
+            ("source", Some(65), "glyph mapping or advance changed"),
+            ("candidate", Some(65), "glyph mapping or advance changed"),
+            ("candidate", Some(65), "glyph render policy changed"),
+        ]
+    );
+}
+
+#[test]
+fn failed_comparable_glyphs_still_emit_diagnostics() {
+    let (source, upstream, mut candidate) = reports("mono_1bit");
+    candidate.records[0].advance_26_6 += 64;
+    candidate.records[0].zeno_format = "changed".into();
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    assert_eq!(evaluation.glyphs.len(), 1);
+    let glyph = &evaluation.glyphs[0];
+    assert_eq!(glyph.codepoint, 65);
+    assert!(!glyph.source.threshold_samples.is_empty());
+    assert!(!glyph.candidate.threshold_samples.is_empty());
+    assert!(glyph.source_command_correspondence);
+    assert!(glyph.source_to_candidate.is_some());
+}
+
+#[test]
+fn sorted_traversal_orders_glyphs_and_per_glyph_failures() {
+    let (mut source, mut upstream, mut candidate) = reports("mono_1bit");
+    for report in [&mut source, &mut upstream, &mut candidate] {
+        let mut extra = report.records[0].clone();
+        extra.codepoint += 1;
+        report.records.push(extra);
+        report.records.reverse();
+    }
+    assert_eq!(candidate.records.len(), 2);
+    for record in &mut source.records {
+        record.advance_26_6 += 64;
+    }
+    for record in &mut candidate.records {
+        record.advance_26_6 += 64;
+        record.zeno_format = "changed".into();
+    }
+    let evaluation = evaluate(&source, &upstream, &candidate);
+    assert!(!evaluation.hard_invariants_pass);
+    assert_eq!(
+        evaluation
+            .glyphs
+            .iter()
+            .map(|glyph| glyph.codepoint)
+            .collect::<Vec<_>>(),
+        vec![65, 66]
+    );
+    assert_eq!(
+        ordered_failures(&evaluation),
+        vec![
+            ("source", Some(65), "glyph mapping or advance changed"),
+            ("candidate", Some(65), "glyph mapping or advance changed"),
+            ("candidate", Some(65), "glyph render policy changed"),
+            ("source", Some(66), "glyph mapping or advance changed"),
+            ("candidate", Some(66), "glyph mapping or advance changed"),
+            ("candidate", Some(66), "glyph render policy changed"),
+        ]
+    );
+}
+
+#[test]
+fn duplicate_records_report_failure_and_use_last_record_for_diagnostics() {
+    let (source, upstream, base) = reports("mono_1bit");
+    let mut small = base.clone();
+    replace_outline(&mut small, rectangle(0.0, 0.0, 1.0, 1.0));
+    let mut large = base.clone();
+    replace_outline(&mut large, rectangle(0.0, 0.0, 2.0, 2.0));
+    for (first, last, area, ink) in [
+        (&small.records[0], &large.records[0], 4.0, 4),
+        (&large.records[0], &small.records[0], 1.0, 1),
+    ] {
+        let mut candidate = base.clone();
+        candidate.records = vec![first.clone(), last.clone()];
+        let evaluation = evaluate(&source, &upstream, &candidate);
+        assert!(!evaluation.hard_invariants_pass);
+        assert_eq!(
+            ordered_failures(&evaluation),
+            vec![("candidate", Some(65), "duplicate glyph record")],
+        );
+        assert_eq!(evaluation.glyphs.len(), 1);
+        assert_eq!(evaluation.glyphs[0].candidate.coverage_area_px, area);
+        assert_eq!(evaluation.glyphs[0].candidate.delivered_ink_pixels, ink);
+    }
+}
