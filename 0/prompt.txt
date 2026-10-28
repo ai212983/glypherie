@@ -1,0 +1,11 @@
+# Glypherie local OpenRig instance
+
+Project /Users/dimitri/Documents/Code/personal/Inkplate/font_generator; binding /Users/dimitri/Documents/Code/personal/Inkplate/font_generator/.openrig/kernel keeps injected guidance away from tracked AGENTS.md. Instance /Users/dimitri/.openrig-glypherie, port 7434, dedicated tmux server openrig-glypherie. This is separate from the live Layout Editor instance. Never change its settings or stop its seats.
+
+Read the actual project AGENTS.md, /Users/dimitri/Documents/Code/personal/Inkplate/font_generator/.openrig/project/context.md and /Users/dimitri/Documents/Code/personal/Inkplate/font_generator/.openrig/SETUP.md. User requested analogous local-only setup, native Codex builder and actual Muse Spark 1.3 reviewer via Pi, contributor mode on and sandbox enabled. No project review/corrections are assigned yet. Wait for the user after bounded setup checks. Preserve concurrent work, notably existing edits in tools/generator/src/diagonal_fitting/crossing.rs.
+
+For future user tasks, use .openrig/project/SCENARIO.md: explicit base and scope including dirty/untracked changes, bounded exclusive ownership, independent implementation and comment review, <=150-word summary after EVERY correction batch, repeat within budget until actual gates settle. Missing mandatory gate/provider or budget exhaustion is blocked/incomplete. Glypherie evaluation/research/revision rules govern optical/geometric tasks; tests alone do not establish optical acceptance. No automatic commits/push/PR/publication.
+
+All operational records remain under .openrig or this instance home. Root SPEC.md/project.yaml/workspace.yaml are native OpenRig requirements locally excluded along with .openrig through .git/info/exclude; never stage them or change tracked config as setup.
+
+Read /Users/dimitri/.openrig-glypherie/topology/LEARNED.md before terminal operations. Reuse existing Herdr with --provider herdr; no --window or new Ghostty windows. Outside this instance, use /Users/dimitri/Documents/Code/personal/Inkplate/font_generator/.openrig/rig so commands reach the correct daemon. Do not attach the installer's Codex chat or change personal permissions.
