@@ -436,70 +436,98 @@ def arguments():
     return parser.parse_args()
 
 
-def cases_from(args):
+def _parse_axes(items):
     axes = {}
-    for item in args.axis:
+    for item in items:
         tag, value = item.split('=', 1)
         if tag in axes:
             raise ValueError(f'Duplicate axis {tag}')
         axes[tag] = float(value)
+    return axes
+
+
+def _default_case(args, axes):
     defaults = {key: getattr(args, key) for key in ['threshold', 'fitting', 'rasterization', 'diagonal_fitting', 'dropout', 'include_stubs', 'font_instructions', 'width', 'line_step']}
     defaults.update(font=str(args.font.resolve()), axes=axes, text=args.text_file.read_text() if args.text_file else args.text, stem_target_px=args.stem_target_px, family_id=None, family_label=None, font_url=None, font_sha256=None)
+    return defaults
+
+
+def _load_entries(args):
     entries = json.loads(args.config.read_text()) if args.config else [{'id': f'size-{size}', 'size_px': size} for size in (args.size or [16])]
     if not isinstance(entries, list) or not entries:
         raise ValueError('Config must be a nonempty array of cases')
+    return entries
+
+
+def _claim_case_id(case, ids):
+    if 'id' not in case or not isinstance(case['id'], str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', case['id']) or case['id'] in ids:
+        raise ValueError('Every case needs a unique safe id')
+    ids.add(case['id'])
+
+
+def _resolve_case_font(case, config):
+    source = Path(case['font'])
+    case['font'] = str(((config.resolve().parent / source) if config and not source.is_absolute() else source).resolve())
+    font_path, font_url, font_digest = Path(case['font']), case.get('font_url'), case.get('font_sha256')
+    if font_url is not None and (not isinstance(font_url, str) or not font_url.startswith(('https://', 'http://'))):
+        raise ValueError('font_url must be an http(s) URL')
+    if font_digest is not None and (not isinstance(font_digest, str) or not re.fullmatch(r'[0-9a-f]{64}', font_digest)):
+        raise ValueError('font_sha256 must be a 64-character lowercase hex digest')
+    if font_url is None and font_digest is None:
+        if not font_path.is_file():
+            raise ValueError(f'Font not found: {case["font"]}')
+    else:
+        if font_url is not None and font_digest is None:
+            raise ValueError('font_url requires a pinned font_sha256')
+        if font_path.is_file() and font_digest is not None and sha(font_path.read_bytes()) == font_digest:
+            pass
+        elif font_url is None:
+            raise ValueError(f'Font identity mismatch: {case["font"]}')
+        else:
+            fetch_pinned_font(font_url, font_digest, font_path)
+
+
+def _validate_case(case):
+    if type(case.get('size_px')) is not int or not 4 <= case['size_px'] <= 96:
+        raise ValueError('size_px must be an integer in 4..96')
+    if type(case['threshold']) is not int or not 1 <= case['threshold'] <= 254:
+        raise ValueError('threshold must be an integer in 1..254')
+    if not isinstance(case['text'], str) or not case['text'].strip() or len(case['text']) > 8192 or any(ch not in ASCII + '\n' for ch in case['text']):
+        raise ValueError('Text must contain printable ASCII and LF only, with visible text and at most 8192 characters')
+    if not isinstance(case['axes'], dict) or any(not isinstance(k, str) or len(k) != 4 or type(v) not in (int, float) or not math.isfinite(v) for k, v in case['axes'].items()):
+        raise ValueError('axes must map four-character tags to finite numbers')
+    if case['stem_target_px'] is not None and (type(case['stem_target_px']) not in (int, float) or not 0.5 <= case['stem_target_px'] <= 4):
+        raise ValueError('stem_target_px must be in 0.5..4')
+    if case['family_id'] is not None and (not isinstance(case['family_id'], str) or not re.fullmatch(r'[a-z0-9-]+', case['family_id'])):
+        raise ValueError('family_id must be a safe lowercase identifier')
+    if case['family_label'] is not None and (not isinstance(case['family_label'], str) or not case['family_label'].strip()):
+        raise ValueError('family_label must be a nonempty string')
+    if type(case['width']) is not int or not 64 <= case['width'] <= 16384 or (case['line_step'] is not None and (type(case['line_step']) is not int or not 1 <= case['line_step'] <= 1024)):
+        raise ValueError('width must be 64..16384; line_step must be 1..1024')
+    canvas_height = case['size_px'] * 6 + (len(case['text'].split('\n')) - 1) * (case['line_step'] or case['size_px'] * 3)
+    if canvas_height * case['width'] > 16_777_216:
+        raise ValueError('Uncropped canvas exceeds 16,777,216 pixels; reduce text, size, width or line_step')
+    # Validate the effective combination before building tools or capturing.
+    for key in ['diagonal_fitting', 'include_stubs', 'font_instructions']:
+        if case[key] is not None and type(case[key]) is not bool:
+            raise ValueError(f'{key} must be boolean')
+    if (case['fitting'] is not None and case['fitting'] not in ['font_hints_auto', 'font_hints_first', 'source_relative', 'upstream_mono']) or (case['rasterization'] is not None and case['rasterization'] not in ['free_type_mono', 'free_type_mono_terminals']) or (case['dropout'] is not None and case['dropout'] not in ['smart', 'simple', 'off']):
+        raise ValueError('Invalid Glypherie pipeline or scan settings')
+
+
+def cases_from(args):
+    axes = _parse_axes(args.axis)
+    defaults = _default_case(args, axes)
+    entries = _load_entries(args)
     cases, ids = [], set()
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) - (set(defaults) | {'id', 'size_px'}):
             raise ValueError('Case contains unknown settings')
         case = {**defaults, **entry}
-        if 'id' not in case or not isinstance(case['id'], str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', case['id']) or case['id'] in ids:
-            raise ValueError('Every case needs a unique safe id')
-        ids.add(case['id'])
-        source = Path(case['font'])
-        case['font'] = str(((args.config.resolve().parent / source) if args.config and not source.is_absolute() else source).resolve())
-        font_path, font_url, font_digest = Path(case['font']), case.get('font_url'), case.get('font_sha256')
-        if font_url is not None and (not isinstance(font_url, str) or not font_url.startswith(('https://', 'http://'))):
-            raise ValueError('font_url must be an http(s) URL')
-        if font_digest is not None and (not isinstance(font_digest, str) or not re.fullmatch(r'[0-9a-f]{64}', font_digest)):
-            raise ValueError('font_sha256 must be a 64-character lowercase hex digest')
-        if font_url is None and font_digest is None:
-            if not font_path.is_file():
-                raise ValueError(f'Font not found: {case["font"]}')
-        else:
-            if font_url is not None and font_digest is None:
-                raise ValueError('font_url requires a pinned font_sha256')
-            if font_path.is_file() and font_digest is not None and sha(font_path.read_bytes()) == font_digest:
-                pass
-            elif font_url is None:
-                raise ValueError(f'Font identity mismatch: {case["font"]}')
-            else:
-                fetch_pinned_font(font_url, font_digest, font_path)
-        if type(case.get('size_px')) is not int or not 4 <= case['size_px'] <= 96:
-            raise ValueError('size_px must be an integer in 4..96')
-        if type(case['threshold']) is not int or not 1 <= case['threshold'] <= 254:
-            raise ValueError('threshold must be an integer in 1..254')
-        if not isinstance(case['text'], str) or not case['text'].strip() or len(case['text']) > 8192 or any(ch not in ASCII + '\n' for ch in case['text']):
-            raise ValueError('Text must contain printable ASCII and LF only, with visible text and at most 8192 characters')
-        if not isinstance(case['axes'], dict) or any(not isinstance(k, str) or len(k) != 4 or type(v) not in (int, float) or not math.isfinite(v) for k, v in case['axes'].items()):
-            raise ValueError('axes must map four-character tags to finite numbers')
-        if case['stem_target_px'] is not None and (type(case['stem_target_px']) not in (int, float) or not 0.5 <= case['stem_target_px'] <= 4):
-            raise ValueError('stem_target_px must be in 0.5..4')
-        if case['family_id'] is not None and (not isinstance(case['family_id'], str) or not re.fullmatch(r'[a-z0-9-]+', case['family_id'])):
-            raise ValueError('family_id must be a safe lowercase identifier')
-        if case['family_label'] is not None and (not isinstance(case['family_label'], str) or not case['family_label'].strip()):
-            raise ValueError('family_label must be a nonempty string')
-        if type(case['width']) is not int or not 64 <= case['width'] <= 16384 or (case['line_step'] is not None and (type(case['line_step']) is not int or not 1 <= case['line_step'] <= 1024)):
-            raise ValueError('width must be 64..16384; line_step must be 1..1024')
-        canvas_height = case['size_px'] * 6 + (len(case['text'].split('\n')) - 1) * (case['line_step'] or case['size_px'] * 3)
-        if canvas_height * case['width'] > 16_777_216:
-            raise ValueError('Uncropped canvas exceeds 16,777,216 pixels; reduce text, size, width or line_step')
-        # Validate the effective combination before building tools or capturing.
-        for key in ['diagonal_fitting', 'include_stubs', 'font_instructions']:
-            if case[key] is not None and type(case[key]) is not bool:
-                raise ValueError(f'{key} must be boolean')
-        if (case['fitting'] is not None and case['fitting'] not in ['font_hints_auto', 'font_hints_first', 'source_relative', 'upstream_mono']) or (case['rasterization'] is not None and case['rasterization'] not in ['free_type_mono', 'free_type_mono_terminals']) or (case['dropout'] is not None and case['dropout'] not in ['smart', 'simple', 'off']):
-            raise ValueError('Invalid Glypherie pipeline or scan settings')
+        _claim_case_id(case, ids)
+        # Preserve font I/O before validation and policy checks before the next case.
+        _resolve_case_font(case, args.config)
+        _validate_case(case)
         resolve_renderer_policy(case)
         cases.append(case)
     if args.publish and len(cases) != 1:
