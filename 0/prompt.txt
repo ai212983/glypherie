@@ -1,0 +1,17 @@
+push
+
+---
+
+what would you target next?
+
+---
+
+do it with Muse, then prune comments
+
+---
+
+review this diff with different lenses under Muse
+
+---
+
+commit changes, then suggest next target
