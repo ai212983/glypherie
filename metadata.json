@@ -3,8 +3,10 @@
   "checkpoint_id": "01M60R9QM5ENYT0VPGZ6T1BS2T",
   "strategy": "manual-commit",
   "branch": "slice/code-cleanup",
-  "checkpoints_count": 1,
-  "files_touched": null,
+  "checkpoints_count": 2,
+  "files_touched": [
+    "README.md"
+  ],
   "sessions": [
     {
       "metadata": "/0/metadata.json",
@@ -12,25 +14,31 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 98238,
+    "input_tokens": 144260,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 10008192,
-    "output_tokens": 23185,
-    "api_call_count": 57,
-    "subagent_tokens_complete": true
+    "cache_read_tokens": 10226944,
+    "output_tokens": 23723,
+    "api_call_count": 63
   },
   "redaction": {
-    "replacements": 252,
+    "replacements": 329,
     "layers": {
-      "betterleaks": 128,
+      "betterleaks": 192,
       "connection_string": 0,
       "credential_key": 0,
-      "credential_value": 4,
+      "credential_value": 6,
       "credentialed_uri": 0,
-      "entropy": 120,
+      "entropy": 131,
       "key_context": 0,
       "provider_token": 0,
       "shell_stdin": 0

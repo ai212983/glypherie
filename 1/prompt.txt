@@ -1,0 +1,1 @@
+commit readme.md only, report of any errors during commit
