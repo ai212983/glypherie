@@ -1,0 +1,1 @@
+I want rasterize existing ttf. Which options would you recommend to rasterize a sample text?
