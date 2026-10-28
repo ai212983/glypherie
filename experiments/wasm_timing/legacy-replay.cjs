@@ -13,10 +13,10 @@ for (let round = 0; round < Number(process.env.ROUNDS ?? 4); round++) {
   const comparison = round === 0 ? 'AA' : 'AB';
   const id = `node-exact-legacy-${comparison}-forward-${round}`;
   const replacementPaths = { before: path.join(trial, 'pkg-nodejs-before'), after: comparison === 'AA'
-    ? path.join(root, 'tools/wasm/pkg-nodejs-preview') : path.join(trial, 'pkg-nodejs-sparse-trial') };
+    ? path.join(root, 'crates/wasm/pkg-nodejs-preview') : path.join(trial, 'pkg-nodejs-sparse-trial') };
   const replacements = [
     ["const root=path.resolve(__dirname,'../../..');", `const root=${JSON.stringify(root)};`],
-    ["const paths={before:path.join(__dirname,'pkg-nodejs-before'),after:path.join(root,'tools/wasm/pkg-nodejs-preview')};", `const paths=${JSON.stringify(replacementPaths)};`],
+    ["const paths={before:path.join(__dirname,'pkg-nodejs-before'),after:path.join(root,'crates/wasm/pkg-nodejs-preview')};", `const paths=${JSON.stringify(replacementPaths)};`],
     ["path.join(__dirname,process.env.OUTPUT??'timing.json')", 'process.env.OUTPUT'],
   ];
   let generated = original;

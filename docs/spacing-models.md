@@ -11,7 +11,7 @@ a preview mode.
 Fitting supplies the glyph outline and, when available, its adjusted advance. Layout finalizes whole-pixel advances and
 sparse whole-pixel pair adjustments, shared by preview, native specimens and bitmap export. Changing placement does not
 refit the glyph or change its bitmap. The exact rules belong to the
-[generator spacing API](../tools/generator/API.md#live-spacing-api).
+[generator spacing API](../crates/generator/API.md#live-spacing-api).
 
 Adjusted advances and bearing-rounding residuals serve different purposes. Layout uses the adjusted advances and applies
 available residuals as additional pair compensation, exactly once per pair. Candidate automatic-Mono captures carry the
@@ -35,7 +35,7 @@ every finalized advance, including spaces and the final glyph advance. Negative 
 overlap glyphs; the requested amount is not limited by minimum gaps or per-glyph clamps. Bitmaps and pair adjustments
 stay unchanged; measurement, wrapping and tracked export use the adjusted advances.
 
-The [tracking API](../tools/generator/API.md#tracking-policy) documents the wider native range and historical tracking
+The [tracking API](../crates/generator/API.md#tracking-policy) documents the wider native range and historical tracking
 protections. Saved variants retain their kerning and tracking settings.
 
 There are no independent word-spacing or line-spacing controls. Fonts exposing an optical-size axis can change their

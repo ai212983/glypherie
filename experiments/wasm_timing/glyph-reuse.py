@@ -15,7 +15,7 @@ OUT = ROOT / 'out/diagnostics/glyph-reuse-optimization'
 def clone(destination):
     assert not destination.exists()
     for name in ['generator', 'wasm']:
-        base, target = ROOT / 'tools' / name, destination / 'tools' / name
+        base, target = ROOT / 'crates' / name, destination / 'crates' / name
         target.mkdir(parents=True)
         for filename in ['Cargo.toml', 'Cargo.lock', 'build.rs']:
             if (base / filename).exists():
@@ -32,12 +32,12 @@ def clone(destination):
 def census():
     source = OUT / 'source-census'
     clone(source)
-    qp = source / 'tools/generator/src/candidate.rs'
+    qp = source / 'crates/generator/src/candidate.rs'
     text = qp.read_text()
     needle = '        let Ok(fit) = crate::diagonal_fitting::approved::fit('
     if needle not in text:
         needle = '        let compute = || {'
-        session = source / 'tools/generator/src/reference.rs'
+        session = source / 'crates/generator/src/reference.rs'
         session.write_text(session.read_text().replace('diagonal_fits: Some(&font.diagonal_fits)',
                                                      'diagonal_fits: None'))
     assert text.count(needle) == 1
@@ -49,9 +49,9 @@ def census():
 ''' + needle)
     qp.write_text(text)
     shutil.copyfile(ROOT / 'experiments/wasm_timing/glyph-reuse-probe.rs',
-                    source / 'tools/generator/src/bin/glyph_reuse_probe.rs')
+                    source / 'crates/generator/src/bin/glyph_reuse_probe.rs')
     command = ['cargo', 'run', '--locked', '--offline', '--release', '--manifest-path',
-               source / 'tools/generator/Cargo.toml', '--target-dir', OUT / 'target-native',
+               source / 'crates/generator/Cargo.toml', '--target-dir', OUT / 'target-native',
                '--bin', 'glyph_reuse_probe', '--', ROOT / 'fonts']
     with (OUT / 'census.jsonl').open('w') as output, (OUT / 'census.log').open('w') as log:
         subprocess.run(command, stdout=output, stderr=log, check=True)
@@ -85,7 +85,7 @@ def build(label):
     with (OUT / f'build-{label}.log').open('w') as log:
         subprocess.run(['cargo', 'build', '--locked', '--offline', '--release', '--target',
                         'wasm32-unknown-unknown', '--features', 'preview', '--manifest-path',
-                        source / 'tools/wasm/Cargo.toml', '--target-dir', OUT / 'target-wasm'],
+                        source / 'crates/wasm/Cargo.toml', '--target-dir', OUT / 'target-wasm'],
                        env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
     wasm = OUT / 'target-wasm/wasm32-unknown-unknown/release/font_wasm.wasm'
     bindgen = env.get('WASM_BINDGEN', '/tmp/font-generator-wasm-tools/bin/wasm-bindgen')
@@ -104,7 +104,7 @@ def build(label):
 def stats():
     source = OUT / 'source-stats'
     clone(source)
-    module = source / 'tools/generator/src/diagonal_fitting/reuse.rs'
+    module = source / 'crates/generator/src/diagonal_fitting/reuse.rs'
     module.write_text(module.read_text().replace('#[cfg(test)]', '') + '''
 impl FitCache {
     pub(crate) fn snapshot(&self) -> serde_json::Value {
@@ -113,7 +113,7 @@ impl FitCache {
     }
 }
 ''')
-    font = source / 'tools/generator/src/source.rs'
+    font = source / 'crates/generator/src/source.rs'
     font.write_text(font.read_text() + '''
 impl PreparedFont {
     pub fn diagnostic_cache_stats(&self) -> serde_json::Value {
@@ -123,10 +123,10 @@ impl PreparedFont {
 ''')
     probe = (ROOT / 'experiments/wasm_timing/glyph-reuse-probe.rs').read_text()
     probe = probe.replace('"ms":', '"cache": font.diagnostic_cache_stats(), "ms":')
-    (source / 'tools/generator/src/bin/glyph_reuse_probe.rs').write_text(probe)
+    (source / 'crates/generator/src/bin/glyph_reuse_probe.rs').write_text(probe)
     with (OUT / 'cache-stats.jsonl').open('w') as output, (OUT / 'cache-stats.log').open('w') as log:
         subprocess.run(['cargo', 'run', '--locked', '--offline', '--release', '--manifest-path',
-                        source / 'tools/generator/Cargo.toml', '--target-dir', OUT / 'target-native',
+                        source / 'crates/generator/Cargo.toml', '--target-dir', OUT / 'target-native',
                         '--bin', 'glyph_reuse_probe', '--', ROOT / 'fonts'], stdout=output, stderr=log, check=True)
     baseline = [json.loads(line) for line in (OUT / 'census.jsonl').read_text().splitlines()]
     rows = [json.loads(line) for line in (OUT / 'cache-stats.jsonl').read_text().splitlines()]

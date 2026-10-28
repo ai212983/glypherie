@@ -34,9 +34,9 @@ if REPO not in sys.path:
     sys.path.insert(0, REPO)
 
 TOOL_VERSION = "direct-diagonal-run-v2"
-DEFAULT_ADAPTER = "tools/generator/target/debug/strokestyles-fit-adapter"
+DEFAULT_ADAPTER = "crates/generator/target/debug/strokestyles-fit-adapter"
 BUILD_ADAPTER_CMD = (
-    "CARGO_TARGET_DIR=tools/generator/target cargo build --locked --offline "
+    "CARGO_TARGET_DIR=crates/generator/target cargo build --locked --offline "
     "--manifest-path experiments/strokestyles_fitting/native/Cargo.toml"
 )
 

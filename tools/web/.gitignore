@@ -1,6 +1,0 @@
-# Staged preview renderer (copied from tools/wasm/pkg-web-preview by
-# scripts/stage-wasm.ts; includes degraded dev stubs when unstaged).
-src/app/renderer/wasm/
-
-# Storybook diagnostic output.
-/debug-storybook.log

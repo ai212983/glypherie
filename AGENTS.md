@@ -20,23 +20,25 @@ Before tackling a problem, follow the [research workflow](docs/evaluation.md#res
 
 ## Code placement
 
-Maintained commands, apps and runtime live in `tools/`; exploratory prototypes, harnesses and adapters live in
-`experiments/`. Read [experiment guidance](experiments/AGENTS.md) before adding or moving experiment code. Extend the
-owning component rather than creating a parallel helper project. Maintained components never depend on `experiments/`;
-experiments may use maintained APIs. Extract shared code only for concrete consumers. Record adoption of an experiment
-in the owning design or iteration document, with the verification and interfaces that adoption requires.
+Applications live in `apps/`; shared Rust packages live in `crates/`; GitHub Actions helpers live in `.github/scripts/`
+with repository-level checks in `tests/tooling/`; exploratory prototypes, harnesses and adapters live in `experiments/`.
+Corpus-specific adapters live beside their corpus. Read [experiment guidance](experiments/AGENTS.md) before adding or
+moving experiment code. Extend the owning component rather than creating a parallel helper project. Maintained
+components never depend on `experiments/`; experiments may use maintained APIs. Extract shared code only for concrete
+consumers. Record adoption of an experiment in the owning design or iteration document, with the verification and
+interfaces that adoption requires.
 
 ## Task guidance
 
 Read first, according to the task:
 
 - Fitting, spacing, raster changes or evaluation tests: [evaluation rules](docs/evaluation.md).
-- Renderer routing, settings or native layout: [generator API](tools/generator/API.md).
-- Preview generation, comparison or publication: [generator contract](tools/generator/CONTRACT.md) and
+- Renderer routing, settings or native layout: [generator API](crates/generator/API.md).
+- Preview generation, comparison or publication: [generator contract](crates/generator/CONTRACT.md) and
   [review rules](docs/evaluation.md#review-and-decision).
-- Web boundaries or publication: [web contract](tools/web/CONTRACT.md); setup and commands in the
-  [web README](tools/web/README.md).
-- WASM interface or build: [WASM README](tools/wasm/README.md).
+- Web boundaries or publication: [web contract](apps/web/CONTRACT.md); setup and commands in the
+  [web README](apps/web/README.md).
+- WASM interface or build: [WASM README](crates/wasm/README.md).
 - Experiments, prototypes or harnesses: [experiment guidance](experiments/AGENTS.md).
 - Iteration scope, decisions or closure: [revision guide](docs/revisions/README.md) and the relevant revision index.
 - Formatting and checks: [task recipes](justfile) and [hook configuration](lefthook.yml).

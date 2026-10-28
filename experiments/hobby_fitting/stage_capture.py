@@ -23,10 +23,10 @@ edition="2021"
 [dependencies]
 font_generator={path=GENERATOR_PATH}
 serde_json={version="1",features=["float_roundtrip"]}
-'''.replace("GENERATOR_PATH", json.dumps(str(ROOT / "tools/generator"))))
+'''.replace("GENERATOR_PATH", json.dumps(str(ROOT / "crates/generator"))))
     locked = (harness / "Cargo.lock").exists()
     if not locked:
-        shutil.copyfile(ROOT / "tools/generator/Cargo.lock", harness / "Cargo.lock")
+        shutil.copyfile(ROOT / "crates/generator/Cargo.lock", harness / "Cargo.lock")
     (harness / "src/main.rs").write_text('''use std::io::{self,BufRead};
 fn main(){for line in io::stdin().lock().lines(){
 let row:serde_json::Value=serde_json::from_str(&line.unwrap()).unwrap();
@@ -39,9 +39,9 @@ println!("{}",serde_json::json!({"cell":row["cell"],"output":report}));
 }}''')
     with (OUT / f"capture-build-{label}.log").open("w") as log:
         subprocess.run(["cargo", "build", "--release", "--offline", *(["--locked"] if locked else []),
-                        "--manifest-path", str(harness / "Cargo.toml"), "--target-dir", str(ROOT / "tools/generator/target")],
+                        "--manifest-path", str(harness / "Cargo.toml"), "--target-dir", str(ROOT / "crates/generator/target")],
                        stdout=log, stderr=subprocess.STDOUT, check=True)
-    shutil.copyfile(ROOT / "tools/generator/target/release/stage-capture", binary)
+    shutil.copyfile(ROOT / "crates/generator/target/release/stage-capture", binary)
     binary.chmod(0o755)
 
 

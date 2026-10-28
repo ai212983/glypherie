@@ -24,7 +24,7 @@ hooks-test:
 
 # Check Rust formatting without changing files.
 rust-fmt-check:
-    cargo fmt --manifest-path tools/generator/Cargo.toml --check
+    cargo fmt --manifest-path crates/generator/Cargo.toml --check
 
 # Install the pinned formatter and spell checker.
 docs-setup:
@@ -45,68 +45,68 @@ spell-check:
 
 # Install locked web dependencies.
 web-setup:
-    npm --prefix tools/web ci --ignore-scripts
+    npm --prefix apps/web ci --ignore-scripts
 
-# Build the WASM font renderer via tools/wasm/build.sh (owned separately; never
+# Build the WASM font renderer via crates/wasm/build.sh (owned separately; never
 # installs toolchains). The browser app stages the source package into a
-# hashed Vite asset; inputs are documented in the [WASM interface](tools/wasm/README.md).
+# hashed Vite asset; inputs are documented in the [WASM interface](crates/wasm/README.md).
 wasm-build:
-    tools/wasm/build.sh web
+    crates/wasm/build.sh web
 
 # Build the candidate-enabled preview WASM renderer. Uses the opt-in `preview`
 # cargo feature, which enables the generator's `candidate` feature; the output
-# (tools/wasm/pkg-web-preview-simd128/) uses standard SIMD and stays separate
-# from the production artifact (tools/wasm/pkg-web/, built by `wasm-build`).
+# (crates/wasm/pkg-web-preview-simd128/) uses standard SIMD and stays separate
+# from the production artifact (crates/wasm/pkg-web/, built by `wasm-build`).
 wasm-build-preview:
-    WASM_SIMD128=1 tools/wasm/build.sh web preview
+    WASM_SIMD128=1 crates/wasm/build.sh web preview
 
 # Build the browser app into out/web/.
 web:
-    npm --prefix tools/web run build
+    npm --prefix apps/web run build
 
 # Serve the browser app with live reload, without generating specimens.
 dev $web_port="8903":
-    npm --prefix tools/web run dev -- --port="$web_port"
+    npm --prefix apps/web run dev -- --port="$web_port"
 
 # Serve the current browser app; `preview` keeps the review-workflow name.
 alias preview := dev
 
 # Serve the built app separately from the dev server.
 web-serve:
-    npm --prefix tools/web run preview
+    npm --prefix apps/web run preview
 
 # Generate and publish the configured specimen packages.
-specimens $config_path="tools/generator/specimens.json" $output_dir="out/specimens":
-    cargo run --locked --manifest-path tools/generator/Cargo.toml --bin font_specimens -- "$config_path" "$output_dir"
+specimens $config_path="crates/generator/specimens.json" $output_dir="out/specimens":
+    cargo run --locked --manifest-path crates/generator/Cargo.toml --bin font_specimens -- "$config_path" "$output_dir"
 
 # Check web browser types without emitting files.
 web-typecheck:
-    npm --prefix tools/web run typecheck
+    npm --prefix apps/web run typecheck
 
 # Run the web tests.
 web-test:
-    npm --prefix tools/web run test
+    npm --prefix apps/web run test
 
 # Capture the five front-page converters; activate the sample-script environment first.
 landing-samples *args:
-    python3 tools/web/scripts/landing-samples/generate.py "$@"
+    python3 apps/web/scripts/landing-samples/generate.py "$@"
 
 # Serve isolated web components with live reload.
 web-storybook:
-    npm --prefix tools/web run storybook
+    npm --prefix apps/web run storybook
 
 # Build the component explorer into out/storybook/.
 web-storybook-build:
-    npm --prefix tools/web run build-storybook
+    npm --prefix apps/web run build-storybook
 
 # Export aligned glyph images and pixel differences from published renders.
-comparisons $config_path="tools/generator/comparisons.json" $specimen_dir="out/specimens":
-    cargo run --locked --manifest-path tools/generator/Cargo.toml --bin font_comparison -- "$config_path" "$specimen_dir"
+comparisons $config_path="crates/generator/comparisons.json" $specimen_dir="out/specimens":
+    cargo run --locked --manifest-path crates/generator/Cargo.toml --bin font_comparison -- "$config_path" "$specimen_dir"
 
 # Stage Playdate Font Lab and compile out/playdate-font-lab/FontLab.pdx.
 playdate-build *args:
-    node tools/playdate/build.mjs {{args}}
+    node apps/playdate-fontlab/build.mjs {{args}}
 
 # Build FontLab.pdx and open it in the SDK Simulator.
 playdate-run *args:
-    node tools/playdate/build.mjs --run {{args}}
+    node apps/playdate-fontlab/build.mjs --run {{args}}

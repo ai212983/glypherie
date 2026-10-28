@@ -22,7 +22,7 @@ for kind in ['web', 'nodejs']:
     assert not (OUT / f'pkg-{kind}-{label}').exists(), 'Preserve the frozen package.'
 with (OUT / f'build-{label}.log').open('w') as log:
     subprocess.run(['cargo', 'build', '--locked', '--offline', '--release', '--target', 'wasm32-unknown-unknown',
-                    '--manifest-path', str(ROOT / 'tools/wasm/Cargo.toml'), '--target-dir', str(OUT / 'target'),
+                    '--manifest-path', str(ROOT / 'crates/wasm/Cargo.toml'), '--target-dir', str(OUT / 'target'),
                     '--features', 'preview'], env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
 wasm = OUT / 'target/wasm32-unknown-unknown/release/font_wasm.wasm'
 for kind in ['web', 'nodejs']:

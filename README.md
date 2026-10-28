@@ -33,7 +33,7 @@ Quality checks:
 ```sh
 npm run fmt:check
 npm run spell:check
-cargo fmt --manifest-path tools/generator/Cargo.toml --check
+cargo fmt --manifest-path crates/generator/Cargo.toml --check
 npm test
 ```
 
@@ -41,9 +41,9 @@ npm test
 
 ### Documentation
 
-- [Generator](tools/generator/README.md)
-- [Web preview](tools/web/README.md)
-- [WASM renderer](tools/wasm/README.md)
+- [Generator](crates/generator/README.md)
+- [Web preview](apps/web/README.md)
+- [WASM renderer](crates/wasm/README.md)
 - [Experiments](experiments/AGENTS.md)
 - [Font assets](fonts/README.md)
 - [Evaluation](docs/evaluation.md)

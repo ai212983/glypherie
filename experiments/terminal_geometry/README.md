@@ -15,5 +15,5 @@ python3 -m experiments.terminal_geometry.replay
 Replay reads `out/diagnostics/terminal-stub-correction-20261020/corpus.json` (before/after fixed FreeType scans) crossed
 with `out/diagnostics/source-feature-work-20261020/source-controls.json` (source outlines) and writes
 `out/diagnostics/source-feature-work-20261020/terminal-report.json` (parent-assigned path, kept out of
-`out/diagnostics/terminal_geometry/`). The maintained kernel is `tools/generator/src/terminal_caps.rs`; adoption and
+`out/diagnostics/terminal_geometry/`). The maintained kernel is `crates/generator/src/terminal_caps.rs`; adoption and
 assessment live in the owning iteration.

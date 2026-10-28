@@ -11,19 +11,19 @@ input identities with each result, then investigate reported differences against
 | `font_hint_probe`   | Explicit automatic or interpreter fitting captures for monochrome output                                                             |
 | `common_rasterizer` | Coverage and pixels from supplied outline commands with declared rendering settings                                                  |
 
-The [generator README](../../tools/generator/README.md#rendering-settings) describes reference rendering controls. The
+The [generator README](../../crates/generator/README.md#rendering-settings) describes reference rendering controls. The
 reference API keeps upstream rendering independent of optional fitting changes.
 
 ## Compare specimens
 
 `font_comparison` exports glyph images and pixel differences aligned to a shared origin and baseline. Its selection and
-output are described in the [comparison contract](../../tools/generator/CONTRACT.md#glyph-comparison-export).
+output are described in the [comparison contract](../../crates/generator/CONTRACT.md#glyph-comparison-export).
 
 `font_specimen_diff` compares two canonical generation artifacts and records changed outlines, pixels, metrics, and
 advances. For monochrome glyphs it also reports changes in connected ink components and enclosed white regions:
 
 ```sh
-cargo run --locked --manifest-path tools/generator/Cargo.toml --bin font_specimen_diff -- \
+cargo run --locked --manifest-path crates/generator/Cargo.toml --bin font_specimen_diff -- \
   REFERENCE_CANONICAL.json PROPOSAL_CANONICAL.json OUTPUT.json
 ```
 
@@ -35,7 +35,7 @@ source and visual review; it does not establish whether the change improves read
 Run the generator suite from the repository root:
 
 ```sh
-cargo test --locked --manifest-path tools/generator/Cargo.toml
+cargo test --locked --manifest-path crates/generator/Cargo.toml
 ```
 
 The tests cover supported font formats, rendering controls, reproducibility, source metrics, layout, reference

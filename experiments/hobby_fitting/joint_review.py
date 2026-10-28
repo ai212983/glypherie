@@ -100,7 +100,7 @@ def main():
     records = {r['codepoint']: r for r in case['modes'][args.hint]['records']}
     module = importlib.import_module('experiments.hobby_fitting.' + (
         'joint_diagonal' if args.model == 'diagonal' else 'smooth_curve_fit'))
-    binary = str(ROOT / 'tools/generator/target/debug/strokestyles-fit-adapter')
+    binary = str(ROOT / 'crates/generator/target/debug/strokestyles-fit-adapter')
     selected = set(map(ord, args.glyphs)) if args.glyphs else set(records)
     old_tiles, new_tiles, glyphs = {}, {}, []
     with tempfile.TemporaryDirectory() as scratch:

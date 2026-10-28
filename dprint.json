@@ -6,7 +6,8 @@
     "AGENTS.md",
     "fonts/**/*.md",
     "docs/**/*.md",
-    "tools/**/*.md",
+    "apps/**/*.md",
+    "crates/**/*.md",
     "experiments/**/*.md",
     "**/*.{json,jsonc}"
   ],

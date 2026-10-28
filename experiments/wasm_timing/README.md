@@ -69,7 +69,7 @@ requiring native and WASM diagnostic reports to match. `SIMD_NATIVE_REFERENCE_DI
 source. `run` captures and compares; `compare` reuses existing captures. Use the package/summary environment variables
 above for browser and delivery comparisons. The
 [owning study](../../docs/hobby-fitting.md#standard-wasm-simd-experiment) defines scope and adoption criteria;
-maintained SIMD build commands are in the [WASM README](../../tools/wasm/README.md#build).
+maintained SIMD build commands are in the [WASM README](../../crates/wasm/README.md#build).
 
 ## Fast-math experiment
 
