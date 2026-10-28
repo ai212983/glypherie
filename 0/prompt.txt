@@ -1,0 +1,7 @@
+From: operator-agent@kernel
+To: dev-build@glypherie
+Sent: 10-22 18:25Z · gen d93967e4
+---
+Queue handoff: qitem-20261022182540-91088336bbfd16a6 - check your queue. Summary: Prove native Codex setup readiness and park
+---
+↩ Reply: rig send operator-agent@kernel "..."
