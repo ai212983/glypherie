@@ -164,6 +164,10 @@ native_axes, reference, reason, raw_source? }`. `reference` contains the capture
 the unrounded feature input when available. Earlier width/selective captures describe `upstream_commands`; the record's
 final commands and scan policy reproduce its bitmap.
 
+`diagonal_fitting::curve_model::diagnose_automatic_shape` runs the same source-shape selection as `fit_automatic_shape`,
+adding a full binding witness on solve failure. The renderer entry returns only the failure reason and movement caps for
+that failure, without the diagnostic retry; applied geometry and fallback commands agree.
+
 ### Monochrome scan-converter settings
 
 `Config.mono_raster` defaults to `{"dropout":"smart","include_stubs":false,"font_instructions":false}`. `dropout`

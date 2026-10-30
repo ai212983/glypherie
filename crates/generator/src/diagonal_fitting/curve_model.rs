@@ -2813,10 +2813,9 @@ pub fn automatic_shape_gate(
     coupled::gate_report_automatic(source, upstream, size, reference, native_axes)
 }
 
-/// Gate report on raw parsed source geometry (f64, no command
-/// round-trip); always abstains. See `coupled::gate_report_parsed`.
-/// Automatic-Y source-shape prototype solve on raw parsed geometry;
-/// renderer-inactive. See `coupled::fit_shape_automatic`.
+/// Automatic-Y source-shape solve used by the renderer. Failed solves return
+/// minimal diagnostics without a second solve; see `diagnose_automatic_shape`
+/// for the full binding witness.
 pub fn fit_automatic_shape(
     source: &geometry::Parsed,
     source_captured: &[FittedCommand],
@@ -2832,9 +2831,34 @@ pub fn fit_automatic_shape(
         size,
         reference,
         native_axes,
+        false,
     )
 }
 
+/// Explicit source-shape diagnostic entry. Selection and fallback commands are
+/// identical to `fit_automatic_shape`; failed solves additionally retry with
+/// large bounds and retain the complete binding witness for experiment capture.
+pub fn diagnose_automatic_shape(
+    source: &geometry::Parsed,
+    source_captured: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+) -> Result<FitResult, Error> {
+    coupled::fit_shape_automatic(
+        source,
+        source_captured,
+        upstream,
+        size,
+        reference,
+        native_axes,
+        true,
+    )
+}
+
+/// Gate report on raw parsed source geometry (f64, no command round-trip);
+/// always abstains. See `coupled::gate_report_parsed`.
 pub fn automatic_shape_gate_parsed(
     source: &geometry::Parsed,
     upstream: &[FittedCommand],

@@ -186,6 +186,7 @@ pub(super) fn fit(
     size_px: f64,
     reference: &Reference,
     native_axes: [bool; 2],
+    collect_witness: bool,
 ) -> Result<FitResult, Error> {
     require_finite_positive_size(size_px)?;
     let result = PreparedShape::new(
@@ -196,7 +197,7 @@ pub(super) fn fit(
         reference,
         native_axes,
     )
-    .and_then(run);
+    .and_then(|shape| run(shape, collect_witness));
     Ok(result.unwrap_or_else(|reason| reason.into_fit(upstream_cmds)))
 }
 
@@ -248,7 +249,11 @@ struct SolvedShape {
     public_caps: Vec<f64>,
 }
 
-fn solve_shape(shape: &PreparedShape<'_>, system: &AssembledShape) -> ShapeResult<SolvedShape> {
+fn solve_shape(
+    shape: &PreparedShape<'_>,
+    system: &AssembledShape,
+    collect_witness: bool,
+) -> ShapeResult<SolvedShape> {
     let parsed = shape.parsed;
     let fitted = &shape.fitted;
     let up_global = &shape.up_global;
@@ -278,16 +283,21 @@ fn solve_shape(shape: &PreparedShape<'_>, system: &AssembledShape) -> ShapeResul
     let (sol, peak, qp) = match hard_solve_bounded_phase1(&mat, &rhs, &kinds, &bounds) {
         Ok(v) => v,
         Err(reason) => {
+            // The production dispatcher discards failed-stage diagnostics.
+            // Only explicit diagnostic calls need a second solve and the full
+            // binding witness; neither affects selection or fallback geometry.
+            if !collect_witness {
+                return no(
+                    &format!("shape-solve-{reason}"),
+                    serde_json::json!({ "n_hard_rows": n_hard, "caps": caps_meta }),
+                );
+            }
             // Smallest exact binding witness (not a representation limit):
             // retry once with a finite large bound. If that succeeds, the
             // binding constraint is the single movement budget; name the
             // exceeded columns. If it still fails, the binding constraint
             // is among the named intended relationships themselves.
             let big = vec![1e6; bounds.len()];
-            let _n_joint_pre = kinds[..kinds.len().saturating_sub(n_hard)]
-                .iter()
-                .filter(|k| matches!(k, RowKind::Joint | RowKind::White))
-                .count();
             // No speculative constraint drops: the witness below names the
             // binding intended relationship instead of hunting pixels.
             // Same Phase-I entry with large bounds distinguishes bound
@@ -395,9 +405,9 @@ fn solve_shape(shape: &PreparedShape<'_>, system: &AssembledShape) -> ShapeResul
     })
 }
 
-fn run(shape: PreparedShape<'_>) -> ShapeResult<FitResult> {
+fn run(shape: PreparedShape<'_>, collect_witness: bool) -> ShapeResult<FitResult> {
     let system = AssembledShape::new(&shape)?;
-    let solved = solve_shape(&shape, &system)?;
+    let solved = solve_shape(&shape, &system, collect_witness)?;
     let checks = CandidateCertificate::new(&shape, &system, &solved)?.verify()?;
     let mut selected = FitResult {
         commands: solved.commands,

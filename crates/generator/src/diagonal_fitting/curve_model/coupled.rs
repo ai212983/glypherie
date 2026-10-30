@@ -1441,6 +1441,7 @@ pub(super) fn fit_shape_automatic(
     size_px: f64,
     reference: &Reference,
     native_axes: [bool; 2],
+    collect_witness: bool,
 ) -> Result<FitResult, Error> {
     automatic_shape::fit(
         parsed,
@@ -1449,5 +1450,6 @@ pub(super) fn fit_shape_automatic(
         size_px,
         reference,
         native_axes,
+        collect_witness,
     )
 }

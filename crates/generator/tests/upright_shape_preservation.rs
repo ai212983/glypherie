@@ -973,6 +973,66 @@ fn call_kernel(
 }
 
 #[test]
+fn explicit_shape_diagnostics_preserve_selection_and_fallback() {
+    let case = kernel_case(16.0);
+    // A positive X dilation retains topology and the 26.6 grid but puts the
+    // source-relative target beyond the original movement budget. This is a
+    // geometric failure control, not a different production fitting rule.
+    let dilated: Vec<_> = case
+        .upstream
+        .iter()
+        .map(|command| match *command {
+            FittedCommand::MoveTo(x, y) => FittedCommand::MoveTo(4.0 * x, y),
+            FittedCommand::LineTo(x, y) => FittedCommand::LineTo(4.0 * x, y),
+            FittedCommand::QuadTo(cx, cy, x, y) => FittedCommand::QuadTo(4.0 * cx, cy, 4.0 * x, y),
+            FittedCommand::CurveTo(cx, cy, dx, dy, x, y) => {
+                FittedCommand::CurveTo(4.0 * cx, cy, 4.0 * dx, dy, 4.0 * x, y)
+            }
+            FittedCommand::Close => FittedCommand::Close,
+        })
+        .collect();
+    for upstream in [&case.upstream, &dilated] {
+        let production = call_kernel(
+            &case.raw,
+            &case.captured,
+            upstream,
+            &case.reference,
+            [false, false],
+            16.0,
+        );
+        let diagnostic = diagonal_fitting::curve_model::diagnose_automatic_shape(
+            &case.raw,
+            &case.captured,
+            upstream,
+            16.0,
+            &case.reference,
+            [false, false],
+        )
+        .unwrap();
+        assert_eq!(production.applied, diagnostic.applied);
+        assert_eq!(production.reason, diagnostic.reason);
+        assert_eq!(production.commands, diagnostic.commands);
+        if upstream == &case.upstream {
+            assert!(production.applied);
+            assert_eq!(production.diagnostics, diagnostic.diagnostics);
+        } else {
+            assert!(!production.applied);
+            assert!(
+                production.reason.starts_with("shape:shape-solve-"),
+                "{}",
+                production.reason
+            );
+            assert_eq!(production.commands, *upstream);
+            assert!(production.diagnostics.get("witness").is_none());
+            assert!(production.diagnostics.get("finite_retry_ok").is_none());
+            assert!(production.diagnostics.get("caps").is_some());
+            assert!(diagnostic.diagnostics["witness"]["mat"].is_array());
+            assert!(diagnostic.diagnostics["finite_retry_ok"].is_boolean());
+        }
+    }
+}
+
+#[test]
 fn walks_reverse_to_bit_identical_outlines() {
     // Control for the test machinery itself: the forward walks lose
     // nothing, so every raw assert above reads the genuine outline.
