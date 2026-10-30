@@ -88,6 +88,8 @@ pub struct ReferenceRecord {
     pub diagonal_fitting: Option<DiagonalFittingCapture>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_alignment: Option<TopAlignmentCapture>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baseline_alignment: Option<BaselineAlignmentCapture>,
     pub coverage: Vec<u8>,
     pub coverage_sha256: String,
     pub left: i32,
@@ -120,6 +122,14 @@ pub struct TopAlignmentCapture {
     pub excess_px: f64,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub mark_translations: Vec<(usize, f64)>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct BaselineAlignmentCapture {
+    pub model: String,
+    pub size_px: f32,
+    pub upstream_commands: Vec<FittedCommand>,
+    pub shift_px: f64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -492,6 +502,7 @@ impl CaptureSession<'_> {
                 width_fitting: None,
                 selective_fitting: None,
                 top_alignment: None,
+                baseline_alignment: None,
                 diagonal_fitting: None,
                 coverage_sha256: format!("{:x}", Sha256::digest(&output.coverage)),
                 coverage: output.coverage,

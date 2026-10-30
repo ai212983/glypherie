@@ -268,6 +268,7 @@ impl GlyphComparison<'_> {
         self.check_source_outline(push);
         self.check_width_input(push);
         self.check_top_alignment_input(push);
+        self.check_baseline_alignment_input(push);
         self.check_selective_input(push);
         self.check_engine(push);
         self.check_gray_identity(push);
@@ -348,14 +349,19 @@ impl GlyphComparison<'_> {
 
     fn check_source_outline(&self, push: &mut impl FnMut(&str, Option<u32>, &str)) {
         if let Some(commands) = &self.candidate.source_commands {
-            if (!matches!(
+            let baseline_coverage = self.candidate.raster_policy == RasterPolicy::Coverage
+                && self.candidate.output_bits == 1
+                && self.candidate.baseline_alignment.is_some();
+            if ((!matches!(
                 self.candidate.raster_policy,
                 RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
-            ) || (self.candidate.raster_policy != RasterPolicy::FreeTypeMonoTerminals
-                && self.candidate.width_fitting.is_none()
-                && self.candidate.selective_fitting.is_none()
-                && self.candidate.diagonal_fitting.is_none()
-                && self.candidate.top_alignment.is_none()))
+            ) && !baseline_coverage)
+                || (self.candidate.raster_policy != RasterPolicy::FreeTypeMonoTerminals
+                    && self.candidate.width_fitting.is_none()
+                    && self.candidate.selective_fitting.is_none()
+                    && self.candidate.diagonal_fitting.is_none()
+                    && self.candidate.top_alignment.is_none()
+                    && self.candidate.baseline_alignment.is_none()))
                 || *commands != self.source.fitted_commands
             {
                 push(
@@ -399,6 +405,22 @@ impl GlyphComparison<'_> {
                     "candidate",
                     Some(self.codepoint),
                     "top alignment input identity changed",
+                );
+            }
+        }
+    }
+
+    fn check_baseline_alignment_input(&self, push: &mut impl FnMut(&str, Option<u32>, &str)) {
+        if let Some(baseline) = &self.candidate.baseline_alignment {
+            if baseline.size_px != self.candidate_report.size_px
+                || (self.candidate.width_fitting.is_none()
+                    && self.candidate.top_alignment.is_none()
+                    && baseline.upstream_commands != self.upstream.fitted_commands)
+            {
+                push(
+                    "candidate",
+                    Some(self.codepoint),
+                    "baseline alignment input identity changed",
                 );
             }
         }
@@ -933,7 +955,11 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
             && (record.width_fitting.is_some()
                 || record.selective_fitting.is_some()
                 || record.diagonal_fitting.is_some()
-                || record.top_alignment.is_some()))
+                || record.top_alignment.is_some()
+                || record.baseline_alignment.is_some()))
+        && !(record.raster_policy == RasterPolicy::Coverage
+            && record.output_bits == 1
+            && record.baseline_alignment.is_some())
     {
         failures.push("source outline on an incompatible raster policy");
     }
@@ -972,6 +998,12 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
             .map(|top| top.upstream_commands.as_slice())
             .or_else(|| {
                 record
+                    .baseline_alignment
+                    .as_ref()
+                    .map(|baseline| baseline.upstream_commands.as_slice())
+            })
+            .or_else(|| {
+                record
                     .diagonal_fitting
                     .as_ref()
                     .map(|diagonal| diagonal.upstream_commands.as_slice())
@@ -998,9 +1030,15 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
             return failures;
         };
         let expected: &[crate::probe::FittedCommand] = record
-            .diagonal_fitting
+            .baseline_alignment
             .as_ref()
-            .map(|diagonal| diagonal.upstream_commands.as_slice())
+            .map(|baseline| baseline.upstream_commands.as_slice())
+            .or_else(|| {
+                record
+                    .diagonal_fitting
+                    .as_ref()
+                    .map(|diagonal| diagonal.upstream_commands.as_slice())
+            })
             .unwrap_or(record.fitted_commands.as_slice());
         let zone = crate::top_alignment::Zone {
             source_ref: top.source_ref_px,
@@ -1020,6 +1058,38 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
                     && fit.excess_px == top.excess_px
                     && fit.mark_translations == top.mark_translations => {}
             _ => failures.push("top alignment does not reproduce from captured inputs"),
+        }
+    }
+    #[cfg(feature = "candidate")]
+    if let Some(baseline) = &record.baseline_alignment {
+        if record.selected_engine != "auto"
+            || record.font_scan.is_some()
+            || record.output_bits != 1
+            || baseline.model != crate::baseline_alignment::MODEL
+            || !matches!(
+                record.raster_policy,
+                RasterPolicy::FreeTypeMono
+                    | RasterPolicy::FreeTypeMonoTerminals
+                    | RasterPolicy::Coverage
+            )
+        {
+            failures.push("baseline alignment on an incompatible render policy");
+        }
+        let Some(source) = &record.source_commands else {
+            failures.push("baseline alignment source outline missing");
+            return failures;
+        };
+        let expected = record
+            .diagonal_fitting
+            .as_ref()
+            .map(|diagonal| diagonal.upstream_commands.as_slice())
+            .unwrap_or(&record.fitted_commands);
+        match crate::baseline_alignment::fit(source, &baseline.upstream_commands, baseline.size_px)
+        {
+            Ok(fit)
+                if fit.applied && fit.commands == expected && fit.shift_px == baseline.shift_px => {
+            }
+            _ => failures.push("baseline alignment does not reproduce from captured inputs"),
         }
     }
     reproduce_raster(record, &config, &mut failures);

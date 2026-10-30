@@ -8,7 +8,9 @@ confer current approval.
 
 Current working preview identity: `font_hints_auto` fitting with `free_type_mono_terminals` scan conversion; disabling
 font hints selects `upstream_mono`. The
-[open iteration](03-spacing-kerning.md#selective-native-hints-and-automatic-fitting) owns its scope and assessment.
+[open iteration](03-spacing-kerning.md#selective-native-hints-and-automatic-fitting) owns its scope and assessment. The
+[baseline association](03-spacing-kerning.md#source-defined-baseline-alignment) stage identifies `baseline-align-01`;
+its local geometric correction is implemented with optical assessment pending.
 
 The `diagonal_fitting` overlay identifies `diagonal-shape-06`. It routes automatic-axis outlines through the
 source-shape stage, which solves the translated raw head profile with the certified standard in the original upstream

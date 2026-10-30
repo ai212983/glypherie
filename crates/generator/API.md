@@ -114,6 +114,13 @@ spacing are unchanged. The
 [open iteration](../../docs/revisions/001/03-spacing-kerning.md#source-defined-x-height-alignment) owns eligibility and
 assessment; historical rendering entry points retain their previous output.
 
+Those explicit Mono pipelines also recover eligible source-baseline terminal associations before optional stroke
+fitting. Changed records carry `baseline_alignment` (`baseline-align-01`) with `size_px`, `upstream_commands` and
+`shift_px` for independent replay; `source_commands` identifies the source outline. Advances and bearing residuals
+remain those of the preceding fit. The
+[iteration note](../../docs/revisions/001/03-spacing-kerning.md#source-defined-baseline-alignment) owns geometry
+eligibility and assessment.
+
 Candidate Mono uses Skrifa 0.48.0 `Target::Mono` on runtime font bytes, including user-provided fonts:
 
 | Strategy                     | Extension            | Engine                                                                                                                                    |

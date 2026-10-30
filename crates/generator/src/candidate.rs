@@ -62,9 +62,11 @@ pub(crate) fn render_with_pipeline_in_session(
             pipeline.fitting,
             StemFittingStrategy::FontHintsAuto | StemFittingStrategy::UpstreamMono
         )
-        && pipeline.rasterization != crate::renderer::Rasterization::Coverage
     {
-        apply_top_alignment(session, request, pipeline.rasterization, &mut report)?;
+        if pipeline.rasterization != crate::renderer::Rasterization::Coverage {
+            apply_top_alignment(session, request, pipeline.rasterization, &mut report)?;
+        }
+        apply_baseline_alignment(session, request, &mut report)?;
     }
     if !pipeline.diagonal_fitting {
         return Ok(report);
@@ -403,6 +405,91 @@ pub(crate) fn render_with_rasterization_in_session(
         StemFittingStrategy::UpstreamMono => "auto",
     };
     session.capture(&effective, selected, &policy)
+}
+
+fn apply_baseline_alignment(
+    session: &CaptureSession<'_>,
+    request: &ReferenceRequest,
+    report: &mut ReferenceReport,
+) -> Result<(), Error> {
+    if !report
+        .records
+        .iter()
+        .any(|r| r.selected_engine == "auto" && r.font_scan.is_none())
+    {
+        return Ok(());
+    }
+    let mut source_request = request.clone();
+    source_request.extensions = "none".into();
+    source_request.settings.hinting = Hinting::None;
+    source_request.settings.mono_raster = Default::default();
+    let source = session.source(&source_request)?;
+    let mut applied = false;
+    for record in &mut report.records {
+        // Wholly automatic geometry only. Selective/native-owned axes and
+        // executed scan state retain their existing coordinate authority.
+        if record.selected_engine != "auto" || record.font_scan.is_some() {
+            continue;
+        }
+        let Some(raw) = source
+            .records
+            .iter()
+            .find(|r| r.codepoint == record.codepoint && r.glyph_id == record.glyph_id)
+        else {
+            continue;
+        };
+        let Ok(fit) = crate::baseline_alignment::fit(
+            &raw.fitted_commands,
+            &record.fitted_commands,
+            request.settings.size_px,
+        ) else {
+            continue;
+        };
+        if !fit.applied {
+            continue;
+        }
+        let mut config = request.settings.clone();
+        config.mono_raster = record.mono_raster.unwrap_or(request.settings.mono_raster);
+        let raster = match record.raster_policy {
+            crate::reference::RasterPolicy::Coverage => {
+                crate::probe::rasterize(&fit.commands, &config)
+            }
+            crate::reference::RasterPolicy::FreeTypeMono => crate::mono::rasterize_with_scan_state(
+                &fit.commands,
+                &config,
+                record.font_scan.as_ref(),
+            ),
+            crate::reference::RasterPolicy::FreeTypeMonoTerminals => {
+                rasterize_terminals(&raw.fitted_commands, &fit.commands, &config)
+            }
+            _ => continue,
+        };
+        let Ok(raster) = raster else {
+            continue;
+        };
+        record.baseline_alignment = Some(crate::reference::BaselineAlignmentCapture {
+            model: crate::baseline_alignment::MODEL.into(),
+            size_px: request.settings.size_px,
+            upstream_commands: record.fitted_commands.clone(),
+            shift_px: fit.shift_px,
+        });
+        record.source_commands = Some(raw.fitted_commands.clone());
+        record.fitted_commands = fit.commands;
+        record.coverage_sha256 = format!("{:x}", sha2::Sha256::digest(&raster.coverage));
+        record.coverage = raster.coverage;
+        record.pixels = raster.pixels;
+        record.left = raster.left;
+        record.top = raster.top;
+        record.width = raster.width;
+        record.height = raster.height;
+        applied = true;
+    }
+    if applied {
+        report
+            .implementation
+            .push_str(&format!(":{}", crate::baseline_alignment::MODEL));
+    }
+    Ok(())
 }
 
 fn apply_top_alignment(

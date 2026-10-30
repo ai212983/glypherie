@@ -1,6 +1,8 @@
 //! Deterministic outline glyph generation, independent of display and output adapters.
 //! Metrics use signed 26.6 pixels. Bitmaps contain unpacked coverage levels, row-major.
 pub mod baseline;
+#[cfg(feature = "candidate")]
+pub(crate) mod baseline_alignment;
 pub mod batch;
 pub mod bitmap_topology;
 #[cfg(feature = "candidate")]

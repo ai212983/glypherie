@@ -91,6 +91,36 @@ bodies with `n`. Body-only correction enlarged the dot gap from two rows to thre
 blank rows from the 1.92 px source gap while retaining dot shape. Native-owned axes, Gray, historical controls and
 spacing remain outside this correction.
 
+### Source-defined baseline alignment
+
+[FreeType blue zones](https://freetype.org/autohinting/blues.html) associate source features with reference lines;
+[Shamir §3.2](../../references/papers/2003-shamir/paper.md#32-constraints-and-point-relations) grounds relative point
+constraints, and [Hobby §6](../../references/papers/1993-hobby/paper.md#6-curved-outlines) grounds constraints on Bézier
+controls. The adaptation restores the source baseline offset of a straight supporting terminal that automatic fitting
+has raised by at least half a pixel, within a one-pixel movement budget. It preserves the fitted cap's slant rather than
+flattening its endpoints onto one grid line.
+
+**Project adaptation:** one unambiguous terminal must span at least one pixel horizontally, attain the source lower hull
+bound, and lie within FreeType's source association band around baseline zero. Source and fitted control hulls must
+remain above its supporting line. Equal Y-displacement constraints retain lines and quadratic endpoint tangents with a
+nonzero horizontal component; vertical attachments may extend without reversing. The movable component must remain
+inside the source baseline band, leaving every upper point and X coordinate fixed. Curvature orientation and
+conservative control-hull separation guard the connecting curves. Shared or ambiguous ownership, multiple contours,
+cubic curves, unresolved predicates and conflicting attachments retain the preceding fit. Equivalent subdivided geometry
+can conservatively abstain when a supporting edge or its ownership cannot be certified.
+
+Explicit automatic Mono pipelines apply this association before optional stroke fitting. Native-owned axes, historical
+rendering entry points, Gray and the separately approved comparison retain their existing policies.
+
+**Confirmed local geometric correction; optical assessment pending:** Literata 400/16 at default `opsz=12` has a source
+foot ending on the baseline, but automatic fitting raises that endpoint by 0.65625 px; `8` stays baseline-aligned. With
+stub rescue excluded, `7` consequently loses the entire last ink row. Restoring the source reference retains cap slant,
+tangent directions, upper geometry and metrics, and restores baseline-adjacent ink. At `opsz=16`, the 0.625 px
+correction also changes terminal ink despite the preceding bitmap already retaining one bottom pixel. Inspect foot
+weight, the leg-to-terminal transition and numeral alignment for both optical sizes. A bounded five-family
+12/14/16/18/20 px sweep at weights 300/400/700 changes only these two captures; it does not establish broader optical
+acceptance.
+
 ### Source-relative straight-stroke correction
 
 [Hobby's coupled-width model](../../hobby-fitting.md#valid-straight-medial-intervals) relates valid straight source

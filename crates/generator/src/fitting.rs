@@ -191,6 +191,7 @@ fn capture_enabled(data: &[u8], request: &ReferenceRequest) -> Result<ReferenceR
             width_fitting: None,
             selective_fitting: None,
             top_alignment: None,
+                baseline_alignment: None,
             diagonal_fitting: None,
             fitted_commands: fitted,
             coverage_sha256: format!("{:x}", Sha256::digest(&output.coverage)),

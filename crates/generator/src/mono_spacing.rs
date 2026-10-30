@@ -608,6 +608,7 @@ mod tests {
             width_fitting: None,
             selective_fitting: None,
             top_alignment: None,
+            baseline_alignment: None,
             diagonal_fitting: None,
             fitted_commands: commands,
             coverage: Vec::new(),

@@ -1,4 +1,4 @@
-// Exact native/WASM parity for the Literata upright-stem preview pipeline.
+// Exact native/WASM parity for Literata source-shape and baseline alignment.
 // Build first: crates/wasm/build.sh nodejs preview
 // Run: node crates/wasm/smoke/upright_stem.mjs
 // Standard SIMD package: build with WASM_SIMD128=1; run with UPRIGHT_STEM_SIMD128=1.
@@ -30,7 +30,7 @@ const recorded = specimens.families.find((family) => family.id === "literata").p
 assert.equal(createHash("sha256").update(fontBytes).digest("hex"), recorded, "Literata bytes match specimens.json");
 
 // Separated t/i/f/l plus ordinary reading context; printable ASCII only.
-const TEXT = "t i f l\nminimum milling\nWe walked by the river.";
+const TEXT = "t i f l\nminimum milling\nWe walked by the river.\n0123456789";
 const SCAN = { dropout: "smart", include_stubs: true, font_instructions: true };
 const SIZES = [12, 14, 15, 16, 17, 18, 20];
 const WEIGHTS = [300, 400, 700];
@@ -40,6 +40,7 @@ const RASTERS = ["free_type_mono", "free_type_mono_terminals"];
 const combos = [
   ...SIZES.map((size_px) => ({ size_px, axes: { wght: 400, opsz: size_px } })),
   ...WEIGHTS.filter((wght) => wght !== 400).map((wght) => ({ size_px: 16, axes: { wght, opsz: 16 } })),
+  { size_px: 16, axes: { wght: 400, opsz: 12 } },
 ];
 
 const cases = [];
@@ -55,7 +56,7 @@ for (const { size_px, axes } of combos) {
     }
   }
 }
-assert.equal(cases.length, 72, "matrix covers 9 size/weight combos x 2 fittings x 2 rasters x on/off");
+assert.equal(cases.length, 80, "matrix covers 10 size/axis combos x 2 fittings x 2 rasters x on/off");
 const invalid = [
   { text: TEXT, width: 400, height: 160, size_px: 16, axes: { wght: 400, opsz: 16 },
     output_bits: 1, mono_raster: SCAN,
@@ -155,4 +156,4 @@ try {
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 } finally { exportFont.free(); }
 
-console.log(`Upright-stem Literata native/WASM parity passed for ${invalidStart} render cases plus export parity.`);
+console.log(`Literata source-alignment native/WASM parity passed for ${invalidStart} render cases plus export parity.`);
