@@ -1,6 +1,6 @@
 # Monochrome geometry and spacing
 
-<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit afloader rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL Adafruit pdfontconv Tophat -->
+<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit afloader rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL Adafruit pdfontconv Tophat rint -->
 
 Combine native and automatic Mono fitting on independent axes, with each upstream policy retained as a control. Assess
 binary continuity, feature balance and reading rhythm with pixel-aligned display and source kerning inspection. The
@@ -177,6 +177,34 @@ are rejected, not aliases for the new default. Earlier source-X findings below d
 
 ### Pair spacing and kerning
 
+The front-page comparison enables source kerning at zero tracking, preserving each converter's glyphs and native
+metrics. The [comparison methodology](../../references/font-converters.md#source-kerning) owns native export support and
+the composition adaptations. Literata 16 px, `wght=400`, `opsz=16`, Mono has a reported `ck` spacing concern, classified
+**pending assessment**: inspect the pair's reading rhythm against its source metrics and fitted bearing correction.
+Enabling source kerning is a comparison-input change, not optical acceptance or a fitting remedy.
+
+The same investigation includes `ic` in “quick” and `or` in “liquor”. Its controls hold font bytes, axes, glyph images
+and zero tracking fixed while separating source pair positioning, fitted advances and bearing compensation. Capture
+source/fitted geometry and current pair metrics at the front-page sizes, including straight and curved neighbors and
+alternate prefixes. Measurements locate spacing changes; they do not supply an optical pass/fail threshold. Any
+optical-spacing alternative remains the isolated proposal below until its source parity and invariants are verified.
+
+At Literata 16 px, `wght=400`, `opsz=16`, the native captures exactly reproduce the front-page glyphs, advances and pair
+tables. The source kerning values for `ck`, `ic` and `or` are respectively −0.109375, −0.015625 and −0.15625 px in the
+renderer’s 26.6 representation; all round to zero. Their right-minus-left bearing residual differences are 28, 30 and 14
+units of 1/64 px, so none crosses the existing one-pixel compensation boundary. No residual is missing or applied twice.
+Fitted advances for `c` and `o` are 9 and 10 px, versus source advances of 7.984375 and 9.375 px. Against source
+bounding-box separation, final fitted-outline separation grows by approximately 0.499, 0.484 and 0.391 px for these
+three pairs. Their delivered ink bounding boxes each leave two blank columns. These bounds are diagnostic measurements,
+not optical-space estimates; the open bowl of `c` and curved facing edges contribute different whitespace by row.
+
+The same pair metrics occur with the diagonal overlay disabled, forced automatic fitting and font hints first. The
+effect also varies by size: `ck` and `ic` have less source-relative bounding-box separation at 8 and 20 px, while their
+12 px differences are small and positive. Current placement therefore follows its declared quantization model; the
+reported optical concerns stay **pending assessment**, with no demonstrated contract failure. The next comparison should
+preserve source-specific estimated optical separation through fitting. It must not use these three reported pairs or
+their measured blank columns as production exceptions or universal spacing targets.
+
 Native diagnostic comparisons select fitting and rasterization independently. Changing only rasterization preserves the
 fitted outline, glyph identity, returned metrics and bitmap placement. Changing fitting may legitimately change fitted
 metrics; the layout algorithm remains the same. The shared bitmap policy defaults to zero tracking. Explicit extra
@@ -302,9 +330,14 @@ outlines, rasters, bitmap offsets and finalized glyph advances. It is separate f
 
 [FontForge's separation estimator](https://fontforge.org/docs/ui/dialogs/autowidth.html) compares facing outline
 envelopes across their shared vertical extent, with bounding boxes adjacent. It averages their separations with weights
-proportional to `1 / (separation + em_size / 50)^2`, excluding empty bands; its default band height is `em_size / 100`.
-These are upstream heuristics. Pin the implementation and license, retain its parameters without glyph-specific tuning,
-and verify estimator parity before assessing rendered output.
+proportional to `1 / (separation + em_size / 50)^2`, excluding empty bands. These are upstream heuristics. The
+documented example uses `em_size / 100` bands; the
+[pinned native implementation](https://github.com/fontforge/fontforge/blob/c41bdb922285f35defd1e1385adfd13bde1ab32a/fontforge/autowidth2.c)
+uses that default for AutoWidth and `em_size / 200` for its pair-kerning paths. It floors envelopes in font design
+units, excludes the upper band in its estimator loop and rounds with C `rint`. Resolve these differences against the
+pinned native reference, preserve its license and record the chosen parameters before estimator parity work. Applying
+its integer quantization directly in pixel coordinates would be a different adaptation. No estimator has been
+implemented or optically accepted here.
 
 Use selected-glyph source and final fitted outlines at the exact axes, scaled to pixels in a common baseline coordinate
 system. Let `S` be the envelope estimate at adjacent bounding boxes, `d` the origin separation, `xmax_left` the left
@@ -812,6 +845,13 @@ Literata 16 px, weight 400, optical size 12 keeps equal two-column `i`/`j` body 
 Flex 16 px, weight 400, width 100, optical size 14, slant zero retains readable joins and counters in the inspected
 sample; broader optical acceptance, especially other weights and sizes, remains pending. These observations do not close
 the iteration or alter the approved comparison baseline.
+
+**Current-policy reproduction, 2026-10-29:** with the current main-page `font_hints_auto` policy, Roboto 400 at 12/14/16
+px and width 100 uses automatic X and native Y. The captured straight outlines of `m`, `n` and `u` all have 1 px stem
+widths; the recorded native-X principal-stem imbalance is not reproduced in these straight spans. This is not optical
+acceptance of the chosen width or of the shoulder and bowl rows. Those curved regions remain pending; the 14 px `u` bowl
+includes a two-column run. The [investigation](../../references/roboto-stem-balance.md) owns the stage evidence, source
+comparison and remaining inspection questions. No fitting correction follows from this finding.
 
 #### Curve scan precision
 

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Literata spacing investigation</title>
+<style>
+  body{max-width:1100px;margin:30px auto;padding:0 20px;font:16px/1.5 system-ui;color:#222;background:#f6f5f1}
+  h1{font-size:26px}h2{font-size:18px;margin:0 0 10px}p{max-width:90ch}label{margin-right:20px}
+  select,button{font:inherit;padding:4px 10px}section{background:white;padding:18px;margin:20px 0;border:1px solid #ccc;overflow:auto}
+  canvas{image-rendering:pixelated;display:block}table{border-collapse:collapse;font-variant-numeric:tabular-nums}
+  td,th{padding:7px 12px;text-align:right;border-bottom:1px solid #ddd}td:first-child,th:first-child{text-align:left}
+  .status{font-weight:600;color:#85420b}.note{font-size:14px;color:#555}
+</style>
+<h1>Literata: “ck”, “ic” and “or”</h1>
+<p class="status">Diagnostic controls · optical assessment pending · no spacing-model changes</p>
+<p>Same static font instances as the front page: weight 400, optical size matched to pixel size, source kerning on,
+zero extra tracking. <!--EXPORT_PARITY--></p>
+<label>Size <select id="size"><option>8</option><option>12</option><option selected>16</option><option>20</option></select> px</label>
+<label>Zoom <select id="zoom"><option>1</option><option>2</option><option selected>4</option></select> ×</label>
+<p class="note">Compare reading rhythm at 1× as well as enlarged pixels. The source control uses an independent unhinted
+raster and fractional source layout; its image differences include rasterization. Each fitted control uses the same
+FreeType terminal scanner. The three gap measurements below describe geometry, not an ideal optical target.</p>
+<div id="cards"></div>
+<section><h2>Current pair measurements</h2><div id="table"></div>
+<p class="note">Outline gap: signed horizontal separation between the two outline bounding boxes. Blank columns: columns
+between the delivered ink bounding boxes. These measures ignore facing curves and the open cavity in “c”.</p></section>
+<script>
+const data=/*CAPTURE_DATA*/;
+const labels={current:'Glypherie current — diagonal overlay on',source:'Source design — unhinted, source layout',font_hints_auto:'Same fitting — overlay off',upstream_mono:'Forced automatic — overlay off',font_hints_first:'Font hints first — overlay off'};
+const lines=['Pack my box with five dozen liquor jugs.','The quick brown fox jumps over the lazy dog.','ck  ic  or   co  ci  oo  nn  on  rn  ri','ck  ack  ick  quick   Pack  cork  liquor'];
+function draw(canvas,model,size){
+  canvas.width=760;canvas.height=lines.length*(size+10)+20;
+  const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let line=0;line<lines.length;line++){
+    let pen=10,prev=null;const baseline=10+size+line*(size+10);
+    for(const ch of lines[line]){
+      const r=model.records[ch];if(!r)throw new Error('Missing glyph '+ch);
+      pen+=model.pairs[(prev??'')+ch]??0;
+      for(let y=0;y<r.height;y++)for(let x=0;x<r.width;x++){
+        const alpha=r.pixels[y*r.width+x];
+        if(alpha){ctx.fillStyle='black';ctx.fillRect(Math.floor(pen+.5)+r.left+x,baseline+r.top+y,1,1);}
+      }
+      pen+=model.advances[ch];prev=ch;
+    }
+  }
+  const zoom=+document.querySelector('#zoom').value;canvas.style.width=canvas.width*zoom+'px';canvas.style.height=canvas.height*zoom+'px';
+}
+function render(){
+ const size=document.querySelector('#size').value,cards=document.querySelector('#cards');cards.replaceChildren();
+ for(const mode of ['current','source','font_hints_auto','upstream_mono','font_hints_first']){
+  const section=document.createElement('section'),h=document.createElement('h2'),canvas=document.createElement('canvas');
+  h.textContent=labels[mode];canvas.setAttribute('aria-label',labels[mode]+' at '+size+' px');section.append(h,canvas);cards.append(section);draw(canvas,data.display[size][mode],+size);
+ }
+ const rows=data.metrics.find(c=>c.size_px===+size&&c.mode==='current').pairs;
+ document.querySelector('#table').innerHTML='<table><thead><tr><th>Pair</th><th>Source kern</th><th>Current pair adjustment</th><th>Source outline gap</th><th>Fitted outline gap</th><th>Gap change</th><th>Blank columns</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+r.pair+'</td>'+['source_kern','finalized_pair','source_outline_gap','fitted_outline_gap','outline_gap_change','bitmap_blank_columns'].map(k=>'<td>'+r[k].toFixed(3)+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+}
+document.querySelector('#size').onchange=render;document.querySelector('#zoom').onchange=render;render();
+</script>
+</html>
