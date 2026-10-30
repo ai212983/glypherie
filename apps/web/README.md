@@ -1,6 +1,6 @@
 # Web
 
-<!-- cspell:words Adafruit pdfontconv Tophat -->
+<!-- cspell:words Adafruit Crosspoint pdfontconv Tophat -->
 
 Local-first font preview as a static React app (`out/web/`). See the [web contract](CONTRACT.md) and the
 [WASM interface](../../crates/wasm/README.md).
@@ -89,12 +89,13 @@ python -m pip install -r apps/web/scripts/landing-samples/requirements.txt
 just landing-samples --font fonts/Roboto.ttf --size 16 --axis wght=300 --axis wdth=100
 ```
 
-The first run downloads pinned LVGL and Adafruit converter sources into `out/diagnostics/landing-samples/_tools/` and
-builds the adapters. Every run uses the hosted pdfontconv and Tophat apps, requiring internet access. The comparison
-supports fonts covering printable ASCII and monochrome output; text may contain printable ASCII and line feeds. All
-converters receive the same static font instance. Each output directory contains a browser gallery, original exports,
-capture settings, source identities, logs and verification results. Open the printed gallery URL with `npm run dev`
-running. Runs write fresh directories by default; `--output PATH` must name a new directory.
+The first run downloads pinned LVGL, Adafruit and Crosspoint converter sources into
+`out/diagnostics/landing-samples/_tools/` and builds the adapters. Every run uses the hosted pdfontconv and Tophat apps,
+requiring internet access. The comparison supports fonts covering printable ASCII and monochrome output; text may
+contain printable ASCII and line feeds. All converters receive the same static font instance. Each output directory
+contains a browser gallery, original exports, capture settings, source identities, logs and verification results. Open
+the printed gallery URL with `npm run dev` running. Runs write fresh directories by default; `--output PATH` must name a
+new directory.
 
 The main-page matrix also samples Rouge Script from an external input. Its canonical `RougeScript-Regular.ttf`
 ([Google Fonts](https://github.com/google/fonts/tree/main/ofl/rougescript), SIL OFL) is downloaded automatically, pinned
@@ -120,7 +121,12 @@ the matrix command above. Set `stem_target_px` (or `--stem-target-px`) without a
 the family-wide weight from source stem geometry; other axes remain explicit or use font defaults. Native horizontal
 body-run measurements are saved separately in each capture. `--publish-matrix` requires unique family/size cases;
 `--publish` updates only the legacy single-case assets. `--threshold` affects the two hosted converters; Glypherie's
-selected FreeType scanner, LVGL and Adafruit retain their native monochrome settings. Source kerning is disabled; each
-converter retains its own advances, and Glypherie retains its exported fitted pair corrections. `--no-diagonal-fitting`
-is required with `--fitting font_hints_first` or `source_relative`. Generation checks do not establish optical
-acceptance; follow the [evaluation rules](../../docs/evaluation.md).
+selected FreeType scanner, LVGL and Adafruit retain their native monochrome settings. Source kerning is enabled with
+zero tracking; see the [comparison methodology](../../docs/references/font-converters.md#source-kerning) for converter
+support and composition adapters. `--no-diagonal-fitting` is required with `--fitting font_hints_first` or
+`source_relative`. Generation checks do not establish optical acceptance; follow the
+[evaluation rules](../../docs/evaluation.md).
+
+Crosspoint captures use the firmware's black-and-white mode. See the
+[comparison methodology](../../docs/references/font-converters.md) for size normalization, gray-level handling and
+capture limitations.

@@ -116,6 +116,9 @@ function validateCaptureInputs(
   if (owner.text !== undefined && inputs.text !== owner.text) {
     fail(caseId, "capture inputs do not match configured text");
   }
+  if (inputs.source_kerning !== true) {
+    fail(caseId, "capture inputs must enable source kerning");
+  }
 }
 
 async function validateSampleAssets(

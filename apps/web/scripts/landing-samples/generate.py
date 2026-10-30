@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Capture the five landing-page converters from one font instance.
+"""Capture the landing-page converters from one font instance.
 
 Instancing: https://fonttools.readthedocs.io/en/latest/varLib/instancer.html
-Adapters retain exported pixels/metrics; source kerning is disabled throughout.
+Adapters retain exported pixels/metrics and apply source kerning.
 """
 import argparse
 import base64
@@ -20,6 +20,8 @@ import subprocess
 import sys
 from urllib.request import urlopen
 
+import crosspoint
+
 ROOT = Path(__file__).resolve().parents[4]
 SCRIPT = Path(__file__).resolve().parent
 ASSETS = ROOT / 'apps/web/src/app/features/landing/assets/rasterizers'
@@ -34,6 +36,7 @@ TOOLS = {
     'tophat': ('Tophat', 'https://kaasiand.cool/tophat/', 'Playdate'),
     'lvgl': ('LVGL Font Converter', 'https://github.com/lvgl/lv_font_conv', 'LVGL'),
     'adafruit': ('Adafruit Font Converter', 'https://github.com/adafruit/Adafruit-GFX-Library', 'Adafruit GFX'),
+    'crosspoint': ('Crosspoint (monochrome)', crosspoint.SOURCE_URL, 'Crosspoint .cpfont'),
 }
 
 
@@ -126,7 +129,9 @@ def prepare_tools(cache):
     probe.write_text('#include <stdio.h>\n#include <ft2build.h>\n#include FT_FREETYPE_H\nint main(void) { FT_Library lib; FT_Int a,b,c; if (FT_Init_FreeType(&lib)) return 1; FT_Library_Version(lib,&a,&b,&c); printf("%d.%d.%d\\n",a,b,c); FT_Done_FreeType(lib); return 0; }\n')
     execute(['cc', probe, '-o', directory / 'freetype-version', *flags], cache, 'build-freetype-version')
     freetype_version = execute([directory / 'freetype-version'], cache, 'freetype-version').decode().strip()
-    return lvgl, binary, {
+    crosspoint_script, crosspoint_capture = crosspoint.prepare(cache)
+    return lvgl, binary, crosspoint_script, {
+        'crosspoint': crosspoint_capture,
         'lv_font_conv': '1.5.3',
         'lvgl_package_lock_sha256': sha((cache / 'lvgl/package-lock.json').read_bytes()),
         'adafruit_revision': ADAFRUIT_REVISION,
@@ -169,7 +174,7 @@ def playdate_glyphs(directory, metadata=None):
     text = (directory / 'font.fnt').read_text()
     properties, entries, pairs = {}, [], {}
     for line in text.splitlines():
-        if not line or line.startswith('--'):
+        if not line or (line.startswith('--') and not re.fullmatch(r'--\s+-?\d+', line)):
             continue
         if '=' in line and line.split('=', 1)[0] in {'data', 'datalen', 'width', 'height', 'tracking'}:
             key, value = line.split('=', 1)
@@ -182,13 +187,13 @@ def playdate_glyphs(directory, metadata=None):
                 key = chr(int(key[2:], 16))
             if len(key) == 1:
                 entries.append((key, int(value)))
-            elif metadata is None:
-                # Disabling source kerning still exports fitted pair corrections.
-                # Preserve them; see crates/generator/API.md.
+            else:
+                # Preserve native source kerning and Glypherie fitting corrections.
                 pair = re.fullmatch(r'U\+([0-9A-Fa-f]+)U\+([0-9A-Fa-f]+)', key)
                 if pair:
                     pairs[(chr(int(pair[1], 16)), chr(int(pair[2], 16)))] = int(value)
-            # Hosted converter source-kerning entries are deliberately omitted.
+                elif len(key) == 2:
+                    pairs[tuple(key)] = int(value)
     if 'data' in properties:
         atlas = Image.open(io.BytesIO(base64.b64decode(properties['data'], validate=True))).convert('RGBA')
         w, h = int(properties['width']), int(properties['height'])
@@ -220,6 +225,7 @@ def playdate_glyphs(directory, metadata=None):
 def lvgl_glyphs(path):
     from PIL import Image
     info = json.loads(path.read_text())
+    native_kerning = any(g['kerning'] for g in info['glyphs'])
     glyphs = {}
     for g in info['glyphs']:
         box = g['bbox']
@@ -229,10 +235,40 @@ def lvgl_glyphs(path):
             raise ValueError('LVGL export is not binary')
         image = Image.new('L', (w, h))
         image.putdata(pixels)
-        # LVGL v8/v9 uses 4 fractional advance bits and nearest pen rounding.
-        # https://github.com/lvgl/lvgl/blob/master/src/font/lv_font_fmt_txt.c
-        glyphs[chr(g['code'])] = (image, math.floor(g['advanceWidth'] * 16 + 0.5) / 16, box['x'], -(box['y'] + h))
+        # LVGL v9 rounds each combined advance/pair step to integer pixels.
+        # https://github.com/lvgl/lvgl/blob/v9.3.0/src/font/lv_font_fmt_txt.c
+        advance_fp = lvgl_advance_fp(g['advanceWidth'], native_kerning)
+        glyphs[chr(g['code'])] = (image, (advance_fp + 8) >> 4, box['x'], -(box['y'] + h))
     return glyphs
+
+
+def lvgl_advance_fp(value, native_kerning):
+    # lv_font_conv uses fractional advances only when a native kern table exists.
+    return math.floor(value * 16 + 0.5) if native_kerning else math.floor(value + 0.5) * 16
+
+
+def lvgl_pairs(path, source_pairs=None):
+    # Match LVGL's signed 4.4 pair quantization. Dump output retains pixel values.
+    # https://github.com/lvgl/lv_font_conv/blob/v1.5.3/lib/font/font.js
+    glyphs = json.loads(path.read_text())['glyphs']
+    native_kerning = any(glyph['kerning'] for glyph in glyphs)
+    if not native_kerning and source_pairs:
+        for glyph in glyphs:
+            glyph['kerning'] = {str(ord(right)): value for (left, right), value in source_pairs.items() if ord(left) == glyph['code']}
+    maximum = max((abs(value) for glyph in glyphs for value in glyph['kerning'].values()), default=0)
+    scale = math.ceil(maximum / 7.5 * 16) / 16 if maximum >= 7.5 else 1
+    scale_fp = math.floor(scale * 16 + 0.5)
+    result = {}
+    for glyph in glyphs:
+        advance_fp = lvgl_advance_fp(glyph['advanceWidth'], native_kerning)
+        neutral = (advance_fp + 8) >> 4
+        for right, value in glyph['kerning'].items():
+            value_fp = math.floor(value / scale * 16 + 0.5)
+            # LVGL rescales the signed pair before adding it to the 12.4 advance.
+            adjustment = ((advance_fp + (value_fp * scale_fp >> 4) + 8) >> 4) - neutral
+            if adjustment:
+                result[(chr(glyph['code']), chr(int(right)))] = adjustment
+    return result
 
 
 def adafruit_glyphs(path):
@@ -275,9 +311,9 @@ def compose(glyphs, text, canvas, origin, baselines, pair_adjustments=None):
 
 
 def glypherie_request(text, size, policy):
-    """Use native advances and fitted pairs without source kerning or extra tracking."""
+    """Use source kerning with native advances, fitted pairs and zero tracking."""
     return {
-        'config': {'size_px': size, 'axes': {}, 'hinting': policy['hinting'], 'output_bits': policy['output_bits'], 'mono_threshold': policy['mono_threshold'], 'gray_gamma': policy['gray_gamma'], 'characters': ''.join(sorted(set(text.replace('\n', '') + 'HIl'))), 'missing_glyphs': policy['missing_glyphs'], 'kerning': False, 'metric_rounding': policy['metric_rounding'], 'mono_raster': policy['mono_raster']},
+        'config': {'size_px': size, 'axes': {}, 'hinting': policy['hinting'], 'output_bits': policy['output_bits'], 'mono_threshold': policy['mono_threshold'], 'gray_gamma': policy['gray_gamma'], 'characters': ''.join(sorted(set(text.replace('\n', '') + 'HIl'))), 'missing_glyphs': policy['missing_glyphs'], 'kerning': True, 'metric_rounding': policy['metric_rounding'], 'mono_raster': policy['mono_raster']},
         'pipeline': {'fitting': policy['fitting'], 'rasterization': policy['rasterization'], 'diagonal_fitting': policy['diagonal_fitting']},
         'letter_spacing_px': 0,
     }
@@ -300,7 +336,7 @@ def generate_case(case, directory, binaries, source_snapshot):
     origin = max(16, size)
     baselines = [size * 3 + i * line_step for i in range(len(text.split('\n')))]
     canvas = (case.get('width', 2400), baselines[-1] + size * 3)
-    inputs = dict(family=family, size_px=size, source_font=str(case['font']), source_font_sha256=sha(Path(case['font']).read_bytes()), font_sha256=sha(font.read_bytes()), source_axes=axes, text=text, text_sha256=sha(text.encode()), canvas=canvas, origin_x=origin, baselines_y=baselines, source_kerning=False, threshold=case['threshold'], spacing='Each converter retains native advances. Glypherie retains fitted pair corrections with source kerning disabled and neutral tracking.')
+    inputs = dict(family=family, size_px=size, source_font=str(case['font']), source_font_sha256=sha(Path(case['font']).read_bytes()), font_sha256=sha(font.read_bytes()), source_axes=axes, text=text, text_sha256=sha(text.encode()), canvas=canvas, origin_x=origin, baselines_y=baselines, source_kerning=True, threshold=case['threshold'], spacing='Source kerning enabled with native advances and zero tracking. Glypherie retains fitted pair corrections. Tophat, Adafruit and LVGL exports without a native pair table use HarfBuzz source pairs during composition.')
     inputs.update(family_id=case.get('family_id'), stem_calibration=calibration)
     write_json(directory / 'inputs.json', inputs)
     declared, policy, fingerprint = resolve_renderer_policy(case)
@@ -311,20 +347,34 @@ def generate_case(case, directory, binaries, source_snapshot):
     browser = json.loads((directory / 'browser.json').read_text())
     if browser['font_sha256'] != inputs['font_sha256']:
         raise ValueError('Browser captured different font bytes')
-    lvgl, adafruit, generator = binaries
+    lvgl, adafruit, generator, crosspoint_script, crosspoint_capture = binaries
     glyphs, pair_adjustments, verification = {}, {}, {}
     for repeat in ['font', 'repeat']:
         execute([generator, font, directory / 'request.json', directory / 'repo' / f'{repeat}.fnt'], directory, f'generate-{repeat}')
-        execute([lvgl, '--font', font, '-r', '0x20-0x7E', '--size', size, '--format', 'dump', '--bpp', '1', '--no-kerning', '--full-info', '-o', directory / 'lvgl' / repeat], directory, f'lvgl-{repeat}')
+        execute([lvgl, '--font', font, '-r', '0x20-0x7E', '--size', size, '--format', 'dump', '--bpp', '1', '--full-info', '-o', directory / 'lvgl' / repeat], directory, f'lvgl-{repeat}')
         header = execute([adafruit, font, size], directory, f'adafruit-{repeat}')
         (directory / 'adafruit' / f'{repeat}.h').write_bytes(header)
-    for tool, first, repeat in [('repo', 'font.fnt', 'repeat.fnt'), ('pdfontconv', 'font.fnt', 'repeat.fnt'), ('pdfontconv', 'font.png', 'repeat.png'), ('tophat', 'font.fnt', 'repeat.fnt'), ('lvgl', 'font/font_info.json', 'repeat/font_info.json'), ('adafruit', 'font.h', 'repeat.h')]:
+        execute([sys.executable, crosspoint_script, font, '--intervals', 'ascii', '--size', size, '--style', 'regular', '-o', directory / 'crosspoint' / f'{repeat}.cpfont'], directory, f'crosspoint-{repeat}')
+    for tool, first, repeat in [('repo', 'font.fnt', 'repeat.fnt'), ('pdfontconv', 'font.fnt', 'repeat.fnt'), ('pdfontconv', 'font.png', 'repeat.png'), ('tophat', 'font.fnt', 'repeat.fnt'), ('lvgl', 'font/font_info.json', 'repeat/font_info.json'), ('adafruit', 'font.h', 'repeat.h'), ('crosspoint', 'font.cpfont', 'repeat.cpfont')]:
         if (directory / tool / first).read_bytes() != (directory / tool / repeat).read_bytes():
             raise ValueError(f'{tool}: repeated exports differ')
     for tool in ['repo', 'pdfontconv', 'tophat']:
         glyphs[tool], pair_adjustments[tool] = playdate_glyphs(directory / tool, browser['samples'].get(tool))
-    glyphs['lvgl'] = lvgl_glyphs(directory / 'lvgl/font/font_info.json')
+    import source_kerning
+    source_pairs = source_kerning.pairs(font, size, text)
+    lvgl_info = directory / 'lvgl/font/font_info.json'
+    lvgl_supplemented = bool(source_pairs) and not any(glyph['kerning'] for glyph in json.loads(lvgl_info.read_text())['glyphs'])
+    glyphs['lvgl'] = lvgl_glyphs(lvgl_info)
+    pair_adjustments['lvgl'] = lvgl_pairs(lvgl_info, source_pairs)
     glyphs['adafruit'] = adafruit_glyphs(directory / 'adafruit/font.h')
+    glyphs['crosspoint'] = crosspoint.glyphs(directory / 'crosspoint/font.cpfont')
+    pair_adjustments['crosspoint'] = crosspoint.pairs(directory / 'crosspoint/font.cpfont')
+    # These converters do not import source kerning. Supplement composition only;
+    # keep their glyph exports and advances intact and record the adaptation.
+    for tool in ['tophat', 'adafruit']:
+        pair_adjustments[tool] = {pair: math.floor(value + 0.5) for pair, value in source_pairs.items() if math.floor(value + 0.5)}
+    for tool, pairs in pair_adjustments.items():
+        write_json(directory / tool / 'applied-pairs.json', [{'left': left, 'right': right, 'adjustment_px': value} for (left, right), value in sorted(pairs.items())])
     images = {tool: compose(data, text, canvas, origin, baselines, pair_adjustments.get(tool)) for tool, data in glyphs.items()}
     bounds = [ImageChops.invert(image).getbbox() for image in images.values()]
     if not all(bounds):
@@ -347,11 +397,14 @@ def generate_case(case, directory, binaries, source_snapshot):
             raise ValueError(f'{tool}: crop or line bands lost ink')
         image.save(directory / tool / 'paragraph.png')
         display.save(directory / f'{tool}.png')
-        verification[tool] = {'repeat_exports_identical': True, 'all_ink_preserved': True, 'paragraph_ink_pixels': ink, 'matches_browser_memory': True if tool in browser['samples'] else None, 'applied_fitted_pair_count': len(pair_adjustments.get(tool, {}))}
+        verification[tool] = {'repeat_exports_identical': True, 'all_ink_preserved': True, 'paragraph_ink_pixels': ink, 'matches_browser_memory': True if tool in browser['samples'] else None, 'source_kerning': True, 'pair_adjustment_count': len(pair_adjustments.get(tool, {})), 'pair_source': 'HarfBuzz source pairs, rounded to integer pixels during composition' if tool in ['tophat', 'adafruit'] else 'native export (including fitted corrections for Glypherie)'}
+        if tool == 'lvgl' and lvgl_supplemented:
+            verification[tool]['pair_source'] = 'HarfBuzz source pairs during composition; native export has no pairs; LVGL 4.4 pair scaling and integer advance-step rounding retained'
         if calibration:
             from stems import native_widths
             verification[tool]['principal_stem_runs'] = native_widths(glyphs[tool], calibration)
-        samples.append({'id': tool, 'label': label, 'source_url': url, 'output': output, 'file': f'{tool}.png', 'original': f'{tool}/paragraph.png', 'sha256': sha((directory / tool / 'paragraph.png').read_bytes()), 'display_sha256': sha((directory / f'{tool}.png').read_bytes()), 'capture': browser['samples'].get(tool), 'export_verification': verification[tool]})
+        capture = crosspoint_capture if tool == 'crosspoint' else browser['samples'].get(tool)
+        samples.append({'id': tool, 'label': label, 'source_url': url, 'output': output, 'file': f'{tool}.png', 'original': f'{tool}/paragraph.png', 'sha256': sha((directory / tool / 'paragraph.png').read_bytes()), 'display_sha256': sha((directory / f'{tool}.png').read_bytes()), 'capture': capture, 'export_verification': verification[tool]})
     manifest = {'inputs': inputs, 'display_crop': crop, 'display_size': [crop[2] - crop[0], crop[3] - crop[1]], 'display_lines': bands, 'display_line_gap': 2, 'glypherie_pipeline': request['pipeline'], 'glypherie_scan': request['config']['mono_raster'], 'renderer_inputs': declared, 'renderer_policy': policy, 'renderer_fingerprint': fingerprint, 'samples': samples, 'source_snapshot_sha256': sha(json.dumps(source_snapshot, sort_keys=True).encode()), 'source_run': str(directory.relative_to(ROOT)) if directory.is_relative_to(ROOT) else str(directory), 'updated_at': datetime.now(timezone.utc).isoformat(), 'assessment': 'Pending optical assessment. Native converter output; no quality ranking.', 'browser': browser['browser'], 'platform': browser['platform'], 'source_files': browser['sources']}
     write_json(directory / 'capture.json', manifest)
     return manifest
@@ -379,7 +432,7 @@ def publish_case(directory, manifest, destination):
             raise ValueError(f'Publication checksum mismatch: {sample["id"]}')
         payloads[sample['id']] = data
     if set(payloads) != set(TOOLS):
-        raise ValueError('Publication requires all five converters')
+        raise ValueError('Publication requires all configured converters')
     for tool, data in payloads.items():
         (destination / f'{tool}.png').write_bytes(data)
     write_json(destination / 'capture.json', manifest)
@@ -541,6 +594,7 @@ def main():
     # Import after --help and argument validation so setup/errors stay usable.
     import fontTools
     import PIL
+    import uharfbuzz
     output = (args.output or ROOT / 'out/diagnostics/landing-samples' / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')).resolve()
     output.mkdir(parents=True, exist_ok=False)
     try:
@@ -548,14 +602,14 @@ def main():
         before = source_state()
         write_json(output / 'source-snapshot.json', before)
         print('Preparing pinned converters and building Glypherie…', flush=True)
-        lvgl, adafruit, versions = prepare_tools(args.cache.resolve())
+        lvgl, adafruit, crosspoint_script, versions = prepare_tools(args.cache.resolve())
         target = args.cache.resolve() / 'glypherie-target'
         execute(['cargo', 'build', '--locked', '--manifest-path', ROOT / 'crates/generator/Cargo.toml', '--bin', 'font_playdate', '--target-dir', target], output, 'build-glypherie')
         generator = target / 'debug/font_playdate'
-        manifests = {case['id']: generate_case(case, output / case['id'], (lvgl, adafruit, generator), before) for case in cases}
+        manifests = {case['id']: generate_case(case, output / case['id'], (lvgl, adafruit, generator, crosspoint_script, versions['crosspoint']), before) for case in cases}
         if before != source_state():
             raise ValueError('Generator source changed during capture; rerun against stable sources')
-        versions.update(fonttools=fontTools.__version__, pillow=PIL.__version__, python=sys.version, node=subprocess.check_output(['node', '--version'], text=True).strip(), adapter_sources={p.name: sha(p.read_bytes()) for p in SCRIPT.iterdir() if p.suffix in ['.py', '.mjs', '.ts', '.txt']}, git_head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
+        versions.update(fonttools=fontTools.__version__, pillow=PIL.__version__, uharfbuzz=uharfbuzz.__version__, harfbuzz=uharfbuzz.version_string(), python=sys.version, node=subprocess.check_output(['node', '--version'], text=True).strip(), adapter_sources={p.name: sha(p.read_bytes()) for p in SCRIPT.iterdir() if p.suffix in ['.py', '.mjs', '.ts', '.txt']}, git_head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
         write_json(output / 'verification.json', {'complete': True, 'source_stable': True, 'versions': versions, 'cases': list(manifests)})
         write_gallery(output, manifests)
         if args.publish:

@@ -676,15 +676,16 @@ investigation.
 
 ##### Main-page source-stem calibration
 
-The [main-page sample selection](../../../apps/web/scripts/landing-samples/main-page.json) targets one native pixel for
-principal stems through one global weight coordinate per family and size. The project adaptation measures upper body
-sections in `H`, `I` and `l`, bounding the widest reference section in the serialized static source font by one pixel.
-All converters receive that same instance; source weight relationships, serif contrast and native converter behavior
-remain intact. This controls specimen inputs rather than changing fitting or scan conversion. It does not claim that
-every serif, join, diagonal or curved stroke is one pixel wide.
+Earlier main-page captures targeted one native pixel for principal stems through one global weight coordinate per family
+and size. The current [sample selection](../../../apps/web/scripts/landing-samples/main-page.json) supersedes that
+calibration; the observations below apply to the earlier calibrated instances. The project adaptation measures upper
+body sections in `H`, `I` and `l`, bounding the widest reference section in the serialized static source font by one
+pixel. All converters receive that same instance; source weight relationships, serif contrast and native converter
+behavior remain intact. This controls specimen inputs rather than changing fitting or scan conversion. It does not claim
+that every serif, join, diagonal or curved stroke is one pixel wide.
 
-Glypherie delivers one-pixel horizontal body runs in the three reference characters for every selected family and size,
-measured in each strike's fitted cap-height frame. The following Mono converter differences remain **pending
+Glypherie delivered one-pixel horizontal body runs in the three reference characters for every calibrated family and
+size, measured in each strike's fitted cap-height frame. The following Mono converter differences remain **pending
 assessment**, with native output retained:
 
 | Family        | Size | Axes                      | Converter                    | Witness                         |

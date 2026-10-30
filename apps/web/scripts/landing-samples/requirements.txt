@@ -1,2 +1,4 @@
 fonttools==4.60.1
 Pillow==12.0.0
+freetype-py==2.5.1
+uharfbuzz==0.53.3

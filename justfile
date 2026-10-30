@@ -87,7 +87,7 @@ web-typecheck:
 web-test:
     npm --prefix apps/web run test
 
-# Capture the five front-page converters; activate the sample-script environment first.
+# Capture the front-page converters; activate the sample-script environment first.
 landing-samples *args:
     python3 apps/web/scripts/landing-samples/generate.py "$@"
 
