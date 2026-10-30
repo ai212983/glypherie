@@ -8,7 +8,7 @@
 //! (f32 points on the observed 1/64 grid). Comparisons state their
 //! quantization: exact where values are grid-representable on both sides,
 //! bounded by the rounding the representation can introduce, never tuned.
-//! Upstream Y stays hinter-owned and is never asserted. Features are
+//! Upstream Y stays hinter-owned and is checked for exact retention. Features are
 //! located structurally from the outlines (single closed contour,
 //! verified op correspondence raw and rounded); no pixel rows, preferred
 //! bitmaps or tuned thresholds appear. Paper grounding: Hobby section 6
@@ -1140,12 +1140,8 @@ fn kernel_output_covaries_with_integer_x_translation() {
 
 #[test]
 fn kernel_applies_source_shape_correction() {
-    // The kernel applies at this seam while the pipeline route still
-    // delivers the old failed result: this test guards the kernel
-    // output, the three pipeline tests guard the renderer route until
-    // integration. No pixel counts, no model reason strings, no source
-    // field names asserted — only the applied flag and the same
-    // geometric relations the pipeline tests demand.
+    // Kernel consumers receive the same source relationships and retained
+    // upstream Y as the integrated renderer route.
     let case = kernel_case(16.0);
     let out = call_kernel(
         &case.raw,
@@ -1162,6 +1158,26 @@ fn kernel_applies_source_shape_correction() {
         segments(&case.upstream),
         segments(&out.commands),
     );
+    for (upstream, candidate) in up.iter().zip(&res) {
+        for (u, c) in [
+            (Some(upstream.a), Some(candidate.a)),
+            (Some(upstream.b), Some(candidate.b)),
+            (upstream.c1, candidate.c1),
+            (upstream.c2, candidate.c2),
+        ] {
+            assert_eq!(u.is_some(), c.is_some(), "control correspondence changed");
+            if let (Some(u), Some(c)) = (u, c) {
+                assert_eq!(c[1].to_bits(), u[1].to_bits(), "upstream Y changed");
+                for coordinate in c {
+                    assert_eq!(
+                        coordinate * 64.0,
+                        (coordinate * 64.0).round(),
+                        "candidate left the 26.6 grid"
+                    );
+                }
+            }
+        }
+    }
     let (_, src_extent, src_dx, _) = head_chain(&src);
     let (_, up_extent, up_dx, _) = head_chain(&up);
     let (_, res_extent, res_dx, res_cross) = head_chain(&res);
@@ -1217,5 +1233,276 @@ fn kernel_applies_source_shape_correction() {
             "kernel curvature sign flip at command {}: source {s}, upstream {u}, kernel {c}",
             res[i].cmd
         );
+    }
+}
+
+#[test]
+fn kernel_competing_faults_keep_boundary_precedence() {
+    let case = kernel_case(16.0);
+    let mut empty = case.reference.clone();
+    empty.anchors.clear();
+    for size in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        let result = diagonal_fitting::coupled::automatic_shape(
+            &case.raw,
+            &case.captured,
+            &case.upstream,
+            size,
+            &empty,
+            [true, true],
+        );
+        match result {
+            Err(error) => assert_eq!(error.0, "curve model requires finite positive size"),
+            Ok(_) => panic!("invalid size bypassed the hard boundary under native ownership"),
+        }
+    }
+    let malformed = vec![FittedCommand::LineTo(0.0, 0.0)];
+    let mut off_grid = case.upstream.clone();
+    match &mut off_grid[0] {
+        FittedCommand::MoveTo(x, _) => *x += 1.0 / 128.0,
+        _ => panic!("fixture must start with a move"),
+    }
+    let mut mismatch = case.raw.clone();
+    mismatch.contours.push(case.raw.contours[0].clone());
+    for (raw, captured, upstream, axes, reason) in [
+        (
+            &case.raw,
+            case.captured.as_slice(),
+            malformed.as_slice(),
+            [true, false],
+            "automatic-axes-required",
+        ),
+        (
+            &case.raw,
+            case.captured.as_slice(),
+            malformed.as_slice(),
+            [false, false],
+            "malformed-commands",
+        ),
+        (
+            &mismatch,
+            case.captured.as_slice(),
+            case.upstream.as_slice(),
+            [false, false],
+            "unsupported-correspondence",
+        ),
+        (
+            &case.raw,
+            malformed.as_slice(),
+            off_grid.as_slice(),
+            [false, false],
+            "upstream-not-26.6",
+        ),
+        (
+            &case.raw,
+            malformed.as_slice(),
+            case.upstream.as_slice(),
+            [false, false],
+            "shape-standard-unavailable",
+        ),
+    ] {
+        let out = call_kernel(raw, captured, upstream, &empty, axes, 16.0);
+        assert!(!out.applied);
+        assert_eq!(out.commands, upstream, "{reason} changed fallback commands");
+        assert_eq!(out.reason, format!("shape:{reason}"));
+        assert_eq!(
+            out.diagnostics,
+            serde_json::json!({"model": "coupled-shape-auto-01"})
+        );
+    }
+}
+
+#[test]
+fn kernel_captured_class_does_not_replace_raw_shape_authority() {
+    let case = kernel_case(16.0);
+    // Exact positive X scaling preserves captured continuity; its width
+    // certificate follows the same scaling, while raw shape authority and
+    // the certified fitted standard remain unchanged.
+    let captured: Vec<FittedCommand> = case
+        .captured
+        .iter()
+        .map(|command| match *command {
+            FittedCommand::MoveTo(x, y) => FittedCommand::MoveTo(2.0 * x, y),
+            FittedCommand::LineTo(x, y) => FittedCommand::LineTo(2.0 * x, y),
+            FittedCommand::QuadTo(cx, cy, x, y) => FittedCommand::QuadTo(2.0 * cx, cy, 2.0 * x, y),
+            FittedCommand::CurveTo(c1x, c1y, c2x, c2y, x, y) => {
+                FittedCommand::CurveTo(2.0 * c1x, c1y, 2.0 * c2x, c2y, 2.0 * x, y)
+            }
+            FittedCommand::Close => FittedCommand::Close,
+        })
+        .collect();
+    let mut reference = case.reference.clone();
+    for anchor in &mut reference.anchors {
+        if let Some(cert) = &mut anchor.cert {
+            cert.border_width *= 2.0;
+        }
+    }
+    let original = call_kernel(
+        &case.raw,
+        &case.captured,
+        &case.upstream,
+        &case.reference,
+        [false, false],
+        16.0,
+    );
+    let scaled = call_kernel(
+        &case.raw,
+        &captured,
+        &case.upstream,
+        &reference,
+        [false, false],
+        16.0,
+    );
+    assert!(original.applied && scaled.applied);
+    assert_eq!(scaled.commands, original.commands);
+    assert_eq!(scaled.reason, original.reason);
+    assert_eq!(scaled.diagnostics, original.diagnostics);
+}
+
+#[test]
+fn kernel_empty_captured_source_falls_back_exact() {
+    let case = kernel_case(16.0);
+    let out = call_kernel(
+        &case.raw,
+        &[],
+        &case.upstream,
+        &case.reference,
+        [false, false],
+        16.0,
+    );
+    assert!(!out.applied);
+    assert_eq!(out.commands, case.upstream);
+    assert_eq!(out.reason, "shape:shape-standard-unavailable");
+    assert_eq!(
+        out.diagnostics,
+        serde_json::json!({"model": "coupled-shape-auto-01"})
+    );
+}
+
+#[test]
+fn kernel_delivered_movement_stays_inside_original_feature_caps() {
+    let case = kernel_case(16.0);
+    let out = call_kernel(
+        &case.raw,
+        &case.captured,
+        &case.upstream,
+        &case.reference,
+        [false, false],
+        16.0,
+    );
+    assert!(out.applied);
+    let raw = raw_walk(&case.raw).segs;
+    let upstream = segments(&case.upstream);
+    let candidate = segments(&out.commands);
+    assert_eq!(raw.len(), upstream.len());
+    assert_eq!(raw.len(), candidate.len());
+    let cap = cap_vertex(&raw);
+    let x_right = cap.2[0];
+    let shared: Vec<&Seg> = raw
+        .iter()
+        .filter(|s| s.op == Op::Line && s.a[0] == x_right && s.b[0] == x_right && s.a[1] != s.b[1])
+        .collect();
+    assert_eq!(
+        shared.len(),
+        2,
+        "fixture must have separate body and head borders"
+    );
+    let body = shared
+        .iter()
+        .min_by(|a, b| a.a[1].min(a.b[1]).total_cmp(&b.a[1].min(b.b[1])))
+        .unwrap();
+    let head = shared
+        .iter()
+        .find(|s| s.a == cap.2 || s.b == cap.2)
+        .unwrap();
+    let body_mid = (body.a[1] + body.b[1]) / 2.0;
+    let mut left_supports: Vec<f64> = raw
+        .iter()
+        .filter(|s| {
+            s.op == Op::Line
+                && s.a[0] == s.b[0]
+                && s.a[0] < x_right
+                && s.a[1].min(s.b[1]) <= body_mid
+                && body_mid <= s.a[1].max(s.b[1])
+        })
+        .map(|s| s.a[0])
+        .collect();
+    left_supports.sort_by(f64::total_cmp);
+    left_supports.dedup();
+    assert_eq!(
+        left_supports.len(),
+        1,
+        "fixture must have one opposite body support"
+    );
+    let body_cap = (x_right - left_supports[0]) / 2.0 - diagonal_fitting::HEADROOM;
+    let (head_range, _, _, _) = head_chain(&raw);
+    // Invert monotone source Bernstein Y independently of the kernel's
+    // analytic root solver. This measures the original three source-width
+    // samples; no candidate coordinate participates in its own budget.
+    let mut widths = Vec::new();
+    for fraction in [0.25, 0.5, 0.75] {
+        let y_low = head.a[1].min(head.b[1]);
+        let y_high = head.a[1].max(head.b[1]);
+        let y = y_low + (y_high - y_low) * fraction;
+        let hits: Vec<&Seg> = raw[head_range.clone()]
+            .iter()
+            .filter(|s| s.op == Op::Quad && s.a[1].min(s.b[1]) <= y && y <= s.a[1].max(s.b[1]))
+            .collect();
+        assert_eq!(hits.len(), 1, "source head sample must meet one quad");
+        let segment = hits[0];
+        let control = segment.c1.unwrap();
+        assert!(
+            segment.a[1].min(segment.b[1]) <= control[1]
+                && control[1] <= segment.a[1].max(segment.b[1]),
+            "source head must be monotone"
+        );
+        let bernstein = |t: f64, axis: usize| {
+            let u = 1.0 - t;
+            u * u * segment.a[axis] + 2.0 * u * t * control[axis] + t * t * segment.b[axis]
+        };
+        let (mut low, mut high) = (0.0, 1.0);
+        for _ in 0..64 {
+            let middle = (low + high) / 2.0;
+            if (bernstein(middle, 1) < y) == (segment.a[1] < segment.b[1]) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        widths.push(x_right - bernstein((low + high) / 2.0, 0));
+    }
+    let head_cap =
+        widths.into_iter().fold(f64::INFINITY, f64::min) / 2.0 - diagonal_fitting::HEADROOM;
+    let shared_cap = body_cap.min(head_cap);
+    assert!(
+        0.0 < head_cap && head_cap < body_cap,
+        "fixture must distinguish head and body budgets"
+    );
+    for (index, ((source, upstream), candidate)) in
+        raw.iter().zip(&upstream).zip(&candidate).enumerate()
+    {
+        for (source_point, upstream_point, candidate_point) in [
+            (Some(source.a), Some(upstream.a), Some(candidate.a)),
+            (Some(source.b), Some(upstream.b), Some(candidate.b)),
+            (source.c1, upstream.c1, candidate.c1),
+        ] {
+            if let (Some(s), Some(u), Some(c)) = (source_point, upstream_point, candidate_point) {
+                let movement = (c[0] - u[0]).abs();
+                assert!(
+                    movement <= body_cap,
+                    "point on segment {index} exceeded original body cap"
+                );
+                if s[0] == x_right || [cap.0, cap.1, cap.2].contains(&s) {
+                    assert!(
+                        movement <= shared_cap,
+                        "shared/cap point on segment {index} exceeded its original cap"
+                    );
+                } else if head_range.contains(&index) {
+                    assert!(
+                        movement <= head_cap,
+                        "head/connector point on segment {index} exceeded original head cap"
+                    );
+                }
+            }
+        }
     }
 }
