@@ -30,19 +30,24 @@ def prepare(cache):
         if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise ValueError(f'Crosspoint source checksum mismatch: {name}')
     source = (directory / 'fontconvert_sdcard.py').read_text()
-    original = '    face.set_char_size(size << 6, size << 6, 150, 150)'
-    if source.count(original) != 1:
-        raise ValueError('Crosspoint source no longer matches the exact-pixel-size adapter')
-    # As with Adafruit, normalize only the size API. Keep upstream glyph loading,
-    # hinting, 2-bit quantization, metrics and packing intact.
-    adapted = source.replace(original, '    face.set_pixel_sizes(0, size)')
+    # Normalize glyph loading and design-unit pair scaling to the same ppem.
+    # Keep upstream hinting, 2-bit quantization, metrics and packing intact.
+    replacements = {
+        '    face.set_char_size(size << 6, size << 6, 150, 150)': '    face.set_pixel_sizes(0, size)',
+        '    ppem = size * 150.0 / 72.0': '    ppem = size',
+    }
+    adapted = source
+    for original, replacement in replacements.items():
+        if source.count(original) != 1:
+            raise ValueError('Crosspoint source no longer matches the exact-pixel-size adapter')
+        adapted = adapted.replace(original, replacement)
     script = directory / 'fontconvert_sdcard_px.py'
     script.write_text(adapted)
     return script, {
         'revision': REVISION,
         'source_sha256': SOURCES,
         'adapter_sha256': hashlib.sha256(adapted.encode()).hexdigest(),
-        'adapter': 'set_char_size(points at 150 DPI) replaced with set_pixel_sizes(ppem); all other converter code unchanged.',
+        'adapter': 'Glyph loading and kerning ppem normalized from points at 150 DPI to the requested pixel size; all other converter code unchanged.',
         'freetype': '.'.join(map(str, freetype.version())),
         'source_bits': 2,
         'monochrome': 'Firmware BW mode: packed coverage levels 1, 2 and 3 become black; level 0 stays white.',

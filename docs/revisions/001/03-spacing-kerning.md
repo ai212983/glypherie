@@ -1,6 +1,6 @@
 # Monochrome geometry and spacing
 
-<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit afloader rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL Adafruit pdfontconv Tophat rint -->
+<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit afloader rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL Adafruit Crosspoint pdfontconv Tophat rint -->
 
 Combine native and automatic Mono fitting on independent axes, preserve source shape and weight relationships, and
 assess continuity and reading rhythm under bitmap placement. Fitting, scan conversion and layout remain separate:
@@ -391,6 +391,12 @@ not establish a contract failure or universal correction. Evidence: `out/diagnos
 Front-page comparisons enable source kerning with zero extra tracking. The
 [methodology](../../references/font-converters.md#source-kerning) owns native support and composition adaptations;
 enabling kerning does not itself resolve these optical concerns.
+
+**Confirmed comparison-fidelity defect:** Crosspoint pairs used the original 150-DPI scale against normalized glyph
+sizes, and composition accumulated fractional positions instead of snapping each combined advance and pair step. The
+correction aligns pair scaling with glyph size and restores firmware placement while retaining exported glyph shapes and
+native advance values. Its visible effect is spacing and placement; comparative optical quality remains pending
+assessment under the existing family, size and axis scope.
 
 #### Fitting-bearing compensation investigation
 

@@ -13,8 +13,7 @@ acceptance.
 Glypherie, pdfontconv, LVGL and Crosspoint use their exported pair data. The pdfontconv capture explicitly sets Canvas
 [`fontKerning=normal`](https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/fontKerning) before its
 stock measured-pair export, avoiding the browser's small-size `auto` policy. LVGL and Crosspoint retain their signed 4.4
-pair storage; LVGL rounds each combined advance and pair step to whole pixels, while Crosspoint accumulates fractional
-positions. Playdate pairs are whole pixels.
+pair storage; both round each combined advance and pair step to whole pixels. Playdate pairs are whole pixels.
 
 Tophat's stock outline import does not import source kerning, and Adafruit's `GFXfont` has no kerning table. Their
 comparison composition adds source-font pair adjustments from [HarfBuzz](https://github.com/harfbuzz/uharfbuzz), with
@@ -33,15 +32,17 @@ used directly, without adding source adjustments a second time.
 The capture uses
 [`fontconvert_sdcard.py` at revision 10709120](https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py),
 which exports `.cpfont` v4 with four coverage levels and fractional advances. Its point-size call at 150 DPI is replaced
-with an exact pixel-size call, as in the existing Adafruit adapter. Glyph loading, native hinting, quantization and
-packing remain upstream behavior. Source and adapted script hashes are recorded separately. This is a normalized
-comparison, not a capture of the stock command at the same numeric point size.
+with an exact pixel-size call, as in the existing Adafruit adapter; design-unit kerning uses that same pixel size. Glyph
+loading, native hinting, quantization and packing remain upstream behavior. Source and adapted script hashes are
+recorded separately. This is a normalized comparison, not a capture of the stock command at the same numeric point size.
 
 The monochrome sample follows the firmware's
 [BW glyph drawing rule](https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/GfxRenderer/GlyphBitmap.h):
 coverage 0 stays white; levels 1, 2 and 3 become black. This differs from midpoint thresholding. The adapter preserves
 packed bit order, glyph bearings and 12.4 advances; native source kerning is applied and ligatures are disabled. The
-original gray-level `.cpfont` export remains in the run directory. The front page shows composed font output, not a
+composition follows the firmware's
+[combined advance-plus-pair rounding](https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/GfxRenderer/GfxRenderer.cpp#L780).
+The original gray-level `.cpfont` export remains in the run directory. The front page shows composed font output, not a
 device screenshot or the firmware's complete text-layout engine.
 
 With anti-aliasing enabled, Crosspoint renders a black-and-white base and gray masks. On supported panels, the display

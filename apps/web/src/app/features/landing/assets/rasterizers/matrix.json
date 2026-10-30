@@ -57,37 +57,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/roboto-8-288ef191d342/repo.png"
+          "file": "samples/roboto-8-fc06a6df9249/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/roboto-8-288ef191d342/pdfontconv.png"
+          "file": "samples/roboto-8-fc06a6df9249/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/roboto-8-288ef191d342/tophat.png"
+          "file": "samples/roboto-8-fc06a6df9249/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/roboto-8-288ef191d342/lvgl.png"
+          "file": "samples/roboto-8-fc06a6df9249/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/roboto-8-288ef191d342/adafruit.png"
+          "file": "samples/roboto-8-fc06a6df9249/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/roboto-8-288ef191d342/crosspoint.png"
+          "file": "samples/roboto-8-fc06a6df9249/crosspoint.png"
         }
       ]
     },
@@ -124,37 +124,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/roboto-12-88185121ade5/repo.png"
+          "file": "samples/roboto-12-a910f00d4a5a/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/roboto-12-88185121ade5/pdfontconv.png"
+          "file": "samples/roboto-12-a910f00d4a5a/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/roboto-12-88185121ade5/tophat.png"
+          "file": "samples/roboto-12-a910f00d4a5a/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/roboto-12-88185121ade5/lvgl.png"
+          "file": "samples/roboto-12-a910f00d4a5a/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/roboto-12-88185121ade5/adafruit.png"
+          "file": "samples/roboto-12-a910f00d4a5a/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/roboto-12-88185121ade5/crosspoint.png"
+          "file": "samples/roboto-12-a910f00d4a5a/crosspoint.png"
         }
       ]
     },
@@ -191,37 +191,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/roboto-16-0d86b0c12a6a/repo.png"
+          "file": "samples/roboto-16-197711a00d99/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/roboto-16-0d86b0c12a6a/pdfontconv.png"
+          "file": "samples/roboto-16-197711a00d99/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/roboto-16-0d86b0c12a6a/tophat.png"
+          "file": "samples/roboto-16-197711a00d99/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/roboto-16-0d86b0c12a6a/lvgl.png"
+          "file": "samples/roboto-16-197711a00d99/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/roboto-16-0d86b0c12a6a/adafruit.png"
+          "file": "samples/roboto-16-197711a00d99/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/roboto-16-0d86b0c12a6a/crosspoint.png"
+          "file": "samples/roboto-16-197711a00d99/crosspoint.png"
         }
       ]
     },
@@ -258,37 +258,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/roboto-20-f38a539891b9/repo.png"
+          "file": "samples/roboto-20-c3bddb21934b/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/roboto-20-f38a539891b9/pdfontconv.png"
+          "file": "samples/roboto-20-c3bddb21934b/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/roboto-20-f38a539891b9/tophat.png"
+          "file": "samples/roboto-20-c3bddb21934b/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/roboto-20-f38a539891b9/lvgl.png"
+          "file": "samples/roboto-20-c3bddb21934b/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/roboto-20-f38a539891b9/adafruit.png"
+          "file": "samples/roboto-20-c3bddb21934b/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/roboto-20-f38a539891b9/crosspoint.png"
+          "file": "samples/roboto-20-c3bddb21934b/crosspoint.png"
         }
       ]
     },
@@ -325,37 +325,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/roboto-italic-8-a2e80cb538ee/repo.png"
+          "file": "samples/roboto-italic-8-96606715e634/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/roboto-italic-8-a2e80cb538ee/pdfontconv.png"
+          "file": "samples/roboto-italic-8-96606715e634/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/roboto-italic-8-a2e80cb538ee/tophat.png"
+          "file": "samples/roboto-italic-8-96606715e634/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/roboto-italic-8-a2e80cb538ee/lvgl.png"
+          "file": "samples/roboto-italic-8-96606715e634/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/roboto-italic-8-a2e80cb538ee/adafruit.png"
+          "file": "samples/roboto-italic-8-96606715e634/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/roboto-italic-8-a2e80cb538ee/crosspoint.png"
+          "file": "samples/roboto-italic-8-96606715e634/crosspoint.png"
         }
       ]
     },
@@ -392,37 +392,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/roboto-italic-12-97d0b85da106/repo.png"
+          "file": "samples/roboto-italic-12-7351e0f7ad11/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/roboto-italic-12-97d0b85da106/pdfontconv.png"
+          "file": "samples/roboto-italic-12-7351e0f7ad11/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/roboto-italic-12-97d0b85da106/tophat.png"
+          "file": "samples/roboto-italic-12-7351e0f7ad11/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/roboto-italic-12-97d0b85da106/lvgl.png"
+          "file": "samples/roboto-italic-12-7351e0f7ad11/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/roboto-italic-12-97d0b85da106/adafruit.png"
+          "file": "samples/roboto-italic-12-7351e0f7ad11/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/roboto-italic-12-97d0b85da106/crosspoint.png"
+          "file": "samples/roboto-italic-12-7351e0f7ad11/crosspoint.png"
         }
       ]
     },
@@ -459,37 +459,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/roboto-italic-16-16b863e7c1b5/repo.png"
+          "file": "samples/roboto-italic-16-6d3e40989deb/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/roboto-italic-16-16b863e7c1b5/pdfontconv.png"
+          "file": "samples/roboto-italic-16-6d3e40989deb/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/roboto-italic-16-16b863e7c1b5/tophat.png"
+          "file": "samples/roboto-italic-16-6d3e40989deb/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/roboto-italic-16-16b863e7c1b5/lvgl.png"
+          "file": "samples/roboto-italic-16-6d3e40989deb/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/roboto-italic-16-16b863e7c1b5/adafruit.png"
+          "file": "samples/roboto-italic-16-6d3e40989deb/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/roboto-italic-16-16b863e7c1b5/crosspoint.png"
+          "file": "samples/roboto-italic-16-6d3e40989deb/crosspoint.png"
         }
       ]
     },
@@ -526,37 +526,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/roboto-italic-20-44bbca1f581b/repo.png"
+          "file": "samples/roboto-italic-20-de7626be1ff5/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/roboto-italic-20-44bbca1f581b/pdfontconv.png"
+          "file": "samples/roboto-italic-20-de7626be1ff5/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/roboto-italic-20-44bbca1f581b/tophat.png"
+          "file": "samples/roboto-italic-20-de7626be1ff5/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/roboto-italic-20-44bbca1f581b/lvgl.png"
+          "file": "samples/roboto-italic-20-de7626be1ff5/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/roboto-italic-20-44bbca1f581b/adafruit.png"
+          "file": "samples/roboto-italic-20-de7626be1ff5/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/roboto-italic-20-44bbca1f581b/crosspoint.png"
+          "file": "samples/roboto-italic-20-de7626be1ff5/crosspoint.png"
         }
       ]
     },
@@ -593,37 +593,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/literata-8-c53a75ad35c6/repo.png"
+          "file": "samples/literata-8-7cb725713176/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/literata-8-c53a75ad35c6/pdfontconv.png"
+          "file": "samples/literata-8-7cb725713176/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/literata-8-c53a75ad35c6/tophat.png"
+          "file": "samples/literata-8-7cb725713176/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/literata-8-c53a75ad35c6/lvgl.png"
+          "file": "samples/literata-8-7cb725713176/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/literata-8-c53a75ad35c6/adafruit.png"
+          "file": "samples/literata-8-7cb725713176/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/literata-8-c53a75ad35c6/crosspoint.png"
+          "file": "samples/literata-8-7cb725713176/crosspoint.png"
         }
       ]
     },
@@ -660,37 +660,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/literata-12-124d5d5136ce/repo.png"
+          "file": "samples/literata-12-022dd9fb530c/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/literata-12-124d5d5136ce/pdfontconv.png"
+          "file": "samples/literata-12-022dd9fb530c/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/literata-12-124d5d5136ce/tophat.png"
+          "file": "samples/literata-12-022dd9fb530c/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/literata-12-124d5d5136ce/lvgl.png"
+          "file": "samples/literata-12-022dd9fb530c/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/literata-12-124d5d5136ce/adafruit.png"
+          "file": "samples/literata-12-022dd9fb530c/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/literata-12-124d5d5136ce/crosspoint.png"
+          "file": "samples/literata-12-022dd9fb530c/crosspoint.png"
         }
       ]
     },
@@ -727,37 +727,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/literata-16-af1d2790bf95/repo.png"
+          "file": "samples/literata-16-97605ccd8ad6/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/literata-16-af1d2790bf95/pdfontconv.png"
+          "file": "samples/literata-16-97605ccd8ad6/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/literata-16-af1d2790bf95/tophat.png"
+          "file": "samples/literata-16-97605ccd8ad6/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/literata-16-af1d2790bf95/lvgl.png"
+          "file": "samples/literata-16-97605ccd8ad6/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/literata-16-af1d2790bf95/adafruit.png"
+          "file": "samples/literata-16-97605ccd8ad6/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/literata-16-af1d2790bf95/crosspoint.png"
+          "file": "samples/literata-16-97605ccd8ad6/crosspoint.png"
         }
       ]
     },
@@ -794,37 +794,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/literata-20-f1b9a4199f61/repo.png"
+          "file": "samples/literata-20-d9d950b1fb6b/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/literata-20-f1b9a4199f61/pdfontconv.png"
+          "file": "samples/literata-20-d9d950b1fb6b/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/literata-20-f1b9a4199f61/tophat.png"
+          "file": "samples/literata-20-d9d950b1fb6b/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/literata-20-f1b9a4199f61/lvgl.png"
+          "file": "samples/literata-20-d9d950b1fb6b/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/literata-20-f1b9a4199f61/adafruit.png"
+          "file": "samples/literata-20-d9d950b1fb6b/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/literata-20-f1b9a4199f61/crosspoint.png"
+          "file": "samples/literata-20-d9d950b1fb6b/crosspoint.png"
         }
       ]
     },
@@ -854,37 +854,37 @@
           "id": "repo",
           "label": "Glypherie",
           "source_url": "https://github.com/ai212983/glypherie",
-          "file": "samples/rouge-script-20-3a4943b546eb/repo.png"
+          "file": "samples/rouge-script-20-d02fe1e54b0b/repo.png"
         },
         {
           "id": "pdfontconv",
           "label": "pdfontconv",
           "source_url": "https://pdfontconv.frozenfractal.com/",
-          "file": "samples/rouge-script-20-3a4943b546eb/pdfontconv.png"
+          "file": "samples/rouge-script-20-d02fe1e54b0b/pdfontconv.png"
         },
         {
           "id": "tophat",
           "label": "Tophat",
           "source_url": "https://kaasiand.cool/tophat/",
-          "file": "samples/rouge-script-20-3a4943b546eb/tophat.png"
+          "file": "samples/rouge-script-20-d02fe1e54b0b/tophat.png"
         },
         {
           "id": "lvgl",
           "label": "LVGL Font Converter",
           "source_url": "https://github.com/lvgl/lv_font_conv",
-          "file": "samples/rouge-script-20-3a4943b546eb/lvgl.png"
+          "file": "samples/rouge-script-20-d02fe1e54b0b/lvgl.png"
         },
         {
           "id": "adafruit",
           "label": "Adafruit Font Converter",
           "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
-          "file": "samples/rouge-script-20-3a4943b546eb/adafruit.png"
+          "file": "samples/rouge-script-20-d02fe1e54b0b/adafruit.png"
         },
         {
           "id": "crosspoint",
           "label": "Crosspoint (monochrome)",
           "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
-          "file": "samples/rouge-script-20-3a4943b546eb/crosspoint.png"
+          "file": "samples/rouge-script-20-d02fe1e54b0b/crosspoint.png"
         }
       ]
     }

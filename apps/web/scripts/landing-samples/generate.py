@@ -288,14 +288,23 @@ def adafruit_glyphs(path):
     return result
 
 
-def compose(glyphs, text, canvas, origin, baselines, pair_adjustments=None):
+def compose(glyphs, text, canvas, origin, baselines, pair_adjustments=None, *, integer_steps=False):
     from PIL import Image, ImageChops
     image = Image.new('L', canvas, 255)
     for line, baseline in zip(text.split('\n'), baselines, strict=True):
         pen = origin
         previous = None
+        previous_advance = 0
         for ch in line:
-            pen += (pair_adjustments or {}).get((previous, ch), 0)
+            adjustment = (pair_adjustments or {}).get((previous, ch), 0)
+            if integer_steps:
+                # Crosspoint snaps the preceding advance plus the next pair
+                # together, rather than rounding a running fractional pen.
+                # https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/GfxRenderer/GfxRenderer.cpp#L780
+                if previous is not None:
+                    pen += math.floor(previous_advance + adjustment + 0.5)
+            else:
+                pen += adjustment
             glyph, advance, left, top = glyphs[ch]
             x, y = math.floor(pen + 0.5) + left, baseline + top
             bounds = glyph.getbbox()
@@ -305,7 +314,9 @@ def compose(glyphs, text, canvas, origin, baselines, pair_adjustments=None):
             ink = Image.new('L', canvas)
             ink.paste(glyph, (x, y))
             image = ImageChops.darker(image, ImageChops.invert(ink))
-            pen += advance
+            if not integer_steps:
+                pen += advance
+            previous_advance = advance
             previous = ch
     return image
 
@@ -375,7 +386,7 @@ def generate_case(case, directory, binaries, source_snapshot):
         pair_adjustments[tool] = {pair: math.floor(value + 0.5) for pair, value in source_pairs.items() if math.floor(value + 0.5)}
     for tool, pairs in pair_adjustments.items():
         write_json(directory / tool / 'applied-pairs.json', [{'left': left, 'right': right, 'adjustment_px': value} for (left, right), value in sorted(pairs.items())])
-    images = {tool: compose(data, text, canvas, origin, baselines, pair_adjustments.get(tool)) for tool, data in glyphs.items()}
+    images = {tool: compose(data, text, canvas, origin, baselines, pair_adjustments.get(tool), integer_steps=tool == 'crosspoint') for tool, data in glyphs.items()}
     bounds = [ImageChops.invert(image).getbbox() for image in images.values()]
     if not all(bounds):
         raise ValueError('Samples contain no ink')
@@ -397,7 +408,12 @@ def generate_case(case, directory, binaries, source_snapshot):
             raise ValueError(f'{tool}: crop or line bands lost ink')
         image.save(directory / tool / 'paragraph.png')
         display.save(directory / f'{tool}.png')
-        verification[tool] = {'repeat_exports_identical': True, 'all_ink_preserved': True, 'paragraph_ink_pixels': ink, 'matches_browser_memory': True if tool in browser['samples'] else None, 'source_kerning': True, 'pair_adjustment_count': len(pair_adjustments.get(tool, {})), 'pair_source': 'HarfBuzz source pairs, rounded to integer pixels during composition' if tool in ['tophat', 'adafruit'] else 'native export (including fitted corrections for Glypherie)'}
+        pair_source = 'native export'
+        if tool == 'repo':
+            pair_source = 'native export including Glypherie fitted corrections'
+        elif tool in ['tophat', 'adafruit']:
+            pair_source = 'HarfBuzz source pairs, rounded to integer pixels during composition'
+        verification[tool] = {'repeat_exports_identical': True, 'all_ink_preserved': True, 'paragraph_ink_pixels': ink, 'matches_browser_memory': True if tool in browser['samples'] else None, 'source_kerning': True, 'pair_adjustment_count': len(pair_adjustments.get(tool, {})), 'pair_source': pair_source}
         if tool == 'lvgl' and lvgl_supplemented:
             verification[tool]['pair_source'] = 'HarfBuzz source pairs during composition; native export has no pairs; LVGL 4.4 pair scaling and integer advance-step rounding retained'
         if calibration:

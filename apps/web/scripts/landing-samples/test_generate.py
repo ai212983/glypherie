@@ -126,6 +126,17 @@ class SampleChecks(unittest.TestCase):
         image = samples.compose({'A': (glyph, 1.25, -1, -1)}, 'AAA', (7, 3), 2, [2])
         self.assertEqual([x for x in range(7) if image.getpixel((x, 1)) == 0], [1, 2, 4])
 
+    def test_crosspoint_snaps_combined_steps_and_resets_each_line(self):
+        # Pinned GfxRenderer.cpp adds toPixel(prevAdvanceFP + kernFP).
+        # Exercise fractional accumulation, a half tie and a negative step;
+        # rounding advance and pair separately would also fail these controls.
+        glyphs = {'A': (Image.new('L', (1, 1), 255), 5.25, -1, -1)}
+        for pair, expected in [(-0.5625, [5, 10, 15, 20]), (0.25, [5, 11, 17, 23]), (-5.8125, [2, 3, 4, 5])]:
+            with self.subTest(pair=pair):
+                image = samples.compose(glyphs, 'AAAA\nAAAA', (30, 5), 6, [2, 4], {('A', 'A'): pair}, integer_steps=True)
+                for row in [1, 3]:
+                    self.assertEqual([x for x in range(30) if image.getpixel((x, row)) == 0], expected)
+
     def test_any_clipped_ink_fails(self):
         glyph = Image.new('L', (2, 1), 255)
         with self.assertRaisesRegex(ValueError, 'clips'):

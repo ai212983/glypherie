@@ -1,12 +1,48 @@
+import hashlib
 import struct
 import tempfile
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import crosspoint
 
 
 class CrosspointChecks(unittest.TestCase):
+    def test_adapter_normalizes_glyph_and_pair_ppem_and_records_its_hash(self):
+        # Pinned upstream rasterize_font_style sets the face at 150 DPI and
+        # passes size * 150 / 72 to design-unit pair extraction. Both must use
+        # the requested pixel size after normalization.
+        source = ('def rasterize_font_style(face, size):\n'
+                  '    face.set_char_size(size << 6, size << 6, 150, 150)\n'
+                  '    ppem = size * 150.0 / 72.0\n'
+                  '    return ppem\n')
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary)
+            directory = cache / 'crosspoint'
+            directory.mkdir()
+            path = directory / 'fontconvert_sdcard.py'
+            path.write_text(source)
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            with patch.object(crosspoint, 'SOURCES', {path.name: digest}):
+                script, capture = crosspoint.prepare(cache)
+                self.assertEqual(capture['source_sha256'], {path.name: digest})
+                self.assertEqual(capture['adapter_sha256'], hashlib.sha256(script.read_bytes()).hexdigest())
+                namespace = {}
+                exec(script.read_text(), namespace)
+                from unittest.mock import Mock
+                face = Mock()
+                self.assertEqual(namespace['rasterize_font_style'](face, 16), 16)
+                face.set_pixel_sizes.assert_called_once_with(0, 16)
+                face.set_char_size.assert_not_called()
+                self.assertEqual(path.read_text(), source)
+            # A verified but structurally changed upstream source must fail
+            # rather than silently leave the pair scale unadapted.
+            path.write_text(source.replace('    ppem = size * 150.0 / 72.0\n', '    ppem = size\n'))
+            with patch.object(crosspoint, 'SOURCES', {path.name: hashlib.sha256(path.read_bytes()).hexdigest()}):
+                with self.assertRaisesRegex(ValueError, 'exact-pixel-size adapter'):
+                    crosspoint.prepare(cache)
+
     def fixture(self):
         # Six samples cross a row boundary and end in a partial byte:
         # coverage 0,1,2 / 3,2,1. Space has advance but no bitmap.
