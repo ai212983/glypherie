@@ -1,0 +1,321 @@
+{
+  "inputs": {
+    "family": "Roboto",
+    "size_px": 16,
+    "source_font": "/Users/dimitri/Documents/Code/personal/Inkplate/font_generator/fonts/Roboto.ttf",
+    "source_font_sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134",
+    "font_sha256": "d0b58303478ea31d61f7c7af947eaa6bf6725d19b4323167a759ccf6b6824684",
+    "source_axes": {
+      "wght": 400,
+      "wdth": 100
+    },
+    "text": "Pack my box with five dozen liquor jugs.\nThe quick brown fox jumps over the lazy dog.\nMinimum effort, maximum clarity: AVATAR To Wa 0123456789.",
+    "text_sha256": "42b5aacd850d8523bfa5a3b078d33dd18f6eee22ce4b95a819eb65abfb9dca0b",
+    "canvas": [
+      2400,
+      192
+    ],
+    "origin_x": 16,
+    "baselines_y": [
+      48,
+      96,
+      144
+    ],
+    "source_kerning": true,
+    "threshold": 128,
+    "spacing": "Source kerning enabled with native advances and zero tracking. Glypherie retains fitted pair corrections. Tophat, Adafruit and LVGL exports without a native pair table use HarfBuzz source pairs during composition.",
+    "family_id": "roboto",
+    "stem_calibration": null
+  },
+  "display_crop": [
+    8,
+    27,
+    475,
+    156
+  ],
+  "display_size": [
+    467,
+    129
+  ],
+  "display_lines": [
+    {
+      "top": 8,
+      "height": 17
+    },
+    {
+      "top": 56,
+      "height": 17
+    },
+    {
+      "top": 104,
+      "height": 17
+    }
+  ],
+  "display_line_gap": 2,
+  "glypherie_pipeline": {
+    "fitting": "font_hints_auto",
+    "rasterization": "free_type_mono_terminals",
+    "diagonal_fitting": true
+  },
+  "glypherie_scan": {
+    "dropout": "smart",
+    "include_stubs": true,
+    "font_instructions": true
+  },
+  "renderer_inputs": {},
+  "renderer_policy": {
+    "fitting": "font_hints_auto",
+    "rasterization": "free_type_mono_terminals",
+    "diagonal_fitting": true,
+    "hinting": "auto_fallback",
+    "output_bits": 1,
+    "mono_threshold": 128,
+    "gray_gamma": 1,
+    "missing_glyphs": "error",
+    "metric_rounding": "subpixel",
+    "mono_raster": {
+      "dropout": "smart",
+      "include_stubs": true,
+      "font_instructions": true
+    }
+  },
+  "renderer_fingerprint": "a6d1bfff5881a45d7591208a2c8251daf4b3bfaec37905daddc6383ce89c15bd",
+  "samples": [
+    {
+      "id": "repo",
+      "label": "Glypherie",
+      "source_url": "https://github.com/ai212983/glypherie",
+      "output": "Playdate",
+      "file": "repo.png",
+      "original": "repo/paragraph.png",
+      "sha256": "e64d2b62cb041b8fde78b2bd2a58514c67b97fe2b4ae0f13315194576ee6f246",
+      "display_sha256": "d89befc83bd49bf3c9bc905bf923f405182a8a550718f379c133292ab419c33d",
+      "capture": null,
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 2629,
+        "matches_browser_memory": null,
+        "source_kerning": true,
+        "pair_adjustment_count": 234,
+        "pair_source": "native export (including fitted corrections for Glypherie)"
+      }
+    },
+    {
+      "id": "pdfontconv",
+      "label": "pdfontconv",
+      "source_url": "https://pdfontconv.frozenfractal.com/",
+      "output": "Playdate",
+      "file": "pdfontconv.png",
+      "original": "pdfontconv/paragraph.png",
+      "sha256": "27cf024e57d4c1f42ca91b98a610346482895253777fbb4bdf3103b64dc59138",
+      "display_sha256": "d3ea1465e7607c0558c03c86db0bad00ca5c5890efb67fd577db918fb09b64d8",
+      "capture": {
+        "baseline": 14,
+        "threshold": 128,
+        "cell_width": 15,
+        "cell_height": 18,
+        "offset_x": 1,
+        "source_kerning": true,
+        "kerning_source": "Native measured export; Canvas fontKerning=normal",
+        "loaded_font_faces": [
+          {
+            "family": "pdfontconv",
+            "status": "loaded"
+          }
+        ],
+        "errors": []
+      },
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 4022,
+        "matches_browser_memory": true,
+        "source_kerning": true,
+        "pair_adjustment_count": 100,
+        "pair_source": "native export (including fitted corrections for Glypherie)"
+      }
+    },
+    {
+      "id": "tophat",
+      "label": "Tophat",
+      "source_url": "https://kaasiand.cool/tophat/",
+      "output": "Playdate",
+      "file": "tophat.png",
+      "original": "tophat/paragraph.png",
+      "sha256": "ccc9933f937bc5d24c4f9c7de301e802e8880c53d70a42dca5ffdff5d10aa7b3",
+      "display_sha256": "976305f82781b8adbdbae72f792842572c7d1c437886a0f85c7c17b3570ada30",
+      "capture": {
+        "baseline": 14,
+        "threshold": 128,
+        "cell_width": 15,
+        "cell_height": 18,
+        "version": "v0.9.9",
+        "source_kerning": true,
+        "kerning_source": "HarfBuzz source pairs applied during composition; stock import has no kerning",
+        "loaded_font_faces": [
+          {
+            "family": "TopHatOutlineFnt0",
+            "status": "loaded"
+          },
+          {
+            "family": "TopHatOutlineFnt1",
+            "status": "loaded"
+          }
+        ],
+        "errors": []
+      },
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 4020,
+        "matches_browser_memory": true,
+        "source_kerning": true,
+        "pair_adjustment_count": 5,
+        "pair_source": "HarfBuzz source pairs, rounded to integer pixels during composition"
+      }
+    },
+    {
+      "id": "lvgl",
+      "label": "LVGL Font Converter",
+      "source_url": "https://github.com/lvgl/lv_font_conv",
+      "output": "LVGL",
+      "file": "lvgl.png",
+      "original": "lvgl/paragraph.png",
+      "sha256": "2a6214d18ee6ce2045ae2a667093155613d30a8cf5bc60e2d043b11c77c177de",
+      "display_sha256": "981fb0fcc158b2d5583c751e04fb1db90dc2f77037ff9a632be9e8851f742317",
+      "capture": null,
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 2787,
+        "matches_browser_memory": null,
+        "source_kerning": true,
+        "pair_adjustment_count": 164,
+        "pair_source": "native export (including fitted corrections for Glypherie)"
+      }
+    },
+    {
+      "id": "adafruit",
+      "label": "Adafruit Font Converter",
+      "source_url": "https://github.com/adafruit/Adafruit-GFX-Library",
+      "output": "Adafruit GFX",
+      "file": "adafruit.png",
+      "original": "adafruit/paragraph.png",
+      "sha256": "4ae46746dd8980573f1a6de3cf1cf9441ade639151a816c15f68ff631e6c2415",
+      "display_sha256": "e5a6da3dbb63c1199506a67e095a3b1d80004a5a1c7cf9f794062c447c37e9e7",
+      "capture": null,
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 3735,
+        "matches_browser_memory": null,
+        "source_kerning": true,
+        "pair_adjustment_count": 5,
+        "pair_source": "HarfBuzz source pairs, rounded to integer pixels during composition"
+      }
+    },
+    {
+      "id": "crosspoint",
+      "label": "Crosspoint (monochrome)",
+      "source_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py",
+      "output": "Crosspoint .cpfont",
+      "file": "crosspoint.png",
+      "original": "crosspoint/paragraph.png",
+      "sha256": "043b75e0153dbf8a9cf322cf5ef3bd0b6328c189d1bf38600fe45cd8773501e4",
+      "display_sha256": "a936d332dd67a9e370bdf5c4a8aae90350edb9c0fc93ad5ec50a32fa34c2fc2e",
+      "capture": {
+        "revision": "10709120e66c0e0604aebc4991cc69830fb4c2b2",
+        "source_sha256": {
+          "fontconvert_sdcard.py": "21441059aa9bf5f429ecddfbf57148022c43e7d5300279b5039a6ea138ee69fb",
+          "cpfont_version.py": "97181fc45b1c06fa7781c6a5bf9040978b68a79533855628fe4081d2fa730171"
+        },
+        "adapter_sha256": "0e1c26a5cee83cb2b48c0a2f226e299e3f5b92e289f70c72d0bfee1e9b4df1fb",
+        "adapter": "set_char_size(points at 150 DPI) replaced with set_pixel_sizes(ppem); all other converter code unchanged.",
+        "freetype": "2.13.2",
+        "source_bits": 2,
+        "monochrome": "Firmware BW mode: packed coverage levels 1, 2 and 3 become black; level 0 stays white.",
+        "renderer_url": "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/GfxRenderer/GlyphBitmap.h",
+        "source_kerning": true,
+        "ligatures": false
+      },
+      "export_verification": {
+        "repeat_exports_identical": true,
+        "all_ink_preserved": true,
+        "paragraph_ink_pixels": 4642,
+        "matches_browser_memory": null,
+        "source_kerning": true,
+        "pair_adjustment_count": 432,
+        "pair_source": "native export (including fitted corrections for Glypherie)"
+      }
+    }
+  ],
+  "source_snapshot_sha256": "e603e1ce9575c2328495bc976c8fcc82c30c48ab434205cb4617e9d9953dfeb8",
+  "source_run": "out/diagnostics/landing-samples/20261029T211553923463Z/roboto-16",
+  "updated_at": "2026-10-29T21:16:32.306352+00:00",
+  "assessment": "Pending optical assessment. Native converter output; no quality ranking.",
+  "browser": "153.0.8010.12",
+  "platform": "darwin 25.6.0 arm64",
+  "source_files": [
+    {
+      "url": "https://pdfontconv.frozenfractal.com/",
+      "file": "pdfontconv/sources/59adbd9b3c6471f9bfce9b726c637ee65de6c7227e468874c7a2a3c68ff4bfbe.source",
+      "sha256": "59adbd9b3c6471f9bfce9b726c637ee65de6c7227e468874c7a2a3c68ff4bfbe"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/style.css",
+      "file": "pdfontconv/sources/3a54003d150a0f19aad38ed458bca18d223f9d6abf3aa91a115860abd4d809bb.source",
+      "sha256": "3a54003d150a0f19aad38ed458bca18d223f9d6abf3aa91a115860abd4d809bb"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/main.js",
+      "file": "pdfontconv/sources/0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8.source",
+      "sha256": "0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/style.css",
+      "file": "pdfontconv/sources/3a54003d150a0f19aad38ed458bca18d223f9d6abf3aa91a115860abd4d809bb.source",
+      "sha256": "3a54003d150a0f19aad38ed458bca18d223f9d6abf3aa91a115860abd4d809bb"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/",
+      "file": "pdfontconv/sources/59adbd9b3c6471f9bfce9b726c637ee65de6c7227e468874c7a2a3c68ff4bfbe.source",
+      "sha256": "59adbd9b3c6471f9bfce9b726c637ee65de6c7227e468874c7a2a3c68ff4bfbe"
+    },
+    {
+      "url": "https://pdfontconv.frozenfractal.com/main.js",
+      "file": "pdfontconv/sources/0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8.source",
+      "sha256": "0fd917574f13ab5f68c69cf1bec7a2c6a75b47a44fee164ba84b649e9b47e5f8"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/",
+      "file": "tophat/sources/a575842cb787fcb756e5f11333896caf0814879c86df039f875c0737ffd1eff8.source",
+      "sha256": "a575842cb787fcb756e5f11333896caf0814879c86df039f875c0737ffd1eff8"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/tophat.css",
+      "file": "tophat/sources/8d58a802cb78f18d9072743a4558ccd24072920dcf722e1cd05b69f3d67b2c19.source",
+      "sha256": "8d58a802cb78f18d9072743a4558ccd24072920dcf722e1cd05b69f3d67b2c19"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/groups.js",
+      "file": "tophat/sources/dcef23746af629a1d766098029d5a2942d69d5e563877943dbf58cc1f9850bc3.source",
+      "sha256": "dcef23746af629a1d766098029d5a2942d69d5e563877943dbf58cc1f9850bc3"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/names.js",
+      "file": "tophat/sources/17fe3bb25943f5dff300fc5af3f0c665666596a0d513a96d3646d26d367400f6.source",
+      "sha256": "17fe3bb25943f5dff300fc5af3f0c665666596a0d513a96d3646d26d367400f6"
+    },
+    {
+      "url": "https://kaasiand.cool/tophat/tophat.js",
+      "file": "tophat/sources/656da810c8f7a7e165f1ea8a93c4e14222dc467b812c2a9d170e32c30fdb0202.source",
+      "sha256": "656da810c8f7a7e165f1ea8a93c4e14222dc467b812c2a9d170e32c30fdb0202"
+    },
+    {
+      "url": "https://cdn.jsdelivr.net/npm/opentype.js@latest/dist/opentype.min.js",
+      "file": "tophat/sources/b39d7bf9661481cec5c118a0d92b02951171d99c30d4d11252a72ecb0285439e.source",
+      "sha256": "b39d7bf9661481cec5c118a0d92b02951171d99c30d4d11252a72ecb0285439e"
+    }
+  ]
+}

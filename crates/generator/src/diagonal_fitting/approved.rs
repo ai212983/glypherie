@@ -57,6 +57,72 @@ pub fn fit(
                 return Ok(fit);
             }
         }
+        // Hobby 3.1, 3.6 and 6 keep shared Bezier controls as joint
+        // variables with source-relative displacement; Shamir 3.2-3.6
+        // supply the shared-point and ratio relations. The translated raw
+        // head profile is solved with the certified standard in the one
+        // original upstream budget, so an applied result carries its own
+        // whole-outline gates and returns directly, never through the
+        // shared-border upright stage or a second movement budget.
+        if let Ok(fit) =
+            super::coupled::automatic_shape(raw, source, upstream, size_px, reference, native_axes)
+        {
+            // One public provenance identity per applied fit: the kernel
+            // prototype travels with its kernel model under the stage
+            // identity, so capture and replay share the same alignment.
+            let kernel = fit.diagnostics.get("model").cloned();
+            let prototype = fit.diagnostics.get("shape_prototype").cloned();
+            if fit.applied {
+                if let (Some(kernel), Some(mut shape)) = (kernel, prototype) {
+                    shape["model"] = serde_json::json!("upright-source-shape-01");
+                    shape["kernel"] = kernel;
+                    let mut result = fit;
+                    result.diagnostics["source_shape"] = shape;
+                    result.diagnostics["stage"] = serde_json::json!("upright-source-shape-01");
+                    result.reason = format!("source-shape:{}", result.reason);
+                    return Ok(result);
+                }
+            }
+        }
+    }
+    fit_pre_coupled(raw, source, upstream, size_px, reference, native_axes)
+}
+
+/// Frozen historical sequence for `diagonal-shape-05` packet replay:
+/// native-Y coupled, then shared-border upright normalization, then the
+/// pre-coupled chain. New captures never route here; evaluation selects
+/// this entry by packet model so frozen captures replay unchanged.
+pub(crate) fn fit_v05(
+    raw: Option<&SourceOutline>,
+    source: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size_px: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+) -> Result<FitResult, Error> {
+    if let Some(raw) = raw {
+        if let Ok(mut fit) = super::coupled::fit(raw, upstream, size_px, reference, native_axes) {
+            if fit.applied {
+                fit.diagnostics["stage"] = serde_json::json!("coupled");
+                fit.reason = format!("coupled:{}", fit.reason);
+                return Ok(fit);
+            }
+        }
+    }
+    // Shared-border upright normalization is already a certified
+    // whole-outline authority (topology, profile, caps and phase are
+    // gated against its original upstream), so it returns directly like
+    // the coupled stage instead of spending a second movement budget
+    // through the pre-coupled chain.
+    let upright = super::upright::fit(source, upstream, size_px, reference, native_axes)
+        .ok()
+        .filter(|fit| fit.applied);
+    if let Some(upright) = upright {
+        let mut result = upright;
+        result.diagnostics["upright_stem"] = result.diagnostics.clone();
+        result.diagnostics["stage"] = serde_json::json!("upright");
+        result.reason = format!("upright:{}", result.reason);
+        return Ok(result);
     }
     fit_pre_coupled(raw, source, upstream, size_px, reference, native_axes)
 }
@@ -168,6 +234,7 @@ mod scheduling_tests {
                 length: 8.0,
                 tangent: [0.0, 1.0],
                 source_ids: "analytic-upright".into(),
+                cert: None,
             }],
             size_px: 16.0,
             records: 1,

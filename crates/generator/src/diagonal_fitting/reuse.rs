@@ -18,6 +18,8 @@ pub(crate) struct Outcome {
     pub commands: Vec<FittedCommand>,
     pub applied: bool,
     pub reason: String,
+    pub upright_stem: Option<serde_json::Value>,
+    pub source_shape: Option<serde_json::Value>,
 }
 
 struct Entry {
@@ -26,11 +28,23 @@ struct Entry {
     commands: Box<[FittedCommand]>,
     reason: Box<str>,
     applied: bool,
+    upright_stem: Option<serde_json::Value>,
+    source_shape: Option<serde_json::Value>,
 }
 
 impl Entry {
     fn payload(&self) -> usize {
-        self.key.len() + std::mem::size_of_val(&*self.commands) + self.reason.len()
+        self.key.len()
+            + std::mem::size_of_val(&*self.commands)
+            + self.reason.len()
+            + self
+                .upright_stem
+                .as_ref()
+                .map_or(0, |v| v.to_string().len())
+            + self
+                .source_shape
+                .as_ref()
+                .map_or(0, |v| v.to_string().len())
     }
 
     fn outcome(&self) -> Outcome {
@@ -38,6 +52,8 @@ impl Entry {
             commands: self.commands.to_vec(),
             applied: self.applied,
             reason: self.reason.to_string(),
+            upright_stem: self.upright_stem.clone(),
+            source_shape: self.source_shape.clone(),
         }
     }
 }
@@ -101,12 +117,21 @@ impl FitCache {
         }
         // Errors are never retained; successful abstentions are pure outcomes too.
         let value = compute()?;
+        let provenance_len = value
+            .upright_stem
+            .as_ref()
+            .map_or(0, |v| v.to_string().len())
+            + value
+                .source_shape
+                .as_ref()
+                .map_or(0, |v| v.to_string().len());
         let Some(payload) = value
             .commands
             .len()
             .checked_mul(std::mem::size_of::<FittedCommand>())
             .and_then(|n| n.checked_add(key.len()))
             .and_then(|n| n.checked_add(value.reason.len()))
+            .and_then(|n| n.checked_add(provenance_len))
         else {
             return Ok(value);
         };
@@ -129,6 +154,8 @@ impl FitCache {
             commands: value.commands.clone().into_boxed_slice(),
             reason: value.reason.clone().into_boxed_str(),
             applied: value.applied,
+            upright_stem: value.upright_stem.clone(),
+            source_shape: value.source_shape.clone(),
         });
         self.bytes += payload;
         Ok(value)
@@ -160,8 +187,11 @@ pub(crate) fn fit(
     native_axes: [bool; 2],
 ) -> Result<Outcome, Error> {
     let value = approved::fit(raw, source, upstream, size_px, reference, native_axes)?;
-    // Detailed fit diagnostics were already discarded by the delivery caller.
+    // Detailed fit diagnostics are discarded except the applied-fit
+    // provenance the delivery record publishes.
     Ok(Outcome {
+        upright_stem: value.diagnostics.get("upright_stem").cloned(),
+        source_shape: value.diagnostics.get("source_shape").cloned(),
         commands: value.commands,
         applied: value.applied,
         reason: value.reason,
@@ -197,6 +227,17 @@ fn key(
                 a.length.to_bits(),
                 a.tangent.map(f64::to_bits),
                 &a.source_ids,
+                a.cert.as_ref().map(|c| {
+                    (
+                        c.record,
+                        c.contour,
+                        c.seg_a,
+                        c.seg_b,
+                        c.border_width.to_bits(),
+                        c.fitted_border_width.to_bits(),
+                        c.unambiguous,
+                    )
+                }),
             )
         })
         .collect::<Vec<_>>();
@@ -226,6 +267,8 @@ mod tests {
             commands: vec![FittedCommand::Close],
             applied: false,
             reason: "unsupported".into(),
+            upright_stem: None,
+            source_shape: None,
         }
     }
 
@@ -273,6 +316,30 @@ mod tests {
                 .unwrap();
         }
         assert_eq!((cache.entries.len(), cache.evictions), (ENTRY_LIMIT, 10));
+    }
+
+    #[test]
+    fn applied_shape_provenance_survives_reuse() {
+        let mut cache = FitCache::default();
+        let shape = serde_json::json!({"model": "coupled-shape-auto-01", "standard": 2.0});
+        let shape_len = shape.to_string().len();
+        let applied = Outcome {
+            commands: vec![FittedCommand::Close],
+            applied: true,
+            reason: "source-shape:shape-candidate".into(),
+            upright_stem: None,
+            source_shape: Some(shape.clone()),
+        };
+        cache
+            .get_or_compute(vec![9], || Ok(applied.clone()))
+            .unwrap();
+        let hit = cache
+            .get_or_compute(vec![9], || panic!("cache miss"))
+            .unwrap();
+        assert!(hit.applied);
+        assert_eq!(hit.source_shape, Some(shape));
+        assert_eq!(hit.upright_stem, None);
+        assert!(cache.bytes >= 1 + shape_len);
     }
 
     #[test]

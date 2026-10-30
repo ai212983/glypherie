@@ -52,6 +52,10 @@ try {
       // persists those bytes; reload then awaits creation of the actual FontFace.
       await page.reload();
       await page.waitForFunction(size => +input.fontSize === size && fontData.charSet.length === 95 && [...document.fonts].some(face => face.family === "pdfontconv" && face.status === "loaded"), settings.size_px);
+      // Canvas "auto" may omit kerning at small sizes. Force source kerning
+      // before the stock exporter recomputes its measured integer pair table.
+      // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/fontKerning
+      await page.evaluate(() => { fontCanvas.getContext("2d").fontKerning = "normal"; });
       metadata = await page.evaluate(() => {
         const c = fontCanvas.getContext("2d");
         c.font = getCssFont();
@@ -59,6 +63,12 @@ try {
       });
       for (const prefix of ["font", "repeat"]) {
         await page.locator("#fontSizeInput").dispatchEvent("change");
+        await page.evaluate(() => {
+          const context = fontCanvas.getContext("2d");
+          context.font = getCssFont();
+          context.fontKerning = "normal";
+          fontData.kerning = computeKerning(context, fontData.charSet);
+        });
         await download(page, "#downloadFntButton", path.join(dir, `${prefix}.fnt`));
         await download(page, "#downloadPngButton", path.join(dir, `${prefix}.png`));
       }
@@ -87,6 +97,8 @@ try {
         await download(page, "#exportbtn", path.join(dir, `${prefix}.fnt`));
       }
     }
+    metadata.source_kerning = true;
+    metadata.kerning_source = tool === "pdfontconv" ? "Native measured export; Canvas fontKerning=normal" : "HarfBuzz source pairs applied during composition; stock import has no kerning";
     metadata.loaded_font_faces = await page.evaluate(() => [...document.fonts].map(face => ({ family: face.family, status: face.status })));
     const glyphs = await page.evaluate(tool => {
       const result = {};

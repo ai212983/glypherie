@@ -79,12 +79,12 @@ test("landing, library and brand links keep distinct destinations under a hostin
   const comparison = page.locator("[data-rasterizer-comparison]");
   assert.equal(await page.getByRole("heading", { name: "Compare font converters", exact: true }).count(), 1);
   assert.deepEqual(await comparison.locator("h3").allTextContents(), [
-    "Glypherie", "pdfontconv", "Tophat", "LVGL Font Converter", "Adafruit Font Converter",
+    "Glypherie", "pdfontconv", "Tophat", "LVGL Font Converter", "Adafruit Font Converter", "Crosspoint (monochrome)",
   ]);
   await page.waitForFunction(({ width, height, count }) => {
     const images = [...document.querySelectorAll<HTMLImageElement>("[data-rasterizer] img")];
     return images.length === count && images.every((image) => image.complete && image.naturalWidth === width && image.naturalHeight === height);
-  }, { width: defaultWidth, height: defaultHeight, count: defaultCapture.display_lines.length * 5 });
+  }, { width: defaultWidth, height: defaultHeight, count: defaultCapture.display_lines.length * 6 });
   const sample = comparison.locator("img").first();
   const lines = comparison.locator("[data-rasterizer-lines]").first();
   assert.ok((await lines.boundingBox())!.height <= 72, "three text lines have no blank lines between them");
@@ -316,8 +316,9 @@ test("landing switches all converter samples across families and native sizes", 
       await page.waitForFunction(({ width, height, count }) => {
         const images = [...document.querySelectorAll<HTMLImageElement>("[data-rasterizer] img")];
         return images.length === count && images.every((image) => image.complete && image.naturalWidth === width && image.naturalHeight === height);
-      }, { width: capture.display_size[0]!, height: capture.display_size[1]!, count: capture.display_lines.length * 5 });
-      assert.equal(await comparison.locator("figure").count(), 5);
+      }, { width: capture.display_size[0]!, height: capture.display_size[1]!, count: capture.display_lines.length * 6 });
+      assert.equal(await comparison.locator("figure").count(), 6);
+      assert.equal(await comparison.locator('[data-rasterizer="crosspoint"] a').getAttribute("href"), "https://github.com/crosspoint-reader/crosspoint-reader/blob/10709120e66c0e0604aebc4991cc69830fb4c2b2/lib/EpdFont/scripts/fontconvert_sdcard.py");
       assert.equal((await comparison.locator("img").first().boundingBox())?.width, capture.display_size[0]);
       assert.match(await comparison.locator("img").first().getAttribute("alt") ?? "", new RegExp(`${family.label} · ${size} px`));
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);

@@ -987,6 +987,183 @@ command format. Unsupported cases retain the preceding reviewed sequence. The ex
 controls selection. Verification compares the port against the approved 58-case packet and checks broader native/WASM
 behavior; approval does not remove the recorded geometric limits.
 
+### Shared-border upright normalization
+
+This slice addresses the
+[equal-source upright defect](revisions/001/03-spacing-kerning.md#equal-source-upright-weight-investigation): one glyph
+carries two disjoint upright sections on the same collinear right border, a straight body section and a narrower curved
+head section, and upstream fitting collapses the body to the head's width. Shamir §§3.2–3.6 supply separate width
+relations to one shared point, inserted once; Hobby §3.2 (4)–(5) supplies local width measurement, §3.6 (17) relative
+coupling that preserves source contrast, §4 (20) one shared integer width parameter substituted into separate relations,
+and §4.2 width clustering by direction and width; Hersch §§5–6 supply standard snapping and phase. The bounded phase,
+per-feature caps and exact gates below are project adaptations of those mechanisms, not results demonstrated by the
+papers.
+
+Feature: in one closed line/quadratic contour with automatic fitting on both axes (`native_axes == [false, false]`), a
+maximal collinear vertical supporting line carrying at least two disjoint Y-intervals. Y-overlap between intervals is
+not required. Exactly one interval pairs with a straight left border (the body); at least one other interval pairs with
+a curved left border whose width is measured at runtime by solving the quadratic at the interval's Y stations (the
+head). Ambiguous pairing, multiple straight bodies, crossings, cubics, multiple contours or native-owned axes abstain.
+This stage retains every fitted Y bit-exact; it does not claim native-Y ownership, and the `[false, true]` coupled path
+and historical paths are untouched. Its output is delivered directly as a certified whole-outline authority, like the
+coupled stage's early return, rather than feeding the pre-coupled chain: its topology, profile, cap and phase gates are
+certified against its original upstream, and no second stage re-spends a movement budget over the normalized borders.
+Finalized layout, advances and kerning stay upstream-owned.
+
+Standard: class membership is source-exact. At reference build time each donor anchor carries a structured certificate
+computed in that donor's own source geometry: the coordinate-difference widths between its pair's straight borders (the
+same measurement this stage applies to its target, in captured coordinates) and an eligibility flag that is false when
+either supporting line of the donor pair carries a second disjoint interval there. A donor is eligible only when it is
+certified unambiguous and its certified source border width equals the target body width exactly; no half-font-unit or
+other semantic tolerance is added. The reported glyph's own donor anchor is therefore excluded by its own ambiguity
+certificate, never by segment-index coincidence or fitted-width equality, and a genuinely unambiguous donor that
+dissents defeats the standard. Anchors from packets built before the certificate existed carry none and are ineligible.
+Every eligible donor's certified fitted border width must be the same integer on the 26.6 grid. Empty, dissenting or
+non-integer standards abstain. This is unanimity after independent source-geometric eligibility, not fitted-width voting
+or rounding of the local scaled width. The station-mean widths used by the older diagonal coupling are unchanged; the
+certificate widths serve only this stage, so historical anchor behavior is unaffected where this stage does not apply.
+
+The curved head is certified, not merely intersected: its opposing curve must be the chain reached by contour adjacency
+from the shared border's head segment (through non-vertical connectors and consecutive quads, stopping at a vertical
+straight or the border itself; no extent constant), and at the interval's quarter, mid and three-quarter Y stations the
+segment from curve to border must lie in ink under the existing certified winding path and have no competing straight or
+curved boundary crossing it. Curve crossings use analytic f64 quadratic roots, not exact arithmetic; a station with two
+distinct crossings is ambiguous and fails closed instead of selecting a root. The head width profile is measured at
+those stations in source and fitted outlines.
+
+Solve: all source points on the shared border, across both intervals plus weld/attachment closure, share one
+displacement `ΔR`; the body left border takes `ΔL` with `ΔR − ΔL = S − W_up` as a hard row. The head keeps its source
+contrast through the Hobby ratio: its fitted width target is `S · (w_head / w_body)` from runtime-measured source
+widths, neither frozen at its upstream width nor forced to `S`. The head's attached curved chain and its controls
+translate in X by the amount that row requires. Attachments follow their incident moved endpoints; a control incident to
+two different displacements abstains. The chain walk stays within the head interval's certified Y span, so crossbar,
+foot and terminal curves outside that span are not head geometry.
+
+Phase additionally excludes the monochrome scanner's tie: with an integer standard width, a body border on an exact
+half-pixel coordinate lets both edge columns be taken, delivering one column too many. Feasible 26.6 phases therefore
+keep both body borders off the exact half-pixel tie (Hersch sections 5–6 grid phase, applied to the delivered Mono
+scan); the choice among feasible phases still minimizes movement, then centre shift, then head translation, and never
+consults delivered pixels. A glyph whose only width-feasible phases sit on the tie abstains.
+
+Phase is geometry/grid-derived, not searched against pixels: among 26.6-representable `(ΔL, ΔR)` satisfying the body row
+exactly and the head ratio within the existing rounding reserve `HEADROOM = √2/128`, choose first the smallest maximum
+movement, then the smallest centre shift, then the smallest head translation. Both keys grow monotonically with distance
+from the continuous optimum `ΔR = D/2`, so the search evaluates a constant number of grid candidates around that optimum
+and around the cap-derived feasible interval ends, for any finite source width; grid values outside the exactly
+representable range abstain. Per-feature budgets are local to this stage: a border governed by the body pair uses
+`w_body/2 − HEADROOM`, the head's borders use the narrowest certified source profile sample (quarter, mid and
+three-quarter stations) in `w_head_min/2 − HEADROOM`, and shared controls obey the intersection (minimum) of all owning
+feature caps. The coupled solver's global bound is unchanged. If no candidate fits the caps, the exact upstream outline
+returns. Rounded candidates must retain Y bits, achieve the body width exactly, keep widths positive and preserve
+segment non-degeneracy, retain the head width profile at every station (each fitted station width shifted by the shared
+displacement, within the rounding reserve), preserve every moved head quad's endpoint tangent orientation (no reversal),
+and reproduce the upstream whole-outline topology under the existing substituted-curve certificate (filled components,
+counters and contacts) after exact collinear merging of straight subdivisions, where a merged vertex must also retain
+positive order on its chord in source, upstream and candidate alike, or abstain. Outlines beyond the existing command
+work limit abstain like the other fitters. Changed commands are never returned under an abstention flag. The stage's
+diagnostics carry its own model identity (`upright-shared-border-01`), and the completed-fit cache key includes the
+donor certificates, so old reference packets replay through the historical paths unchanged.
+
+**Current source-fidelity limitation (2026-10-29):** this stage carries forward a compressed upstream head profile;
+rigid translation does not recover the source curve's lost detail. Width stations, topology and tangent orientation also
+leave cap proportions and off-chain curvature insufficiently constrained. The
+[source-detail review](revisions/001/03-spacing-kerning.md#source-detail-review-candidate-requires-revision) records
+confirmed cap/foot distortion and the candidate's required revision. That rejected shared-border candidate is not
+accepted as a shape-preserving solution.
+
+### Automatic-Y coupled shape mode
+
+This mode asks whether the coupled whole-outline model can restore source shape when both axes come from automatic
+fitting. It is now implemented and wired into the runtime as the `diagonal-shape-06` source-shape sequence, with public
+identity `upright-source-shape-01` and kernel `coupled-shape-auto-01`; every applied output from the new sequence
+carries `diagonal-shape-06`, and `source_shape` provenance is present only on source-shape reasons. The
+[reviewed correction was optically approved with limits on 2026-10-29](revisions/001/03-spacing-kerning.md#source-shape-correction-approved-with-limits).
+Current verification results are owned by the
+[source-shape report](../out/diagnostics/upright-source-shape-20261029/report.md). The rejected
+`upright-shared-border-01` candidate remains frozen and rejected; its packets keep the historical `diagonal-shape-05`
+replay identity and are never reinterpreted by this sequence.
+
+The reported Literata `t` shows why translating the hinted outline is insufficient: its ascending head chain is
+compressed from 1.776 px in raw source X (1.765625 px in the captured 26.6 source) to 1.25 px upstream, and its top
+endpoint tangent loses the source horizontal component. The chosen model therefore translates the **original source head
+X profile** — relative X distances within the head are the source's, not the hinted compression — inside the existing
+coupled whole-outline solve. Hobby §§3.1, 3.6 and 6 keep Bézier controls as variables with source-relative displacement;
+Shamir §§3.2–3.6 supply shared-point and ratio relations; Hersch §2 supplies endpoint-derivative identities and §§5–6
+grid phase. Project adaptations, labeled as such: the hard rows below, the per-feature bounds, and the mode's joint
+handling.
+
+Decided relations, all in one solve with one original-upstream budget:
+
+- the certified body-width standard `S` (the existing `DonorCert` decision is the standard-selection metric; raw source
+  geometry is the shape authority — the two authorities are distinct and neither substitutes for the other);
+- one head-mid coupling row: candidate width at the head's mid station equals `S` times the source head/body width
+  ratio, so the translated source profile is anchored to the shared border;
+- the Shamir cap ratio: the cap vertex keeps its source fraction between its neighbors;
+- the whole outline's remaining quads — foot included — stay free variables under the existing Hobby source shape
+  objective and whole-interval source curvature certificates. No point is frozen by ad-hoc incidence; all X degrees are
+  free except welds, native-owned coordinates, and upright pins outside the released feature groups.
+
+Head detail under retained Y is source-relative, not angle-exact. Source controls and the chain's extreme endpoints keep
+the translated source profile. Interior on-curve knots at smooth joins stay free for the existing G1 joint equations,
+which weight the knot by the adjacent fitted-Y legs (the TrueType/Hersch midpoint mechanism): this preserves original
+head extent and the nonzero top endpoint tangent component before quantization while adapting only the smooth knots.
+Exact source angles are not an invariant — directions transform with the feature deformation — but G1 continuity is: a
+join is smooth when its tangent cross is exactly zero in **any** of the raw source, a genuine independent captured
+source (without hinting), or the original upstream — an exact-representation union, not a tolerance. The captured source
+adds conservative continuity constraints where its coarser representation is exactly collinear; raw coordinates remain
+the shape authority, and finite precision in the source producer does not manufacture meaningful sharp corners from
+1-ULP raw noise. The measured provenance (joints with raw crosses of order 1e-16 against exact zeros in the captured
+source or upstream) is recorded in the
+[smooth-provenance diagnostic](../out/diagnostics/upright-source-shape-20261029/host-smooth-provenance.json). Interior
+head on-curve knots are free under this same union, and every post-rounding sharp classification uses it consistently.
+This general exact-representation union is a project adaptation of the Hersch endpoint-derivative and TrueType
+implicit-knot mechanisms. At sharp corners affected by the width deformation (cap, crossbar and border junctions), the
+old fixed upstream cross value is not retained — under retained Y it locks the cap/crossbar span — and is replaced by
+the feature equations plus post-rounding turn-orientation and non-degeneracy checks against source. The native-Y slice's
+joint semantics are unchanged everywhere.
+
+Ownership is computed before the solve: both endpoints of the source vertical connector incident to the head chain share
+the head group; both straight border groups keep constant X across their intervals (shared-point equalities). Movement
+caps are assigned per ownership: head and shared-border controls carry the narrower head limit (narrowest certified head
+sample, about 0.506 px at the reported 16 px case), body-owned controls the wider body limit (about 0.733 px). The
+quantization reserve is held **inside** the original cap — the accepted movement limit is the cap minus its row-derived
+rounding reserve — never added on top of the accepted cap. One budget from the original upstream governs every control;
+shared controls take the minimum of their incident owners. Every moved quad keeps its source curvature sign — zero
+counts as failure for a curved source — and post-rounding station, cap, tangent-survival and topology checks use each
+row's actual rounding reserve, not a global tolerance.
+
+Shape authority is the raw `SourceOutline` used directly as parsed geometry with segment-for-segment topology
+correspondence; partition changes fail closed. Raw f64 values are dyadic, but generally not f32-representable after the
+size/UPM scale, so the native-Y slice's f32 command normalization cannot carry them — a representation limit of that
+entry, not of the glyph. The captured 26.6 outline is only a rounded-source control. Depth-0 substitution certifies raw
+true-curve topology where its hulls pass; deeper dyadic joints are not rounded to pretend otherwise. An empty certified
+straight white set in this mode means no straight white-gap equalities apply; substituted topology remains the counter
+protection, while the native-Y slice keeps its own requirement.
+
+Numerical mechanism: the legacy bounded-equalities entry initializes from the minimum-norm equality solution and
+strictly rejects that start when it lies outside the movement box — the minimum-norm start is not itself a strict
+Phase-I — even when other feasible points exist (Forsgren–Gill–Wong active-set foundation, as in the existing QP
+module). A solver exit from that entry is therefore **not** an infeasibility certificate. The automatic mode instead
+invokes the existing elastic Phase I through a new bounded-equalities entry over the same bounds and the same solver
+tolerance (`BOUNDED_TOL`); the legacy strict entry and every native-Y call keep their existing behavior. Independent
+HiGHS/SLSQP verification on the recorded 15 px hard matrix found a feasible point (residual 1.11e−16, bound excess 0;
+[receipt](../out/diagnostics/upright-source-shape-20261029/fresh-core/host-independent-feasibility.json)): the earlier
+"15 px incompatible" reading of a generic solver failure is withdrawn. Under the elastic Phase I, the strict 15 and 16
+px cases now apply inside the original per-feature caps. Each solve outcome is reported as certified candidate,
+uncertified initialization/solver exit (no geometric conclusion), or proven infeasibility (independent verification) —
+never conflated.
+
+Falsification remains the decision boundary for any glyph: it must reach the solve on raw geometry and deliver a rounded
+candidate retaining every decided relation inside the single budget, with delivered Mono pixels reported separately from
+outline restoration. A front-gate, rank, or budget witness is reported for that glyph; no protection is weakened and no
+per-glyph relief is introduced to reopen it. Transformed synthetic curved heads, caps, tapers and multiple attachments
+falsify recognition; native-axis conflicts and ambiguous standards abstain.
+
+Demonstrated limitation: at Literata 15/16 px the source head X profile and nonzero upper tangent are restored
+geometrically, but the top three delivered bitmap rows remain unchanged; crossbar and foot pixels change. That is a
+measured outcome, not a promise of additional upper pixels. The cap and foot defects are mechanically corrected; the
+reviewed appearance, including the unchanged upper rows, is accepted within the linked approval scope.
+
 ### Attached diagonal and curve constraints
 
 This isolated continuation asks whether shared line-and-curve fitting can regularize a diagonal whose endpoint pins

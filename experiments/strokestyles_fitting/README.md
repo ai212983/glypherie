@@ -68,6 +68,14 @@ cargo run --manifest-path experiments/strokestyles_fitting/native/Cargo.toml -- 
 
 ## Run fitting
 
+The `approved_fitting` JSON-lines adapter accepts `mode: "source-shape"` for the maintained source-shape diagnostic
+entry, including binding witnesses on solve failure. Set `diagnostics: true` to include them in its output:
+
+```sh
+cargo run --locked --manifest-path experiments/strokestyles_fitting/native/Cargo.toml --example approved_fitting \
+  < INPUT.jsonl > out/diagnostics/strokestyles-fitting/source-shape.jsonl
+```
+
 Fitting is off by default; enable it explicitly per run. The analysis directory holds only extract-record JSONs,
 separate from the extraction cache and the run summary:
 

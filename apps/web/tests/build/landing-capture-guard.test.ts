@@ -76,7 +76,7 @@ async function writeFixture(
     const bytes = Buffer.from("fixture image");
     await fs.writeFile(path.join(sampleDir, "repo.png"), bytes);
     await fs.writeFile(captureFile, JSON.stringify({
-      inputs: { family_id: owner.family_id, size_px: owner.size_px, source_axes: owner.axes, text: owner.text },
+      inputs: { family_id: owner.family_id, size_px: owner.size_px, source_axes: owner.axes, text: owner.text, source_kerning: true },
       ...capture,
       samples: [{ id: "repo", file: "repo.png", display_sha256: createHash("sha256").update(bytes).digest("hex") }],
     }));
@@ -121,6 +121,16 @@ test("key order in the stored policy does not matter", async (t) => {
   );
   const fixture = await writeFixture(t, [{ id: "roboto-16" }], { "roboto-16": capture });
   assert.deepEqual(await validateLandingCaptures(fixture.repoRoot, optionsOf(fixture)), { checked: 1 });
+});
+
+test("captures with source kerning disabled or missing require regeneration", async (t) => {
+  for (const sourceKerning of [false, undefined]) {
+    const fixture = await writeFixture(t, [{ id: "roboto-16" }], { "roboto-16": recordedCapture({}) });
+    const capture = JSON.parse(await fs.readFile(fixture.captureFile, "utf8"));
+    capture.inputs.source_kerning = sourceKerning;
+    await fs.writeFile(fixture.captureFile, JSON.stringify(capture));
+    await assert.rejects(() => validateLandingCaptures(fixture.repoRoot, optionsOf(fixture)), /enable source kerning/);
+  }
 });
 
 test("capture identity and declared text must match the current matrix and case", async (t) => {

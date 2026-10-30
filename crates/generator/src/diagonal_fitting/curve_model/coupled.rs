@@ -16,11 +16,15 @@ use super::super::{
     abstain, curves, geometry, intervals, reference_meta, FitResult, Reference, MAX_COMMANDS,
 };
 use super::{
-    assemble, degenerate_triples, hard_solve, joints, prefix_diag, qp_json, recognize,
-    restricted_matrix, run_prefixes, weld_map, with_effectibility, WhiteSpec, DEPTHS,
+    assemble, degenerate_triples, g1_row, hard_solve, hard_solve_bounded_phase1, joints,
+    leg_vertex, prefix_diag, qp_json, recognize, recognize_parsed_depths,
+    require_finite_positive_size, restricted_matrix, rounding_reserve, run_prefixes, weld_map,
+    with_effectibility, RowKind, WhiteSpec, DEPTHS,
 };
-use crate::{fail, probe::FittedCommand, Error};
+use crate::{probe::FittedCommand, Error};
 use std::collections::{HashMap, HashSet};
+
+mod automatic_shape;
 
 struct StraightEdge {
     ci: usize,
@@ -177,10 +181,23 @@ fn white_contacts(source: &[FittedCommand]) -> (Vec<WhiteFeature>, Option<String
         Ok(parsed) => parsed,
         Err(()) => return (Vec::new(), Some("malformed-commands".to_string())),
     };
+    white_contacts_parsed(&parsed)
+}
+
+/// White features on already-parsed source geometry (raw f64 outlines
+/// use the same machinery without a command round-trip).
+fn white_contacts_parsed(parsed: &geometry::Parsed) -> (Vec<WhiteFeature>, Option<String>) {
+    white_contacts_parsed_depths(parsed, &DEPTHS)
+}
+
+fn white_contacts_parsed_depths(
+    parsed: &geometry::Parsed,
+    depths: &[usize],
+) -> (Vec<WhiteFeature>, Option<String>) {
     let mut depth = None;
-    for candidate in DEPTHS {
-        if curves::certify_parsed(&parsed, candidate).is_ok() {
-            depth = Some(candidate);
+    for candidate in depths {
+        if curves::certify_parsed(parsed, *candidate).is_ok() {
+            depth = Some(*candidate);
             break;
         }
     }
@@ -259,9 +276,7 @@ pub(super) fn fit_coupled(
     reference: &Reference,
     native_axes: [bool; 2],
 ) -> Result<FitResult, Error> {
-    if !(size_px.is_finite() && size_px > 0.0) {
-        return Err(fail("curve model requires finite positive size"));
-    }
+    require_finite_positive_size(size_px)?;
     // Only native Y with automatic X is approved for this model.
     if native_axes != [false, true] {
         return Ok(abstain(
@@ -544,6 +559,231 @@ pub(super) fn fit_coupled(
     })
 }
 
+/// Diagnostics-first front half of the automatic-Y shape mode
+/// (docs/hobby-fitting.md#automatic-y-coupled-shape-mode-feasibility-prototype).
+///
+/// Runs the existing coupled gates in order and always abstains: no
+/// candidate is solved, rounded, or delivered. The native-Y slice in
+/// `fit_coupled` is untouched; this entry requires automatic axes
+/// exactly and reports retained (not native-owned) Y.
+pub(super) fn gate_report_automatic(
+    source: &[FittedCommand],
+    upstream_cmds: &[FittedCommand],
+    size_px: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+) -> Result<FitResult, Error> {
+    if !geometry::check_correspondence(source, upstream_cmds) {
+        return Ok(FitResult {
+            commands: upstream_cmds.to_vec(),
+            applied: false,
+            reason: "shape-gate:unsupported-correspondence".to_string(),
+            diagnostics: serde_json::json!({
+                "model": "coupled-shape-auto-01", "gate_report": true, "reached": "correspondence",
+            }),
+        });
+    }
+    let Ok(parsed) = geometry::parse_commands(source) else {
+        return Ok(FitResult {
+            commands: upstream_cmds.to_vec(),
+            applied: false,
+            reason: "shape-gate:malformed-commands".to_string(),
+            diagnostics: serde_json::json!({
+                "model": "coupled-shape-auto-01", "gate_report": true, "reached": "parse",
+            }),
+        });
+    };
+    gate_report_parsed(
+        &parsed,
+        upstream_cmds,
+        size_px,
+        reference,
+        native_axes,
+        true,
+    )
+}
+
+/// Gate report on already-parsed source geometry: raw f64 outlines keep
+/// their exact dyadic coordinates; only segment-for-segment topology
+/// correspondence with the upstream is supported.
+pub(super) fn gate_report_parsed(
+    parsed: &geometry::Parsed,
+    upstream_cmds: &[FittedCommand],
+    size_px: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+    from_commands: bool,
+) -> Result<FitResult, Error> {
+    require_finite_positive_size(size_px)?;
+    let report = |reached: &str, reason: &str, mut diag: serde_json::Value| {
+        diag["model"] = serde_json::json!("coupled-shape-auto-01");
+        diag["gate_report"] = serde_json::json!(true);
+        diag["reached"] = serde_json::json!(reached);
+        diag["native_axes"] = serde_json::json!(native_axes);
+        diag["retained_upstream_axes"] = serde_json::json!([false, true]);
+        Ok(FitResult {
+            commands: upstream_cmds.to_vec(),
+            applied: false,
+            reason: format!("shape-gate:{reason}"),
+            diagnostics: diag,
+        })
+    };
+    if native_axes != [false, false] {
+        return report("axes", "automatic-axes-required", serde_json::json!({}));
+    }
+    let source_units = parsed.oncurve.len()
+        + parsed.offcurve.len()
+        + parsed.contours.iter().map(|c| c.len()).sum::<usize>();
+    if source_units > MAX_COMMANDS || upstream_cmds.len() > MAX_COMMANDS {
+        return report("size", "oversize-outline", serde_json::json!({}));
+    }
+    let Ok(fitted) = geometry::parse_commands(upstream_cmds) else {
+        return report("parse", "malformed-commands", serde_json::json!({}));
+    };
+    let topology_match = parsed.contours.len() == fitted.contours.len()
+        && parsed.oncurve.len() == fitted.oncurve.len()
+        && parsed.offcurve.len() == fitted.offcurve.len()
+        && parsed.contours.iter().zip(&fitted.contours).all(|(a, b)| {
+            a.len() == b.len()
+                && a.iter()
+                    .zip(b)
+                    .all(|(x, y)| std::mem::discriminant(x) == std::mem::discriminant(y))
+        });
+    let _ = from_commands;
+    if !topology_match {
+        return report(
+            "correspondence",
+            "unsupported-correspondence",
+            serde_json::json!({}),
+        );
+    }
+    let has_cubic = |p: &geometry::Parsed| {
+        p.contours
+            .iter()
+            .flatten()
+            .any(|s| matches!(s, geometry::Segment::Cubic { .. }))
+    };
+    if parsed.contours.len() != 1
+        || fitted.contours.len() != 1
+        || has_cubic(&parsed)
+        || has_cubic(&fitted)
+        || !contour_closed(parsed)
+    {
+        return report(
+            "contour",
+            "unsupported-correspondence",
+            serde_json::json!({}),
+        );
+    }
+    let up_global: Vec<[f64; 2]> = fitted
+        .oncurve
+        .iter()
+        .chain(fitted.offcurve.iter())
+        .copied()
+        .collect();
+    if up_global
+        .iter()
+        .flat_map(|p| [p[0], p[1]])
+        .any(|v| v * 64.0 != (v * 64.0).round())
+    {
+        return report("grid", "upstream-not-26.6", serde_json::json!({}));
+    }
+    let (features, white_reason) = white_contacts_parsed_depths(parsed, &[0, 2, 3, 4]);
+    if let Some(reason) = white_reason {
+        let certify_error = (0..=4usize)
+            .map(|d| {
+                serde_json::json!({
+                    "depth": d,
+                    "error": super::super::curves::certify_parsed(parsed, d)
+                        .err()
+                        .map(|e| e.to_string()),
+                })
+            })
+            .collect::<Vec<_>>();
+        return report(
+            "white",
+            &reason,
+            serde_json::json!({ "white_certify_error": certify_error }),
+        );
+    }
+    // Diagnostics continue past the white gate with an empty spec set so
+    // the report can name the next binding gate; no candidate follows.
+    let white_empty = features.is_empty();
+    let _ = &white_reason;
+    let (pairs, recognition) = recognize_parsed_depths(parsed, f64::INFINITY, &[0, 2, 3, 4]);
+    if pairs.is_empty() {
+        return report(
+            "recognition",
+            "no-certified-pairs",
+            serde_json::json!({ "recognition": recognition }),
+        );
+    }
+    if reference.anchors.is_empty() {
+        return report(
+            "reference",
+            "no-reference-anchors",
+            serde_json::json!({ "recognition": recognition }),
+        );
+    }
+    let weld = weld_map(&parsed);
+    let up_weld = weld_map(&fitted);
+    if weld != up_weld {
+        return report("weld", "weld-mismatch", serde_json::json!({}));
+    }
+    for (dup, canon) in &weld {
+        if up_global[*dup] != up_global[*canon] {
+            return report("weld", "weld-mismatch", serde_json::json!({}));
+        }
+    }
+    let mut fixed_x = HashSet::new();
+    for edge in straight_edges(&parsed) {
+        if edge.p0[0] == edge.p1[0] {
+            for v in [edge.i0, edge.i1] {
+                fixed_x.insert(weld.get(&v).copied().unwrap_or(v));
+            }
+        }
+    }
+    let owned = vec![1usize];
+    let frozen: HashSet<usize> = weld.keys().copied().collect();
+    let specs: Vec<WhiteSpec> = features.iter().map(|f| f.spec.clone()).collect();
+    let ctx = match assemble(
+        parsed, &up_global, &pairs, reference, size_px, &owned, &frozen, true, &fixed_x, true,
+        &specs, true,
+    ) {
+        Ok(ctx) => ctx,
+        Err(reason) => {
+            return report(
+                "assemble",
+                &reason,
+                serde_json::json!({
+                    "recognition": recognition,
+                    "n_pairs": pairs.len(),
+                    "n_white_features": features.len(),
+                }),
+            );
+        }
+    };
+    let pair_widths: Vec<f64> = ctx.pair_work.iter().map(|(w, _)| w.width).collect();
+    report(
+        "assemble",
+        if white_empty {
+            "reached-assemble-no-white-feature"
+        } else {
+            "reached-assemble"
+        },
+        serde_json::json!({
+            "recognition": recognition,
+            "n_pairs": pairs.len(),
+            "pair_widths": pair_widths,
+            "n_white_features": features.len(),
+            "white_feature_empty": white_empty,
+            "n_upright_pins": fixed_x.len(),
+            "n_free_cols": ctx.cols.len(),
+            "bound": ctx.bound,
+        }),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{axis_corner_tangent, rounding_reserve, SegRef};
@@ -805,4 +1045,411 @@ mod tests {
         assert!(!out.applied);
         assert_eq!(out.reason, "unsupported-correspondence");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Automatic-Y source-shape solve (docs/hobby-fitting.md#automatic-y-
+// coupled-shape-mode-feasibility-prototype). Active automatic source-shape
+// mode: approved::fit routes eligible outlines here; the kernel prototype
+// identity `coupled-shape-auto-01` persists as the internal solver
+// configuration string.
+
+struct ShapeFeature {
+    x_r: f64,
+    x_l: f64,
+    w_body: f64,
+    w_head_mid: f64,
+    w_head_min: f64,
+    r_verts: Vec<usize>,
+    l_verts: Vec<usize>,
+    chain_segs: Vec<usize>,
+    chain_verts: Vec<usize>,
+    chain_ctrls: Vec<usize>,
+    cap: Option<(usize, usize, usize, f64)>,
+    stations: Vec<(usize, f64, f64)>, // (seg, fitted t, source fraction-matched width)
+    body_r_seg: usize,
+    body_l_seg: usize,
+    head_r_seg: usize,
+}
+
+fn quad_roots_y(p0: [f64; 2], c: [f64; 2], p1: [f64; 2], y: f64) -> Vec<(f64, f64)> {
+    let a = p0[1] - 2.0 * c[1] + p1[1];
+    let b = 2.0 * (c[1] - p0[1]);
+    let d = p0[1] - y;
+    let mut roots = Vec::new();
+    if a == 0.0 {
+        if b != 0.0 {
+            roots.push(-d / b);
+        }
+    } else {
+        let disc = b * b - 4.0 * a * d;
+        if disc >= 0.0 {
+            let sq = disc.sqrt();
+            roots.push((-b + sq) / (2.0 * a));
+            roots.push((-b - sq) / (2.0 * a));
+        }
+    }
+    roots
+        .into_iter()
+        .filter(|t| (0.0..=1.0).contains(t))
+        .map(|t| {
+            let u = 1.0 - t;
+            (t, u * u * p0[0] + 2.0 * u * t * c[0] + t * t * p1[0])
+        })
+        .collect()
+}
+
+fn unique_quad_x(parsed: &geometry::Parsed, seg: &geometry::Segment, y: f64) -> Option<(f64, f64)> {
+    let geometry::Segment::Quad { c, a, b } = *seg else {
+        return None;
+    };
+    let hits = quad_roots_y(parsed.oncurve[a], parsed.offcurve[c], parsed.oncurve[b], y);
+    let mut uniq: Vec<(f64, f64)> = Vec::new();
+    for h in hits {
+        if !uniq.iter().any(|u| u.0 == h.0) {
+            uniq.push(h);
+        }
+    }
+    if uniq.len() == 1 {
+        Some(uniq[0])
+    } else {
+        None
+    }
+}
+
+fn extract_shape_feature(src: &geometry::Parsed, fit: &geometry::Parsed) -> Option<ShapeFeature> {
+    let contour = src.contours.first()?;
+    // Shared border: one vertical supporting line with >=2 disjoint intervals.
+    let mut groups: std::collections::BTreeMap<u64, Vec<(usize, f64, f64)>> =
+        std::collections::BTreeMap::new();
+    for (idx, seg) in contour.iter().enumerate() {
+        if let geometry::Segment::Line { a, b } = *seg {
+            let (pa, pb) = (src.oncurve[a], src.oncurve[b]);
+            if pa[0] == pb[0] && pa[1] != pb[1] {
+                groups.entry(pa[0].to_bits()).or_default().push((
+                    idx,
+                    pa[1].min(pb[1]),
+                    pa[1].max(pb[1]),
+                ));
+            }
+        }
+    }
+    let mut candidates = Vec::new();
+    for (bits, mut segs) in groups {
+        segs.sort_by(|x, y| x.1.partial_cmp(&y.1).unwrap());
+        let mut merged: Vec<(usize, f64, f64)> = Vec::new();
+        for sgm in segs {
+            if let Some(last) = merged.last_mut() {
+                if sgm.1 <= last.2 {
+                    last.2 = last.2.max(sgm.2);
+                    continue;
+                }
+            }
+            merged.push(sgm);
+        }
+        if merged.len() >= 2 {
+            candidates.push((f64::from_bits(bits), merged));
+        }
+    }
+    if candidates.len() != 1 {
+        return None;
+    }
+    let (x_r, intervals) = candidates.into_iter().next().unwrap();
+    let mut body: Option<(usize, usize, f64, f64)> = None; // (iv_idx, l_seg, ylo, yhi)
+    let mut head: Option<(usize, f64, Vec<usize>, Vec<f64>)> = None;
+    for (iv_i, iv) in intervals.iter().enumerate() {
+        let mut straight: Vec<(f64, usize)> = Vec::new();
+        for (idx, seg) in contour.iter().enumerate() {
+            if let geometry::Segment::Line { a, b } = *seg {
+                let (pa, pb) = (src.oncurve[a], src.oncurve[b]);
+                if pa[0] == pb[0] && pa[0] < x_r && pa[1] != pb[1] {
+                    let lo = pa[1].min(pb[1]).max(iv.1);
+                    let hi = pa[1].max(pb[1]).min(iv.2);
+                    if hi > lo {
+                        straight.push((pa[0], idx));
+                    }
+                }
+            }
+        }
+        straight.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap());
+        straight.dedup_by(|x, y| x.0 == y.0);
+        let mut station_segs = Vec::new();
+        let mut station_widths = Vec::new();
+        let mut curve_ok = true;
+        for frac in [0.25, 0.5, 0.75] {
+            let y = iv.1 + (iv.2 - iv.1) * frac;
+            let mut hits = Vec::new();
+            for (idx, seg) in contour.iter().enumerate() {
+                if let geometry::Segment::Quad { .. } = *seg {
+                    let (a, b) = seg.endpoints();
+                    if src.oncurve[a][0] < x_r && src.oncurve[b][0] < x_r {
+                        if let Some((_, x)) = unique_quad_x(src, seg, y) {
+                            if x < x_r {
+                                hits.push((idx, x_r - x));
+                            }
+                        }
+                    }
+                }
+            }
+            if hits.len() != 1 {
+                curve_ok = false;
+                break;
+            }
+            station_segs.push(hits[0].0);
+            station_widths.push(hits[0].1);
+        }
+        match (straight.len(), curve_ok) {
+            (1, false) => {
+                if body.is_some() {
+                    return None;
+                }
+                body = Some((iv_i, straight[0].1, iv.1, iv.2));
+            }
+            (0, true) => {
+                if head.is_some() {
+                    return None;
+                }
+                head = Some((iv_i, station_widths[1], station_segs, station_widths));
+            }
+            _ => return None,
+        }
+    }
+    let (body_iv_i, body_l_seg, _bylo, _byhi) = body?;
+    let (head_iv_i, w_head_mid, head_segs, head_station_widths) = head?;
+    let body_iv = &intervals[body_iv_i];
+    let head_iv = &intervals[head_iv_i];
+    // Straight body left x from the body partner segment.
+    let geometry::Segment::Line { a: la, .. } = contour[body_l_seg] else {
+        return None;
+    };
+    let x_l = src.oncurve[la][0];
+    let w_body = x_r - x_l;
+    if !(w_body > 0.0) {
+        return None;
+    }
+    // Attached chain from the head border segment (contour adjacency,
+    // bounded by the head interval's Y span).
+    let mut adjacency: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (idx, seg) in contour.iter().enumerate() {
+        let (a, b) = seg.endpoints();
+        adjacency.entry(a).or_default().push(idx);
+        adjacency.entry(b).or_default().push(idx);
+    }
+    let mut chain_segs: Vec<usize> = Vec::new();
+    let (ha, hb) = contour[head_iv.0].endpoints();
+    for start in [ha, hb] {
+        let mut current = start;
+        let mut prev = head_iv.0;
+        for _ in 0..contour.len() {
+            let Some(next) = adjacency
+                .get(&current)
+                .and_then(|v| v.iter().copied().find(|&i| i != prev))
+            else {
+                break;
+            };
+            let seg = contour[next];
+            let (a, b) = seg.endpoints();
+            let other = if a == current { b } else { a };
+            match seg {
+                geometry::Segment::Quad { .. } => {
+                    let ymin = src.oncurve[a][1].min(src.oncurve[b][1]);
+                    let ymax = src.oncurve[a][1].max(src.oncurve[b][1]);
+                    if ymax < head_iv.1 || ymin > head_iv.2 {
+                        break;
+                    }
+                    if !chain_segs.contains(&next) {
+                        chain_segs.push(next);
+                    }
+                }
+                geometry::Segment::Line { .. } => {
+                    let (pa, pb) = (src.oncurve[a], src.oncurve[b]);
+                    if pa[0] == pb[0] || !chain_segs.is_empty() {
+                        break;
+                    }
+                }
+                geometry::Segment::Cubic { .. } => break,
+            }
+            prev = next;
+            current = other;
+            if current == ha || current == hb {
+                break;
+            }
+        }
+    }
+    if chain_segs.is_empty() || !head_segs.iter().all(|sg| chain_segs.contains(sg)) {
+        return None;
+    }
+    // Ink/dominance at stations via the certified winding path.
+    let (portions, _, loops, flats) = geometry::split_visible(src, true);
+    let _ = portions;
+    for (k, frac) in [0.25, 0.5, 0.75].iter().enumerate() {
+        let y = head_iv.1 + (head_iv.2 - head_iv.1) * frac;
+        let seg = &contour[head_segs[k]];
+        let Some((_, x_left)) = unique_quad_x(src, seg, y) else {
+            return None;
+        };
+        let probe = [x_left + 0.75 * (x_r - x_left), y];
+        match geometry::certified_winding(probe, &loops, &flats) {
+            Some(w) if w != 0 => {}
+            _ => return None,
+        }
+        // No competing boundary crosses the open station segment.
+        for (idx, sgm) in contour.iter().enumerate() {
+            match *sgm {
+                geometry::Segment::Line { a, b } => {
+                    let (pa, pb) = (src.oncurve[a], src.oncurve[b]);
+                    if pa[0] == x_r && pb[0] == x_r {
+                        continue;
+                    }
+                    if (pa[1] <= y) != (pb[1] <= y) && pa[1] != pb[1] {
+                        let xi = pa[0] + (y - pa[1]) / (pb[1] - pa[1]) * (pb[0] - pa[0]);
+                        if xi > x_left && xi < x_r {
+                            return None;
+                        }
+                    }
+                }
+                geometry::Segment::Quad { c, a, b } => {
+                    if idx == head_segs[k] {
+                        continue;
+                    }
+                    for (_, x) in quad_roots_y(src.oncurve[a], src.offcurve[c], src.oncurve[b], y) {
+                        if x > x_left && x < x_r {
+                            return None;
+                        }
+                    }
+                }
+                geometry::Segment::Cubic { .. } => return None,
+            }
+        }
+    }
+    // Fitted stations (parameter from the fitted curve at matched Y).
+    let fseg = &fit.contours[0][head_iv.0];
+    let (fa, fb) = fseg.endpoints();
+    let (fylo, fyhi) = (
+        fit.oncurve[fa][1].min(fit.oncurve[fb][1]),
+        fit.oncurve[fa][1].max(fit.oncurve[fb][1]),
+    );
+    let mut stations = Vec::new();
+    for (k, frac) in [0.25, 0.5, 0.75].iter().enumerate() {
+        let y = fylo + (fyhi - fylo) * frac;
+        let seg = &fit.contours[0][head_segs[k]];
+        let Some((t, _)) = unique_quad_x(fit, seg, y) else {
+            return None;
+        };
+        stations.push((head_segs[k], t, head_station_widths[k]));
+    }
+    // Cap anchor: first line-vertex-line turn walking away from the head
+    // border's upper endpoint on the curve side.
+    let mut cap = None;
+    {
+        let mut adjacency_v: HashMap<usize, Vec<usize>> = adjacency.clone();
+        let _ = &mut adjacency_v;
+        let mut current = if src.oncurve[ha][1] >= src.oncurve[hb][1] {
+            ha
+        } else {
+            hb
+        };
+        // Walk at most 3 segments collecting line vertices.
+        let mut verts = vec![current];
+        let mut prev = head_iv.0;
+        for _ in 0..3 {
+            let Some(next) = adjacency
+                .get(&current)
+                .and_then(|v| v.iter().copied().find(|&i| i != prev))
+            else {
+                break;
+            };
+            let (a, b) = contour[next].endpoints();
+            let other = if a == current { b } else { a };
+            verts.push(other);
+            if !matches!(contour[next], geometry::Segment::Line { .. }) {
+                break;
+            }
+            prev = next;
+            current = other;
+        }
+        if verts.len() >= 3 {
+            // Walk order: shared-border top, cap vertex, head-curve end.
+            let (right, cap_v, left) = (verts[0], verts[1], verts[2]);
+            let run = src.oncurve[right][0] - src.oncurve[left][0];
+            if run != 0.0 && src.oncurve[right][0] == x_r {
+                let f = (src.oncurve[cap_v][0] - src.oncurve[left][0]) / run;
+                cap = Some((cap_v, left, right, f));
+            }
+        }
+        let _ = current;
+    }
+    let r_verts: Vec<usize> = src
+        .oncurve
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p[0] == x_r)
+        .map(|(i, _)| i)
+        .collect();
+    let l_verts: Vec<usize> = src
+        .oncurve
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p[0] == x_l)
+        .map(|(i, _)| i)
+        .collect();
+    let mut chain_verts = Vec::new();
+    let mut chain_ctrls = Vec::new();
+    for &sg in &chain_segs {
+        let (a, b) = contour[sg].endpoints();
+        for v in [a, b] {
+            if src.oncurve[v][0] < x_r && !chain_verts.contains(&v) {
+                chain_verts.push(v);
+            }
+        }
+        if let geometry::Segment::Quad { c, .. } = contour[sg] {
+            if !chain_ctrls.contains(&c) {
+                chain_ctrls.push(c);
+            }
+        }
+    }
+    Some(ShapeFeature {
+        x_r,
+        x_l,
+        w_body,
+        w_head_mid,
+        w_head_min: head_station_widths
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min),
+        r_verts,
+        l_verts,
+        chain_segs,
+        chain_verts,
+        chain_ctrls,
+        cap,
+        stations,
+        body_r_seg: body_iv.0,
+        body_l_seg,
+        head_r_seg: head_iv.0,
+    })
+}
+
+/// Automatic-Y source-shape solve. Always returns the upstream
+/// outline unchanged unless every gate and post-rounding shape check
+/// passes. Routed from approved::fit for eligible automatic outlines;
+/// the gate-report entries remain diagnostics-first and always abstain.
+pub(super) fn fit_shape_automatic(
+    parsed: &geometry::Parsed,
+    source_captured: &[FittedCommand],
+    upstream_cmds: &[FittedCommand],
+    size_px: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+    collect_witness: bool,
+) -> Result<FitResult, Error> {
+    automatic_shape::fit(
+        parsed,
+        source_captured,
+        upstream_cmds,
+        size_px,
+        reference,
+        native_axes,
+        collect_witness,
+    )
 }

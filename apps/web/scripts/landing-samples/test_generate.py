@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
+sys.path.insert(0, str(Path(__file__).parent))
 spec = importlib.util.spec_from_file_location('landing_samples', Path(__file__).with_name('generate.py'))
 samples = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(samples)
@@ -74,7 +75,7 @@ console.log(JSON.stringify(toRenderSpec({text:'AV',sizePx:16,axes:{},profile:'mo
     def test_glypherie_request_keeps_comparison_kerning_policy(self):
         _, policy, _ = samples.resolve_renderer_policy(self.default_case())
         request = samples.glypherie_request('AV', 16, policy)
-        self.assertFalse(request['config']['kerning'])
+        self.assertTrue(request['config']['kerning'])
         self.assertEqual(request['letter_spacing_px'], 0)
         self.assertEqual(request['pipeline'], {'fitting': 'font_hints_auto', 'rasterization': 'free_type_mono_terminals', 'diagonal_fitting': True})
         self.assertEqual(request['config']['mono_raster'], policy['mono_raster'])
@@ -125,6 +126,17 @@ class SampleChecks(unittest.TestCase):
         image = samples.compose({'A': (glyph, 1.25, -1, -1)}, 'AAA', (7, 3), 2, [2])
         self.assertEqual([x for x in range(7) if image.getpixel((x, 1)) == 0], [1, 2, 4])
 
+    def test_crosspoint_snaps_combined_steps_and_resets_each_line(self):
+        # Pinned GfxRenderer.cpp adds toPixel(prevAdvanceFP + kernFP).
+        # Exercise fractional accumulation, a half tie and a negative step;
+        # rounding advance and pair separately would also fail these controls.
+        glyphs = {'A': (Image.new('L', (1, 1), 255), 5.25, -1, -1)}
+        for pair, expected in [(-0.5625, [5, 10, 15, 20]), (0.25, [5, 11, 17, 23]), (-5.8125, [2, 3, 4, 5])]:
+            with self.subTest(pair=pair):
+                image = samples.compose(glyphs, 'AAAA\nAAAA', (30, 5), 6, [2, 4], {('A', 'A'): pair}, integer_steps=True)
+                for row in [1, 3]:
+                    self.assertEqual([x for x in range(30) if image.getpixel((x, row)) == 0], expected)
+
     def test_any_clipped_ink_fails(self):
         glyph = Image.new('L', (2, 1), 255)
         with self.assertRaisesRegex(ValueError, 'clips'):
@@ -149,6 +161,54 @@ class SampleChecks(unittest.TestCase):
             glyphs, pairs = samples.playdate_glyphs(directory)
         self.assertEqual(glyphs['A'][1:], (3, -1, -1))
         self.assertEqual(pairs, {('A', 'V'): -1})
+
+    def test_hosted_playdate_decoder_keeps_native_pairs_and_checks_browser_glyphs(self):
+        atlas = Image.new('RGBA', (95, 1), (0, 0, 0, 255))
+        entries = '\n'.join(f'{ch if ch != " " else "space"} 4' for ch in samples.ASCII)
+        source = f'width=1\nheight=1\ntracking=0\n{entries}\nAV -1\n-- -2\n A 1\n'
+        metadata = {'cell_width': 1, 'cell_height': 1, 'baseline': 1}
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            atlas.save(directory / 'font.png')
+            (directory / 'font.fnt').write_text(source)
+            (directory / 'memory.json').write_text(json.dumps({ch: {'alpha': [255], 'advance': 4} for ch in samples.ASCII}))
+            _, pairs = samples.playdate_glyphs(directory, metadata)
+        self.assertEqual(pairs, {('A', 'V'): -1, ('-', '-'): -2, (' ', 'A'): 1})
+
+    def test_lvgl_rounds_combined_advance_and_pair_once_per_step(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'font_info.json'
+            path.write_text(json.dumps({'glyphs': [{'code': 65, 'advanceWidth': 4.5, 'kerning': {'86': -0.53, '84': 0.53}}]}))
+            self.assertEqual(samples.lvgl_pairs(path), {('A', 'V'): -1})
+
+    def test_lvgl_supplements_an_empty_native_table_without_double_kerning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'font_info.json'
+            glyph = {'code': 65, 'advanceWidth': 4.49, 'kerning': {}}
+            path.write_text(json.dumps({'glyphs': [glyph]}))
+            self.assertEqual(samples.lvgl_pairs(path, {('A', 'V'): -0.6}), {('A', 'V'): -1})
+            self.assertEqual(samples.lvgl_advance_fp(4.49, False), 64)
+            glyph['kerning'] = {'86': -0.6}
+            path.write_text(json.dumps({'glyphs': [glyph]}))
+            self.assertEqual(samples.lvgl_pairs(path, {('A', 'V'): -4}), {('A', 'V'): -1})
+
+    def test_lvgl_rescales_large_pairs_before_combined_rounding(self):
+        # LVGL scales the signed 4.4 pair before adding it to the 12.4 advance step.
+        # https://github.com/lvgl/lv_font_conv/blob/v1.5.3/lib/font/font.js
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'font_info.json'
+            path.write_text(json.dumps({'glyphs': [{'code': 65, 'advanceWidth': 4.0, 'kerning': {'86': -8.0}}]}))
+            self.assertEqual(samples.lvgl_pairs(path), {('A', 'V'): -8})
+
+    def test_lvgl_advance_uses_fractional_only_with_native_kerning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'font_info.json'
+            glyph = {'code': 65, 'advanceWidth': 4.49, 'bbox': {'width': 1, 'height': 1, 'x': 0, 'y': 0}, 'pixels': [[255]], 'kerning': {}}
+            path.write_text(json.dumps({'glyphs': [glyph]}))
+            self.assertEqual(samples.lvgl_glyphs(path)['A'][1:], (4, 0, -1))
+            glyph['kerning'] = {'86': -0.6}
+            path.write_text(json.dumps({'glyphs': [glyph]}))
+            self.assertEqual(samples.lvgl_glyphs(path)['A'][1:], (5, 0, -1))
 
     def test_multi_case_publish_and_incompatible_pipeline_fail_before_work(self):
         with self.assertRaisesRegex(ValueError, 'exactly one case'):

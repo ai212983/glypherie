@@ -360,7 +360,7 @@ fn enabled_opt_in_preserves_reference_config_and_metrics() {
             }
         }
         if applied > 0 {
-            assert!(on.implementation.contains(":diagonal-shape-05"));
+            assert!(on.implementation.contains(":diagonal-shape-06"));
         }
     }
 }
@@ -838,7 +838,7 @@ fn missing_donor_keeps_upstream_without_new_failure() {
             .records
             .iter()
             .all(|record| record.diagonal_fitting.is_none()));
-        assert!(!on.implementation.contains(":diagonal-shape-05"));
+        assert!(!on.implementation.contains(":diagonal-shape-"));
         assert_eq!(off.records.len(), on.records.len());
         for (a, b) in off.records.iter().zip(&on.records) {
             assert_eq!(a.fitted_commands, b.fitted_commands);

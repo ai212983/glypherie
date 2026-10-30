@@ -110,6 +110,7 @@ fn reference_of(root: &Value) -> Reference {
                     a["tangent"][1].as_f64().unwrap(),
                 ],
                 source_ids: a["source_ids"].as_str().unwrap().to_string(),
+                cert: None,
             })
             .collect(),
         size_px: raw["size_px"].as_f64().unwrap(),

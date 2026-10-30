@@ -44,6 +44,14 @@ fn cell(input: Value) -> Result<Value, Box<dyn std::error::Error>> {
             serde_json::from_value::<fitting_source::SourceOutline>(r["raw_outline"].clone())?
         };
         let result = match input["mode"].as_str().unwrap_or("sequence") {
+            "source-shape" => fitting::curve_model::diagnose_automatic_shape(
+                &raw,
+                &source,
+                &upstream,
+                size,
+                &reference,
+                native_axes,
+            )?,
             "terminal" => fitting::terminal::fit_terminal(
                 &raw,
                 &source,

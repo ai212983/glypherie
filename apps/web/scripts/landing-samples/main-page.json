@@ -6,9 +6,9 @@
     "family_label": "Roboto",
     "size_px": 8,
     "axes": {
-      "wdth": 100
-    },
-    "stem_target_px": 1
+      "wdth": 100,
+      "wght": 400
+    }
   },
   {
     "id": "roboto-12",
@@ -17,9 +17,9 @@
     "family_label": "Roboto",
     "size_px": 12,
     "axes": {
-      "wdth": 100
-    },
-    "stem_target_px": 1
+      "wdth": 100,
+      "wght": 400
+    }
   },
   {
     "id": "roboto-16",
@@ -28,9 +28,9 @@
     "family_label": "Roboto",
     "size_px": 16,
     "axes": {
-      "wdth": 100
-    },
-    "stem_target_px": 1
+      "wdth": 100,
+      "wght": 400
+    }
   },
   {
     "id": "roboto-20",
@@ -39,9 +39,9 @@
     "family_label": "Roboto",
     "size_px": 20,
     "axes": {
-      "wdth": 100
-    },
-    "stem_target_px": 1
+      "wdth": 100,
+      "wght": 400
+    }
   },
   {
     "id": "roboto-italic-8",
@@ -50,9 +50,9 @@
     "family_label": "Roboto Italic",
     "size_px": 8,
     "axes": {
-      "wdth": 100
-    },
-    "stem_target_px": 1
+      "wdth": 100,
+      "wght": 400
+    }
   },
   {
     "id": "roboto-italic-12",
@@ -61,9 +61,9 @@
     "family_label": "Roboto Italic",
     "size_px": 12,
     "axes": {
-      "wdth": 100
-    },
-    "stem_target_px": 1
+      "wdth": 100,
+      "wght": 400
+    }
   },
   {
     "id": "roboto-italic-16",
@@ -72,9 +72,9 @@
     "family_label": "Roboto Italic",
     "size_px": 16,
     "axes": {
-      "wdth": 100
-    },
-    "stem_target_px": 1
+      "wdth": 100,
+      "wght": 400
+    }
   },
   {
     "id": "roboto-italic-20",
@@ -83,9 +83,9 @@
     "family_label": "Roboto Italic",
     "size_px": 20,
     "axes": {
-      "wdth": 100
-    },
-    "stem_target_px": 1
+      "wdth": 100,
+      "wght": 400
+    }
   },
   {
     "id": "literata-8",
@@ -94,9 +94,9 @@
     "family_label": "Literata",
     "size_px": 8,
     "axes": {
-      "opsz": 8
-    },
-    "stem_target_px": 1
+      "opsz": 8,
+      "wght": 400
+    }
   },
   {
     "id": "literata-12",
@@ -105,9 +105,9 @@
     "family_label": "Literata",
     "size_px": 12,
     "axes": {
-      "opsz": 12
-    },
-    "stem_target_px": 1
+      "opsz": 12,
+      "wght": 400
+    }
   },
   {
     "id": "literata-16",
@@ -116,9 +116,9 @@
     "family_label": "Literata",
     "size_px": 16,
     "axes": {
-      "opsz": 16
-    },
-    "stem_target_px": 1
+      "opsz": 16,
+      "wght": 400
+    }
   },
   {
     "id": "literata-20",
@@ -127,9 +127,9 @@
     "family_label": "Literata",
     "size_px": 20,
     "axes": {
-      "opsz": 20
-    },
-    "stem_target_px": 1
+      "opsz": 20,
+      "wght": 400
+    }
   },
   {
     "id": "rouge-script-20",

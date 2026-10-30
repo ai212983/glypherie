@@ -641,7 +641,7 @@ fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
         };
     let replay = if matches!(
         diagonal.model.as_str(),
-        "diagonal-shape-04" | "diagonal-shape-05"
+        "diagonal-shape-04" | "diagonal-shape-05" | "diagonal-shape-06"
     ) {
         let raw: Option<crate::fitting_source::SourceOutline> = match diagonal
             .raw_source
@@ -654,14 +654,55 @@ fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
                 return DiagonalReplay::Abort("diagonal raw source does not deserialize");
             }
         };
-        if diagonal.model == "diagonal-shape-05"
-            && diagonal.reason.starts_with("coupled:")
+        if diagonal.model == "diagonal-shape-05" {
+            if diagonal.source_shape.is_some() {
+                return DiagonalReplay::Flaw("legacy capture carries new source-shape provenance");
+            }
+        }
+        if matches!(
+            diagonal.model.as_str(),
+            "diagonal-shape-05" | "diagonal-shape-06"
+        ) && diagonal.reason.starts_with("coupled:")
             && record.raster_policy != RasterPolicy::FreeTypeMono
         {
             return DiagonalReplay::Flaw("coupled fit requires recorded FreeType mono policy");
         }
+        if diagonal.model == "diagonal-shape-06" {
+            // The model identifies the producing sequence. Shape provenance
+            // travels only with its own stage; other stages retain their
+            // axis and raster-policy requirements.
+            if diagonal.upright_stem.is_some() {
+                return DiagonalReplay::Flaw("new source capture under legacy provenance field");
+            }
+            if diagonal.reason.starts_with("source-shape:") {
+                let aligned = diagonal.source_shape.as_ref().is_some_and(|shape| {
+                    shape
+                        .get("model")
+                        .is_some_and(|model| model == "upright-source-shape-01")
+                        && shape
+                            .get("kernel")
+                            .is_some_and(|kernel| kernel == "coupled-shape-auto-01")
+                });
+                if !aligned {
+                    return DiagonalReplay::Flaw("new source capture without kernel provenance");
+                }
+                if !matches!(
+                    record.raster_policy,
+                    RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+                ) {
+                    return DiagonalReplay::Flaw("source-shape fit requires recorded mono policy");
+                }
+                if diagonal.native_axes != [false, false] {
+                    return DiagonalReplay::Flaw("source-shape fit requires automatic axes");
+                }
+            } else if diagonal.source_shape.is_some() {
+                return DiagonalReplay::Flaw("new non-shape capture carries shape provenance");
+            }
+        }
         let fit = if diagonal.model == "diagonal-shape-04" {
             crate::diagonal_fitting::approved::fit_pre_coupled
+        } else if diagonal.model == "diagonal-shape-05" {
+            crate::diagonal_fitting::approved::fit_v05
         } else {
             crate::diagonal_fitting::approved::fit
         };
