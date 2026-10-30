@@ -47,6 +47,8 @@ npm test
 - [Experiments](experiments/AGENTS.md)
 - [Font assets](fonts/README.md)
 - [Evaluation](docs/evaluation.md)
+- [Current spacing guide](docs/guides/text-layout/spacing-models.md)
+- [Contextual spacing and healing proposal](docs/designs/text-layout/contextual-spacing-and-healing.md)
 - [Development revisions](docs/revisions/README.md)
 - [Agent instructions](AGENTS.md)
 - [Research papers](docs/references/papers/)

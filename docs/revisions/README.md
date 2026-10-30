@@ -34,6 +34,10 @@ scoped assessment. Evaluation principles belong in the [evaluation guide](../eva
 interface contracts belong in tool documentation. Preview selections belong in configuration and policy files. Link to
 the owner rather than repeat its content. Vendored baseline/candidate documentation remains independent.
 
+Cross-topic proposals live in `docs/designs/<subject>/`; current-use guides live in `docs/guides/<subject>/`. Keep the
+proposed model in its design document and link from the relevant iteration, which records adoption and scoped
+assessment.
+
 ## Iteration lifecycle
 
 Feedback may extend an iteration's agreed topics. Close only with explicit user agreement and a disposition for each:

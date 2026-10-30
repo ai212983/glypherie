@@ -440,48 +440,10 @@ are intentional: eighteen advances total 144 rather than 142.3125 px. Broader op
 
 #### Proposed optical pair-spacing experiment
 
-**Project hypothesis; unimplemented and not adopted:** preserve each source pair's estimated optical separation through
-fitting, changing placement while retaining final outlines, rasters, offsets and advances. This is separate from metric
-residual recovery and is not an optical improvement claim.
-
-[FontForge's estimator](https://fontforge.org/docs/ui/dialogs/autowidth.html) weights facing outline-envelope
-separations by `1 / (separation + em_size / 50)^2`, excluding empty shared bands. Resolve documentation/native
-differences against the
-[pinned implementation](https://github.com/fontforge/fontforge/blob/c41bdb922285f35defd1e1385adfd13bde1ab32a/fontforge/autowidth2.c):
-documented/AutoWidth bands default to em/100, native pair paths to em/200; envelopes are floored in design units, the
-upper loop band is excluded, and rounding uses C `rint`. Preserve its license and record parameters. Flooring directly
-in pixels would be a different adaptation.
-
-For selected source/fitted outlines in a common baseline frame, let `S` be adjacent-box optical separation and `d` the
-origin step. FontForge's translation assumption gives:
-
-```text
-D(d) = d + xmin_right - xmax_left + S
-d_source = source_advance_left + source_pair_adjustment
-D_fitted(d_required) = D_source(d_source)
-pair_adjustment = round(d_required - finalized_advance_left)
-```
-
-Calculate weights once at adjacent boxes. Round the signed adjustment once, not the absolute step; replace the pair
-adjustment rather than adding kerning/bearing compensation again. Apply tracking afterward. The source-pair target is
-our adaptation: FontForge normally targets a common chosen separation.
-
-Empty glyphs, spaces, no-shared-band pairs, fixed-pitch fonts and source-tabular digit pairs retain placement with
-recorded abstentions. Preserve source overlaps and unsupported-shaping errors; non-finite geometry fails. Do not add
-collision clamps, blank-column targets or glyph exceptions.
-
-First verify pinned-estimator parity, translation, scale, unchanged-source identity, rectangles, curves and empty bands;
-failure stops expansion. Then compare kerning off/on, available residual compensation and optical placement over Roboto,
-Roboto Flex, Source Sans 3 and Literata at 12/14/16/18/20/24 px, weights 300/400/700, default remaining axes and
-independent optical-size endpoints. Include fixed/tabular controls, punctuation, supported accented scalars, repeated
-letters, words, straight/curved/diagonal pairs and alternate prefixes. Keep automatic, selective, overlay and supported
-Gray pipelines distinct.
-
-Retain identities, exact settings, envelopes, fractional targets, integer tables and abstentions. Verify unchanged
-images/advances, single pair application, prefix independence, tracking separation and shared measurement/wrapping
-inputs. Use an isolated browser comparison for native/enlarged assessment of rhythm, punctuation and word boundaries.
-Adoption requires optical assessment and shared finalized metrics; preview scope and the separate approved baseline stay
-unchanged.
+The unimplemented optical-spacing experiment is now owned by the
+[contextual spacing and healing design](../../designs/text-layout/contextual-spacing-and-healing.md#source-relative-optical-spacing-experiment).
+Its source-relative target remains a project hypothesis. Adoption and optical assessment remain open; the current bitmap
+policy and the scoped findings above retain their existing status.
 
 ### Tracking and word separation
 
