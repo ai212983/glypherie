@@ -46,6 +46,7 @@ Verify the Node package:
 ```sh
 node crates/wasm/smoke/render.mjs [font-path]   # needs the nodejs pkg
 node crates/wasm/smoke/parity.mjs              # exact native/WASM comparison; needs Cargo
+node crates/wasm/smoke/upright_stem.mjs        # Literata preview-pipeline parity (upright-stem regression case); needs preview build + Cargo
 node --check crates/wasm/smoke/render.mjs crates/wasm/examples/hello.mjs
 ```
 

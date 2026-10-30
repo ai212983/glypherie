@@ -196,6 +196,7 @@ fn attached_rejects_off_grid_input() {
             length: 8.0,
             tangent: [0.0, 1.0],
             source_ids: "stub".to_string(),
+            cert: None,
         });
     let mut outline = square();
     outline[1] = FittedCommand::LineTo(0.1, 0.0);

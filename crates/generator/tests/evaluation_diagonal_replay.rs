@@ -122,7 +122,7 @@ fn applied_diagonal_replay_accepts() {
     );
     let index = applied_index(&candidate);
     let diagonal = candidate.records[index].diagonal_fitting.as_ref().unwrap();
-    assert_eq!(diagonal.model, "diagonal-shape-05");
+    assert_eq!(diagonal.model, "diagonal-shape-06");
     assert_eq!(diagonal.reason, "curve:fitted");
     assert!(!diagonal.upstream_commands.is_empty());
     assert_ne!(
@@ -174,7 +174,7 @@ fn coupled_native_y_capture_replays_and_requires_its_scan_policy() {
         .diagonal_fitting
         .as_ref()
         .expect("reviewed native-Y curve fits");
-    assert_eq!(capture.model, "diagonal-shape-05");
+    assert_eq!(capture.model, "diagonal-shape-06");
     assert_eq!(capture.reason, "coupled:fitted");
     assert_eq!(capture.native_axes, [false, true]);
     assert_eq!(capture.upstream_commands, old.fitted_commands);
@@ -312,7 +312,7 @@ fn invalid_raw_source_returns_before_later_guards() {
     let mut candidate = diagonal_candidate("s");
     let index = applied_index(&candidate);
     let diagonal = candidate.records[index].diagonal_fitting.as_mut().unwrap();
-    assert_eq!(diagonal.model, "diagonal-shape-05");
+    assert_eq!(diagonal.model, "diagonal-shape-06");
     diagonal.raw_source = Some(serde_json::json!(5));
     candidate.records[index].pixels[0] ^= 1;
     let evaluation = evaluate(&source, &upstream, &candidate);

@@ -601,6 +601,33 @@ fn elastic_start(
     Some(xt[..n].to_vec())
 }
 
+/// Shared bounded-equality core: `a x = b` in the least-squares sense
+/// subject to `g x = h` and `|x[i]| <= bounds[i]`. A strict start rejects
+/// an equality minimum-norm start outside the box; a repaired start reuses
+/// the existing `elastic_start` repair through `active_set(strict_init =
+/// false)`, exactly as the convex path already does.
+fn bounded_equalities_impl(
+    a: &[Vec<f64>],
+    b: &[f64],
+    g: &[Vec<f64>],
+    h: &[f64],
+    bounds: &[f64],
+    strict_init: bool,
+) -> Option<(Vec<f64>, QpInfo)> {
+    active_set(
+        &BOUNDED_TOL,
+        a,
+        b,
+        &g.iter()
+            .zip(h.iter())
+            .map(|(r, v)| (r.clone(), *v))
+            .collect::<Vec<_>>(),
+        &[],
+        bounds,
+        strict_init,
+    )
+}
+
 /// Feasible primal active-set least squares with equality and box limits.
 ///
 /// Native port of the joint-model `_bounded_equalities`: `a x = b` in the
@@ -614,18 +641,27 @@ pub(super) fn bounded_equalities(
     h: &[f64],
     bounds: &[f64],
 ) -> Option<(Vec<f64>, QpInfo)> {
-    active_set(
-        &BOUNDED_TOL,
-        a,
-        b,
-        &g.iter()
-            .zip(h.iter())
-            .map(|(r, v)| (r.clone(), *v))
-            .collect::<Vec<_>>(),
-        &[],
-        bounds,
-        true,
-    )
+    bounded_equalities_impl(a, b, g, h, bounds, true)
+}
+
+/// Bounded-equality solve with elastic Phase-I start (automatic source-shape
+/// mode only).
+///
+/// Forsgren–Gill–Wong feasible active set needs a feasible start; the legacy
+/// strict entry above rejects an equality minimum-norm start outside the box
+/// even when other feasible points exist. This entry reuses the existing
+/// `elastic_start` repair (same `BOUNDED_TOL`, same box) through
+/// `active_set(strict_init = false)`, exactly as the convex path already
+/// does. No tolerance is loosened and no new numerics are introduced; the
+/// legacy strict entry and every existing caller keep their behavior.
+pub(super) fn bounded_equalities_phase1(
+    a: &[Vec<f64>],
+    b: &[f64],
+    g: &[Vec<f64>],
+    h: &[f64],
+    bounds: &[f64],
+) -> Option<(Vec<f64>, QpInfo)> {
+    bounded_equalities_impl(a, b, g, h, bounds, false)
 }
 
 /// Fixed convex least squares with linear constraints and box bounds.
@@ -907,6 +943,32 @@ mod tests {
         let a = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
         let b = vec![0.0, 0.0];
         assert!(bounded_equalities(&a, &b, &[vec![1.0, 0.0]], &[5.0], &[1.0, 1.0]).is_none());
+    }
+
+    #[test]
+    fn phase1_repairs_box_violating_equality_start() {
+        // Equality x0 + x1 = 1 with asymmetric box |x0| <= 0.4, |x1| <= 0.8
+        // and identity objective. The equality minimum-norm start (0.5, 0.5)
+        // violates the x0 side, so the legacy strict entry returns None by
+        // contract; the elastic Phase-I entry repairs through the existing
+        // `elastic_start` and certifies the constrained optimum (0.4, 0.6)
+        // within the unchanged bounds and KKT gates. No tolerance is
+        // loosened.
+        let a = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let b = vec![0.0, 0.0];
+        let g = vec![vec![1.0, 1.0]];
+        let h = vec![1.0];
+        let bounds = vec![0.4, 0.8];
+        assert!(bounded_equalities(&a, &b, &g, &h, &bounds).is_none());
+        let (x, info) = bounded_equalities_phase1(&a, &b, &g, &h, &bounds)
+            .expect("phase-I repairs the box-violating equality start");
+        close(&x, &[0.4, 0.6], 1e-9);
+        assert!(info.equality_error <= 1e-9);
+        assert!(info.stationarity_error <= 1e-9);
+        assert!(x
+            .iter()
+            .zip(bounds.iter())
+            .all(|(v, l)| v.abs() <= l + 1e-9));
     }
 
     #[test]

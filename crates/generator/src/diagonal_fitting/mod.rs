@@ -30,6 +30,7 @@ pub(crate) mod reuse;
 pub(crate) mod rows;
 pub mod terminal;
 pub mod topology;
+pub mod upright;
 
 use crate::{fail, probe::FittedCommand, Error};
 /// Unrounded raw source outline in pixels; the parent owns raw capture
@@ -128,6 +129,26 @@ fn basis_row(weights: &[(usize, f64)], n: usize) -> Vec<f64> {
     row
 }
 
+/// Structured donor certificate computed in the donor's own source
+/// geometry at reference build time. `border_width` and
+/// `fitted_border_width` are coordinate differences between the pair's
+/// straight borders, the same measurement the upright stage applies to
+/// its target; `unambiguous` is false when either supporting line of the
+/// pair carries a second disjoint interval in that donor (a competing
+/// local pairing, as in the reported shared-border glyph), so such a
+/// donor cannot certify a standard. Absent in packets built before this
+/// certificate existed; those anchors are ineligible, never guessed.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DonorCert {
+    pub record: usize,
+    pub contour: usize,
+    pub seg_a: usize,
+    pub seg_b: usize,
+    pub border_width: f64,
+    pub fitted_border_width: f64,
+    pub unambiguous: bool,
+}
+
 /// Frozen upright reference anchor: same font, axes, size and native settings.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Anchor {
@@ -137,6 +158,8 @@ pub struct Anchor {
     pub length: f64,
     pub tangent: [f64; 2],
     pub source_ids: String,
+    #[serde(default)]
+    pub cert: Option<DonorCert>,
 }
 
 /// Font-wide upright anchor list with build diagnostics.
@@ -439,6 +462,12 @@ pub fn build_reference(
                 continue;
             }
             let (lo, hi) = geometry::longest_span(&pair.dom).unwrap_or((0.0, 0.0));
+            // Certificate in the donor's own geometry: coordinate-diff
+            // border widths (the upright stage's measurement) and no
+            // competing disjoint interval on either supporting line.
+            let unambiguous = [a.p0[0], b.p0[0]]
+                .iter()
+                .all(|&x| geometry::vertical_line_intervals(&parsed, x).len() < 2);
             anchors.push(Anchor {
                 source_width: src_mean,
                 fitted_width: fit_mean,
@@ -449,6 +478,15 @@ pub fn build_reference(
                     "r{}:c{}a({},{:.4},{:.4})/b({},{:.4},{:.4})",
                     num, a.contour, a.seg, a.t0, a.t1, b.seg, b.t0, b.t1
                 ),
+                cert: Some(DonorCert {
+                    record: num,
+                    contour: a.contour,
+                    seg_a: a.seg,
+                    seg_b: b.seg,
+                    border_width: (b.p0[0] - a.p0[0]).abs(),
+                    fitted_border_width: (fitted.oncurve[b.i0][0] - fitted.oncurve[a.i0][0]).abs(),
+                    unambiguous,
+                }),
             });
         }
     }
@@ -1350,6 +1388,7 @@ mod tests {
             length: 4.0,
             tangent: [0.0, 1.0],
             source_ids: "r0:c0a(0,0.0000,1.0000)/b(1,0.0000,1.0000)".to_string(),
+            cert: None,
         }
     }
 

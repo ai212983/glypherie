@@ -24,7 +24,7 @@ use super::curves::{
 use super::exact::Exact as BigRational;
 use super::{
     abstain, acute, basis_row, curves, filtered, geometry, intervals, min_norm_solve,
-    qp::{bounded_equalities, QpInfo},
+    qp::{bounded_equalities, bounded_equalities_phase1, QpInfo},
     reference_meta, width_weight, FitResult, Reference, HEADROOM, MAX_COMMANDS,
 };
 use crate::{fail, probe::FittedCommand, Error};
@@ -320,6 +320,37 @@ pub(super) fn recognize(
     source: &[FittedCommand],
     size_px: f64,
 ) -> (Vec<CurvePair>, serde_json::Value) {
+    let Ok(parsed) = geometry::parse_commands(source) else {
+        let mut rejected: BTreeMap<String, usize> = BTreeMap::new();
+        *rejected
+            .entry("malformed-commands".to_string())
+            .or_insert(0) += 1;
+        return (
+            Vec::new(),
+            serde_json::json!({"candidates": 0, "rejected": rejected, "reason": "malformed-commands"}),
+        );
+    };
+    recognize_parsed(&parsed, size_px)
+}
+
+/// Recognition on already-parsed source geometry (raw f64 outlines use
+/// the same machinery without a command round-trip).
+pub(super) fn recognize_parsed(
+    parsed: &geometry::Parsed,
+    size_px: f64,
+) -> (Vec<CurvePair>, serde_json::Value) {
+    recognize_parsed_depths(parsed, size_px, &DEPTHS)
+}
+
+/// Recognition with an explicit substitution-depth order. Raw f64
+/// outlines may only certify at depth 0: deeper dyadic joints of
+/// scaled coordinates need not be f64-representable, which is a
+/// representation limit of the certificate, not of the geometry.
+pub(super) fn recognize_parsed_depths(
+    parsed: &geometry::Parsed,
+    size_px: f64,
+    depths: &[usize],
+) -> (Vec<CurvePair>, serde_json::Value) {
     let mut rejected: BTreeMap<String, usize> = BTreeMap::new();
     let mut reject = |reason: &str| {
         *rejected.entry(reason.to_string()).or_insert(0) += 1;
@@ -329,10 +360,6 @@ pub(super) fn recognize(
             Vec::new(),
             serde_json::json!({"candidates": 0, "rejected": rejected, "reason": reason}),
         )
-    };
-    let Ok(parsed) = geometry::parse_commands(source) else {
-        reject("malformed-commands");
-        return fail("malformed-commands", &rejected);
     };
     if parsed.contours.len() != 1 {
         reject("multi-contour-unsupported");
@@ -356,11 +383,11 @@ pub(super) fn recognize(
         .collect();
     let mut depths_tried = Vec::new();
     let mut chosen: Option<usize> = None;
-    for depth in DEPTHS {
-        depths_tried.push(depth);
-        match curves::certify_parsed(&parsed, depth) {
+    for depth in depths {
+        depths_tried.push(*depth);
+        match curves::certify_parsed(parsed, *depth) {
             Ok(()) => {
-                chosen = Some(depth);
+                chosen = Some(*depth);
                 break;
             }
             Err(reason) => reject(reason),
@@ -370,7 +397,7 @@ pub(super) fn recognize(
         reject("uncertified-substitution");
         return fail("uncertified-substitution", &rejected);
     };
-    let (edges, loops) = substitute(&parsed, depth);
+    let (edges, loops) = substitute(parsed, depth);
     let mut eps_global = 0.0f64;
     for contour in &parsed.contours {
         for seg in contour {
@@ -2339,7 +2366,27 @@ fn hard_solve(
     bound: f64,
     ncols: usize,
 ) -> Result<(Vec<f64>, f64, Option<QpInfo>), String> {
-    let bounds = vec![bound; ncols];
+    hard_solve_bounded(mat, rhs, kinds, &vec![bound; ncols])
+}
+
+/// Split hard-solve rows: free least-squares rows with targets alongside
+/// denoised exact rows with targets.
+struct HardRowSplit {
+    free_mat: Vec<Vec<f64>>,
+    free_rhs: Vec<f64>,
+    exact_mat: Vec<Vec<f64>>,
+    exact_rhs: Vec<f64>,
+}
+
+/// Shared hard-solve row assembly: joint and white-gap rows stay exact
+/// while width error is minimized over free columns. A zero-norm row with
+/// a nonzero target means incompatible pins; no exact row means the bounds
+/// cannot hold a joint.
+fn split_hard_rows(
+    mat: &[Vec<f64>],
+    rhs: &[f64],
+    kinds: &[RowKind],
+) -> Result<HardRowSplit, String> {
     let mut a_free = Vec::new();
     let mut b_free = Vec::new();
     let mut g = Vec::new();
@@ -2366,7 +2413,64 @@ fn hard_solve(
     if gz.is_empty() {
         return Err("joint-bounds-incompatible".to_string());
     }
-    match bounded_equalities(&a_free, &b_free, &gz, &hz, &bounds) {
+    Ok(HardRowSplit {
+        free_mat: a_free,
+        free_rhs: b_free,
+        exact_mat: gz,
+        exact_rhs: hz,
+    })
+}
+
+/// Bounded-equality solve with per-column movement bounds (one budget
+/// from the original upstream; each column carries its owning
+/// feature's cap). Private to this module; the child `coupled` module
+/// reaches it as an ancestor item.
+fn hard_solve_bounded(
+    mat: &[Vec<f64>],
+    rhs: &[f64],
+    kinds: &[RowKind],
+    bounds: &[f64],
+) -> Result<(Vec<f64>, f64, Option<QpInfo>), String> {
+    let rows = split_hard_rows(mat, rhs, kinds)?;
+    match bounded_equalities(
+        &rows.free_mat,
+        &rows.free_rhs,
+        &rows.exact_mat,
+        &rows.exact_rhs,
+        bounds,
+    ) {
+        Some((s, info)) => {
+            let peak = s.iter().map(|x| x.abs()).fold(0.0, f64::max);
+            Ok((s, peak, Some(info)))
+        }
+        None => Err("joint-bounds-incompatible".to_string()),
+    }
+}
+
+/// Bounded-equality solve with elastic Phase-I start (automatic source-shape
+/// mode only).
+///
+/// Same row assembly and per-column caps as `hard_solve_bounded`, but the
+/// equality minimum-norm start outside the box is repaired through the
+/// existing elastic Phase I instead of abstaining. The legacy strict entry
+/// above keeps its contract for native-Y and every existing caller; only the
+/// automatic mode opts into this helper. No tolerance or bound is changed.
+/// Private to this module; the child `coupled` module reaches it as an
+/// ancestor item.
+fn hard_solve_bounded_phase1(
+    mat: &[Vec<f64>],
+    rhs: &[f64],
+    kinds: &[RowKind],
+    bounds: &[f64],
+) -> Result<(Vec<f64>, f64, Option<QpInfo>), String> {
+    let rows = split_hard_rows(mat, rhs, kinds)?;
+    match bounded_equalities_phase1(
+        &rows.free_mat,
+        &rows.free_rhs,
+        &rows.exact_mat,
+        &rows.exact_rhs,
+        bounds,
+    ) {
         Some((s, info)) => {
             let peak = s.iter().map(|x| x.abs()).fold(0.0, f64::max);
             Ok((s, peak, Some(info)))
@@ -2496,6 +2600,16 @@ pub(super) fn with_effectibility(
     }
 }
 
+/// Shared boundary guard for the curve-model fit entries: the size must
+/// be finite and positive before any geometry is touched.
+fn require_finite_positive_size(size_px: f64) -> Result<(), Error> {
+    if size_px.is_finite() && size_px > 0.0 {
+        Ok(())
+    } else {
+        Err(fail("curve model requires finite positive size"))
+    }
+}
+
 /// Horizontal completion retaining the fitted Y grid and straight attachments.
 /// Turner/Lemberg axis separation; Hersch sections 2 and 5: local width
 /// completion retains existing alignment and attachment curves.
@@ -2506,9 +2620,7 @@ pub fn fit_horizontal(
     reference: &Reference,
     native_axes: [bool; 2],
 ) -> Result<FitResult, Error> {
-    if !(size_px.is_finite() && size_px > 0.0) {
-        return Err(fail("curve model requires finite positive size"));
-    }
+    require_finite_positive_size(size_px)?;
     let base_diag = serde_json::json!({ "size_px": size_px });
     if !geometry::check_correspondence(source, preferred) {
         return Ok(abstain(preferred, "no-correspondence", base_diag));
@@ -2687,6 +2799,50 @@ pub fn fit_coupled(
     native_axes: [bool; 2],
 ) -> Result<FitResult, Error> {
     coupled::fit_coupled(source, upstream, size, reference, native_axes)
+}
+
+/// Diagnostics-first automatic-Y shape gate report; always abstains.
+/// See `coupled::gate_report_automatic`.
+pub fn automatic_shape_gate(
+    source: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+) -> Result<FitResult, Error> {
+    coupled::gate_report_automatic(source, upstream, size, reference, native_axes)
+}
+
+/// Gate report on raw parsed source geometry (f64, no command
+/// round-trip); always abstains. See `coupled::gate_report_parsed`.
+/// Automatic-Y source-shape prototype solve on raw parsed geometry;
+/// renderer-inactive. See `coupled::fit_shape_automatic`.
+pub fn fit_automatic_shape(
+    source: &geometry::Parsed,
+    source_captured: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+) -> Result<FitResult, Error> {
+    coupled::fit_shape_automatic(
+        source,
+        source_captured,
+        upstream,
+        size,
+        reference,
+        native_axes,
+    )
+}
+
+pub fn automatic_shape_gate_parsed(
+    source: &geometry::Parsed,
+    upstream: &[FittedCommand],
+    size: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+) -> Result<FitResult, Error> {
+    coupled::gate_report_parsed(source, upstream, size, reference, native_axes, false)
 }
 
 #[cfg(test)]

@@ -133,6 +133,15 @@ pub struct DiagonalFittingCapture {
     pub size_px: f64,
     // Core `Reference` as JSON value: the baseline build has no core type.
     pub reference: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upright_stem: Option<serde_json::Value>,
+    // Applied source-shape provenance for `diagonal-shape-06` captures:
+    // the kernel prototype carrying the public stage identity and the
+    // kernel identity. Present only with the shape stage reason; absent on
+    // every older packet and on new non-shape captures, never populated
+    // under the legacy field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_shape: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Serialize)]

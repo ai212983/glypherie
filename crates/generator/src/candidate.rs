@@ -177,8 +177,12 @@ fn apply_diagonal_fitting(
             _ => continue,
         };
         let Ok(raster) = raster else { continue };
+        // One capture model per producing sequence: every applied result of
+        // the current sequence carries the new model, while provenance
+        // fields travel only with their own stage.
+        let is_shape = fit.reason.starts_with("source-shape:");
         record.diagonal_fitting = Some(crate::reference::DiagonalFittingCapture {
-            model: "diagonal-shape-05".into(),
+            model: "diagonal-shape-06".into(),
             raw_source: raw_features
                 .as_ref()
                 .and_then(|r| serde_json::to_value(r).ok()),
@@ -187,6 +191,12 @@ fn apply_diagonal_fitting(
             reason: fit.reason.clone(),
             size_px,
             reference: donors_value.clone(),
+            upright_stem: None,
+            source_shape: if is_shape {
+                fit.source_shape.clone()
+            } else {
+                None
+            },
         });
         record.source_commands = Some(raw.fitted_commands.clone());
         record.fitted_commands = fit.commands;
@@ -200,7 +210,7 @@ fn apply_diagonal_fitting(
         applied_any = true;
     }
     if applied_any {
-        report.implementation.push_str(":diagonal-shape-05");
+        report.implementation.push_str(":diagonal-shape-06");
     }
     Ok(())
 }

@@ -360,7 +360,7 @@ fn enabled_opt_in_preserves_reference_config_and_metrics() {
             }
         }
         if applied > 0 {
-            assert!(on.implementation.contains(":diagonal-shape-05"));
+            assert!(on.implementation.contains(":diagonal-shape-06"));
         }
     }
 }

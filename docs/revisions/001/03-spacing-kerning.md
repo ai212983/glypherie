@@ -1259,3 +1259,104 @@ up separately; all 394 protected files are preserved, including the frozen appro
 Browser update activation confirms build `261021-1519`. Publication evidence is retained in `wasm-summary.json`,
 `deployment-receipt.json` and `publication-verification.json`. The existing diagonal toggle setting and iteration's
 unrelated pending findings remain unchanged.
+
+#### Equal-source upright weight investigation
+
+**Confirmed weight-balance defect, inherited from upstream automatic fitting:** at the main-page Literata 16 px,
+`wght=400`, `opsz=16`, Mono settings, the `t` body is one pixel wide while the `i`/`f`/`l` bodies are two. The static
+comparison instance has equal 93-unit source uprights (1.488 px) in all four glyphs. This loses a source weight
+relationship; it is not evidence that the source design intends a lighter `t` body. Browser inspection of the delivered
+sample confirms the imbalance. This finding does not establish when it was introduced.
+
+[Hersch §6](../../references/papers/1993-hersch/paper.md) and
+[FreeType stem-width normalization](https://freetype.org/autohinting/widths.html) ground the relationship being
+inspected. The upstream Mono outline already fits the `t` body borders to X=2 and X=3, versus X=1 and X=3 for `i`.
+Disabling selective hints, source-relative correction, diagonal fitting or terminal-aware scanning retains that
+discrepancy. These glyphs select the automatic engine. The existing straight-only source correction abstains on their
+curved outlines; the diagonal/curve stage retains their upright anchors. Its local `t` foot changes do not restore the
+body width. This separates the upright defect from those local changes.
+
+**Internal cause supported by the diagnostic hint plan:** `t` has a body-left segment at source X=115 and an upper-left
+segment near X=146, both opposing right-side segments at X=208. The right-side segments merge into one edge whose
+preferred link is the narrower upper section (about 62 units), rather than the 93-unit body. The resulting fitted edge
+positions collapse both left edges to X=2 and the right edge to X=3. Upstream
+[edge-link selection](https://github.com/googlefonts/fontations/blob/skrifa-v0.48.0/skrifa/src/outline/autohint/topo/edges.rs#L230-L263)
+prefers the smaller segment separation. The public Skrifa hint-plan API uses its ahead-of-time mode; its matching
+positions support this explanation but are not an instrumented trace of the runtime mode. Runtime captures separately
+confirm the unequal body widths before project overlays and scan conversion.
+
+At weight 400 with optical size equal to pixel size, the checked 12/14 px cases have one-pixel bodies in all four
+letters; 15/16 px have a one-pixel `t` against two-pixel peers; 17/18/20 px have two-pixel bodies throughout. Fresh
+native exports reproduce the captured main-page glyph ink, and repeated exports are identical. These are reproducibility
+controls, not optical acceptance across other axes or sizes. Detailed source, fitted-command and pixel evidence is
+isolated in `out/diagnostics/literata-t-20261029/`.
+
+**Implemented candidate, pending optical assessment:** the
+[paper comparison](../../references/upright-stem-consistency.md) direction is now implemented as the shared-border
+upright stage in the [owning model](../../hobby-fitting.md#shared-border-upright-normalization)
+(`upright-shared-border-01`): separate local upper/body width relations share one border displacement, certified
+unambiguous donors supply the unanimous integer standard, the narrower head keeps its source ratio, feasible phases stay
+off the monochrome scanner's half-pixel tie, and fitted Y, layout and native ownership are retained. Native replay of
+the 19-case matrix changes only `t` at 15/16 px (plus the 16 px ASCII cell): the body now delivers two columns with the
+peers, the head stays narrower, and all other cells, advances and pair adjustments are identical. This is a body
+thickening with an accompanying foot-shape change; its optical disposition is **pending assessment**, not acceptance.
+Preview selection and the separate approved comparison are unchanged; no publication follows from this candidate.
+
+The [implementation and verification report](../../../out/diagnostics/upright-stem-implementation-20261029/report.md)
+links the plan, captures, independent reviews, checks and isolated browser comparison. Optical review should compare
+body weight with `i`/`f`/`l`, the narrower upper section and the changed foot at 15/16 px.
+
+##### Source-detail review: candidate requires revision
+
+**2026-10-29 user finding:** the solution does not preserve the left part of the upper stem. Captured Literata 16 px,
+weight 400 and optical size 16 confirms unresolved source-shape loss: the ascending left-head profile spans 1.776 px in
+raw source X (1.765625 px in the captured 26.6 source) but only 1.25 px after upstream fitting and in the candidate. Its
+upper endpoint tangent loses its source horizontal component before this stage; translating that hinted chain cannot
+restore the detail. The three upper bitmap rows are unchanged from the preceding candidate, so this loss is inherited
+and unrestored.
+
+Separately, differential movement introduced cap and foot distortion: the cap vertex stays fixed between differently
+moved borders, and an attached foot quadratic reverses its curvature sign while the current topology and tangent
+orientation checks pass. These are confirmed source-fidelity defects, not acceptable deviations. The candidate
+**requires revision**. The earlier passing mechanical checks remain evidence for their stated contracts; they do not
+establish preservation of these omitted shape relationships.
+
+The
+[source-detail review](../../../out/diagnostics/upright-stem-implementation-20261029/verification/upper-stem-detail-review.md)
+records the four-stage measurements and general correction direction. A revised model needs source-relative curve,
+tangent and cap relationships together with body-width constraints, covering every differentially moved attachment. No
+fitting change, preview promotion or publication was made during this assessment.
+
+##### Source-shape correction: approved with limits
+
+**User approval, 2026-10-29:** “Looks good, approved” accepts the reviewed 19-case source-shape comparison. The affected
+result is Literata `t` at 15/16 px, weight 400 and optical size equal to pixel size, with the shown Mono settings. Body
+weight, restored upper-left outline, cap relationship and changed crossbar/foot appearance are accepted in this scope.
+The unchanged top three bitmap rows are an accepted limitation; this does not extend optical approval to unseen corpus
+cases.
+
+The [automatic-Y coupled shape model](../../hobby-fitting.md#automatic-y-coupled-shape-mode) extends the coupled
+whole-outline model inside its single budget: the original source head X profile is translated (not the compressed
+hinted profile), anchored by one head-mid coupling to the decided body standard, with the Shamir cap ratio and the whole
+outline's free source controls in the same solve. Interior smooth knots stay free for the existing G1 equations under
+retained Y, with smoothness taken from an exact-representation union (raw source, independent captured source, or
+original upstream — no tolerance); source-sharp feature corners keep turn orientation instead of the old fixed upstream
+cross. Movement caps are per ownership, with the quantization reserve inside the cap. Strict 15 and 16 px now apply
+inside the original caps through the automatic elastic Phase I entry (the legacy strict entry and native-Y behavior are
+unchanged), and the mode is wired into the runtime as the `diagonal-shape-06` source-shape sequence, with public
+identity `upright-source-shape-01` and kernel `coupled-shape-auto-01`; every applied output from the new sequence
+carries `diagonal-shape-06`, and `source_shape` provenance is present only on source-shape reasons. Current verification
+results are owned by the [source-shape report](../../../out/diagnostics/upright-source-shape-20261029/report.md); the
+reviewed result is optically approved with limits. Demonstrated limitation: at Literata 15/16 px the source head X
+profile and nonzero upper tangent are restored geometrically, but the top three delivered bitmap rows remain unchanged;
+crossbar and foot pixels change — a measured outcome, not a promise of additional upper pixels. The cap and foot defects
+are mechanically corrected and the reviewed appearance is accepted. The rejected `upright-shared-border-01` candidate
+stays frozen under the historical `diagonal-shape-05` replay identity and is never reinterpreted; genuine historical
+packets replay unchanged. This approval does not close iteration 001.03 or change the separate approved baseline.
+
+**Approved delivery refresh, 2026-10-29:** the browser renderer and existing 13-case main-page matrix were rebuilt
+without changing their configuration, converter set or source fonts. Only the Literata 16 px image package changed; the
+other sample images remain byte-identical. The published glyphs match the approved capture in a common pen/baseline
+frame, and actual browser renders and exports at 15/16 px agree with the approved result. The
+[delivery report](../../../out/diagnostics/approved-main-refresh-20261029/REPORT.md) owns identities and verification.
+This delivers the scoped approval above; it does not extend optical acceptance to the remaining matrix or corpus.

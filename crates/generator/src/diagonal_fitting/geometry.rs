@@ -1211,6 +1211,35 @@ pub fn upright_pairs(pairs: &[Pair]) -> Vec<&Pair> {
         .collect()
 }
 
+/// Merged Y-intervals of straight vertical segments on one supporting
+/// line. Disjoint intervals on the same line are the shared-border
+/// signature: one supporting line carrying competing local pairings.
+pub fn vertical_line_intervals(parsed: &Parsed, x: f64) -> Vec<(f64, f64)> {
+    let mut spans: Vec<(f64, f64)> = Vec::new();
+    for contour in &parsed.contours {
+        for seg in contour {
+            if let Segment::Line { a, b } = *seg {
+                let (pa, pb) = (parsed.oncurve[a], parsed.oncurve[b]);
+                if pa[0] == x && pb[0] == x && pa[1] != pb[1] {
+                    spans.push((pa[1].min(pb[1]), pa[1].max(pb[1])));
+                }
+            }
+        }
+    }
+    spans.sort_by(|p, q| p.0.partial_cmp(&q.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut merged: Vec<(f64, f64)> = Vec::new();
+    for s in spans {
+        if let Some(last) = merged.last_mut() {
+            if s.0 <= last.1 {
+                last.1 = last.1.max(s.1);
+                continue;
+            }
+        }
+        merged.push(s);
+    }
+    merged
+}
+
 /// True when an uncertified curve may enter the pair's ink zone.
 ///
 /// Curves are tested per segment against their control-hull boxes; box
