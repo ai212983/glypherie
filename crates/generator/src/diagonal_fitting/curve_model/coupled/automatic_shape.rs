@@ -133,6 +133,14 @@ impl<'a> PreparedShape<'a> {
         let Ok(captured) = geometry::parse_commands(source_captured) else {
             return no("shape-standard-unavailable", serde_json::json!({}));
         };
+        // Hobby 6's corresponding controls require the same index graph
+        // before captured segment indices can address the fitted outline.
+        if captured.contours != fitted.contours
+            || captured.oncurve.len() != fitted.oncurve.len()
+            || captured.offcurve.len() != fitted.offcurve.len()
+        {
+            return no("shape-standard-unavailable", serde_json::json!({}));
+        }
         let Some(captured_feature) = extract_shape_feature(&captured, &fitted) else {
             return no("shape-standard-unavailable", serde_json::json!({}));
         };

@@ -1419,6 +1419,41 @@ fn kernel_captured_class_does_not_replace_raw_shape_authority() {
 }
 
 #[test]
+fn kernel_mismatched_captured_topology_falls_back_exact() {
+    let case = kernel_case(16.0);
+    // Preserve source geometry while shifting its feature segment indices
+    // beyond the fitted contour. Hobby section 6's corresponding controls
+    // cannot be reused across different outline graphs.
+    let mut extra_segments = case.captured.clone();
+    let FittedCommand::MoveTo(x, y) = extra_segments[0] else {
+        panic!("fixture must start with a move");
+    };
+    extra_segments.splice(1..1, vec![FittedCommand::LineTo(x, y); case.upstream.len()]);
+    let mut extra_contour = case.captured.clone();
+    extra_contour.extend_from_slice(&case.captured);
+    // A dangling move adds an on-curve point without changing any segments.
+    let mut extra_point = case.captured.clone();
+    extra_point.push(FittedCommand::MoveTo(x, y));
+    for captured in [extra_segments, extra_contour, extra_point] {
+        let out = call_kernel(
+            &case.raw,
+            &captured,
+            &case.upstream,
+            &case.reference,
+            [false, false],
+            16.0,
+        );
+        assert!(!out.applied);
+        assert_eq!(out.commands, case.upstream);
+        assert_eq!(out.reason, "shape:shape-standard-unavailable");
+        assert_eq!(
+            out.diagnostics,
+            serde_json::json!({"model": "coupled-shape-auto-01"})
+        );
+    }
+}
+
+#[test]
 fn kernel_empty_captured_source_falls_back_exact() {
     let case = kernel_case(16.0);
     let out = call_kernel(
