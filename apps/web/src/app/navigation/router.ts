@@ -77,7 +77,7 @@ export function hashFamilyId(hash: string): string | null {
   return hash.match(/^#family-([A-Za-z0-9-]+)$/)?.[1] ?? null;
 }
 
-function outerParams(search: string | URLSearchParams): URLSearchParams {
+export function outerParams(search: string | URLSearchParams): URLSearchParams {
   if (search instanceof URLSearchParams) return new URLSearchParams(search);
   const text = search.startsWith("?") ? search.slice(1) : search;
   return new URLSearchParams(text);
@@ -182,6 +182,23 @@ export function variantPathKeeping(
 /** Canonical screen path, keeping foreign params (e.g. role, utm) while dropping snapshot state. */
 export function screenPath(baseSearch: string | URLSearchParams): string {
   return sectionPath("screen/", baseSearch);
+}
+
+/**
+ * Legacy scene links canonicalize directly to the unified Screen route:
+ * /scenes/ becomes /screen/, /scene/<id>/ becomes /screen/?scene=<id>.
+ * Foreign params survive while snapshot state is dropped; the hosting prefix
+ * rides along through screenPath.
+ */
+export function legacyScreenPath(scene: string | null, baseSearch: string | URLSearchParams): string {
+  if (scene === null) return screenPath(baseSearch);
+  const base = outerParams(baseSearch);
+  const next = new URLSearchParams();
+  next.set("scene", scene);
+  for (const [key, value] of base.entries()) {
+    if (key !== "scene") next.append(key, value);
+  }
+  return screenPath(next);
 }
 
 /** Canonical scenes path, keeping foreign params while dropping snapshot state. */

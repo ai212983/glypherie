@@ -18,7 +18,7 @@ use crate::{
     reference::CaptureSession,
     renderer::RendererRole,
     stem_fitting::StemFittingStrategy,
-    Config, Error, GeneratedFont, Glyph, MissingGlyphs,
+    Config, Error, FontMetrics, GeneratedFont, Glyph, MissingGlyphs,
 };
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap};
@@ -169,6 +169,49 @@ pub struct RenderedLine {
     pub height_px: u32,
 }
 
+/// One in-place editing stop produced by the same layout pass that paints.
+///
+/// Caret stops sit at pen positions (advance boundaries), not glyph origins:
+/// a pair kern shifts the following glyph's origin, so the boundary between
+/// two glyphs is the pen after the previous advance, per the FreeType
+/// advance/bearing model (`layout_spacing` foundation). `offset_utf16` counts
+/// UTF-16 code units from the start of the request text (ECMA-262 String
+/// indexing), always at a character boundary. `x_26_6` is the native-source
+/// pixel position including the line's alignment shift, fractional for
+/// source-layout roles; `y_px` is the line top in native pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaretStop {
+    /// JS UTF-16 text boundary this stop edits.
+    pub offset_utf16: usize,
+    /// Visual line index (`RenderedText::lines` order; paragraph order when
+    /// blank input keeps `lines` empty).
+    pub line: usize,
+    /// Native-source pixel position in 26.6, alignment included.
+    pub x_26_6: i32,
+    /// Native-source pixel top of the line.
+    pub y_px: u32,
+    /// Line height in pixels.
+    pub height_px: u32,
+}
+
+/// Exact editing geometry for the painted text.
+///
+/// Covers every UTF-16 boundary of the request text, including spaces,
+/// skipped glyphs, wrapped and empty lines, and newline terminators, so an
+/// editor backend (transparent textarea per the W3C EditContext model) can
+/// map native caret rectangles to text offsets without browser glyph
+/// metrics. Soft line breaks may surface one offset on two lines.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditingGeometry {
+    /// One stop per covered boundary, in text order within each line and in
+    /// visual line order overall.
+    pub carets: Vec<CaretStop>,
+    /// Widest laid-out line advance in 26.6 (pen, unaligned, clamped at zero).
+    pub width_26_6: i32,
+    /// Total laid-out text height in native pixels.
+    pub height_px: u32,
+}
+
 /// Composited bounded text render.
 ///
 /// Coverage compositing per texel with level `v` (`0..=levels - 1`,
@@ -190,7 +233,11 @@ pub struct RenderedText {
     /// RGBA row-major canvas, length `width * height * 4`.
     pub pixels: Vec<u8>,
     /// Visual lines in top-to-bottom order, including empty paragraph lines.
+    /// Blank input keeps this empty for backward compatibility; see `editing`.
     pub lines: Vec<RenderedLine>,
+    /// Exact caret geometry from the painting layout pass, including blank
+    /// input (whose virtual lines follow paragraph order).
+    pub editing: EditingGeometry,
     /// Codepoints skipped under the `Skip` missing-glyph policy, in sorted order.
     pub missing_codepoints: Vec<u32>,
 }
@@ -554,12 +601,7 @@ fn render_inner(
         crate::validate_axes(&font, &request.config.axes)?;
         let levels = 1u32 << request.config.output_bits;
         palette_map(&request.foreground, request.palette.as_deref(), levels)?;
-        return blank(
-            request.width,
-            request.height,
-            &request.background,
-            Vec::new(),
-        );
+        return blank(font_data, request, Vec::new());
     }
     if repertoire.len() > MAX_DISTINCT_CHARS {
         return Err(fail(
@@ -599,7 +641,7 @@ fn render_inner(
                 let levels = 1u32 << request.config.output_bits;
                 palette_map(&request.foreground, request.palette.as_deref(), levels)?;
                 let missing: Vec<u32> = repertoire.iter().map(|ch| *ch as u32).collect();
-                return blank(request.width, request.height, &request.background, missing);
+                return blank(font_data, request, missing);
             }
             Err(error) => return Err(error),
         };
@@ -689,7 +731,7 @@ fn render_inner(
                 let levels = 1u32 << request.config.output_bits;
                 palette_map(&request.foreground, request.palette.as_deref(), levels)?;
                 let missing: Vec<u32> = repertoire.iter().map(|ch| *ch as u32).collect();
-                return blank(request.width, request.height, &request.background, missing);
+                return blank(font_data, request, missing);
             }
             Err(error) => return Err(error),
         };
@@ -837,11 +879,7 @@ fn render_inner(
         letter_spacing_px: engine_spacing,
     })?;
     let metrics = &generated.metrics;
-    let line_height_px = ((i64::from(metrics.ascent_26_6) - i64::from(metrics.descent_26_6)
-        + i64::from(metrics.line_gap_26_6)
-        + 63)
-        / 64)
-        .max(1) as u32;
+    let line_height = line_height_px(metrics);
     let ascent_px = (i64::from(metrics.ascent_26_6) + 63).div_euclid(64);
     let limit_26_6 = i64::from(request.width) * 64;
     let layout = Layout {
@@ -862,7 +900,7 @@ fn render_inner(
         pixels: background_pixels(request.width, request.height, &request.background),
     };
     for (index, line) in lines.iter().enumerate() {
-        let baseline = ascent_px + index as i64 * i64::from(line_height_px);
+        let baseline = ascent_px + index as i64 * i64::from(line_height);
         canvas.draw_line(line, baseline, request.align, &glyphs)?;
     }
     let mut rendered = Vec::with_capacity(lines.len());
@@ -871,14 +909,22 @@ fn render_inner(
             byte_start: line.byte_start,
             byte_end: line.byte_end,
             width_26_6: line.width_26_6()?,
-            height_px: line_height_px,
+            height_px: line_height,
         });
     }
+    let editing = editing_geometry(
+        &request.text,
+        &lines,
+        request.width,
+        request.align,
+        line_height,
+    )?;
     Ok(RenderedText {
         width: request.width,
         height: request.height,
         pixels: canvas.pixels,
         lines: rendered,
+        editing,
         missing_codepoints: generated.missing_codepoints.clone(),
     })
 }
@@ -921,18 +967,33 @@ fn split_paragraphs(text: &str) -> Vec<Paragraph> {
     paragraphs
 }
 
-/// Blank canvas; callers pass the skipped codepoints, if any.
+/// Blank canvas; callers pass the skipped codepoints, if any. `lines` stays
+/// empty for backward compatibility while `editing` covers every text
+/// boundary over virtual lines in paragraph order.
 fn blank(
-    width: u32,
-    height: u32,
-    background: &[u8; 4],
+    font_data: &[u8],
+    request: &TextRenderRequest,
     missing_codepoints: Vec<u32>,
 ) -> Result<RenderedText, Error> {
-    Ok(RenderedText {
-        width,
+    let font = crate::open_font(font_data)?;
+    let height = line_height_px(&crate::line_metrics_for(&font, &request.config));
+    let virtual_lines: Vec<LineBuild> = split_paragraphs(&request.text)
+        .iter()
+        .map(|paragraph| LineBuild::empty(paragraph.start))
+        .collect();
+    let editing = editing_geometry(
+        &request.text,
+        &virtual_lines,
+        request.width,
+        request.align,
         height,
-        pixels: background_pixels(width, height, background),
+    )?;
+    Ok(RenderedText {
+        width: request.width,
+        height: request.height,
+        pixels: background_pixels(request.width, request.height, &request.background),
         lines: Vec::new(),
+        editing,
         missing_codepoints,
     })
 }
@@ -1006,9 +1067,19 @@ fn palette_map(
     Ok(vec![*foreground; levels as usize])
 }
 
+/// One placed character: its glyph origin plus the byte range and the pen
+/// after its advance. Caret stops reuse the recorded `after` pens, so editing
+/// geometry comes from the same placement the painter consumes.
+struct PlacedChar {
+    ch: char,
+    byte: usize,
+    origin: i64,
+    after: i64,
+}
+
 /// One visual line under construction: placed chars with their 26.6 pen origins.
 struct LineBuild {
-    placed: Vec<(char, i64)>,
+    placed: Vec<PlacedChar>,
     pen_26_6: i64,
     last: Option<u32>,
     byte_start: usize,
@@ -1029,6 +1100,168 @@ impl LineBuild {
     fn width_26_6(&self) -> Result<i32, Error> {
         i32::try_from(self.pen_26_6).map_err(|_| fail("layout advance overflow"))
     }
+}
+
+/// Uniform line height in pixels, mirroring the specimen layout.
+fn line_height_px(metrics: &FontMetrics) -> u32 {
+    ((i64::from(metrics.ascent_26_6) - i64::from(metrics.descent_26_6)
+        + i64::from(metrics.line_gap_26_6)
+        + 63)
+        / 64)
+        .max(1) as u32
+}
+
+/// Native-source 26.6 alignment shift applied to a laid-out line, shared by
+/// the painter and the caret builder so both agree on every origin.
+fn align_origin_26_6(pen_26_6: i64, canvas_width: u32, align: HAlign) -> Result<i64, Error> {
+    let line_px = pen_26_6.max(0).saturating_add(32).div_euclid(64);
+    let width_px = i64::from(canvas_width);
+    let offset = match align {
+        HAlign::Left => 0,
+        HAlign::Center => (width_px - line_px) / 2,
+        HAlign::Right => width_px - line_px,
+    };
+    offset
+        .checked_mul(64)
+        .ok_or_else(|| fail("layout position overflow"))
+}
+
+/// UTF-16 code-unit count of `text[..byte]` for every byte index: valid
+/// character boundaries map to their JS string offset in O(1). Only boundary
+/// indexes are queried; interior bytes of multi-byte scalars stay unset.
+fn utf16_at_byte(text: &str) -> Vec<usize> {
+    let mut table = vec![0usize; text.len() + 1];
+    let mut units = 0usize;
+    for (byte, ch) in text.char_indices() {
+        table[byte] = units;
+        units += ch.len_utf16();
+    }
+    table[text.len()] = units;
+    table
+}
+
+/// Exact caret geometry for laid-out (or blank) lines, from the pens the
+/// painter consumed: no re-simulation, no glyph-specific rules. Every UTF-16
+/// boundary of `text` gets at least one stop. Bytes no line covers (break
+/// whitespace consumed by wrapping, newline terminators, leading gaps) map
+/// to the preceding line end, or to the first line start; the next line
+/// still emits its own start stop, hence the allowed duplicate offsets.
+fn editing_geometry(
+    text: &str,
+    lines: &[LineBuild],
+    canvas_width: u32,
+    align: HAlign,
+    line_height: u32,
+) -> Result<EditingGeometry, Error> {
+    let units = utf16_at_byte(text);
+    let total_units = units[text.len()];
+    let mut carets = Vec::with_capacity(total_units + lines.len());
+    let mut width_26_6: i32 = 0;
+    let push = |offset_utf16: usize,
+                line: usize,
+                pen_26_6: i64,
+                shift_26_6: i64,
+                y_px: u32,
+                carets: &mut Vec<CaretStop>|
+     -> Result<(), Error> {
+        let x = pen_26_6
+            .checked_add(shift_26_6)
+            .and_then(|x| i32::try_from(x).ok())
+            .ok_or_else(|| fail("layout advance overflow"))?;
+        carets.push(CaretStop {
+            offset_utf16,
+            line,
+            x_26_6: x,
+            y_px,
+            height_px: line_height,
+        });
+        Ok(())
+    };
+    let height_px = u32::try_from(lines.len() as u64 * u64::from(line_height))
+        .map_err(|_| fail("layout advance overflow"))?;
+    for (index, line) in lines.iter().enumerate() {
+        let y_px = u32::try_from(index as u64 * u64::from(line_height))
+            .map_err(|_| fail("layout advance overflow"))?;
+        let shift = align_origin_26_6(line.pen_26_6, canvas_width, align)?;
+        if index == 0 {
+            for (byte, _) in text[..line.byte_start].char_indices() {
+                push(units[byte], 0, 0, shift, y_px, &mut carets)?;
+            }
+        } else {
+            let prev = &lines[index - 1];
+            let prev_y = u32::try_from((index - 1) as u64 * u64::from(line_height))
+                .map_err(|_| fail("layout advance overflow"))?;
+            let prev_shift = align_origin_26_6(prev.pen_26_6, canvas_width, align)?;
+            for (rel, ch) in text[prev.byte_end..line.byte_start].char_indices() {
+                let end = prev.byte_end + rel + ch.len_utf8();
+                // After a hard break the caret starts the next paragraph;
+                // only soft-wrap boundaries have affinity on both lines.
+                if end == line.byte_start && matches!(ch, '\r' | '\n') {
+                    continue;
+                }
+                push(
+                    units[end],
+                    index - 1,
+                    prev.pen_26_6,
+                    prev_shift,
+                    prev_y,
+                    &mut carets,
+                )?;
+            }
+        }
+        if line.placed.is_empty() {
+            push(units[line.byte_start], index, 0, shift, y_px, &mut carets)?;
+        } else {
+            push(units[line.byte_start], index, 0, shift, y_px, &mut carets)?;
+            let mut placed = 0usize;
+            for (rel, ch) in text[line.byte_start..line.byte_end].char_indices() {
+                let byte = line.byte_start + rel;
+                let pen = if placed < line.placed.len() && line.placed[placed].byte == byte {
+                    let after = line.placed[placed].after;
+                    placed += 1;
+                    after
+                } else {
+                    // Skip-missing glyphs hold the pen; their boundary still
+                    // gets a stop at the unchanged position.
+                    if placed == 0 {
+                        0
+                    } else {
+                        line.placed[placed - 1].after
+                    }
+                };
+                push(
+                    units[byte + ch.len_utf8()],
+                    index,
+                    pen,
+                    shift,
+                    y_px,
+                    &mut carets,
+                )?;
+            }
+        }
+        width_26_6 = width_26_6.max(line.pen_26_6.clamp(0, i64::from(i32::MAX)) as i32);
+    }
+    if let Some(last) = lines.last() {
+        let y_px = u32::try_from((lines.len() - 1) as u64 * u64::from(line_height))
+            .map_err(|_| fail("layout advance overflow"))?;
+        let shift = align_origin_26_6(last.pen_26_6, canvas_width, align)?;
+        for (rel, ch) in text[last.byte_end..].char_indices() {
+            let end = last.byte_end + rel + ch.len_utf8();
+            push(
+                units[end],
+                lines.len() - 1,
+                last.pen_26_6,
+                shift,
+                y_px,
+                &mut carets,
+            )?;
+        }
+    }
+    Ok(EditingGeometry {
+        carets,
+        width_26_6,
+        height_px,
+    })
 }
 
 struct Layout<'a> {
@@ -1068,7 +1301,12 @@ impl Layout<'_> {
             line.byte_start = byte;
         }
         line.byte_end = byte + len;
-        line.placed.push((ch, origin));
+        line.placed.push(PlacedChar {
+            ch,
+            byte,
+            origin,
+            after: next,
+        });
         line.last = Some(ch as u32);
         Ok(())
     }
@@ -1214,21 +1452,15 @@ impl Canvas {
         align: HAlign,
         glyphs: &HashMap<u32, &Glyph>,
     ) -> Result<(), Error> {
-        let line_px = line.pen_26_6.max(0).saturating_add(32).div_euclid(64);
         let width_px = i64::from(self.width);
-        let offset = match align {
-            HAlign::Left => 0,
-            HAlign::Center => (width_px - line_px) / 2,
-            HAlign::Right => width_px - line_px,
-        };
-        let origin_26_6 = offset
-            .checked_mul(64)
-            .ok_or_else(|| fail("layout position overflow"))?;
-        for (ch, pen) in &line.placed {
-            let Some(glyph) = glyphs.get(&(*ch as u32)) else {
+        let origin_26_6 = align_origin_26_6(line.pen_26_6, self.width, align)
+            .map_err(|_| fail("layout position overflow"))?;
+        for placed in &line.placed {
+            let Some(glyph) = glyphs.get(&(placed.ch as u32)) else {
                 continue;
             };
-            let pen_px = pen
+            let pen_px = placed
+                .origin
                 .checked_add(origin_26_6)
                 .and_then(|p| p.checked_add(32))
                 .map(|p| p.div_euclid(64))

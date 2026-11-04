@@ -198,6 +198,7 @@ const methods: Record<DomainMethod, (backend: DomainBackend, ...args: never[]) =
   addSceneLabel: commands.addSceneLabel,
   updateSceneLabel: commands.updateSceneLabel,
   removeSceneLabel: commands.removeSceneLabel,
+  restoreSceneSnapshot: commands.restoreSceneSnapshot,
   resolveTextStyle: commands.resolveTextStyle,
   resolveTextStyles: commands.resolveTextStyles,
   importLegacySnapshot: (active, ...args: never[]) =>

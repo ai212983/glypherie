@@ -20,10 +20,9 @@ import {
   indexPath,
   homePath,
   isRoutePath,
+  legacyScreenPath,
   palettesPath,
   parseRoute,
-  scenePath,
-  scenesPath,
   screenPath,
   type Route,
 } from "./router.js";
@@ -164,8 +163,10 @@ export function canonicalPathFor(
   }
   if (route.page === "palettes") return palettesPath(baseSearch);
   if (route.page === "screen") return screenPath(baseSearch);
-  if (route.page === "scenes") return scenesPath(baseSearch);
-  if (route.page === "scene") return scenePath(route.scene, baseSearch);
+  // Legacy scene links canonicalize directly to the unified Screen route;
+  // history state stays with the caller (see replaceCanonicalPath).
+  if (route.page === "scenes") return legacyScreenPath(null, baseSearch);
+  if (route.page === "scene") return legacyScreenPath(route.scene, baseSearch);
   if (route.page === "home") return homePath(baseSearch);
   return indexPath(baseSearch);
 }

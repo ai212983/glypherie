@@ -256,14 +256,14 @@ test("installed app cold-boots a fresh domain owner offline with persisted state
     variantId = await openNewVariant(page, fontId);
     await page.waitForFunction(canvasRendered, null, { timeout: 20000 });
     await page.goto(`${url}scenes/`, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => document.querySelector("[data-scenes-page]") !== null);
-    await page.locator("[data-scene-create-name]").fill("Offline");
-    await page.locator("[data-scene-create]").waitFor();
+    await page.waitForFunction(() => document.querySelector("[data-screen-page]") !== null);
+    await page.locator("[data-screen-composition-create-name]").fill("Offline");
+    await page.locator("[data-screen-composition-create]").waitFor();
     await page.waitForFunction(
-      () => !((document.querySelector("[data-scene-create]") as HTMLButtonElement | null)?.disabled ?? true),
+      () => !((document.querySelector("[data-screen-composition-create]") as HTMLButtonElement | null)?.disabled ?? true),
     );
-    await page.locator("[data-scene-create]").click();
-    await page.locator("[data-scene-detail]").waitFor();
+    await page.locator("[data-screen-composition-create]").click();
+    await page.locator("[data-screen-workspace]").waitFor();
     // Closing the browser kills the SharedWorker owner; the profile keeps
     // the database and the precached engine for the offline boot below.
     await context.close();
@@ -283,12 +283,12 @@ test("installed app cold-boots a fresh domain owner offline with persisted state
     assert.deepEqual(await cardNames(page), names, "seeded fonts survive a fresh offline boot");
     await bootVariant(page, `${url}font/${fontId}/variant/${variantId}/`);
     await page.goto(`${url}scenes/`, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => document.querySelectorAll("[data-scene-card]").length > 0, null, {
+    await page.waitForFunction(() => document.querySelectorAll("[data-screen-composition]").length > 0, null, {
       timeout: 30000,
     });
     assert.ok(
-      (await page.locator("[data-scene-card]").allInnerTexts()).join("\n").includes("Offline"),
-      "the created scene survives a fresh offline boot",
+      (await page.locator("[data-screen-composition]").allInnerTexts()).join("\n").includes("Offline"),
+      "the created composition survives a fresh offline boot",
     );
     await context.setOffline(false);
   }

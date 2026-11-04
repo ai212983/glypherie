@@ -34,4 +34,4 @@ Roboto font variant with the “Small screen” rendering profile.
 
 A text style and an output profile determine how a bitmap font is generated.
 
-Exporting fonts from the Scene page generates bitmap fonts for all text styles and packages them in a ZIP archive.
+Exporting fonts from the Screen page generates bitmap fonts for all text styles and packages them in a ZIP archive.

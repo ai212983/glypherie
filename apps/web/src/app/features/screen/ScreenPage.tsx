@@ -1,10 +1,9 @@
-// Standalone device viewer: a catalog device rendered through its vector
-// shell with a neutral paper screen. Font-independent: no font library,
-// renderer, or preview settings are needed. The device selection is local
-// page state; the paper renders at the CSS reference density times a
-// persisted preview-size percentage, and the collapsed disclosure reports
-// the two detected monitor values with the size control and an approximate
-// millimetre ruler.
+// Unified Screen page: saved compositions (formerly scenes) on a selected
+// device with freely positioned labels. The legacy /scenes/ and
+// /scene/<id>/ links render this same page; the canonical route is /screen/
+// with the open composition in ?scene=. Display calibration (preview size,
+// ruler, monitor reading) stays page-level and never writes the editor's
+// device state.
 import * as React from "react";
 import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
@@ -12,8 +11,11 @@ import { Slider } from "../../../components/ui/slider";
 import { TooltipHint } from "../../../components/TooltipHint";
 import { deviceById, DEVICE_CATALOG } from "../../devices/catalog.js";
 import { DeviceShell } from "../../devices/DeviceShell.js";
-import { CSS_REFERENCE_PX_PER_IN, referenceSizeCssScale } from "../../renderer/display-scaling.js";
+import type { FontLibrary } from "../../fonts/useFontLibrary.js";
+import { readRouteSearch } from "../../navigation/location.js";
+import { screenPath } from "../../navigation/router.js";
 import { useLiveRatio } from "../../renderer/live-ratio.js";
+import { CSS_REFERENCE_PX_PER_IN, referenceSizeCssScale } from "../../renderer/display-scaling.js";
 import { resolveMonitorReading, type MonitorReading, type MonitorSnapshot } from "./monitor-info.js";
 import {
   SCREEN_SIZE_DEFAULT,
@@ -22,9 +24,38 @@ import {
   readScreenSizePercent,
   writeScreenSizePercent,
 } from "./screen-size.js";
+import { CompositionList } from "./CompositionList.js";
+import { SceneWorkspace } from "./SceneWorkspace.js";
+import { defaultNewSceneDevice } from "./device-resolution.js";
+import {
+  createScene,
+  deleteScene,
+  listOutputProfiles,
+  listScenes,
+  subscribeDomain,
+  type DomainSceneView,
+} from "../scenes/service.js";
+import { isConflict } from "../scenes/conflict.js";
 
-// Fixed neutral paper shown through the aperture; illustrative, not a device claim.
-const SCREEN_PAPER = "#f5f2ea";
+function sceneQuery(): string | null {
+  try {
+    const search = readRouteSearch() || window.location.search;
+    return new URLSearchParams(search).get("scene");
+  } catch {
+    return null;
+  }
+}
+
+function writeSceneQuery(scene: string | null): void {
+  const search = readRouteSearch() || window.location.search;
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  if (scene) params.set("scene", scene);
+  else params.delete("scene");
+  const query = params.toString();
+  const base = screenPath("");
+  const path = query ? `${base}?${query}` : base;
+  window.history.pushState(null, "", path);
+}
 
 function readMonitorSnapshot(dpr: number): MonitorSnapshot {
   const screen = globalThis.window?.screen as { width?: unknown; height?: unknown } | undefined;
@@ -152,22 +183,23 @@ function DisplayDetails({ size, onSize }: { size: number; onSize: (value: number
   );
 }
 
-export function ScreenPage(): React.JSX.Element {
-  // The viewer always shows a real catalog device, never the null specimen.
+// Fixed neutral paper shown through the aperture; illustrative, not a device claim.
+const SCREEN_PAPER = "#f5f2ea";
+
+// Standalone catalog viewer for the empty-selection state: a real catalog
+// device through its vector shell with a neutral paper screen. Local page
+// state only; the paper renders at the CSS reference density times the
+// persisted preview-size percentage.
+function DeviceViewer({ sizePercent }: { sizePercent: number }): React.JSX.Element {
   const [deviceId, setDeviceId] = React.useState<string>(
     () => DEVICE_CATALOG.devices[0]?.id ?? "",
   );
   const device = deviceById(DEVICE_CATALOG, deviceId) ?? DEVICE_CATALOG.devices[0];
-  const [sizePercent, setSizePercent] = React.useState(readScreenSizePercent);
   if (!device) return <p role="status">No devices are available.</p>;
   const cssScale = referenceSizeCssScale(device.ppi) * sizePercent / 100;
-  const handleSize = (next: number): void => {
-    setSizePercent(next);
-    writeScreenSizePercent(next);
-  };
   const inches = device.widthPx / device.ppi;
   return (
-    <div className="flex min-w-0 flex-col gap-4" data-screen-page>
+    <>
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor="screen-device-select">Device</Label>
         <Select value={device.id} onValueChange={setDeviceId}>
@@ -184,12 +216,6 @@ export function ScreenPage(): React.JSX.Element {
       <p data-screen-device-meta className="m-0 text-[.8rem] text-soft">
         {device.widthPx} × {device.heightPx} px · {device.ppi} PPI · {inches.toFixed(2)} in wide
       </p>
-      <p data-screen-approximate className="m-0 text-[.8rem] text-soft">
-        <TooltipHint content="The browser reports CSS screen size and pixel ratio, not physical monitor dimensions, so true size stays approximate.">
-          <span>Preview size is approximate.</span>
-        </TooltipHint>
-      </p>
-      <DisplayDetails size={sizePercent} onSize={handleSize} />
       <div className="overflow-x-auto py-2">
         <DeviceShell key={device.id} device={device} cssScale={cssScale}>
           {(layout) => (
@@ -208,6 +234,134 @@ export function ScreenPage(): React.JSX.Element {
             />
           )}
         </DeviceShell>
+      </div>
+    </>
+  );
+}
+
+export function ScreenPage({ library, legacySceneId }: {
+  library: FontLibrary;
+  legacySceneId?: string | null;
+}): React.JSX.Element {
+  const [scenes, setScenes] = React.useState<DomainSceneView[] | null>(null);
+  const [profileId, setProfileId] = React.useState<string | null>(null);
+  const [activeId, setActiveId] = React.useState<string | null>(() => legacySceneId ?? sceneQuery());
+  const [creating, setCreating] = React.useState(false);
+  const [listError, setListError] = React.useState("");
+  const [sizePercent, setSizePercent] = React.useState(readScreenSizePercent);
+
+  const reload = React.useCallback(async () => {
+    try {
+      const [nextScenes, nextProfiles] = await Promise.all([listScenes(), listOutputProfiles()]);
+      setScenes(nextScenes);
+      setProfileId((current) => current ?? nextProfiles[0]?.id ?? null);
+      setListError("");
+    } catch (failure) {
+      setListError(failure instanceof Error ? failure.message : "Couldn’t load compositions.");
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void reload();
+    return subscribeDomain(() => { void reload(); });
+  }, [reload]);
+
+  // Back/Forward across compositions stays on the Screen page (only the
+  // ?scene= query changes), so the open composition follows the URL through
+  // popstate/hashchange events instead of only following the deep-link prop.
+  React.useEffect(() => {
+    const syncFromRoute = (): void => {
+      setActiveId(legacySceneId ?? sceneQuery());
+    };
+    syncFromRoute();
+    window.addEventListener("popstate", syncFromRoute);
+    window.addEventListener("hashchange", syncFromRoute);
+    return () => {
+      window.removeEventListener("popstate", syncFromRoute);
+      window.removeEventListener("hashchange", syncFromRoute);
+    };
+  }, [legacySceneId]);
+
+  const select = React.useCallback((id: string | null) => {
+    setActiveId(id);
+    writeSceneQuery(id);
+  }, []);
+
+  const create = React.useCallback(async (input: { name: string }): Promise<void> => {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const profiles = await listOutputProfiles();
+      const outputProfileId = profiles[0]?.id;
+      if (!outputProfileId) throw new Error("No output profile is available for the composition.");
+      const device = defaultNewSceneDevice(DEVICE_CATALOG.devices);
+      if (!device) throw new Error("No device is available for the composition.");
+      const created = await createScene({
+        name: input.name,
+        width: device.widthPx,
+        height: device.heightPx,
+        deviceId: device.id,
+        outputProfileId,
+      });
+      await reload();
+      select(created.id);
+    } finally {
+      setCreating(false);
+    }
+  }, [creating, reload, select]);
+
+  const remove = React.useCallback(async (scene: DomainSceneView): Promise<void> => {
+    try {
+      await deleteScene(scene.id, scene.revision);
+      setActiveId((current) => {
+        const next = current === scene.id ? null : current;
+        if (next !== current) writeSceneQuery(next);
+        return next;
+      });
+      await reload();
+    } catch (failure) {
+      if (isConflict(failure)) {
+        await reload();
+        throw new Error("The composition changed in another tab; it was reloaded.");
+      }
+      throw failure;
+    }
+  }, [reload]);
+
+  const handleSize = (next: number): void => {
+    setSizePercent(next);
+    writeScreenSizePercent(next);
+  };
+
+  return (
+    <div className="flex min-w-0 flex-col gap-4" data-screen-page>
+      <p data-screen-approximate className="m-0 text-[.8rem] text-soft">
+        <TooltipHint content="The browser reports CSS screen size and pixel ratio, not physical monitor dimensions, so true size stays approximate.">
+          <span>Preview size is approximate.</span>
+        </TooltipHint>
+      </p>
+      <DisplayDetails size={sizePercent} onSize={handleSize} />
+      {listError && <p role="alert" className="m-0 text-xs" data-screen-list-error>{listError}</p>}
+      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]">
+        <CompositionList
+          scenes={scenes}
+          activeId={activeId}
+          profilesLoaded={profileId !== null}
+          creating={creating}
+          onSelect={select}
+          onCreate={create}
+          onDelete={remove}
+        />
+        <div className="min-w-0">
+          {activeId ? (
+            <SceneWorkspace key={activeId} sceneId={activeId} library={library} sizePercent={sizePercent} onBack={() => select(null)} />
+          ) : (
+            <>
+              <DeviceViewer sizePercent={sizePercent} />
+              <p className="m-0 mt-2 text-xs text-soft" data-screen-no-selection>Select a composition to place labels on its screen.</p>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

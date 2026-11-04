@@ -16,9 +16,14 @@ import {
   getScene,
   listScenes,
   removeSceneLabel,
+  restoreSceneSnapshot,
   updateScene,
   updateSceneLabel,
 } from "../../src/app/domain/scene-commands.ts";
+import type {
+  DomainSceneView,
+  SceneSnapshotInput,
+} from "../../src/app/domain/types.ts";
 import { createVariant } from "../../src/app/variants/repository.ts";
 import { createPalette, updatePalette } from "../../src/app/palettes/repository.ts";
 import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
@@ -270,6 +275,105 @@ test("placements reject foreign scenes and removal drops orphans", async () => {
   await assert.rejects(removeSceneLabel(backend, cleaned.id, placementId, cleaned.revision), /does not exist in scene/);
 });
 
+function snapshotOf(view: DomainSceneView): SceneSnapshotInput {
+  return {
+    name: view.name,
+    width: view.width,
+    height: view.height,
+    deviceId: view.deviceId,
+    outputProfileId: view.outputProfileId,
+    exportCoverage: view.exportCoverage,
+    placements: view.placements.map((placement) => ({
+      text: placement.text,
+      textStyleId: placement.textStyleId,
+      x: placement.x,
+      y: placement.y,
+      order: placement.order,
+    })),
+  };
+}
+
+function contentOf(view: DomainSceneView): unknown {
+  return {
+    ...snapshotOf(view),
+    placements: snapshotOf(view).placements
+      .map((placement) => ({ ...placement }))
+      .sort((a, b) => a.order - b.order || a.x - b.x || (a.text < b.text ? -1 : 1)),
+  };
+}
+
+test("snapshot restore replaces whole content atomically under one revision", async () => {
+  const outputId = await monoId();
+  const style = await styleId();
+  const created = await createScene(backend, { name: "Card", width: 400, height: 300, outputProfileId: outputId });
+  const before = await addSceneLabel(backend, created.id, { text: "A", textStyleId: style, x: 1, y: 2 }, created.revision);
+  const wanted = snapshotOf(before);
+
+  const changed = await updateSceneLabel(backend, before.id, before.placements[0]!.id, { text: "B", x: 9 }, before.revision);
+  assert.notDeepEqual(contentOf(changed), contentOf(before));
+
+  const restored = await restoreSceneSnapshot(backend, changed.id, changed.revision, wanted);
+  assert.deepEqual(contentOf(restored), contentOf(before));
+  assert.equal(restored.revision, changed.revision + 1);
+
+  // Scalars restore through the same command.
+  const renamed = snapshotOf(restored);
+  renamed.name = "Renamed";
+  renamed.width = 200;
+  const renamedView = await restoreSceneSnapshot(backend, restored.id, restored.revision, renamed);
+  assert.equal(renamedView.name, "Renamed");
+  assert.equal(renamedView.width, 200);
+});
+
+test("snapshot restore rejects stale revisions and invalid content without partial changes", async () => {
+  const outputId = await monoId();
+  const style = await styleId();
+  const created = await createScene(backend, { name: "Card", width: 100, height: 100, outputProfileId: outputId });
+  const placed = await addSceneLabel(backend, created.id, { text: "A", textStyleId: style, x: 0, y: 0 }, created.revision);
+  const wanted = snapshotOf(placed);
+
+  await assert.rejects(restoreSceneSnapshot(backend, placed.id, placed.revision + 1, wanted), /changed underneath/);
+  await assert.rejects(restoreSceneSnapshot(backend, placed.id, "2" as never, wanted), /integer expected revision/);
+  assert.deepEqual(await getScene(backend, placed.id), placed);
+
+  const badStyle = snapshotOf(placed);
+  badStyle.placements[0]!.textStyleId = "missing-style";
+  await assert.rejects(restoreSceneSnapshot(backend, placed.id, placed.revision, badStyle), /does not exist/);
+  const badName = snapshotOf(placed);
+  badName.name = "";
+  await assert.rejects(restoreSceneSnapshot(backend, placed.id, placed.revision, badName), /Scene names/);
+  const badPoint = snapshotOf(placed);
+  badPoint.placements[0]!.x = 1.5;
+  await assert.rejects(restoreSceneSnapshot(backend, placed.id, placed.revision, badPoint), /pixel grid/);
+  assert.deepEqual(await getScene(backend, placed.id), placed);
+
+  await deleteScene(backend, placed.id, placed.revision);
+  await assert.rejects(restoreSceneSnapshot(backend, placed.id, placed.revision, wanted), /does not exist/);
+  assert.equal(await getScene(backend, placed.id), undefined);
+});
+
+test("snapshot restore keeps duplicate identical labels over repeated cycles", async () => {
+  const outputId = await monoId();
+  const style = await styleId();
+  const created = await createScene(backend, { name: "Dupes", width: 100, height: 100, outputProfileId: outputId });
+  const one = await addSceneLabel(backend, created.id, { text: "Same", textStyleId: style, x: 4, y: 5 }, created.revision);
+  const two = await addSceneLabel(backend, one.id, { text: "Same", textStyleId: style, x: 4, y: 5 }, one.revision);
+  assert.equal(two.placements.length, 2);
+  const full = snapshotOf(two);
+  const empty: SceneSnapshotInput = { ...snapshotOf(two), placements: [] };
+
+  const cleared = await restoreSceneSnapshot(backend, two.id, two.revision, empty);
+  assert.deepEqual(cleared.placements, []);
+  const back = await restoreSceneSnapshot(backend, cleared.id, cleared.revision, full);
+  assert.deepEqual(contentOf(back), contentOf(two));
+  // A second delete/restore round still returns the same multiset: expired
+  // placement ids never confuse the content-ordered match.
+  const clearedAgain = await restoreSceneSnapshot(backend, back.id, back.revision, { ...snapshotOf(back), placements: [] });
+  assert.deepEqual(clearedAgain.placements, []);
+  const backAgain = await restoreSceneSnapshot(backend, clearedAgain.id, clearedAgain.revision, full);
+  assert.deepEqual(contentOf(backAgain), contentOf(two));
+});
+
 test("scene list orders by name then id and skips missing scenes", async () => {
   const outputId = await monoId();
   const beta = await createScene(backend, { name: "Beta", width: 10, height: 10, outputProfileId: outputId });
@@ -277,4 +381,27 @@ test("scene list orders by name then id and skips missing scenes", async () => {
   const listed = await listScenes(backend);
   assert.deepEqual(listed.map((scene) => scene.id), [alpha.id, beta.id]);
   assert.equal(await getScene(backend, "missing"), undefined);
+});
+
+test("scene device selection defaults to custom and persists through updates", async () => {
+  const outputId = await monoId();
+  const custom = await createScene(backend, { name: "Custom", width: 400, height: 300, outputProfileId: outputId });
+  assert.equal(custom.deviceId, null);
+
+  const attached = await createScene(backend, {
+    name: "Device", width: 480, height: 800, deviceId: "xteink-x4", outputProfileId: outputId,
+  });
+  assert.equal(attached.deviceId, "xteink-x4");
+
+  const detached = await updateScene(backend, attached.id, { deviceId: null }, attached.revision);
+  assert.equal(detached.deviceId, null);
+  const reattached = await updateScene(backend, detached.id, { deviceId: "playdate", width: 400, height: 240 }, detached.revision);
+  assert.deepEqual([reattached.deviceId, reattached.width, reattached.height], ["playdate", 400, 240]);
+
+  await assert.rejects(updateScene(backend, reattached.id, { deviceId: "" }, reattached.revision), /device ids/);
+  await assert.rejects(
+    createScene(backend, { name: "Bad", width: 10, height: 10, deviceId: "x".repeat(81), outputProfileId: outputId }),
+    /device ids/,
+  );
+  assert.deepEqual(await getScene(backend, reattached.id), reattached);
 });

@@ -17,12 +17,15 @@ export const PUBLIC_PAGES = {
   screen: {
     path: "screen/",
     title: "Screen — Glypherie",
-    description: "View supported reflective device shells with their native screen geometry in Glypherie.",
+    description: "Place text labels on supported device screens and export their text styles as bitmap fonts in Glypherie.",
   },
+  // Legacy alias: the same Screen document under the old path so saved
+  // links keep working on static hosts; crawlers canonicalize to /screen/.
   scenes: {
     path: "scenes/",
-    title: "Scenes — Glypherie",
-    description: "Arrange text labels into scenes and export their text styles as bitmap fonts in Glypherie.",
+    canonicalPath: "screen/",
+    title: "Screen — Glypherie",
+    description: "Place text labels on supported device screens and export their text styles as bitmap fonts in Glypherie.",
   },
 } as const;
 

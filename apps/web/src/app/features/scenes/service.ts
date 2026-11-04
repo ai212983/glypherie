@@ -8,6 +8,7 @@ export type {
   DomainOutputProfileView,
   DomainPlacementView,
   DomainSceneView,
+  SceneSnapshotInput,
 } from "../../domain/service.js";
 export {
   listTextStyles,
@@ -20,6 +21,7 @@ export {
   addSceneLabel,
   updateSceneLabel,
   removeSceneLabel,
+  restoreSceneSnapshot,
   resolveTextStyle,
   resolveTextStyles,
   subscribeDomain,

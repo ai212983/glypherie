@@ -223,6 +223,13 @@ settings, axes and palette exactly as a non-empty request would. Text whose glyp
 `missing_glyphs: "skip"` likewise yields a blank canvas, reporting every skipped codepoint in
 `layout().missing_codepoints`.
 
+Every successful render also reports exact editing geometry in `layout().editing`: `{ carets: [{ offset, line, x, y,
+height }], width, height }`. `offset` is a JS UTF-16 text boundary, `line` a visual line index; positions and bounds use
+native source pixels, with `x` fractional for source-layout roles. The stops come from the same layout pass that paints
+the bitmap — including blank text, which keeps zero `lines` — and every text boundary keeps at least one stop; soft line
+breaks may repeat one offset on two lines. Synthetic renderers omit `editing`; consumers must handle its absence without
+approximating stops from browser glyph metrics.
+
 ## metadata() shape
 
 A plain JS object (maps serialize as objects with string keys, never `Map`s) containing native `FontMetadata`. Fields

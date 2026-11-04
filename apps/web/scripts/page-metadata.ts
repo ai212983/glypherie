@@ -10,10 +10,10 @@ const escapeAttribute = (value: string): string => value
 export function pageMetadataPlugin(): Plugin {
   let siteUrl = "";
   let base = "/";
-  const head = (page: typeof PUBLIC_PAGES[keyof typeof PUBLIC_PAGES]): string => {
+  const head = (page: { path: string; canonicalPath?: string; title: string; description: string }): string => {
     const title = escapeAttribute(page.title);
     const description = escapeAttribute(page.description);
-    const url = siteUrl ? escapeAttribute(new URL(page.path, siteUrl).href) : "";
+    const url = siteUrl ? escapeAttribute(new URL(page.canonicalPath ?? page.path, siteUrl).href) : "";
     return `<title data-page-metadata>${title}</title>
 <meta data-page-metadata name="description" content="${description}">
 <meta data-page-metadata name="robots" content="index,follow">

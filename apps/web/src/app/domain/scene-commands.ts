@@ -3,7 +3,11 @@
 import type { DomainBackend } from "./backend.ts";
 import { normalizeCoverage, type CharacterCoverage } from "./coverage.ts";
 import { DomainError } from "./errors.ts";
-import type { DomainPlacementView, DomainSceneView } from "./types.ts";
+import type {
+  DomainPlacementView,
+  DomainSceneView,
+  SceneSnapshotInput,
+} from "./types.ts";
 
 type Store = DomainBackend["store"];
 
@@ -50,6 +54,16 @@ function checkLabelText(text: unknown): void {
 function checkPlacementOrder(order: unknown): void {
   if (!Number.isInteger(order) || !Number.isFinite(order)) {
     failInvalid("Placement order must be a stable integer.");
+  }
+}
+
+// The domain stores the selected device as an opaque id so the graph never
+// depends on the catalog; the screen UI resolves it and keeps custom screens
+// as null with the scene's own dimensions.
+function checkSceneDevice(deviceId: unknown): void {
+  if (deviceId === null || deviceId === undefined) return;
+  if (typeof deviceId !== "string" || deviceId.length === 0 || deviceId.length > 80) {
+    failInvalid("Scene device ids must be non-empty text within 80 characters.");
   }
 }
 
@@ -130,6 +144,9 @@ async function buildSceneView(store: Store, sceneId: string): Promise<DomainScen
     name: String(record.name),
     width: Number(record.width),
     height: Number(record.height),
+    // Rows written before the device field carry no value and read as a
+    // custom screen rather than failing or adopting a catalog device.
+    deviceId: typeof record.deviceId === "string" ? String(record.deviceId) : null,
     revision: Number(record.revision),
     outputProfileId: String(outputEdge.toId),
     exportCoverage: normalizeCoverage(record.exportCoverage as CharacterCoverage),
@@ -237,7 +254,7 @@ async function applyLabelContent(
 // separately in setSceneOutput.
 function applySceneScalars(
   record: Record<string, unknown>,
-  patch: Partial<Pick<DomainSceneView, "name" | "width" | "height" | "exportCoverage">>,
+  patch: Partial<Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "exportCoverage">>,
   next: Record<string, unknown>,
 ): void {
   if (patch.name !== undefined) {
@@ -248,6 +265,10 @@ function applySceneScalars(
     checkSceneDimensions(patch.width ?? record.width, patch.height ?? record.height);
     if (patch.width !== undefined) next.width = patch.width;
     if (patch.height !== undefined) next.height = patch.height;
+  }
+  if (patch.deviceId !== undefined) {
+    checkSceneDevice(patch.deviceId);
+    next.deviceId = patch.deviceId;
   }
   if (patch.exportCoverage !== undefined) {
     next.exportCoverage = normalizeSceneCoverage(patch.exportCoverage);
@@ -289,11 +310,12 @@ export async function getScene(backend: DomainBackend, id: string): Promise<Doma
 
 export async function createScene(
   backend: DomainBackend,
-  input: { name: string; width: number; height: number; outputProfileId: string; exportCoverage?: CharacterCoverage },
+  input: { name: string; width: number; height: number; deviceId?: string | null; outputProfileId: string; exportCoverage?: CharacterCoverage },
 ): Promise<DomainSceneView> {
   if (!input || typeof input !== "object") failInvalid("Scene creation needs an input object.");
   checkSceneName(input.name);
   checkSceneDimensions(input.width, input.height);
+  checkSceneDevice(input.deviceId);
   await requireOutputProfile(backend.store, input.outputProfileId);
   const coverage = normalizeSceneCoverage(input.exportCoverage ?? { presetIds: ["ascii"], extraRanges: [] });
   const created = await backend.store.transaction(async (tx) => {
@@ -303,6 +325,7 @@ export async function createScene(
       name: input.name,
       width: input.width,
       height: input.height,
+      deviceId: input.deviceId ?? null,
       exportCoverage: coverage as never,
       revision: 1,
       createdAt: stamp,
@@ -320,7 +343,7 @@ export async function createScene(
 export async function updateScene(
   backend: DomainBackend,
   id: string,
-  patch: Partial<Pick<DomainSceneView, "name" | "width" | "height" | "outputProfileId" | "exportCoverage">>,
+  patch: Partial<Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "outputProfileId" | "exportCoverage">>,
   expectedRevision: number,
 ): Promise<DomainSceneView> {
   checkScenePatchShape(patch);
@@ -432,5 +455,134 @@ export async function removeSceneLabel(
   });
   const view = await buildSceneView(backend.store, sceneId);
   if (!view) throw new DomainError("not-found", `Scene "${sceneId}" does not exist.`);
+  return view;
+}
+
+// Snapshot restores carry no placement ids: labels pair by content order, so
+// re-created ids from an earlier undo never confuse the match and duplicate
+// identical labels restore as the same multiset.
+function checkSnapshotInput(snapshot: unknown): asserts snapshot is SceneSnapshotInput {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    failInvalid("Scene restore needs a snapshot object.");
+  }
+  const candidate = snapshot as Record<string, unknown>;
+  checkSceneName(candidate.name);
+  checkSceneDimensions(candidate.width, candidate.height);
+  if (candidate.deviceId === undefined) failInvalid("Scene restore needs an explicit device selection (string or null).");
+  checkSceneDevice(candidate.deviceId);
+  if (typeof candidate.outputProfileId !== "string" || candidate.outputProfileId.length === 0) {
+    failInvalid("Scene restore needs an output profile id.");
+  }
+  if (!Array.isArray(candidate.placements)) failInvalid("Scene restore needs a placements array.");
+  for (const placement of candidate.placements) {
+    if (!placement || typeof placement !== "object") failInvalid("Scene restore placements must be objects.");
+    const entry = placement as Record<string, unknown>;
+    checkLabelText(entry.text);
+    if (typeof entry.textStyleId !== "string" || entry.textStyleId.length === 0) {
+      failInvalid("Scene restore placements need a text style id.");
+    }
+    checkPlacementPoint(entry.x, entry.y);
+    checkPlacementOrder(entry.order);
+  }
+}
+
+// Atomic undo/redo restore: one revision-guarded transaction replaces the
+// whole scene content. Every boundary rule above still applies, and any
+// rejection (stale revision, unknown style, invalid content) rolls back the
+// transaction, so a failed restore never leaves a partial scene behind. A
+// missing scene reports not-found without recreating it.
+export async function restoreSceneSnapshot(
+  backend: DomainBackend,
+  id: string,
+  expectedRevision: number,
+  snapshot: SceneSnapshotInput,
+): Promise<DomainSceneView> {
+  checkSnapshotInput(snapshot);
+  if (!Number.isInteger(expectedRevision)) failInvalid("Scene restore needs an integer expected revision.");
+  await backend.store.transaction(async (tx) => {
+    const txStore = tx as unknown as Store;
+    const scene = await requireScene(txStore, id, `Scene "${id}" does not exist; refusing to recreate it.`);
+    requireSceneRevision(scene, expectedRevision, `Scene "${id}" changed underneath this edit (expected revision ${expectedRevision}).`);
+    // Validate every referenced row before touching state.
+    const profile = await requireOutputProfile(txStore, snapshot.outputProfileId);
+    const record = scene as unknown as Record<string, unknown>;
+    const next: Record<string, unknown> = { updatedAt: now(), revision: expectedRevision + 1 };
+    applySceneScalars(record, {
+      name: snapshot.name,
+      width: snapshot.width,
+      height: snapshot.height,
+      deviceId: snapshot.deviceId,
+      exportCoverage: snapshot.exportCoverage,
+    }, next);
+    await txStore.nodes.Scene.update(scene.id, next as never);
+    await setSceneOutput(txStore, scene, profile);
+
+    const edges = await txStore.edges.places.findFrom(scene);
+    const current: Array<{
+      edge: PlacementHandle;
+      label: LabelHandle;
+      text: string;
+      textStyleId: string;
+      x: number;
+      y: number;
+      order: number;
+    }> = [];
+    const torn: PlacementHandle[] = [];
+    for (const edge of edges) {
+      const label = await txStore.nodes.Label.getById(edge.toId as never).catch(() => undefined);
+      if (!label) {
+        torn.push(edge);
+        continue;
+      }
+      const labelRecord = label as unknown as Record<string, unknown>;
+      const styleEdges = await txStore.edges.styledAs.findFrom(label);
+      const styleEdge = styleEdges[0];
+      if (!styleEdge) throw new DomainError("unavailable", `Placement "${String(edge.id)}" links to a missing text style.`);
+      const edgeRecord = edge as unknown as Record<string, unknown>;
+      current.push({
+        edge,
+        label,
+        text: String(labelRecord.text),
+        textStyleId: String(styleEdge.toId),
+        x: Number(edgeRecord.x),
+        y: Number(edgeRecord.y),
+        order: Number(edgeRecord.order),
+      });
+    }
+    current.sort((a, b) => a.order - b.order || (String(a.edge.id) < String(b.edge.id) ? -1 : 1));
+    const target = snapshot.placements.map((placement, index) => ({ ...placement, index }));
+    target.sort((a, b) => a.order - b.order || a.index - b.index);
+    const targetStyles: TextStyleHandle[] = [];
+    for (const entry of target) targetStyles.push(await requireTextStyle(txStore, entry.textStyleId));
+
+    const shared = Math.min(current.length, target.length);
+    for (let index = 0; index < shared; index++) {
+      const entry = current[index]!;
+      const wanted = target[index]!;
+      if (entry.text !== wanted.text) await txStore.nodes.Label.update(entry.label.id, { text: wanted.text });
+      if (entry.textStyleId !== wanted.textStyleId) {
+        await setLabelStyle(txStore, entry.label, targetStyles[index]!);
+      }
+      const props: Record<string, unknown> = {};
+      if (entry.x !== wanted.x) props.x = wanted.x;
+      if (entry.y !== wanted.y) props.y = wanted.y;
+      if (entry.order !== wanted.order) props.order = wanted.order;
+      if (Object.keys(props).length > 0) await txStore.edges.places.update(entry.edge.id, props as never);
+    }
+    for (let index = shared; index < target.length; index++) {
+      const wanted = target[index]!;
+      const label = await txStore.nodes.Label.create({ text: wanted.text });
+      await setLabelStyle(txStore, label, targetStyles[index]!);
+      await txStore.edges.places.create(scene, label, { x: wanted.x, y: wanted.y, order: wanted.order });
+    }
+    for (let index = shared; index < current.length; index++) {
+      const entry = current[index]!;
+      await txStore.edges.places.delete(entry.edge.id);
+      await retireLabelIfOrphaned(txStore, entry.label);
+    }
+    for (const edge of torn) await txStore.edges.places.delete(edge.id);
+  });
+  const view = await buildSceneView(backend.store, id);
+  if (!view) throw new DomainError("not-found", `Scene "${id}" does not exist.`);
   return view;
 }

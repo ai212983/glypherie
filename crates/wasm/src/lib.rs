@@ -34,7 +34,8 @@
 //!     // For canvas: `new ImageData(new Uint8ClampedArray(u8.buffer), w, h)`
 //!     // (zero-copy view; the copy is already JS-owned so the result can be
 //!     // freed independently at any time).
-//!     const layout = result.layout(); // plain object: { lines, missing_codepoints }
+//!     // plain object: { lines, editing: { carets, width, height }, missing_codepoints }
+//!     const layout = result.layout();
 //!     void layout;
 //!   } finally {
 //!     result.free();
@@ -572,10 +573,68 @@ struct LineView {
     height_px: u32,
 }
 
+/// One in-place editing stop in native source pixels: `offset` is a JS
+/// UTF-16 text boundary, `line` a visual line index, `x` the caret position
+/// (fractional for source-layout roles), `y` the line top and `height` the
+/// line height. Converted from the native same-pass 26.6 pens (`x_26_6 /
+/// 64` is exact in float64); duplicate offsets at soft line breaks allowed.
+#[derive(Clone, Debug, Serialize)]
+struct CaretView {
+    offset: usize,
+    line: usize,
+    x: f64,
+    y: u32,
+    height: u32,
+}
+
+/// Exact editing bounds in native source pixels: laid-out text width and
+/// total text height alongside every caret stop.
+#[derive(Clone, Debug, Serialize)]
+struct EditingView {
+    carets: Vec<CaretView>,
+    width: f64,
+    height: u32,
+}
+
 #[derive(Clone, Debug, Serialize)]
 struct LayoutView {
     lines: Vec<LineView>,
+    editing: EditingView,
     missing_codepoints: Vec<u32>,
+}
+
+/// Plain-object view behind [`RenderResult::layout`]; kept as a pure
+/// function so native tests can pin the serialized shape without a JS runtime.
+fn layout_view(rendered: &RenderedText) -> LayoutView {
+    LayoutView {
+        lines: rendered
+            .lines
+            .iter()
+            .map(|line| LineView {
+                byte_start: line.byte_start,
+                byte_end: line.byte_end,
+                width_26_6: line.width_26_6,
+                height_px: line.height_px,
+            })
+            .collect(),
+        editing: EditingView {
+            carets: rendered
+                .editing
+                .carets
+                .iter()
+                .map(|stop| CaretView {
+                    offset: stop.offset_utf16,
+                    line: stop.line,
+                    x: f64::from(stop.x_26_6) / 64.0,
+                    y: stop.y_px,
+                    height: stop.height_px,
+                })
+                .collect(),
+            width: f64::from(rendered.editing.width_26_6) / 64.0,
+            height: rendered.editing.height_px,
+        },
+        missing_codepoints: rendered.missing_codepoints.clone(),
+    }
 }
 
 #[wasm_bindgen]
@@ -605,24 +664,13 @@ impl RenderResult {
         self.inner.lines.len()
     }
 
-    /// Per-line layout plus skipped codepoints as a plain JS object:
-    /// `{ lines: [{byte_start, byte_end, width_26_6, height_px}], missing_codepoints }`.
+    /// Per-line layout plus exact editing geometry as a plain JS object:
+    /// `{ lines: [{byte_start, byte_end, width_26_6, height_px}],
+    /// editing: {carets: [{offset, line, x, y, height}], width, height},
+    /// missing_codepoints }`. Caret positions and bounds use native source
+    /// pixels; `x` may be fractional for source-layout roles.
     pub fn layout(&self) -> Result<JsValue, JsValue> {
-        let view = LayoutView {
-            lines: self
-                .inner
-                .lines
-                .iter()
-                .map(|line| LineView {
-                    byte_start: line.byte_start,
-                    byte_end: line.byte_end,
-                    width_26_6: line.width_26_6,
-                    height_px: line.height_px,
-                })
-                .collect(),
-            missing_codepoints: self.inner.missing_codepoints.clone(),
-        };
-        to_plain_object(&view)
+        to_plain_object(&layout_view(&self.inner))
     }
 }
 
@@ -1040,7 +1088,8 @@ mod tests {
     #[test]
     fn baseline_render_matches_approved_surface_path() {
         // Routing identity for the unchanged production path: the default
-        // spec must equal `surface::render_text` byte-for-byte.
+        // spec must equal `surface::render_text` byte-for-byte, including
+        // the same-pass editing geometry.
         let spec = minimal_spec("A A", 96, 48);
         let routed = render_parsed(FIXTURE, &spec).unwrap();
         let request = TextRenderRequest {
@@ -1060,6 +1109,7 @@ mod tests {
         let direct = surface::render_text(FIXTURE, &request).unwrap();
         assert_eq!(routed.pixels, direct.pixels);
         assert_eq!(routed.lines, direct.lines);
+        assert_eq!(routed.editing, direct.editing);
     }
 
     #[test]
@@ -1191,19 +1241,7 @@ mod tests {
     fn layout_view_round_trips_through_json() {
         let spec = minimal_spec("A", 96, 48);
         let rendered = render_parsed(FIXTURE, &spec).unwrap();
-        let view = LayoutView {
-            lines: rendered
-                .lines
-                .iter()
-                .map(|line| LineView {
-                    byte_start: line.byte_start,
-                    byte_end: line.byte_end,
-                    width_26_6: line.width_26_6,
-                    height_px: line.height_px,
-                })
-                .collect(),
-            missing_codepoints: rendered.missing_codepoints.clone(),
-        };
+        let view = layout_view(&rendered);
         let value = serde_json::to_value(&view).unwrap();
         assert!(value["lines"].is_array());
         assert_eq!(
@@ -1211,6 +1249,57 @@ mod tests {
             rendered.lines.len()
         );
         assert!(value["missing_codepoints"].is_array());
+        assert!(value["editing"]["carets"].is_array());
+        assert_eq!(
+            value["editing"]["carets"].as_array().unwrap().len(),
+            rendered.editing.carets.len()
+        );
+    }
+
+    #[test]
+    fn layout_view_reports_source_pixel_editing_including_blank_text() {
+        // Non-blank: UTF-16 offsets cover every boundary; caret `x` and the
+        // editing width reproduce the native 26.6 pens in source pixels.
+        let rendered = render_parsed(ROBOTO, &minimal_spec("Aé", 96, 48)).unwrap();
+        let view = layout_view(&rendered);
+        let value = serde_json::to_value(&view).unwrap();
+        let carets = value["editing"]["carets"].as_array().unwrap();
+        assert_eq!(carets.len(), 3, "A + é + end boundary");
+        assert_eq!(carets[0]["offset"], 0);
+        assert_eq!(carets[0]["x"], 0.0);
+        assert_eq!(carets[2]["offset"], 2);
+        let line_width = rendered.lines[0].width_26_6;
+        assert_eq!(carets[2]["x"], line_width as f64 / 64.0);
+        assert_eq!(value["editing"]["width"], line_width as f64 / 64.0);
+        assert_eq!(
+            value["editing"]["height"],
+            rendered.editing.height_px as u64
+        );
+        for caret in carets {
+            for key in ["offset", "line", "x", "y", "height"] {
+                assert!(caret.get(key).is_some(), "caret keeps {key}");
+            }
+        }
+        // Blank text keeps zero lines but still reports its boundary stops.
+        let blank = render_parsed(FIXTURE, &minimal_spec("", 64, 32)).unwrap();
+        assert!(blank.lines.is_empty());
+        let blank_view = layout_view(&blank);
+        let blank_value = serde_json::to_value(&blank_view).unwrap();
+        assert_eq!(
+            blank_value["editing"]["carets"].as_array().unwrap().len(),
+            1
+        );
+        assert_eq!(blank_value["editing"]["carets"][0]["offset"], 0);
+        let wrapped = render_parsed(ROBOTO, &minimal_spec("A\nB", 96, 48)).unwrap();
+        let wrapped_value = serde_json::to_value(&layout_view(&wrapped)).unwrap();
+        let offsets: Vec<u64> = wrapped_value["editing"]["carets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|caret| caret["offset"].as_u64().unwrap())
+            .collect();
+        assert_eq!(offsets.iter().max(), Some(&3));
+        assert!(wrapped_value["editing"]["carets"][0].get("line").is_some());
     }
 
     const ROBOTO: &[u8] = include_bytes!("../../../fonts/Roboto.ttf");

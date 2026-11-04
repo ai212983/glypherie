@@ -11,6 +11,7 @@ import type {
   DomainPlacementView,
   DomainSceneView,
   DomainTextStyleView,
+  SceneSnapshotInput,
 } from "./types.ts";
 
 export type {
@@ -18,6 +19,7 @@ export type {
   DomainPlacementView,
   DomainSceneView,
   DomainTextStyleView,
+  SceneSnapshotInput,
 } from "./types.ts";
 
 export async function listTextStyles(): Promise<DomainTextStyleView[]> {
@@ -40,6 +42,7 @@ export async function createScene(input: {
   name: string;
   width: number;
   height: number;
+  deviceId?: string | null;
   outputProfileId: string;
   exportCoverage?: DomainSceneView["exportCoverage"];
 }): Promise<DomainSceneView> {
@@ -48,7 +51,7 @@ export async function createScene(input: {
 
 export async function updateScene(
   id: string,
-  patch: Partial<Pick<DomainSceneView, "name" | "width" | "height" | "outputProfileId" | "exportCoverage">>,
+  patch: Partial<Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "outputProfileId" | "exportCoverage">>,
   expectedRevision: number,
 ): Promise<DomainSceneView> {
   return (await callDomain("updateScene", [id, patch, expectedRevision])) as DomainSceneView;
@@ -81,6 +84,19 @@ export async function removeSceneLabel(
   expectedSceneRevision: number,
 ): Promise<DomainSceneView> {
   return (await callDomain("removeSceneLabel", [sceneId, placementId, expectedSceneRevision])) as DomainSceneView;
+}
+
+/**
+ * Atomic undo/redo restore: one revision-guarded transaction replaces the
+ * whole scene content from an id-free snapshot. Any rejection rolls the
+ * transaction back, so a failed restore never leaves a partial scene.
+ */
+export async function restoreSceneSnapshot(
+  sceneId: string,
+  expectedSceneRevision: number,
+  snapshot: SceneSnapshotInput,
+): Promise<DomainSceneView> {
+  return (await callDomain("restoreSceneSnapshot", [sceneId, expectedSceneRevision, snapshot])) as DomainSceneView;
 }
 
 export async function resolveTextStyle(

@@ -27,14 +27,12 @@ import {
   buildMetas,
   metaForFont,
 } from "./features/preview/state/family-meta";
-import { indexPath, palettesPath, resolveRoute, scenePath, scenesPath, screenPath, variantPathKeeping } from "./navigation/router";
+import { indexPath, palettesPath, resolveRoute, screenPath, variantPathKeeping } from "./navigation/router";
 import { useFontLibrary } from "./fonts/useFontLibrary";
 import { displayName } from "./fonts/metadata";
 import { createVariant } from "./variants/repository.js";
 import { GrayscalePage } from "./features/grayscale/GrayscalePage";
 import { ScreenPage } from "./features/screen/ScreenPage";
-import { ScenesPage } from "./features/scenes/ScenesPage";
-import { SceneDetailPage } from "./features/scenes/SceneDetailPage";
 import { LandingPage } from "./features/landing/LandingPage";
 import { LibraryPage } from "./features/library/LibraryPage";
 import { readStoredLibraryPreferences, writeStoredLibraryPreferences, type LibraryPreferences } from "./features/library/preferences";
@@ -50,9 +48,10 @@ import { PREVIEW_DESCRIPTION } from "./shell/page-metadata";
 type Page =
   | { name: "home" }
   | { name: "palettes" }
-  | { name: "screen" }
-  | { name: "scenes" }
-  | { name: "scene"; scene: string }
+  // The unified Screen page also serves the legacy /scenes/ and
+  // /scene/<id>/ links: legacyScene carries the scene id from a legacy
+  // /scene/<id>/ URL until it canonicalizes to /screen/?scene=.
+  | { name: "screen"; legacyScene?: string | null }
   | { name: "index" }
   | { name: "preview"; font: string }
   | { name: "variant"; font: string; variant: string };
@@ -179,37 +178,15 @@ function AppContent(): React.JSX.Element {
     pushPath(screenPath(migrationBase()));
   }, [pushPath]);
 
-  const openScenes = React.useCallback(() => {
-    cancelSnapshotWrite();
-    setPage({ name: "scenes" });
-    setNotice("");
-    setPreviewStatus("");
-    setDetailNotice("");
-    setSaveVariantError("");
-    pushPath(scenesPath(migrationBase()));
-  }, [pushPath]);
-
-  const openScene = React.useCallback((scene: string) => {
-    cancelSnapshotWrite();
-    setPage({ name: "scene", scene });
-    setNotice("");
-    setPreviewStatus("");
-    setDetailNotice("");
-    setSaveVariantError("");
-    pushPath(scenePath(scene, migrationBase()));
-  }, [pushPath]);
-
-  const primaryNav = (active: "fonts" | "palettes" | "screen" | "scenes" | null): React.JSX.Element => (
+  const primaryNav = (active: "fonts" | "palettes" | "screen" | null): React.JSX.Element => (
     <PrimaryNav
       active={active}
       fontsHref={indexPath(migrationBase())}
       palettesHref={palettesPath(migrationBase())}
       screenHref={screenPath(migrationBase())}
-      scenesHref={scenesPath(migrationBase())}
       onFonts={() => openIndex()}
       onPalettes={openPalettes}
       onScreen={openScreen}
-      onScenes={openScenes}
     />
   );
 
@@ -222,8 +199,8 @@ function AppContent(): React.JSX.Element {
         const snap = readInitialSnapshot(metas);
         setPage(probe.page === "home" ? { name: "home" }
           : probe.page === "screen" ? { name: "screen" }
-          : probe.page === "scenes" ? { name: "scenes" }
-          : probe.page === "scene" ? { name: "scene", scene: probe.scene }
+          : probe.page === "scenes" ? { name: "screen" }
+          : probe.page === "scene" ? { name: "screen", legacyScene: probe.scene }
           : { name: "palettes" });
         setNotice("");
         const inner = readRouteSearch();
@@ -258,8 +235,8 @@ function AppContent(): React.JSX.Element {
       || route.page === "scenes" || route.page === "scene") {
       setPage(route.page === "home" ? { name: "home" }
         : route.page === "screen" ? { name: "screen" }
-        : route.page === "scenes" ? { name: "scenes" }
-        : route.page === "scene" ? { name: "scene", scene: route.scene }
+        : route.page === "scenes" ? { name: "screen" }
+        : route.page === "scene" ? { name: "screen", legacyScene: route.scene }
         : { name: "palettes" });
       setNotice("");
     } else {
@@ -298,8 +275,8 @@ function AppContent(): React.JSX.Element {
         if (!snapshotRef.current) setSnapshot(current);
         setPage(route.page === "home" ? { name: "home" }
           : route.page === "screen" ? { name: "screen" }
-          : route.page === "scenes" ? { name: "scenes" }
-          : route.page === "scene" ? { name: "scene", scene: route.scene }
+          : route.page === "scenes" ? { name: "screen" }
+          : route.page === "scene" ? { name: "screen", legacyScene: route.scene }
           : { name: "palettes" });
         setNotice("");
       } else if (libraryPending) {
@@ -485,69 +462,32 @@ function AppContent(): React.JSX.Element {
     );
   }
 
-  if (page?.name === "scenes"
-    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "scenes")) {
-    return (
-      <>
-        <SkipLink />
-        <PublicPageMetadata page="scenes" />
-        <div className="flex min-h-dvh flex-col">
-          <div className="sticky top-0 z-40 shrink-0">
-            <SiteHeader
-              title="Glypherie"
-              titleAs="div"
-              variant="brand"
-              nav={primaryNav("scenes")}
-            />
-          </div>
-          <main id="main" className="mx-auto w-[min(100%-3rem,72rem)] flex-1 pb-16">
-            <h1 className="sr-only">Scenes</h1>
-            <div className="pt-6">
-              <ScenesPage onOpenScene={openScene} />
-            </div>
-          </main>
-        </div>
-      </>
-    );
-  }
+  // The unified Screen page serves the canonical /screen/ route and the
+  // legacy /scenes/ and /scene/<id>/ links: a legacy scene id selects that
+  // composition, and the navigation effects canonicalize the URL directly to
+  // /screen/ (or /screen/?scene=), never from inside this render.
+  const legacyScenesRoute = page === null
+    && resolveRoute(readRoutePath(), window.location.search, []).page === "scenes";
+  const legacySceneRoute = page === null
+    ? resolveRoute(readRoutePath(), window.location.search, []).page === "scene"
+      ? resolveRoute(readRoutePath(), window.location.search, [])
+      : null
+    : null;
+  const legacySceneId = page?.name === "screen" ? (page.legacyScene ?? null)
+    : legacySceneRoute && legacySceneRoute.page === "scene" ? legacySceneRoute.scene
+    : null;
+  const screenRoute = page?.name === "screen" || legacyScenesRoute || legacySceneRoute !== null
+    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "screen");
 
-  if (page?.name === "scene"
-    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "scene")) {
-    const sceneId = page?.name === "scene" ? page.scene : null;
+  if (screenRoute) {
     return (
       <>
         <SkipLink />
-        <PageMetadata title="Scene — Glypherie" description="Edit a saved scene: labels, text styles, bitmap preview and Playdate font export." />
-        <div className="flex min-h-dvh flex-col">
-          <div className="sticky top-0 z-40 shrink-0">
-            <SiteHeader
-              title="Glypherie"
-              titleAs="div"
-              variant="brand"
-              nav={primaryNav("scenes")}
-            />
-          </div>
-          <main id="main" className="mx-auto w-[min(100%-3rem,72rem)] flex-1 pb-16">
-            <h1 className="sr-only">Scene</h1>
-            <div className="pt-6">
-              {sceneId ? (
-                <SceneDetailPage key={sceneId} sceneId={sceneId} library={library} onScenes={openScenes} />
-              ) : (
-                <p role="status">Loading scene…</p>
-              )}
-            </div>
-          </main>
-        </div>
-      </>
-    );
-  }
-
-  if (page?.name === "screen"
-    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "screen")) {
-    return (
-      <>
-        <SkipLink />
-        <PublicPageMetadata page="screen" />
+        {legacySceneRoute !== null ? (
+          <PageMetadata title="Screen — Glypherie" description="Edit saved compositions on device screens: labels, text styles, bitmap preview and Playdate font export." />
+        ) : (
+          <PublicPageMetadata page="screen" />
+        )}
         <div className="flex min-h-dvh flex-col">
           <div className="sticky top-0 z-40 shrink-0">
             <SiteHeader
@@ -560,7 +500,7 @@ function AppContent(): React.JSX.Element {
           <main id="main" className="mx-auto w-[min(100%-3rem,72rem)] flex-1 pb-16">
             <h1 className="sr-only">Screen</h1>
             <div className="pt-6">
-              <ScreenPage />
+              <ScreenPage library={library} legacySceneId={legacySceneId} />
             </div>
           </main>
         </div>

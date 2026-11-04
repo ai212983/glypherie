@@ -656,6 +656,7 @@ export {
   addSceneLabel,
   updateSceneLabel,
   removeSceneLabel,
+  restoreSceneSnapshot,
 } from "./scene-commands.ts";
 
 // ---- Text styles and output profiles ----

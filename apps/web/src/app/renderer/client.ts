@@ -15,9 +15,32 @@ export interface RenderLayoutLine {
   height_px: number;
 }
 
+// One in-place editing stop from the native layout pass that painted these
+// pixels (`offset` is a JS UTF-16 text boundary, `line` a visual line
+// index). Coordinates and bounds use native source pixels; `x` may be
+// fractional for source-layout roles. Duplicate offsets at soft line
+// breaks are allowed.
+export interface RenderCaret {
+  offset: number;
+  line: number;
+  x: number;
+  y: number;
+  height: number;
+}
+
+export interface RenderEditing {
+  carets: RenderCaret[];
+  width: number;
+  height: number;
+}
+
 export interface RenderLayout {
   lines: RenderLayoutLine[];
   missing_codepoints: number[];
+  // Exact geometry from the real renderer, including blank text. Fixture
+  // and synthetic renderers omit it; consumers must handle its absence
+  // honestly and never approximate it with browser glyph metrics.
+  editing?: RenderEditing | null;
 }
 
 interface Envelope {

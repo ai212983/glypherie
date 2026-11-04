@@ -334,3 +334,16 @@ retain fractional 26.6 offsets. Nonzero Mono tracking preserves a blank column f
 except fixed pitch and tabular digits. Negative tracking preserves neutral ASCII word gaps; positive tracking widens
 letters and spaces. These historical constraints can limit tightening. Static publication uses zero tracking. Rationale
 belongs to the [tracking decision](../../docs/revisions/001/03-spacing-kerning.md#tracking-and-word-separation).
+
+### Editing geometry for in-place labels
+
+`surface::RenderedText::editing` reports exact caret geometry produced by the same layout pass that paints the bitmap:
+no re-simulation and no glyph-specific rules. `carets` holds one stop per covered JS UTF-16 text boundary
+(`offset_utf16`), in visual line order, with the native-source pen position in 26.6 (`x_26_6`, alignment included,
+fractional for source-layout roles), the line top (`y_px`) and the line height. Stops sit at pen positions (advance
+boundaries); a pair kern shifts only the following glyph origin, never the caret. Spaces, skipped glyphs, consumed wrap
+whitespace, newline terminators, explicit empty lines and trailing breaks map to the nearest laid-out edge; soft line
+breaks may surface one offset on two lines. `width_26_6` is the widest laid-out advance (clamped at zero) and
+`height_px` the total text height. Blank input keeps `lines` empty for backward compatibility while `editing` still
+covers every boundary over virtual lines in paragraph order. Bitmaps, line metrics, `lines` and `missing_codepoints` are
+unchanged by this addition.

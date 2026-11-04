@@ -132,6 +132,18 @@ fn reference(case: &Value, prepared: &font_generator::surface::PreparedFont) -> 
                         "byte_start": line.byte_start, "byte_end": line.byte_end,
                         "width_26_6": line.width_26_6, "height_px": line.height_px,
                     })).collect::<Vec<_>>(),
+                    // Mirrors `layout_view` in src/lib.rs (`x_26_6 / 64` is
+                    // exact in float64); the harness deep-comparison pins
+                    // native/WASM editing parity, including blank text.
+                    "editing": {
+                        "carets": result.editing.carets.iter().map(|stop| json!({
+                            "offset": stop.offset_utf16, "line": stop.line,
+                            "x": stop.x_26_6 as f64 / 64.0,
+                            "y": stop.y_px, "height": stop.height_px,
+                        })).collect::<Vec<_>>(),
+                        "width": result.editing.width_26_6 as f64 / 64.0,
+                        "height": result.editing.height_px,
+                    },
                     "missing_codepoints": result.missing_codepoints,
                 },
                 "metadata": metadata::extract(&data).unwrap(),

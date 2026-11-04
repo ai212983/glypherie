@@ -28,11 +28,35 @@ export interface DomainPlacementView {
   order: number;
 }
 
+// Undo/redo snapshot payload: full scene content without placement ids, so a
+// restore never depends on expired ids. Labels are matched by content order,
+// which keeps duplicate identical labels stable across repeated cycles.
+export interface SceneSnapshotPlacement {
+  text: string;
+  textStyleId: string;
+  x: number;
+  y: number;
+  order: number;
+}
+
+export interface SceneSnapshotInput {
+  name: string;
+  width: number;
+  height: number;
+  deviceId: string | null;
+  outputProfileId: string;
+  exportCoverage: CharacterCoverage;
+  placements: SceneSnapshotPlacement[];
+}
+
 export interface DomainSceneView {
   id: string;
   name: string;
   width: number;
   height: number;
+  // Selected catalog device; null means a custom screen with the scene's own
+  // width/height. Rows written before this field read back as null.
+  deviceId: string | null;
   revision: number;
   outputProfileId: string;
   exportCoverage: CharacterCoverage;

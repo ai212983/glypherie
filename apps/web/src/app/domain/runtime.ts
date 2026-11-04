@@ -24,7 +24,7 @@ export type DomainMethod =
   | "listPalettes" | "createPalette" | "updatePalette" | "deletePalette"
   | "listTextStyles" | "listOutputProfiles" | "listScenes" | "getScene"
   | "createScene" | "updateScene" | "deleteScene"
-  | "addSceneLabel" | "updateSceneLabel" | "removeSceneLabel"
+  | "addSceneLabel" | "updateSceneLabel" | "removeSceneLabel" | "restoreSceneSnapshot"
   | "resolveTextStyle" | "resolveTextStyles"
   | "importLegacySnapshot";
 
@@ -46,6 +46,7 @@ export const MUTATING_METHODS: ReadonlySet<DomainMethod> = new Set([
   "addSceneLabel",
   "updateSceneLabel",
   "removeSceneLabel",
+  "restoreSceneSnapshot",
   "importLegacySnapshot",
 ]);
 

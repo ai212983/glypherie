@@ -20,13 +20,16 @@ import {
 import type { MonoRaster, OutputProfile, Rasterization, RendererRole, RGBA, StemFitting } from "./renderer-types.js";
 import { logicalBounds, toRenderSpec } from "./render-spec";
 import { layoutHeight } from "./render-layout.js";
-import type { RenderPixels } from "./client";
+import type { RenderLayout, RenderPixels } from "./client";
 import type { RenderSpec } from "./renderer-types.js";
 
 export interface FontCanvasDiagnostics {
   missing: number;
   fullHeight: number;
   truncated: boolean;
+  // The layout of the committed paint, when the renderer reported one.
+  // Absent for synthetic renderers; never synthesized from browser metrics.
+  layout?: RenderLayout;
 }
 
 export interface FontCanvasProps {
@@ -456,6 +459,8 @@ function useFontRender(options: RenderHookOptions): {
           missing: data.layout?.missing_codepoints?.length ?? 0,
           fullHeight,
           truncated,
+          // Same identity as the committed pixels: this layout painted them.
+          ...(data.layout ? { layout: data.layout } : {}),
         });
       },
       onError: (error: unknown) => {

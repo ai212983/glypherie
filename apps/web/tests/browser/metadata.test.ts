@@ -39,19 +39,23 @@ test("metadata follows navigation, local drafts, reload and recovery without sta
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
 
-  for (const [path, title] of [
+  const routes: Array<readonly [path: string, title: string, canonical?: string]> = [
     ["", "Glypherie — Bitmap fonts for low-resolution displays"],
     ["fonts/", "Font library — Glypherie"],
     ["palettes/", "Palettes — Glypherie"],
-  ] as const) {
+    ["screen/", "Screen — Glypherie"],
+    // The legacy alias serves the Screen document and canonicalizes to it.
+    ["scenes/", "Screen — Glypherie", "screen/"],
+  ];
+  for (const [path, title, canonical] of routes) {
     const response = await fetch(`${url}${path}`);
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.match(html, new RegExp(`<title data-page-metadata>${title}</title>`));
-    assert.ok(html.includes(`href="https://example.test/preview/${path}"`));
+    assert.ok(html.includes(`href="https://example.test/preview/${canonical ?? path}"`));
     assert.ok(html.includes('property="og:image" content="https://example.test/preview/icons/icon-512.png"'));
     await page.goto(`${url}${path}`);
-    await assertMetadata(page, title, path);
+    await assertMetadata(page, title, canonical ?? path);
   }
   const image = await fetch(`${url}icons/icon-512.png`);
   assert.equal(image.status, 200);

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  legacyScreenPath,
   parseRoute,
   resolveRoute,
   screenPath,
@@ -34,4 +35,15 @@ test("screen links drop snapshot state and keep foreign params", () => {
   assert.equal(screenPath(""), "/screen/");
   assert.equal(screenPath("v=1&font=aaa&profile=gray_3bit"), "/screen/");
   assert.equal(screenPath("v=1&font=aaa&utm=keep"), "/screen/?utm=keep");
+});
+
+test("legacy scene routes canonicalize directly to the Screen route", () => {
+  assert.equal(legacyScreenPath(null, ""), "/screen/");
+  assert.equal(legacyScreenPath(null, "v=1&font=aaa&utm=keep"), "/screen/?utm=keep");
+  assert.equal(legacyScreenPath("abc", ""), "/screen/?scene=abc");
+  assert.equal(legacyScreenPath("abc", "utm=keep"), "/screen/?scene=abc&utm=keep");
+  assert.equal(
+    legacyScreenPath("abc", "v=1&font=aaa&utm=keep"),
+    "/screen/?scene=abc&utm=keep",
+  );
 });

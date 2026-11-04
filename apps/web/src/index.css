@@ -187,4 +187,14 @@
     outline: 3px solid var(--color-brand);
     outline-offset: 3px;
   }
+
+  /* In-place scene label editing: the native textarea captures typing,
+  selection, clipboard and IME, while the WASM bitmap stays visible. Its own
+  glyphs, caret and selection painting stay invisible; the committed renderer
+  geometry draws the caret and selection overlay instead. */
+  .scene-edit-textarea,
+  .scene-edit-textarea::selection {
+    color: transparent;
+    background: transparent;
+  }
 }

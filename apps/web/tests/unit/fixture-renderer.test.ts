@@ -358,6 +358,19 @@ test("two-bit gray renders hand-computed coverage steps", async () => {
   renderer.terminate();
 });
 
+test("fixture omits editing geometry instead of approximating it", async () => {
+  // The synthetic renderer has no native layout pass, so it reports no
+  // caret geometry; consumers must handle the absence honestly and never
+  // synthesize stops from browser glyph metrics.
+  const renderer = createFixtureRenderer({ latencyMs: 0 });
+  for (const text of ["A", "A\nB", ""]) {
+    const result = await renderer.render("font", 1, spec({ text, height: 30 }));
+    assert.equal(result.pixels.layout?.editing, undefined);
+    assert.ok(Array.isArray(result.pixels.layout?.lines));
+  }
+  renderer.terminate();
+});
+
 test("mixed newline styles split lines identically", async () => {
   const renderer = createFixtureRenderer({ latencyMs: 0 });
   const result = await renderer.render(

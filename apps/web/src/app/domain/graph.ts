@@ -181,6 +181,11 @@ const Scene = defineNode("Scene", {
     name: z.string().min(1).max(SCENE_NAME_MAX_LENGTH),
     width: z.number().int().min(SCENE_DIMENSION_MIN).max(SCENE_DIMENSION_MAX),
     height: z.number().int().min(SCENE_DIMENSION_MIN).max(SCENE_DIMENSION_MAX),
+    // Selected catalog device for the composition; null (or absent on rows
+    // written before this field) means a custom screen with the scene's own
+    // dimensions. The domain stores the opaque id only; catalog matching
+    // lives in the screen UI.
+    deviceId: z.string().min(1).max(80).nullish(),
     exportCoverage: characterCoverageSchema,
     revision: revisionSchema,
     createdAt: timestampSchema,

@@ -129,11 +129,17 @@ test("Pages transport preserves URLs beneath root and project hosting prefixes",
     const output = await buildApp(t, base, `https://example.test${base}/`);
     const index = await fs.readFile(path.join(output, "index.html"), "utf8");
     const fallback = await fs.readFile(path.join(output, "404.html"), "utf8");
-    for (const [route, title] of [["", "Glypherie — Bitmap fonts for low-resolution displays"], ["fonts/", "Font library — Glypherie"], ["palettes/", "Palettes — Glypherie"], ["screen/", "Screen — Glypherie"], ["scenes/", "Scenes — Glypherie"]]) {
+    for (const [route, title, canonicalRoute] of [
+      ["", "Glypherie — Bitmap fonts for low-resolution displays", ""],
+      ["fonts/", "Font library — Glypherie", "fonts/"],
+      ["palettes/", "Palettes — Glypherie", "palettes/"],
+      ["screen/", "Screen — Glypherie", "screen/"],
+      ["scenes/", "Screen — Glypherie", "screen/"],
+    ]) {
       const page = await fs.readFile(path.join(output, route!, "index.html"), "utf8");
       assert.equal((page.match(/<title\b/g) ?? []).length, 1);
       assert.ok(page.includes(`>${title}</title>`));
-      assert.ok(page.includes(`rel="canonical" href="https://example.test${base}${route}"`));
+      assert.ok(page.includes(`rel="canonical" href="https://example.test${base}${canonicalRoute}"`));
       assert.ok(page.includes(`property="og:image" content="https://example.test${base}icons/icon-512.png"`));
       assert.ok(page.includes(`href="${base}manifest.webmanifest"`));
     }
