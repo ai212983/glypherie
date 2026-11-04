@@ -61,6 +61,8 @@ async function devBase(_t: TestContext): Promise<string> {
 declare global {
   interface Window {
     __harnessRenderGate?: { hold: () => void; releaseNext: () => void; waitingCount: () => number };
+    __strictLibLoadGate?: { hold: () => void; releaseNext: () => void; open: () => void; waitingCount: () => number };
+    __strictLibShared?: { library: { loads: Array<{ fontId: string }> } };
   }
 }
 
@@ -307,7 +309,7 @@ test("StrictMode replay settles canvas and library on exactly one live worker ea
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(`${base}iframe.html?id=renderer-lifecycleharness--strict-root&viewMode=story`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
   // Canvas: the replayed setup's pending render is dropped; the live worker
   // issues the second render and paints.
@@ -357,15 +359,29 @@ test("StrictMode replay settles canvas and library on exactly one live worker ea
   assert.equal(Number(await strictText(page, "lib-session")), librarySession + 1, "replacement bumps the session by one");
 
   // A replacement load pending at unmount is dropped; remount loads again.
+  // The gate parks the pending load at the renderer seam, so unmount
+  // provably retires it instead of racing the backend read before it.
+  await page.evaluate(() => {
+    const gate = window.__strictLibLoadGate;
+    if (!gate) throw new Error("strict library load gate is not installed");
+    gate.hold();
+  });
   await page.locator("[data-strict-lib-replace]").click();
   await page.waitForFunction(
-    () => document.querySelector("[data-strict-lib-load]")?.textContent === "loading",
+    () => (window.__strictLibShared?.library.loads.length ?? 0) === 3,
+    null,
+    { timeout: 120000 },
+  );
+  await page.waitForFunction(
+    () => (window.__strictLibLoadGate?.waitingCount() ?? 0) > 0,
     null,
     { timeout: 120000 },
   );
   await page.locator("[data-strict-lib-mounted]").uncheck();
-  await page.waitForTimeout(500);
   assert.equal(await page.locator("[data-strict-lib-load]").count(), 0, "unmounted library leaves no readout");
+  await page.evaluate(() => {
+    window.__strictLibLoadGate?.open();
+  });
   await page.locator("[data-strict-lib-mounted]").check();
   await page.waitForFunction(
     () => document.querySelector("[data-strict-lib-load]")?.textContent === "ready",

@@ -27,11 +27,14 @@ import {
   buildMetas,
   metaForFont,
 } from "./features/preview/state/family-meta";
-import { indexPath, palettesPath, resolveRoute, variantPathKeeping } from "./navigation/router";
+import { indexPath, palettesPath, resolveRoute, scenePath, scenesPath, screenPath, variantPathKeeping } from "./navigation/router";
 import { useFontLibrary } from "./fonts/useFontLibrary";
 import { displayName } from "./fonts/metadata";
 import { createVariant } from "./variants/repository.js";
 import { GrayscalePage } from "./features/grayscale/GrayscalePage";
+import { ScreenPage } from "./features/screen/ScreenPage";
+import { ScenesPage } from "./features/scenes/ScenesPage";
+import { SceneDetailPage } from "./features/scenes/SceneDetailPage";
 import { LandingPage } from "./features/landing/LandingPage";
 import { LibraryPage } from "./features/library/LibraryPage";
 import { readStoredLibraryPreferences, writeStoredLibraryPreferences, type LibraryPreferences } from "./features/library/preferences";
@@ -47,6 +50,9 @@ import { PREVIEW_DESCRIPTION } from "./shell/page-metadata";
 type Page =
   | { name: "home" }
   | { name: "palettes" }
+  | { name: "screen" }
+  | { name: "scenes" }
+  | { name: "scene"; scene: string }
   | { name: "index" }
   | { name: "preview"; font: string }
   | { name: "variant"; font: string; variant: string };
@@ -163,23 +169,62 @@ function AppContent(): React.JSX.Element {
     pushPath(palettesPath(migrationBase()));
   }, [pushPath]);
 
-  const primaryNav = (active: "fonts" | "palettes" | null): React.JSX.Element => (
+  const openScreen = React.useCallback(() => {
+    cancelSnapshotWrite();
+    setPage({ name: "screen" });
+    setNotice("");
+    setPreviewStatus("");
+    setDetailNotice("");
+    setSaveVariantError("");
+    pushPath(screenPath(migrationBase()));
+  }, [pushPath]);
+
+  const openScenes = React.useCallback(() => {
+    cancelSnapshotWrite();
+    setPage({ name: "scenes" });
+    setNotice("");
+    setPreviewStatus("");
+    setDetailNotice("");
+    setSaveVariantError("");
+    pushPath(scenesPath(migrationBase()));
+  }, [pushPath]);
+
+  const openScene = React.useCallback((scene: string) => {
+    cancelSnapshotWrite();
+    setPage({ name: "scene", scene });
+    setNotice("");
+    setPreviewStatus("");
+    setDetailNotice("");
+    setSaveVariantError("");
+    pushPath(scenePath(scene, migrationBase()));
+  }, [pushPath]);
+
+  const primaryNav = (active: "fonts" | "palettes" | "screen" | "scenes" | null): React.JSX.Element => (
     <PrimaryNav
       active={active}
       fontsHref={indexPath(migrationBase())}
       palettesHref={palettesPath(migrationBase())}
+      screenHref={screenPath(migrationBase())}
+      scenesHref={scenesPath(migrationBase())}
       onFonts={() => openIndex()}
       onPalettes={openPalettes}
+      onScreen={openScreen}
+      onScenes={openScenes}
     />
   );
 
   React.useEffect(() => {
     if (pageRef.current === null) {
       const probe = resolveRoute(readRoutePath(), window.location.search, []);
-      if (probe.page === "palettes" || probe.page === "home") {
+      if (probe.page === "palettes" || probe.page === "screen" || probe.page === "home"
+        || probe.page === "scenes" || probe.page === "scene") {
         const metas = buildMetas([]);
         const snap = readInitialSnapshot(metas);
-        setPage(probe.page === "home" ? { name: "home" } : { name: "palettes" });
+        setPage(probe.page === "home" ? { name: "home" }
+          : probe.page === "screen" ? { name: "screen" }
+          : probe.page === "scenes" ? { name: "scenes" }
+          : probe.page === "scene" ? { name: "scene", scene: probe.scene }
+          : { name: "palettes" });
         setNotice("");
         const inner = readRouteSearch();
         replaceCanonicalPath(probe, snap, [], inner || window.location.search);
@@ -209,8 +254,13 @@ function AppContent(): React.JSX.Element {
       }
       setPage({ name: "preview", font: route.font });
       setNotice("");
-    } else if (route.page === "palettes" || route.page === "home") {
-      setPage(route.page === "home" ? { name: "home" } : { name: "palettes" });
+    } else if (route.page === "palettes" || route.page === "screen" || route.page === "home"
+      || route.page === "scenes" || route.page === "scene") {
+      setPage(route.page === "home" ? { name: "home" }
+        : route.page === "screen" ? { name: "screen" }
+        : route.page === "scenes" ? { name: "scenes" }
+        : route.page === "scene" ? { name: "scene", scene: route.scene }
+        : { name: "palettes" });
       setNotice("");
     } else {
       setPage({ name: "index" });
@@ -241,11 +291,16 @@ function AppContent(): React.JSX.Element {
       setSaveVariantError("");
       const order = list.map((font) => font.id);
       const base = readRouteSearch() || window.location.search;
-      if (route.page === "palettes" || route.page === "home") {
+      if (route.page === "palettes" || route.page === "screen" || route.page === "home"
+        || route.page === "scenes" || route.page === "scene") {
         const current = snapshotRef.current ?? readInitialSnapshot(metas);
         replaceCanonicalPath(route, current, order, base);
         if (!snapshotRef.current) setSnapshot(current);
-        setPage(route.page === "home" ? { name: "home" } : { name: "palettes" });
+        setPage(route.page === "home" ? { name: "home" }
+          : route.page === "screen" ? { name: "screen" }
+          : route.page === "scenes" ? { name: "scenes" }
+          : route.page === "scene" ? { name: "scene", scene: route.scene }
+          : { name: "palettes" });
         setNotice("");
       } else if (libraryPending) {
         return;
@@ -424,6 +479,89 @@ function AppContent(): React.JSX.Element {
           <main id="main" className="w-full flex-1 lg:flex lg:min-h-0 lg:flex-col">
             <h1 className="sr-only">Palettes</h1>
             <GrayscalePage embedded baseSize={indexBaseSize} />
+          </main>
+        </div>
+      </>
+    );
+  }
+
+  if (page?.name === "scenes"
+    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "scenes")) {
+    return (
+      <>
+        <SkipLink />
+        <PublicPageMetadata page="scenes" />
+        <div className="flex min-h-dvh flex-col">
+          <div className="sticky top-0 z-40 shrink-0">
+            <SiteHeader
+              title="Glypherie"
+              titleAs="div"
+              variant="brand"
+              nav={primaryNav("scenes")}
+            />
+          </div>
+          <main id="main" className="mx-auto w-[min(100%-3rem,72rem)] flex-1 pb-16">
+            <h1 className="sr-only">Scenes</h1>
+            <div className="pt-6">
+              <ScenesPage onOpenScene={openScene} />
+            </div>
+          </main>
+        </div>
+      </>
+    );
+  }
+
+  if (page?.name === "scene"
+    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "scene")) {
+    const sceneId = page?.name === "scene" ? page.scene : null;
+    return (
+      <>
+        <SkipLink />
+        <PageMetadata title="Scene — Glypherie" description="Edit a saved scene: labels, text styles, bitmap preview and Playdate font export." />
+        <div className="flex min-h-dvh flex-col">
+          <div className="sticky top-0 z-40 shrink-0">
+            <SiteHeader
+              title="Glypherie"
+              titleAs="div"
+              variant="brand"
+              nav={primaryNav("scenes")}
+            />
+          </div>
+          <main id="main" className="mx-auto w-[min(100%-3rem,72rem)] flex-1 pb-16">
+            <h1 className="sr-only">Scene</h1>
+            <div className="pt-6">
+              {sceneId ? (
+                <SceneDetailPage key={sceneId} sceneId={sceneId} library={library} onScenes={openScenes} />
+              ) : (
+                <p role="status">Loading scene…</p>
+              )}
+            </div>
+          </main>
+        </div>
+      </>
+    );
+  }
+
+  if (page?.name === "screen"
+    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "screen")) {
+    return (
+      <>
+        <SkipLink />
+        <PublicPageMetadata page="screen" />
+        <div className="flex min-h-dvh flex-col">
+          <div className="sticky top-0 z-40 shrink-0">
+            <SiteHeader
+              title="Glypherie"
+              titleAs="div"
+              variant="brand"
+              nav={primaryNav("screen")}
+            />
+          </div>
+          <main id="main" className="mx-auto w-[min(100%-3rem,72rem)] flex-1 pb-16">
+            <h1 className="sr-only">Screen</h1>
+            <div className="pt-6">
+              <ScreenPage />
+            </div>
           </main>
         </div>
       </>

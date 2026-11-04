@@ -1,15 +1,16 @@
 import * as React from "react";
 import { Label } from "../../../../components/ui/label";
 import { Input } from "../../../../components/ui/input";
-import { Switch } from "../../../../components/ui/switch";
+import { KerningControls } from "./KerningControls";
+import type { KerningPreference } from "../../../kerning/model";
 import { normalizedSpacing } from "../../../renderer/render-spec.js";
 
 interface LayoutControlsProps {
   fontId: string;
   spacingPx: number;
-  kerning: boolean;
+  kerning: KerningPreference;
   onSpacing: (value: number) => void;
-  onKerning: (value: boolean) => void;
+  onKerning: (value: KerningPreference) => void;
 }
 export function LayoutControls({ fontId, spacingPx, kerning, onSpacing, onKerning }: LayoutControlsProps): React.JSX.Element {
   return (
@@ -45,15 +46,7 @@ export function LayoutControls({ fontId, spacingPx, kerning, onSpacing, onKernin
             />
           </div>
         </div>
-        <div className="interactive-field flex flex-col gap-[.35rem] text-[.8rem]">
-          <Label htmlFor={`kerning-${fontId}`}>Kerning</Label>
-          <Switch
-            id={`kerning-${fontId}`}
-            data-kerning
-            checked={kerning}
-            onCheckedChange={onKerning}
-          />
-        </div>
+        <KerningControls fontId={fontId} value={kerning} onChange={onKerning} />
       </div>
     </div>
   );

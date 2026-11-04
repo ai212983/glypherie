@@ -115,6 +115,7 @@ fn apply_diagonal_fitting(
     };
     let size_px = f64::from(request.settings.size_px);
     let mut applied_any = false;
+    let mut applied_placement = false;
     for record in report.records.iter_mut() {
         let Some(raw) = source.records.iter().find(|candidate| {
             candidate.codepoint == record.codepoint && candidate.glyph_id == record.glyph_id
@@ -184,7 +185,12 @@ fn apply_diagonal_fitting(
         // fields travel only with their own stage.
         let is_shape = fit.reason.starts_with("source-shape:");
         record.diagonal_fitting = Some(crate::reference::DiagonalFittingCapture {
-            model: "diagonal-shape-06".into(),
+            model: if fit.reason.starts_with("placement:") {
+                "diagonal-placement-01"
+            } else {
+                "diagonal-shape-06"
+            }
+            .into(),
             raw_source: raw_features
                 .as_ref()
                 .and_then(|r| serde_json::to_value(r).ok()),
@@ -210,9 +216,13 @@ fn apply_diagonal_fitting(
         record.width = raster.width;
         record.height = raster.height;
         applied_any = true;
+        applied_placement |= fit.reason.starts_with("placement:");
     }
     if applied_any {
         report.implementation.push_str(":diagonal-shape-06");
+    }
+    if applied_placement {
+        report.implementation.push_str(":diagonal-placement-01");
     }
     Ok(())
 }
@@ -788,7 +798,14 @@ pub fn generate_bitmap_font_with_tracking(
     strategy: Option<StemFittingStrategy>,
     letter_spacing_px: f32,
 ) -> Result<GeneratedFont, Error> {
-    generate_bitmap_font_impl(data, config, strategy, letter_spacing_px, None)
+    generate_bitmap_font_impl(
+        data,
+        config,
+        strategy,
+        letter_spacing_px,
+        None,
+        crate::KerningMethod::Source,
+    )
 }
 
 /// Export Mono using the same explicit stages and uniform tracking as preview.
@@ -798,9 +815,46 @@ pub fn generate_monochrome_font_with_pipeline(
     pipeline: crate::renderer::RenderPipeline,
     letter_spacing_px: f32,
 ) -> Result<GeneratedFont, Error> {
+    generate_monochrome_font_with_pipeline_and_kerning(
+        data,
+        config,
+        pipeline,
+        letter_spacing_px,
+        crate::KerningMethod::Source,
+    )
+}
+
+/// Export the same finalized pair method consumed by explicit-pipeline preview.
+pub fn generate_monochrome_font_with_pipeline_and_kerning(
+    data: &[u8],
+    config: &Config,
+    pipeline: crate::renderer::RenderPipeline,
+    letter_spacing_px: f32,
+    kerning_method: crate::KerningMethod,
+) -> Result<GeneratedFont, Error> {
+    kerning_method.validate(true)?;
     if config.output_bits != 1 {
         return Err(fail("monochrome bitmap export requires output_bits 1"));
     }
+    generate_bitmap_font_with_pipeline_and_kerning(
+        data,
+        config,
+        pipeline,
+        letter_spacing_px,
+        kerning_method,
+    )
+}
+
+/// Generate a finalized strike for any supported explicit pipeline and pair method.
+/// Captured glyph images are unchanged; the method resolves before uniform tracking.
+pub fn generate_bitmap_font_with_pipeline_and_kerning(
+    data: &[u8],
+    config: &Config,
+    pipeline: crate::renderer::RenderPipeline,
+    letter_spacing_px: f32,
+    kerning_method: crate::KerningMethod,
+) -> Result<GeneratedFont, Error> {
+    kerning_method.validate(true)?;
     pipeline.validate(config)?;
     generate_bitmap_font_impl(
         data,
@@ -808,6 +862,7 @@ pub fn generate_monochrome_font_with_pipeline(
         Some(pipeline.fitting),
         letter_spacing_px,
         Some(pipeline),
+        kerning_method,
     )
 }
 
@@ -817,11 +872,13 @@ fn generate_bitmap_font_impl(
     strategy: Option<StemFittingStrategy>,
     letter_spacing_px: f32,
     pipeline: Option<crate::renderer::RenderPipeline>,
+    kerning_method: crate::KerningMethod,
 ) -> Result<GeneratedFont, Error> {
     crate::layout_spacing::uniform_tracking_26_6(letter_spacing_px)?;
     let profile = match config.output_bits {
         1 => PROFILE_MONO_1BIT,
         3 => PROFILE_GRAY_3BIT,
+        2 | 4 if pipeline.is_some() => PROFILE_GRAY_3BIT,
         other => {
             return Err(fail(format!(
                 "candidate bitmap generation requires output_bits 1 or 3, got {other}"
@@ -838,10 +895,12 @@ fn generate_bitmap_font_impl(
     // Source metrics and kerning are inputs to the bitmap policy, not an
     // alternative layout: prepare them without rasterizing, then take
     // every bitmap from the one candidate capture below.
-    let source = crate::source::prepare_source(data, &effective)?;
+    let session = CaptureSession::new(data);
+    let analysis_plan = crate::kerning::AnalysisPlan::new(data, kerning_method, &effective)?;
+    let source = crate::source::prepare_source_in_session(&session, &effective)?;
     let preview = ReferenceRequest {
         profile: profile.to_string(),
-        extensions: if config.output_bits == 1 {
+        extensions: if config.output_bits == 1 || pipeline.is_some() {
             StemFittingStrategy::extension(Some(strategy)).to_string()
         } else {
             EXTENSIONS_FONT_HINTS_FIRST.to_string()
@@ -852,10 +911,12 @@ fn generate_bitmap_font_impl(
     // finalized advances below come from preserved upstream metrics, so a
     // changed diagonal bitmap frame cannot smuggle different layout.
     let report = match pipeline {
-        Some(pipeline) => render_with_pipeline(data, &preview, pipeline)?,
-        None => {
-            render_with_rasterization(data, &preview, crate::renderer::Rasterization::FreeTypeMono)?
-        }
+        Some(pipeline) => render_with_pipeline_in_session(&session, &preview, pipeline)?,
+        None => render_with_rasterization_in_session(
+            &session,
+            &preview,
+            crate::renderer::Rasterization::FreeTypeMono,
+        )?,
     };
     let source_advances: HashMap<u32, i32> = source
         .glyphs
@@ -870,7 +931,7 @@ fn generate_bitmap_font_impl(
     let properties = font_spacing_properties(data, &effective)?;
     // The one finalized bitmap table for this strike; preview and
     // specimens resolve the same table from their own captures.
-    let metrics = finalize_bitmap_metrics(
+    let mut metrics = finalize_bitmap_metrics(
         &report.records,
         &source_advances,
         &source_kern,
@@ -878,6 +939,42 @@ fn generate_bitmap_font_impl(
         properties.monospace,
         properties.tabular_digits,
     );
+    if !matches!(kerning_method, crate::KerningMethod::Source) {
+        let glyphs: Vec<Glyph> = report
+            .records
+            .iter()
+            .map(|record| Glyph {
+                codepoint: record.codepoint,
+                glyph_id: record.glyph_id,
+                advance_26_6: metrics.advances_26_6[&record.codepoint],
+                left: record.left,
+                top: record.top,
+                width: record.width,
+                height: record.height,
+                pixels: record.pixels.clone(),
+            })
+            .collect();
+        let analysis = match pipeline {
+            Some(pipeline) => crate::kerning::capture_analysis(
+                &session,
+                &effective,
+                pipeline,
+                &analysis_plan,
+                &report.records,
+            )?,
+            None => crate::kerning::AnalysisCapture::default(),
+        };
+        crate::kerning::resolve(
+            data,
+            &effective,
+            kerning_method,
+            &glyphs,
+            &report.records,
+            &mut metrics,
+            properties,
+            &analysis,
+        )?;
+    }
     let tracked =
         crate::layout_spacing::apply_uniform_tracking(&metrics.advances_26_6, letter_spacing_px)?;
     let mut glyphs = Vec::with_capacity(report.records.len());

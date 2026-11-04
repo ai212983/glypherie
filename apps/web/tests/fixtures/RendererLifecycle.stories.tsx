@@ -262,6 +262,36 @@ function strictFontMetadata(): FontMetadata {
   };
 }
 
+// Pending-load gate for the replacement/unmount race: loadCalled fires at
+// load entry, but completion stays parked while held, so a test can prove
+// the request reached the renderer before unmounting it.
+interface StrictLibLoadGate {
+  hold: () => void;
+  releaseNext: () => void;
+  open: () => void;
+  waitingCount: () => number;
+}
+
+let strictLibLoadGateClosed = false;
+const strictLibLoadGateWaiters: Array<() => void> = [];
+
+function awaitStrictLibLoadGate(): Promise<void> {
+  if (!strictLibLoadGateClosed) return Promise.resolve();
+  return new Promise<void>((resolve) => { strictLibLoadGateWaiters.push(resolve); });
+}
+
+if (typeof window !== "undefined") {
+  (window as unknown as { __strictLibLoadGate?: StrictLibLoadGate }).__strictLibLoadGate = {
+    hold: () => { strictLibLoadGateClosed = true; },
+    releaseNext: () => { strictLibLoadGateWaiters.shift()?.(); },
+    open: () => {
+      strictLibLoadGateClosed = false;
+      while (strictLibLoadGateWaiters.length > 0) strictLibLoadGateWaiters.shift()?.();
+    },
+    waitingCount: () => strictLibLoadGateWaiters.length,
+  };
+}
+
 function StrictLibraryInner({ shared }: { shared: StrictShared }): React.JSX.Element {
   const library = useFontLibrary();
   const { session } = useRenderer();
@@ -305,10 +335,18 @@ function StrictLibrarySection({ shared }: { shared: StrictShared }): React.JSX.E
     terminated: () => { shared.library.terminated += 1; },
     loadCalled: (call: { fontId: string }) => { shared.library.loads.push(call); },
   }), [shared]);
-  const createService = React.useCallback(
-    () => createFixtureRenderer({ scenario: "ok", latencyMs: 150, lineHeight: 24, events }),
-    [factoryId, events],
-  );
+  const createService = React.useCallback((): RendererService => {
+    const inner = createFixtureRenderer({ scenario: "ok", latencyMs: 150, lineHeight: 24, events });
+    return {
+      ...inner,
+      // Parked completion keeps a pending load observable at the seam:
+      // unmount retires it, so it never publishes ready.
+      load: async (fontId: string) => {
+        await inner.load(fontId, new ArrayBuffer(0));
+        await awaitStrictLibLoadGate();
+      },
+    };
+  }, [factoryId, events]);
   return (
     <RendererProvider createService={createService}>
       <button data-strict-lib-replace type="button" onClick={() => setFactoryId((id) => id + 1)}>
@@ -339,6 +377,8 @@ function StrictRootHarness(): React.JSX.Element {
     if (!host) return;
     const root = createRoot(host);
     const shared = sharedRef.current;
+    // Direct reads bypass the JSON readout, which refreshes only on renders.
+    (window as unknown as { __strictLibShared?: StrictShared }).__strictLibShared = shared ?? undefined;
     if (shared) {
       root.render(
         <React.StrictMode>

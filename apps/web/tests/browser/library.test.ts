@@ -154,7 +154,7 @@ test("legacy query and fragment links migrate to the canonical path", { skip: !b
   assert.equal(await hashParam(page, "profile"), "gray_3bit", "legacy profile survives migration");
   assert.equal(new URL(page.url()).searchParams.get("font"), null, "outer font query is cleared");
 
-  await page.goto(`${url}#family-${ids[literata]}`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#family-${ids[literata]}`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     (name) => document.querySelector('.family h2[id^="heading-"]')?.textContent === name,
     names[literata],

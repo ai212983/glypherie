@@ -7,7 +7,7 @@
 // https://url.spec.whatwg.org/#interface-urlsearchparams):
 //   v=1 & font=<family-id> & profile=<id> & exact=<0|1>
 //   & stem=<font_hints_first|upstream_mono> & diagonals=<1, absent when off>
-//   & kerning=<0|1> & families=<JSON>
+//   & kerning=<0|1|JSON method settings> & families=<JSON>
 // Older zoom, scan-control and model parameters are ignored on
 // decoding and dropped when the snapshot is next written.
 // `families` maps each family id to
@@ -16,6 +16,7 @@
 // multiline text even when a preset is selected, so a copied URL does not
 // depend on the other browser's storage or preset definitions. Unknown
 // query parameters are preserved; the hosting path prefix is untouched.
+import { cloneKerning, decodeKerning, encodeKerning, type KerningPreference } from "../../../kerning/model.ts";
 import type { MonoRaster, OutputProfile, Rasterization, RendererRole, StemFitting } from "../../../renderer/renderer-types.js";
 import type { VariantSettings } from "../../../variants/model.js";
 import { PREVIEW_MONO_RASTER } from "../../../renderer/render-spec.ts";
@@ -67,7 +68,7 @@ export interface PreviewSnapshot {
   diagonalFitting: boolean;
   monoRaster: MonoRaster;
   rasterization?: Rasterization;
-  kerning: boolean;
+  kerning: KerningPreference;
   families: Record<string, FamilySnapshot>;
 }
 
@@ -195,7 +196,7 @@ export function parseUrlSnapshot(
     ? (profileParam as OutputProfile)
     : defaults.profile;
   const stemParam = params.get("stem");
-  const kerning = parseBoolParam(params.get("kerning"));
+  const kerning = decodeKerning(params.get("kerning"));
   // Historical links carry no flag; the opt-in stays off unless set.
   const diagonals = parseBoolParam(params.get("diagonals")) ?? false;
   let familiesRaw: unknown = null;
@@ -290,7 +291,7 @@ export function encodeUrlSnapshot(
   // False stays absent so historical links keep their shape.
   if (snapshot.diagonalFitting === true) result.set("diagonals", "1");
   result.set("raster", snapshot.profile === "mono_1bit" ? "free_type_mono" : "coverage");
-  result.set("kerning", snapshot.kerning ? "1" : "0");
+  result.set("kerning", encodeKerning(snapshot.kerning));
   result.set("families", JSON.stringify(familiesJson));
   return result;
 }
@@ -317,7 +318,7 @@ export function previewVariantSettings(
     letterSpacingPx: family.spacing,
     profile: snapshot.profile,
     paletteId: snapshot.paletteId ?? 0,
-    kerning: snapshot.kerning,
+    kerning: cloneKerning(snapshot.kerning),
     stemFitting: snapshot.stemFitting,
     diagonalFitting: snapshot.diagonalFitting ?? false,
     monoRaster: snapshot.monoRaster,

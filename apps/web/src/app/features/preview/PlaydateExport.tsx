@@ -1,20 +1,20 @@
 import * as React from "react";
-import { Download, ListOrdered } from "lucide-react";
+import { Download } from "lucide-react";
 import { useRenderer } from "../../renderer/renderer-context";
 import type { VariantSettings } from "../../variants/model";
 import { Button } from "../../../components/ui/button";
-import { Textarea } from "../../../components/ui/textarea";
-import { Label } from "../../../components/ui/label";
-import { TooltipHint } from "../../../components/TooltipHint";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
-import { PLAYDATE_ASCII, playdateFileName, playdateRequest } from "./playdate-export";
+import { DEFAULT_CHARACTER_COVERAGE, coverageCount, type CharacterCoverage, type CodepointRange } from "../../domain/coverage";
+import { PLAYDATE_EXPORT_MAX_SCALARS } from "../../domain/font-export";
+import { CoverageControl } from "./CoverageControl";
+import { playdateCoveredRequest, playdateFileName, splitPlaydateCoverage } from "./playdate-export";
 
-export function PlaydateExport({ fontId, name, settings, ready }: {
+export function PlaydateExport({ fontId, name, settings, ready, availableRanges }: {
   fontId: string; name: string; settings: VariantSettings; ready: boolean;
+  availableRanges?: readonly CodepointRange[];
 }): React.JSX.Element {
   const { service, available } = useRenderer();
-  const id = React.useId();
-  const [characters, setCharacters] = React.useState(PLAYDATE_ASCII);
+  const [coverage, setCoverage] = React.useState<CharacterCoverage>(DEFAULT_CHARACTER_COVERAGE);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const [completed, setCompleted] = React.useState(false);
@@ -23,16 +23,20 @@ export function PlaydateExport({ fontId, name, settings, ready }: {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
-  React.useEffect(() => { setError(""); setCompleted(false); }, [characters, settings]);
-  const count = new Set(characters).size;
+  React.useEffect(() => { setError(""); setCompleted(false); }, [coverage, settings]);
+  // The 1024 cap applies to the actual covered set, never the full preset
+  // union; unknown font coverage generates the full requested set.
+  const split = React.useMemo(() => splitPlaydateCoverage(coverage, availableRanges), [coverage, availableRanges]);
+  const count = coverageCount(split.supported);
   const mono = settings.profile === "mono_1bit";
+  const overLimit = count > PLAYDATE_EXPORT_MAX_SCALARS;
   const download = async (): Promise<void> => {
     if (!service || busy) return;
     setBusy(true);
     setError("");
     setCompleted(false);
     try {
-      const bytes = await service.exportPlaydate(fontId, playdateRequest(settings, characters));
+      const bytes = await service.exportPlaydate(fontId, playdateCoveredRequest(settings, coverage, availableRanges));
       if (!mounted.current) return;
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
       const link = document.createElement("a");
@@ -55,21 +59,10 @@ export function PlaydateExport({ fontId, name, settings, ready }: {
         <CardTitle asChild><h2><Download aria-hidden="true" className="size-3 shrink-0" />Export</h2></CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor={id}>{count} characters</Label>
-          <TooltipHint content="Sort characters and remove duplicates">
-            <Button type="button" variant="ghost" size="icon-xs" aria-label="Sort characters and remove duplicates"
-              disabled={busy || count === 0}
-              onClick={() => setCharacters((current) => [...new Set(current)]
-                .sort((left, right) => left.codePointAt(0)! - right.codePointAt(0)!).join(""))}>
-              <ListOrdered aria-hidden="true" />
-            </Button>
-          </TooltipHint>
-        </div>
-        <Textarea id={id} data-export-characters value={characters} maxLength={8192} disabled={busy}
-          spellCheck={false} onChange={(event) => setCharacters(event.target.value)} />
+        <CoverageControl coverage={coverage} onCoverage={setCoverage} disabled={busy} availableRanges={availableRanges} />
         {!mono && <p className="m-0 text-xs text-soft">Select Monochrome output to export for Playdate.</p>}
-        <Button data-export-playdate className="self-start" disabled={busy || !ready || available !== true || !mono || count < 1 || count > 1024}
+        {overLimit && <p className="m-0 text-xs text-soft">Coverage exceeds the 1024-character Playdate limit.</p>}
+        <Button data-export-playdate className="self-start" disabled={busy || !ready || available !== true || !mono || count < 1 || overLimit}
           onClick={() => void download()}>
           {busy ? "Exporting…" : "Playdate .fnt"}
         </Button>

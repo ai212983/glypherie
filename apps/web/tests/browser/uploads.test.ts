@@ -37,7 +37,7 @@ test("uploads matching bundled bytes dedup instead of duplicating cards", { skip
     assert.equal(await page.locator("[data-variant-editor]").count(), 0, "import creates no variant");
   }
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.equal((await cardNames(page)).length, 5, "dedup survives reload");
   await context.close();
@@ -65,7 +65,7 @@ test("new uploads appear in the library, persist, and delete cleanly", { skip: !
   assert.ok(names.some((name) => /RobotX/.test(name)), "imported font appears in the library");
   assert.match(await page.locator("[data-import-status]").textContent() ?? "", /Imported RobotX/);
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length === 6);
   assert.deepEqual(await cardNames(page), names, "upload survives reload");
 
@@ -82,7 +82,7 @@ test("new uploads appear in the library, persist, and delete cleanly", { skip: !
   assert.deepEqual(await cardNames(page), before, "deletion returns the library to five fonts");
   assert.equal(await hashPath(page), "/fonts/", "delete returns to the library route");
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.deepEqual(await cardNames(page), before, "deletion survives reload");
   await context.close();
@@ -104,7 +104,7 @@ test("invalid font uploads are rejected and never stored", { skip: !browserAvail
   await page.waitForFunction(() => (document.body.textContent ?? "").includes("Couldn’t import"));
   assert.equal(await page.locator("[data-font-card]").count(), 5);
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.equal(await page.locator("[data-font-card]").count(), 5, "invalid font was not stored");
   assert.deepEqual(errors, []);
@@ -145,7 +145,7 @@ test("multiple selected fonts import and persist even when one file is invalid",
   assert.equal(await page.locator("[data-import-font]").inputValue(), "", "selection clears for reuse");
   assert.equal(await page.locator("[data-variant-editor]").count(), 0, "imports stay on the library");
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length === 7);
   assert.deepEqual(await cardNames(page), names, "both successful imports survive reload");
   await context.close();

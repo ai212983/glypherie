@@ -115,6 +115,10 @@ if [[ ",$FEATURES," == *,preview,* ]]; then
     cat "$HERE/../generator/vendor/freetype-mono/FTL.TXT"; } > "$OUT/LICENSE-FreeType.txt"
   cp "$HERE/../generator/vendor/skrifa-scan/LICENSE-MIT" "$OUT/LICENSE-Skrifa-scan.txt"
 fi
+cat "$HERE/../generator/src/kerning/typefacet/NOTICE.txt" \
+    "$HERE/../generator/src/kerning/typefacet/LICENSE-APACHE-2.0.txt" > "$OUT/LICENSE-TypeFacet.txt"
+cat "$HERE/../generator/src/kerning/fontforge/NOTICE.txt" \
+    "$HERE/../generator/src/kerning/fontforge/LICENSE-BSD-3-Clause.txt" > "$OUT/LICENSE-FontForge.txt"
 if [ "$TARGET" = "nodejs" ]; then
   # wasm-bindgen --target nodejs emits CommonJS, but the repo root is
   # type=module: the isolated output dir carries its own marker so Node

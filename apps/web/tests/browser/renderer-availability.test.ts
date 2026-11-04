@@ -36,7 +36,7 @@ test("stored library stays accessible when the renderer is unavailable", { skip:
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${url}fonts/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}fonts/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0, null, {
     timeout: 30000,
   });
@@ -47,7 +47,7 @@ test("stored library stays accessible when the renderer is unavailable", { skip:
   assert.equal(await page.locator("[data-library-variant-canvas]").count(), 0);
   assert.deepEqual(errors, []);
 
-  await page.goto(`${url}#/font/${ids[0]}/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/font/${ids[0]}/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     () => document.querySelector("section[role='alert'] h2")?.textContent === "Preview unavailable.",
     null,

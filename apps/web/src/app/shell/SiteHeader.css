@@ -67,6 +67,24 @@
   .site-header [data-canvas-preset] { width: 108px; }
 }
 @media (max-width: 359px) {
+  .site-header__inner,
+  .site-header--no-display .site-header__inner {
+    grid-template-columns: minmax(0, 1fr) 32px;
+    grid-template-areas: "identity theme" "nav nav" "display display";
+  }
+  .site-header--no-display .site-header__inner {
+    grid-template-areas: "identity theme" "nav nav";
+  }
+  .site-header__inner:has(.site-header__search):not(:has(.site-header__actions)) {
+    grid-template-areas: "identity theme" "nav nav" "search search" "display display";
+  }
+  .site-header__inner:has(.site-header__actions):not(:has(.site-header__search)) {
+    grid-template-areas: "identity theme" "nav nav" "actions actions" "display display";
+  }
+  .site-header__inner:has(.site-header__search):has(.site-header__actions) {
+    grid-template-areas: "identity theme" "nav nav" "search search" "actions actions" "display display";
+  }
+  .site-header__navlinks { flex-wrap: wrap; }
   .site-header [data-canvas-preset] { width: 62px; }
   .site-header [data-canvas-preset] [data-canvas-name] { display: none; }
 }

@@ -33,7 +33,7 @@ const [shardIndex, shardCount] = (process.env.DIAGONAL_SHARD ?? "0/1").split("/"
 assert.ok(Number.isInteger(shardIndex) && Number.isInteger(shardCount)
   && shardCount > 0 && shardIndex >= 0 && shardIndex < shardCount, "invalid DIAGONAL_SHARD index/count");
 const TEXT = corpus ? Array.from({ length: 95 }, (_, i) => String.fromCodePoint(i + 32)).join(" ")
-  : "cC kyxzvAW sX2 M^ We walked by the river.";
+  : "cC kyxzvAW sX2 MN^ We walked by the river.";
 const CHARACTERS = [...new Set(TEXT)].join("");
 const SIZES = defaults ? [16] : corpus ? [12, 14, 16, 18, 20, 24] : [12, 16, 24];
 const WEIGHTS = defaults ? [400] : [300, 400, 700];
@@ -159,6 +159,7 @@ let exportMs = 0;
 if (shardIndex === 0) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "diagonal-export-"));
   const exportFont = new Font(fs.readFileSync(path.join(root, "fonts/Roboto.ttf")));
+  const flexExportFont = new Font(fs.readFileSync(path.join(root, "fonts/RobotoFlex.ttf")));
   try {
     const begin = performance.now();
     for (const fitting of FITTINGS) {
@@ -170,19 +171,21 @@ if (shardIndex === 0) {
           letter_spacing_px: 0 };
         const requestFile = path.join(temp, "request.json"), outputFile = path.join(temp, "font.fnt");
         fs.writeFileSync(requestFile, JSON.stringify(request));
-        execFileSync("cargo", ["run", "--release", "--quiet", "--locked", "--manifest-path", path.join(root, "crates/wasm/Cargo.toml"),
-          "--features", "preview", "--example", "playdate_reference",
-          "--", path.join(root, "fonts/Roboto.ttf"), requestFile, outputFile], { stdio: "pipe" });
-        const wasm = exportFont.export_playdate(request);
-        assert.deepEqual(Buffer.from(wasm), fs.readFileSync(outputFile), JSON.stringify(request.pipeline));
-        exportShas.push(sha(wasm));
+        for (const [fontFile, font] of [["fonts/Roboto.ttf", exportFont], ["fonts/RobotoFlex.ttf", flexExportFont]]) {
+          execFileSync("cargo", ["run", "--release", "--quiet", "--locked", "--manifest-path", path.join(root, "crates/wasm/Cargo.toml"),
+            "--features", "preview", "--example", "playdate_reference",
+            "--", path.join(root, fontFile), requestFile, outputFile], { stdio: "pipe" });
+          const wasm = font.export_playdate(request);
+          assert.deepEqual(Buffer.from(wasm), fs.readFileSync(outputFile), `${fontFile}: ${JSON.stringify(request.pipeline)}`);
+          exportShas.push(sha(wasm));
+        }
       }
     }
     const gray = { config: { characters: CHARACTERS, size_px: 16, axes: {}, output_bits: 3, kerning: true },
       pipeline: { fitting: "font_hints_auto", rasterization: "coverage", diagonal_fitting: true }, letter_spacing_px: 0 };
     assert.throws(() => exportFont.export_playdate(gray), "gray export rejects the flag");
     exportMs = performance.now() - begin;
-  } finally { exportFont.free(); fs.rmSync(temp, { recursive: true, force: true }); }
+  } finally { exportFont.free(); flexExportFont.free(); fs.rmSync(temp, { recursive: true, force: true }); }
 }
 
 console.log(JSON.stringify({ cases: cases.length, corpus, defaults, shard: [shardIndex, shardCount], focus: process.env.DIAGONAL_FOCUS === "1",

@@ -1,12 +1,19 @@
 import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import test, { beforeEach } from "node:test";
-import { createPalette, updatePalette } from "../../src/app/palettes/repository.ts";
+import test, { after, beforeEach } from "node:test";
+import { createPalette, listPalettes, updatePalette } from "../../src/app/palettes/repository.ts";
+import { MONOCHROME } from "../../src/app/palettes/model.ts";
 import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
-import Dexie, { type Table } from "dexie";
+import Dexie from "dexie";
+import { fontDatabase } from "../../src/app/database.ts";
+import { kvPut } from "../../src/app/domain/backend.ts";
+import { getDomainVersion, subscribeDomain } from "../../src/app/domain/events.ts";
+import { importLegacySnapshot } from "../../src/app/domain/importer.ts";
+import { callDomain } from "../../src/app/domain/runtime.ts";
+import { getBackend, closeDomainForTests, resetDomainForTests } from "../../src/app/domain/node-backend.ts";
+import { readLegacySnapshot } from "../../src/app/legacy-database.ts";
 import {
-  fontDatabase,
   getFont,
   listFonts,
   removeFont,
@@ -15,7 +22,7 @@ import {
   type FontMetadata,
   type StoredFont,
 } from "../../src/app/fonts/storage.ts";
-import type { VariantRow } from "../../src/app/database.ts";
+import { editKerning, normalizeKerning, selectKerningMethod } from "../../src/app/kerning/model.ts";
 import { TEXT_DEFAULT } from "../../src/app/renderer/render-spec.ts";
 import {
   defaultVariantSettings,
@@ -67,9 +74,58 @@ async function assertRejectsCode(
 }
 
 beforeEach(async () => {
+  await resetDomainForTests();
   await fontDatabase.close();
   await Dexie.delete("font-library");
+  await fontDatabase.open();
   assert.equal((await listVariants()).length, 0);
+});
+
+after(async () => {
+  await closeDomainForTests();
+});
+
+test("saved kerning methods retain controls across updates without aliases or variant leakage", async () => {
+  const font = await saveFixture();
+  const kerning = editKerning(selectKerningMethod(false, "typefacet"), {
+    method: "typefacet", settings: { normalDistanceEm: 0.2, intrusionToleranceEm: 0.05, minimumDistanceEm: 0.025, maxXExtremaOverlapEm: 0.125 },
+  });
+  const variant = await createVariant(font.id, { settings: { ...defaultVariantSettings(font), kerning } });
+  kerning.typefacet.normalDistanceEm = 0.4;
+  assert.equal(normalizeKerning((await getVariant(variant.id))!.settings.kerning).typefacet.normalDistanceEm, 0.2);
+  const source = selectKerningMethod(variant.settings.kerning, "source");
+  const saved = await updateVariant(variant.id, { settings: { ...variant.settings, kerning: source } }, variant.revision);
+  const reloaded = (await getVariant(variant.id))!;
+  assert.deepEqual(reloaded.settings.kerning, saved.settings.kerning);
+  assert.deepEqual(normalizeKerning(reloaded.settings.kerning), {
+    ...normalizeKerning(true),
+    method: "source", source: { enabled: false }, typefacet: { normalDistanceEm: 0.2, intrusionToleranceEm: 0.05, minimumDistanceEm: 0.025, maxXExtremaOverlapEm: 0.125 },
+  });
+  source.source.enabled = true;
+  assert.equal(normalizeKerning((await getVariant(variant.id))!.settings.kerning).source.enabled, false);
+  assert.equal((await createVariant(font.id)).settings.kerning, true, "another variant starts with current defaults");
+  await assertRejectsCode(updateVariant(saved.id, {
+    settings: { ...saved.settings, kerning: { ...source, typefacet: { ...source.typefacet, normalDistanceEm: 3 } } },
+  }, saved.revision), "invalid-settings");
+});
+
+test("saved Hu/Hersch strength migrates legacy defaults and survives inactive method updates", async () => {
+  const font = await saveFixture();
+  const legacy = await createVariant(font.id, { settings: { ...defaultVariantSettings(font), kerning: {
+    ...normalizeKerning(true), method: "hu_hersch", hu_hersch: {},
+  } } });
+  assert.deepEqual(normalizeKerning(legacy.settings.kerning).hu_hersch, { strength: 1 });
+  const edited = editKerning(legacy.settings.kerning, { method: "hu_hersch", settings: { strength: 0.35 } });
+  const saved = await updateVariant(legacy.id, { settings: { ...legacy.settings, kerning: edited } }, legacy.revision);
+  edited.hu_hersch.strength = 0.8;
+  assert.equal(normalizeKerning((await getVariant(saved.id))!.settings.kerning).hu_hersch.strength, 0.35);
+  const source = selectKerningMethod(saved.settings.kerning, "source");
+  const inactive = await updateVariant(saved.id, { settings: { ...saved.settings, kerning: source } }, saved.revision);
+  assert.equal(normalizeKerning((await getVariant(inactive.id))!.settings.kerning).hu_hersch.strength, 0.35);
+  assert.equal(selectKerningMethod(inactive.settings.kerning, "hu_hersch").hu_hersch.strength, 0.35);
+  await assertRejectsCode(updateVariant(inactive.id, {
+    settings: { ...inactive.settings, kerning: { ...source, hu_hersch: { strength: 1.1 } } },
+  }, inactive.revision), "invalid-settings");
 });
 
 test("imported fonts start with no variants; Add creates a default saved variant", async () => {
@@ -117,7 +173,8 @@ test("sample text inheritance persists while explicit and historical text remain
 
   const explicit = await createVariant(font.id, { sampleText: TEXT_DEFAULT });
   assert.equal(explicit.inheritSampleText, false, "text matching a default is still an override");
-  await fontDatabase.variants.update(explicit.id, { inheritSampleText: undefined });
+  // Simulate a historical preference row missing the inheritance flag.
+  await kvPut(getBackend().db, `preview:${explicit.id}`, JSON.stringify({ sampleText: TEXT_DEFAULT }));
   assert.equal((await getVariant(explicit.id))?.inheritSampleText, false, "historical rows preserve saved text");
   const renamed = await updateVariant(explicit.id, { name: "Historical" }, explicit.revision);
   assert.equal(renamed.inheritSampleText, false);
@@ -430,67 +487,39 @@ test("revision conflicts reject stale writes, including concurrent ones", async 
   assert.equal(repaired.name, "Fresh write");
 });
 
-test("a second database connection sees repository writes", async (t) => {
-  class SecondConnection extends Dexie {
-    fonts!: Table<StoredFont, string>;
-    meta!: Table<{ key: string; value: string }, string>;
-    variants!: Table<VariantRow, string>;
-    constructor() {
-      super("font-library");
-      this.version(1).stores({ fonts: "id, addedAt, source", meta: "key" });
-      this.version(2).stores({ fonts: "id, addedAt, source", meta: "key", variants: "id, fontId" });
-    }
+test("committed writes bump the domain version for subscribers", async () => {
+  let notifications = 0;
+  const unsubscribe = subscribeDomain(() => {
+    notifications += 1;
+  });
+  try {
+    const before = getDomainVersion();
+    const font = await saveFixture();
+    const created = await createVariant(font.id);
+    assert.ok(getDomainVersion() > before, "writes advance the shared version");
+    assert.ok(notifications > 0, "subscribers observe committed writes");
+    await updateVariant(created.id, { name: "Renamed" }, created.revision);
+    assert.ok(notifications > 1, "every committed write notifies");
+    unsubscribe();
+    const settled = notifications;
+    await getVariant(created.id);
+    assert.equal(notifications, settled, "reads never bump the version");
+  } finally {
+    unsubscribe();
   }
-  const peer = new SecondConnection();
-  t.after(() => peer.close());
-  const font = await saveFixture();
-  const created = await createVariant(font.id);
-  const seen = await peer.variants.get(created.id);
-  assert.equal(seen?.fontId, font.id);
-  assert.equal(seen?.revision, 1);
-  await peer.close();
 });
 
-test("competing same-revision writes through two connections leave one conflict", async (t) => {
-  class PeerDatabase extends Dexie {
-    fonts!: Table<StoredFont, string>;
-    meta!: Table<{ key: string; value: string }, string>;
-    variants!: Table<VariantRow, string>;
-    constructor() {
-      super("font-library");
-      this.version(1).stores({ fonts: "id, addedAt, source", meta: "key" });
-      this.version(2).stores({ fonts: "id, addedAt, source", meta: "key", variants: "id, fontId" });
-    }
-  }
-  const peer = new PeerDatabase();
-  t.after(() => peer.close());
+test("competing same-revision writes leave one conflict", async () => {
   const font = await saveFixture();
   const created = await createVariant(font.id);
   assert.equal(created.revision, 1);
 
-  // Raw peer transaction with the repository's read-compare-write semantics;
-  // the repository API intentionally stays singleton, so the second writer
-  // path is spelled out here instead of through a second repository.
-  const peerWrite = peer.transaction("rw", [peer.fonts, peer.variants], async () => {
-    const existing = await peer.variants.get(created.id);
-    if (!existing) throw new VariantStorageError("not-found", `Variant "${created.id}" does not exist.`);
-    if (existing.revision !== created.revision) {
-      throw new VariantStorageError(
-        "conflict",
-        `Variant "${created.id}" changed underneath this edit (expected revision ${created.revision}, found ${existing.revision}).`,
-      );
-    }
-    const next: VariantRow = {
-      ...existing,
-      name: "Peer writer",
-      revision: existing.revision + 1,
-      updatedAt: Date.now(),
-    };
-    await peer.variants.put(next);
-    return next;
-  });
-  const repositoryWrite = updateVariant(created.id, { name: "Repository writer" }, created.revision);
-  const outcomes = await Promise.allSettled([peerWrite, repositoryWrite]);
+  // The store serializes concurrent transactions, so the loser reads the
+  // winner's committed revision and fails its compare-and-set.
+  const outcomes = await Promise.allSettled([
+    updateVariant(created.id, { name: "First writer" }, created.revision),
+    updateVariant(created.id, { name: "Second writer" }, created.revision),
+  ]);
   const fulfilled = outcomes.filter((outcome) => outcome.status === "fulfilled");
   const rejected = outcomes.filter((outcome) => outcome.status === "rejected");
   assert.equal(fulfilled.length, 1);
@@ -500,7 +529,6 @@ test("competing same-revision writes through two connections leave one conflict"
 
   const current = await getVariant(created.id);
   assert.equal(current?.revision, 2);
-  await peer.close();
 });
 
 test("parent and identity stay immutable through updates", async () => {
@@ -586,27 +614,11 @@ test("settings writes never copy or alter font binaries", async () => {
   assert.deepEqual(after.metadata, font.metadata);
 });
 
-test("v1 databases upgrade with fonts and seed marker retained, variants empty", async (t) => {
-  class LegacyDatabase extends Dexie {
-    fonts!: Table<StoredFont, string>;
-    meta!: Table<{ key: string; value: string }, string>;
-    constructor() {
-      super("font-library");
-      this.version(1).stores({ fonts: "id, addedAt, source", meta: "key" });
-    }
-  }
-  // beforeEach leaves an empty v2 database behind via its listVariants check;
-  // drop it so this test builds a genuine v1 database from scratch.
-  await fontDatabase.close();
-  await Dexie.delete("font-library");
-
-  const legacy = new LegacyDatabase();
-  t.after(() => legacy.close());
-  await legacy.open();
-  assert.equal(legacy.verno, 1);
+test("legacy v1 font rows import with bytes and seed marker retained, variants empty", async () => {
+  // Genuine v1-shaped legacy rows: fonts plus the seed marker, no variants.
   const bytes = fontBytes(51);
   const id = sha256(bytes);
-  await legacy.fonts.add({
+  await fontDatabase.fonts.add({
     id,
     name: "Legacy",
     fileName: "legacy.ttf",
@@ -615,15 +627,19 @@ test("v1 databases upgrade with fonts and seed marker retained, variants empty",
     source: "uploaded",
     addedAt: 123,
   });
-  await legacy.meta.put({ key: "bundled-fonts", value: "legacy-marker" });
-  await legacy.close();
+  await fontDatabase.meta.put({ key: "bundled-fonts", value: "legacy-marker" });
 
-  await fontDatabase.open();
-  assert.equal(fontDatabase.verno, 3);
+  const result = await importLegacySnapshot(getBackend(), await readLegacySnapshot());
+  assert.equal(result.skipped, false);
+  // Genuine legacy databases always carry the Monochrome preset row; the
+  // importer maps it onto the seeded graph profile instead of duplicating it.
+  assert.deepEqual([result.fonts, result.variants, result.palettes], [1, 0, 1]);
+  assert.deepEqual(await listPalettes(), [MONOCHROME]);
+
   const fonts = await listFonts();
   assert.deepEqual(fonts.map((font) => font.id), [id]);
   assert.deepEqual(Buffer.from(fonts[0]?.bytes ?? new ArrayBuffer(0)), Buffer.from(bytes));
-  assert.equal((await fontDatabase.meta.get("bundled-fonts"))?.value, "legacy-marker");
+  assert.equal(await callDomain("getSeedMarker", []), "legacy-marker");
   assert.deepEqual(await listVariants(), []);
 
   const variant = await createVariant(id);

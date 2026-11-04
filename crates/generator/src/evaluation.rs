@@ -663,7 +663,7 @@ fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
         };
     let replay = if matches!(
         diagonal.model.as_str(),
-        "diagonal-shape-04" | "diagonal-shape-05" | "diagonal-shape-06"
+        "diagonal-shape-04" | "diagonal-shape-05" | "diagonal-shape-06" | "diagonal-placement-01"
     ) {
         let raw: Option<crate::fitting_source::SourceOutline> = match diagonal
             .raw_source
@@ -680,6 +680,18 @@ fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
             if diagonal.source_shape.is_some() {
                 return DiagonalReplay::Flaw("legacy capture carries new source-shape provenance");
             }
+        }
+        if diagonal.model == "diagonal-placement-01"
+            && (!diagonal.reason.starts_with("placement:")
+                || diagonal.native_axes[0]
+                || diagonal.source_shape.is_some()
+                || diagonal.upright_stem.is_some()
+                || !matches!(
+                    record.raster_policy,
+                    RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+                ))
+        {
+            return DiagonalReplay::Flaw("shared placement capture has incompatible provenance");
         }
         if matches!(
             diagonal.model.as_str(),
@@ -725,6 +737,8 @@ fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
             crate::diagonal_fitting::approved::fit_pre_coupled
         } else if diagonal.model == "diagonal-shape-05" {
             crate::diagonal_fitting::approved::fit_v05
+        } else if diagonal.model == "diagonal-shape-06" {
+            crate::diagonal_fitting::approved::fit_v06
         } else {
             crate::diagonal_fitting::approved::fit
         };

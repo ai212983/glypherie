@@ -1,6 +1,6 @@
 # Generator API
 
-<!-- cspell:words fpgm SCANCTRL SCANTYPE Playdate interglyph pdfontconv unrepresentable -->
+<!-- cspell:words typefacet Fontforge fpgm SCANCTRL SCANTYPE Playdate interglyph pdfontconv unrepresentable -->
 
 This interface covers native generation, renderer selection and layout consumed by the WASM and specimen adapters.
 [Setup, commands and settings defaults](README.md) are separate from the [published specimen contract](CONTRACT.md).
@@ -97,15 +97,16 @@ Optional `diagonal_fitting` defaults to `false`; `true` requires 1-bit FreeType 
 or `upstream_mono`. Its fixed donor reference is independent of the requested text. Unsupported geometry retains the
 preceding fitted outline. The [fitting sequence](../../docs/hobby-fitting.md#approved-fitting-sequence-adoption) and its
 [coupled extension](../../docs/hobby-fitting.md#coupled-whole-outline-widths) own the model and gates. Modified captures
-identify `diagonal-shape-05` and retain the original upstream outline, donor reference and unrounded feature source for
-independent replay; the preference does not change metrics or layout. Fitting owns engine selection and returned
-advances; rasterization consumes the fitted outline without changing geometry or metrics. The automatic fitter's
-returned metrics, advances and bearing residuals alike, are identical on every rasterization; scanner choice changes
-only delivered pixels. Both scanners use the same bitmap layout below, with uniform extra tracking defaulting to zero.
-In 1-bit output, coverage is Zeno Alpha quantized using `mono_threshold`; FreeType uses the scan controls below.
-Coverage rejects non-default `mono_raster` settings. In 2-, 3- or 4-bit output, only automatic fitting (`upstream_mono`)
-with `coverage` is valid; this uses Normal fitting. Invalid combinations fail even for blank text. Historical role APIs
-remain available with their original fitting, rasterization and layout policies.
+identify `diagonal-shape-06`, or `diagonal-placement-01` for shared stroke placement, and retain the original upstream
+outline, donor reference and unrounded feature source for independent replay; the preference does not change metrics or
+layout. Fitting owns engine selection and returned advances; rasterization consumes the fitted outline without changing
+geometry or metrics. The automatic fitter's returned metrics, advances and bearing residuals alike, are identical on
+every rasterization; scanner choice changes only delivered pixels. Both scanners use the same bitmap layout below, with
+uniform extra tracking defaulting to zero. In 1-bit output, coverage is Zeno Alpha quantized using `mono_threshold`;
+FreeType uses the scan controls below. Coverage rejects non-default `mono_raster` settings. In 2-, 3- or 4-bit output,
+only automatic fitting (`upstream_mono`) with `coverage` is valid; this uses Normal fitting. Invalid combinations fail
+even for blank text. Historical role APIs remain available with their original fitting, rasterization and layout
+policies.
 
 Explicit 1-bit `font_hints_auto` and `upstream_mono` pipelines apply source-defined x-height alignment before optional
 stroke fitting. Changed records carry `top_alignment` (`top-align-02`) with the preceding outline, reference heights,
@@ -232,7 +233,7 @@ the [specimen output contract](CONTRACT.md#specimen-images).
 
 ## Live spacing API
 
-Explicit pipelines share bitmap layout with optional uniform tracking; there is no selectable spacing model.
+Explicit pipelines share bitmap advances and placement, with selectable pair kerning and optional uniform tracking.
 `surface::render_text_with_pipeline` defaults to zero; `surface::render_text_with_pipeline_and_spacing` accepts the
 tracking offset. Historical role APIs retain their layout policies. Baseline `generate()` and independent reference use
 fractional source advances and kerning, accumulated in 26.6 and rounded only when drawing. Their source-layout captures
@@ -250,9 +251,74 @@ Candidate Mono and Gray use the same bitmap policy in exported strikes, native s
   blank-column floor; intentional overhang remains. Integer pen accumulation gives each pair the same relative placement
   regardless of preceding text; line widths and wrapping use these metrics.
 
-`layout_spacing::SpacingEngine::place` consumes finalized advances, pair kerning and bearing deltas, returning the glyph
-origin and next pen. Native layout, interactive drawing, specimens and wrapping share that operation; exported candidate
-metrics are exactly their inputs.
+`layout_spacing::SpacingEngine::place` consumes finalized advances and pair adjustments, returning the glyph origin and
+next pen. Native layout, interactive drawing, specimens and wrapping share that operation; exported candidate metrics
+are exactly their inputs.
+
+### Pair kerning methods
+
+`KerningMethod::Source` preserves the existing source-kerning and fitted-bearing policy. Existing entry points default
+to it. `surface::render_text_with_pipeline_and_kerning` and the corresponding `PreparedFont` method accept an explicit
+`KerningMethod` alongside the pipeline and tracking. `candidate::generate_bitmap_font_with_pipeline_and_kerning`
+supports the same 1/2/3/4-bit explicit pipelines. The monochrome strike wrapper and
+`playdate::ExportRequest.kerning_method` use the same resolver; omitted serialized export settings mean `source`.
+
+Serialized selections are strict, method-specific objects:
+
+| Selection                                                                      | Parameters                                                                                                                    |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `{"method":"source"}`                                                          | No additional parameters.                                                                                                     |
+| `{"method":"typefacet","normal_distance_em":0.1,"intrusion_tolerance_em":0.1}` | Finite normal distance `0.01..=0.5` em and intrusion tolerance `0..=0.5` em. Both default to `0.1` em.                        |
+| `{"method":"hu_hersch","strength":1.0}`                                        | Finite strength `0..=1`, default `1`; `0` preserves Source exactly. Uses the fixed full-outline, density-conserving endpoint. |
+| `{"method":"fontforge","strength":1.0}`                                        | Finite strength `0..=1`, default `1`; `0` preserves Source exactly.                                                           |
+
+TypeFacet additionally accepts `minimum_distance_em` (finite `0..=normal_distance_em`, default `0`) and
+`max_x_extrema_overlap_em` (finite `0..=0.5`, default `0.1`). Omitted new fields preserve historical two-parameter
+requests. Minimum distance constrains the minimum inflated profiles; maximum overlap constrains horizontal extrema,
+independently of actual contour overlap. These are font-unit geometry settings scaled by em, not tracking offsets.
+
+Invalid settings and unknown fields fail even for empty text or a reused prepared font. Non-Source methods require an
+explicit bitmap-layout pipeline; historical-role requests reject them. Rasterization and output-depth compatibility
+remain the pipeline's responsibility.
+
+The TypeFacet solver consumes font-unit geometric profiles. Its capture adapters supply delivered binary cells for Mono
+and fitted outline paths for Gray, before coverage quantization. Gray gamma, threshold and output depth do not enter its
+geometry. It applies to eligible captured scalars without an ASCII or case restriction; unsupported shaping remains
+governed by the shared input contract. Whitespace, empty geometry, source-tabular digit pairs and fixed-pitch fonts
+retain the source method's table.
+
+Hu/Hersch measures fitted outlines and calibrates density over complete fixed ASCII lowercase, uppercase, digit or
+mixed-case pair domains. Auxiliary calibration glyphs use the same rendering pipeline but remain outside the requested
+output repertoire and its pair-shaping domain. Targets do not depend on supplied text or the source `kerning` switch.
+Latin lowercase/uppercase scalars, including accented letters, use their corresponding class; proportional ASCII digits
+use the experimental digit class. Other pair classes or unavailable calibration retain Source. Mono body windows use
+delivered reference glyphs; Gray uses fitted reference bounds independently of gamma, threshold and output depth.
+
+Hu/Hersch `strength` blends finalized Source adjustment with its continuous optical adjustment before signed pixel
+rounding and the existing feasibility bound. Strength `1` preserves the full correction, including its calibration;
+strength `0` preserves Source exactly and needs no auxiliary calibration or feasibility work. Legacy requests omitting
+strength retain the full correction. Strength changes no target density, geometry or glyph metrics.
+
+FontForge-derived spacing preserves each source pair's measured contour separation rather than imposing one shared
+target. It uses source and fitted outlines in font units, blending the analytic adjustment with finalized Source by
+`strength`. The source `kerning` switch affects that source-relative target as well as the Source endpoint. Missing
+shared measurement bands retain Source.
+
+Each method selects completed adjustments on the existing whole-pixel bitmap grid, with its own solving and feasibility
+policy. Advances, glyph images and bearing offsets are unchanged. Supported pairs replace the source adjustment
+entirely, including a zero result; abstentions retain it. A failed calculation applies no partial replacement table.
+Placement adds finalized adjustments once; tracking is applied afterward. The source `kerning` switch controls fallback
+tables and does not disable TypeFacet or Hu/Hersch.
+
+Nonzero-strength Hu/Hersch and FontForge allow face/corner contact. Their Mono bound forbids occupied-cell overlap and
+same-row wall inversion; Gray uses a certified conservative bound on continuous raw fitted-outline wall order, without
+converting coverage to binary cells. It may retain a wider integer placement when the tighter bound cannot be certified.
+This policy does not modify Source or either method's zero-strength endpoint.
+
+TypeFacet parameters are manual; it runs no density calibration. Missing feasible integer positions or exceeded
+computation limits return an error. The
+[spacing design](../../docs/designs/text-layout/contextual-spacing-and-healing.md#interchangeable-kerning-methods) owns
+the model and experimental relationship; retained Literata trials do not establish other-font optical acceptance.
 
 ### Tracking policy
 

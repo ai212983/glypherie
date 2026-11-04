@@ -6,6 +6,8 @@ import {
   indexPath,
   parseRoute,
   resolveRoute,
+  scenePath,
+  scenesPath,
   splitRoute,
   variantPath,
   variantPathKeeping,
@@ -166,4 +168,28 @@ test("library paths are explicit and ignore stale font query state", () => {
   assert.equal(homePath("?v=1&font=bbb&utm=keep"), "/?utm=keep");
   assert.deepEqual(resolveRoute("/", "?utm=keep", []), { page: "home" });
   assert.deepEqual(resolveRoute("/", "?font=bbb&v=1", IDS), { page: "font", font: "bbb" });
+});
+
+test("scene hashes parse with or without a trailing slash or query", () => {
+  assert.deepEqual(parseRoute("#/scenes/"), { name: "scenes" });
+  assert.deepEqual(parseRoute("#/scenes"), { name: "scenes" });
+  assert.deepEqual(parseRoute("/scenes/?utm=keep"), { name: "scenes" });
+  assert.deepEqual(parseRoute("#/scene/abc/"), { name: "scene", scene: "abc" });
+  assert.deepEqual(parseRoute("#/scene/abc"), { name: "scene", scene: "abc" });
+  assert.deepEqual(parseRoute("/scene/a%20b/?utm=keep"), { name: "scene", scene: "a b" });
+  assert.equal(parseRoute("#/scene/"), null);
+  assert.equal(parseRoute("#/scene/abc/extra"), null);
+});
+
+test("scenes resolve without fonts and survive stale font queries", () => {
+  assert.deepEqual(resolveRoute("#/scenes/", "", IDS), { page: "scenes" });
+  const noFonts: string[] = [];
+  assert.deepEqual(resolveRoute("#/scenes/", "", noFonts), { page: "scenes" });
+  assert.deepEqual(resolveRoute("/scenes/", "?font=aaa&v=1", IDS), { page: "scenes" });
+  assert.deepEqual(resolveRoute("/scene/abc/", "", noFonts), { page: "scene", scene: "abc" });
+  assert.deepEqual(resolveRoute("/scene/abc/", "?v=1&font=aaa", IDS), { page: "scene", scene: "abc" });
+  assert.deepEqual(scenesPath(""), "/scenes/");
+  assert.deepEqual(scenesPath("v=1&font=aaa&utm=keep"), "/scenes/?utm=keep");
+  assert.equal(scenePath("abc", ""), "/scene/abc/");
+  assert.equal(scenePath("a/b", "v=1&utm=keep"), "/scene/a%2Fb/?utm=keep");
 });

@@ -1,6 +1,6 @@
 # font_wasm
 
-<!-- cspell:words rustup bindgen BINDGEN RUSTFLAGS rgba COLR CBDT sbix texel texels fpgm Playdate -->
+<!-- cspell:words typefacet fontforge rustup bindgen BINDGEN RUSTFLAGS rgba COLR CBDT sbix texel texels fpgm Playdate -->
 
 Browser/Node port of the Rust font renderer. It reuses `generate()` through `font_generator::surface::render_text` with
 the legacy skrifa-baseline snapshot: no fitting or model code lives here, so rendering parity with the native path is
@@ -123,12 +123,33 @@ positioning beyond a single left-advance change. Invalid settings and single-cha
 This descriptive API draws no outlines and changes no rendering or layout policy; native generation retains its strict
 shaping errors. Size and axes use the same validation as rendering, with omitted axes at their font defaults.
 
+## Pair kerning selection
+
+Preview render requests accept optional `kerning_method`:
+
+```js
+{ method: "source" } // default
+{
+  method: "typefacet", normal_distance_em: 0.1, intrusion_tolerance_em: 0.1,
+  minimum_distance_em: 0, max_x_extrema_overlap_em: 0.1,
+}
+{ method: "hu_hersch", strength: 1.0 }
+{ method: "fontforge", strength: 1.0 }
+```
+
+Non-Source methods require an explicit bitmap-layout pipeline and resolve current font bytes in WASM through the shared
+native implementation. Historical roles, invalid parameters and unknown fields fail, including for blank text. The
+[generator pair-method contract](../generator/API.md#pair-kerning-methods) owns parameter ranges, profile support,
+coverage, fallbacks and computation limits. `font.kerning_pairs` continues describing source data independently of this
+choice.
+
 ## Playdate export
 
-Preview builds expose `font.export_playdate({ config, pipeline, letter_spacing_px })`, returning a JS-owned `Uint8Array`
-containing a standalone `.fnt`. `config.characters` explicitly selects the repertoire. The
+Preview builds expose `font.export_playdate({ config, pipeline, letter_spacing_px, kerning_method? })`, returning a
+JS-owned `Uint8Array` containing a standalone `.fnt`. `config.characters` explicitly selects the repertoire. The
 [generator API](../generator/API.md#playdate-font-export) owns settings, format guarantees and representability limits.
-Unknown request, config, pipeline and scan-setting fields fail. Default production builds reject this export.
+The optional `kerning_method` uses the same selection as preview. Unknown request, config, pipeline and scan-setting
+fields fail. Default production builds reject this export.
 
 Verify native/WASM export parity with the Node preview package; optionally set `PLAYDATE_SDK_PATH` to validate every
 export with the official compiler:

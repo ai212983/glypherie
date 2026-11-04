@@ -4,6 +4,7 @@
 // debounce), built from the live library instead of generator exports: no
 // family is hardcoded.
 // cspell:words metas
+import { cloneKerning, parseKerning, type KerningPreference } from "../kerning/model.ts";
 import type { RendererRole } from "../renderer/renderer-types.js";
 import {
   defaultSnapshot,
@@ -21,6 +22,9 @@ import {
   isRoutePath,
   palettesPath,
   parseRoute,
+  scenePath,
+  scenesPath,
+  screenPath,
   type Route,
 } from "./router.js";
 
@@ -49,12 +53,13 @@ export function writeRoleParam(role: RendererRole): void {
   window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params}`);
 }
 
-function readStoredGlobals(): { kerning?: boolean } {
-  const result: { kerning?: boolean } = {};
+function readStoredGlobals(): { kerning?: KerningPreference } {
+  const result: { kerning?: KerningPreference } = {};
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(SPACING_KEY) ?? "");
-    if (parsed && typeof parsed === "object" && typeof (parsed as Record<string, unknown>).kerning === "boolean") {
-      result.kerning = (parsed as { kerning: boolean }).kerning;
+    if (parsed && typeof parsed === "object") {
+      const kerning = parseKerning((parsed as Record<string, unknown>).kerning);
+      if (kerning !== null) result.kerning = kerning;
     }
   } catch { /* storage unavailable */ }
   return result;
@@ -63,7 +68,7 @@ function readStoredGlobals(): { kerning?: boolean } {
 function withStoredGlobals(snapshot: PreviewSnapshot): PreviewSnapshot {
   const stored = readStoredGlobals();
   snapshot.pixelAccurate = true;
-  if (stored.kerning !== undefined) snapshot.kerning = stored.kerning;
+  if (stored.kerning !== undefined) snapshot.kerning = cloneKerning(stored.kerning);
   return snapshot;
 }
 
@@ -158,6 +163,9 @@ export function canonicalPathFor(
     return `${detailPath(route.font)}?${encodeHashSearch(snapshot, baseSearch, familyOrder).toString()}`;
   }
   if (route.page === "palettes") return palettesPath(baseSearch);
+  if (route.page === "screen") return screenPath(baseSearch);
+  if (route.page === "scenes") return scenesPath(baseSearch);
+  if (route.page === "scene") return scenePath(route.scene, baseSearch);
   if (route.page === "home") return homePath(baseSearch);
   return indexPath(baseSearch);
 }

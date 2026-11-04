@@ -74,7 +74,12 @@ test("reset buttons mute at defaults and keep contrasting hover icons in both th
         await specimen.click();
         assert.equal(await specimen.isDisabled(), true);
 
-        await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+        await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
+        await page.waitForFunction(
+          () => document.querySelector('main section[aria-label="Grayscale preview"]') !== null,
+          null,
+          { timeout: 20000 },
+        );
         await page.getByRole("button", { name: "Add preset", exact: true }).click();
         const levels = page.getByRole("button", { name: "Reset levels", exact: true });
         await levels.waitFor();

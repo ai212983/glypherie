@@ -35,7 +35,7 @@ const RESERVE_26_6: f64 = 1.0 / 128.0;
 /// Curvature/leg inequality slack for one rounding quantum.
 const CROSS_QUANTUM: f64 = 1.0 / 4096.0;
 /// Reflection-match tolerance between crossing arms.
-const EPS_PARITY: f64 = 0.25;
+pub(super) const EPS_PARITY: f64 = 0.25;
 /// Hobby (16) symmetry-row weight scale.
 const ALPHA6: f64 = 5e5;
 

@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { chromium } from "playwright-core";
 import {
   bootLibrary,
+  bootVariant,
   browserAvailable,
+  browserPath,
   buildApp,
   canvasRendered,
   cardIds,
@@ -33,7 +37,7 @@ test("installed app shell reloads offline beneath the hosting prefix", { skip: !
   await page.waitForFunction(canvasRendered);
   await page.locator('[data-primary-nav="fonts"]').click();
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   await page.waitForFunction(() => navigator.serviceWorker?.controller !== null, null, { timeout: 20000 });
 
@@ -77,7 +81,7 @@ test("footer offers a checked update for an explicit click and prompts for backg
   const page = await context.newPage();
   await bootLibrary(page, url);
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
 
   const footer = page.getByRole("contentinfo");
@@ -221,4 +225,71 @@ test("footer shows a plain version without update controls when service workers 
   assert.equal(await footer.getByRole("button", { name: "Update", exact: true }).count(), 0);
   assert.equal(await footer.getByLabel("Build details").count(), 1);
   assert.equal(problems.filter((text) => /service worker/i.test(text)).length, 0, `no service worker warning or crash, got: ${problems.join(" | ")}`);
+});
+
+test("installed app cold-boots a fresh domain owner offline with persisted state", { skip: !browserAvailable }, async (t) => {
+  const output = await buildApp(t);
+  const url = await servePrefix(t, output);
+  // A persistent profile, not an ephemeral context: IndexedDB plus
+  // CacheStorage survive the browser restart below while the SharedWorker
+  // owner does not, so the offline boot must start a genuinely fresh
+  // worker instead of reusing a warm one.
+  const profile = await fs.mkdtemp(path.join(os.tmpdir(), "font-offline-profile-"));
+  t.after(() => fs.rm(profile, { recursive: true, force: true }));
+  const viewport = { width: 1280, height: 900 };
+
+  let names: string[];
+  let fontId: string;
+  let variantId: string;
+  {
+    const context = await chromium.launchPersistentContext(profile, {
+      executablePath: browserPath, headless: true, viewport,
+    });
+    const page = await context.newPage();
+    await bootLibrary(page, url);
+    await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
+    await page.waitForFunction(() => navigator.serviceWorker?.controller !== null, null, { timeout: 20000 });
+    names = await cardNames(page);
+    fontId = (await cardIds(page))[0]!;
+    variantId = await openNewVariant(page, fontId);
+    await page.waitForFunction(canvasRendered, null, { timeout: 20000 });
+    await page.goto(`${url}scenes/`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.querySelector("[data-scenes-page]") !== null);
+    await page.locator("[data-scene-create-name]").fill("Offline");
+    await page.locator("[data-scene-create]").waitFor();
+    await page.waitForFunction(
+      () => !((document.querySelector("[data-scene-create]") as HTMLButtonElement | null)?.disabled ?? true),
+    );
+    await page.locator("[data-scene-create]").click();
+    await page.locator("[data-scene-detail]").waitFor();
+    // Closing the browser kills the SharedWorker owner; the profile keeps
+    // the database and the precached engine for the offline boot below.
+    await context.close();
+  }
+
+  {
+    const context = await chromium.launchPersistentContext(profile, {
+      executablePath: browserPath, headless: true, viewport,
+    });
+    t.after(() => context.close());
+    await context.setOffline(true);
+    const page = await context.newPage();
+    await page.goto(`${url}fonts/`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0, null, {
+      timeout: 30000,
+    });
+    assert.deepEqual(await cardNames(page), names, "seeded fonts survive a fresh offline boot");
+    await bootVariant(page, `${url}font/${fontId}/variant/${variantId}/`);
+    await page.goto(`${url}scenes/`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.querySelectorAll("[data-scene-card]").length > 0, null, {
+      timeout: 30000,
+    });
+    assert.ok(
+      (await page.locator("[data-scene-card]").allInnerTexts()).join("\n").includes("Offline"),
+      "the created scene survives a fresh offline boot",
+    );
+    await context.setOffline(false);
+  }
 });

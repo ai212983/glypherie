@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { chromium, type Browser, type Locator, type Page } from "playwright-core";
+import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright-core";
 
 export const webRoot: string = fileURLToPath(new URL("../..", import.meta.url));
 export const repoRoot: string = path.resolve(webRoot, "..", "..");
@@ -101,8 +101,147 @@ export async function canvasPixels(page: Page): Promise<{ width: number; height:
  * already carries the full catalog.
  */
 export async function bootLibrary(page: Page, url: string): Promise<void> {
-  await page.goto(`${url}fonts/`, { waitUntil: "networkidle" });
+  // domcontentloaded, not networkidle: the shared domain worker's script load
+  // never reports completion to the page target, so page-scoped networkidle
+  // cannot fire once the owner exists. The waits below prove settledness.
+  await page.goto(`${url}fonts/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
+}
+
+/**
+ * Record the domain SharedWorker script URL before the app boots so later
+ * page.evaluate calls can open their own port to the same single owner.
+ * The domain worker owns PGlite: its script fetch never surfaces in the
+ * page's resource timing (see probe), so page-scoped networkidle cannot
+ * observe it. Call this on the context before creating pages that need
+ * variantState/domainVariant below. Idempotent and independent of page-level
+ * worker wrappers (e.g. renderer SPEC_SCRIPT hooks).
+ */
+export async function captureDomainWorker(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    const holder = window as unknown as { SharedWorker?: unknown; __sharedWorkerUrls?: string[] };
+    const Ctor = holder.SharedWorker as unknown as
+      | (new (url: string | URL, options?: unknown) => SharedWorker)
+      | undefined;
+    if (typeof Ctor !== "function" || !Ctor) return;
+    if ((Ctor as unknown as { __glypherieCaptured?: boolean }).__glypherieCaptured) return;
+    const urls: string[] = [];
+    holder.__sharedWorkerUrls = urls;
+    function Wrapped(this: unknown, url: string | URL, options?: unknown): SharedWorker {
+      try {
+        urls.push(String(url));
+      } catch {
+        // Best-effort capture only.
+      }
+      return new (Ctor as new (url: string | URL, options?: unknown) => SharedWorker)(url, options);
+    }
+    Wrapped.prototype = (Ctor as unknown as { prototype: unknown }).prototype;
+    (Wrapped as unknown as { __glypherieCaptured?: boolean }).__glypherieCaptured = true;
+    holder.SharedWorker = Wrapped as unknown;
+  });
+}
+
+export interface DomainVariantState {
+  revision: number;
+  inheritSampleText: boolean;
+  paletteId: number;
+  profile: string;
+}
+
+/**
+ * Read one variant through the actual graph storage seam: a fresh port to
+ * the same SharedWorker owner the app uses, calling its getVariant command.
+ * Never touches the retired Dexie "font-library" database, which no longer
+ * receives writes. Throws when the worker URL was not captured (call
+ * captureDomainWorker on the context before booting).
+ */
+export async function variantState(page: Page, id: string): Promise<DomainVariantState> {
+  return page.evaluate(async (variantId): Promise<DomainVariantState> => {
+    const urls = (window as unknown as { __sharedWorkerUrls?: unknown }).__sharedWorkerUrls;
+    const workerUrl = Array.isArray(urls) ? urls.find((entry): entry is string => typeof entry === "string") : undefined;
+    if (!workerUrl) throw new Error("domain worker URL was not captured; call captureDomainWorker(context) before booting.");
+    const shared = new SharedWorker(workerUrl, { type: "module", name: "glypherie-domain-v1" });
+    const port = shared.port;
+    const callId = Math.floor(Math.random() * 2 ** 31);
+    try {
+      const result = await new Promise<unknown>((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error("domain worker call timed out")), 20000);
+        port.onmessage = (event: MessageEvent) => {
+          const data = event.data as { id?: unknown; ok?: unknown; result?: unknown; error?: { message?: unknown } };
+          if (data?.id !== callId) return;
+          window.clearTimeout(timer);
+          if (data.ok) resolve(data.result);
+          else reject(new Error(typeof data.error?.message === "string" ? data.error.message : "domain call failed"));
+        };
+        port.onmessageerror = () => {
+          window.clearTimeout(timer);
+          reject(new Error("domain channel failed"));
+        };
+        port.start();
+        port.postMessage({ id: callId, method: "getVariant", params: [variantId] });
+      });
+      const variant = result as {
+        revision: unknown;
+        inheritSampleText?: unknown;
+        settings?: { paletteId?: unknown; profile?: unknown };
+      } | undefined;
+      if (!variant || typeof variant !== "object") throw new Error(`variant ${variantId} is missing`);
+      return {
+        revision: Number(variant.revision),
+        inheritSampleText: variant.inheritSampleText !== false,
+        paletteId: typeof variant.settings?.paletteId === "number" ? variant.settings.paletteId : 0,
+        profile: typeof variant.settings?.profile === "string" ? variant.settings.profile : "",
+      };
+    } finally {
+      try {
+        port.close();
+      } catch {
+        // Best-effort teardown only.
+      }
+    }
+  }, id);
+}
+
+/**
+ * Fail only the domain owner (SharedWorker + its dedicated-worker fallback),
+ * keeping the renderer worker alive. The retired main-thread indexedDB stub
+ * cannot fail the worker-side PGlite engine, so denied-storage coverage uses
+ * this instead: domain calls reject with code "unavailable" and the library
+ * shows its supported message with a retry.
+ */
+export async function blockDomainStorage(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    const holder = window as unknown as { SharedWorker?: unknown; Worker?: unknown };
+    const isDomainUrl = (url: string | URL): boolean => {
+      const text = String(url);
+      // Hashed legacy ("worker-<hash>.js"), stable ("domain-worker.js") and
+      // dev ("worker.ts") domain entries; never the renderer font-worker.
+      return (text.includes("worker-") || text.includes("domain-worker") || text.includes("worker."))
+        && !text.includes("font-worker");
+    };
+    const SharedCtor = holder.SharedWorker as unknown as
+      | (new (url: string | URL, options?: unknown) => SharedWorker)
+      | undefined;
+    if (typeof SharedCtor === "function" && SharedCtor) {
+      function BlockedShared(this: unknown, url: string | URL, options?: unknown): SharedWorker {
+        if (isDomainUrl(url)) throw new Error("Domain storage is unavailable in this context.");
+        return new (SharedCtor as new (url: string | URL, options?: unknown) => SharedWorker)(url, options);
+      }
+      BlockedShared.prototype = (SharedCtor as unknown as { prototype: unknown }).prototype;
+      holder.SharedWorker = BlockedShared as unknown;
+    }
+    const WorkerCtor = holder.Worker as unknown as
+      | (new (url: string | URL, options?: unknown) => Worker)
+      | undefined;
+    if (typeof WorkerCtor === "function" && WorkerCtor) {
+      function BlockedWorker(this: unknown, url: string | URL, options?: unknown): Worker {
+        if (isDomainUrl(url)) throw new Error("Domain storage is unavailable in this context.");
+        return new (WorkerCtor as new (url: string | URL, options?: unknown) => Worker)(url, options);
+      }
+      BlockedWorker.prototype = (WorkerCtor as unknown as { prototype: unknown }).prototype;
+      holder.Worker = BlockedWorker as unknown;
+    }
+  });
 }
 
 /** Read a hint through the same hover interaction as the app's tooltip triggers. */
@@ -121,14 +260,14 @@ export async function tooltipText(page: Page, trigger: Locator): Promise<string>
 
 /** Wait for an unsaved font preview (font switcher plus rendered specimen). */
 export async function bootDetail(page: Page, url: string): Promise<void> {
-  await page.goto(url, { waitUntil: "networkidle" });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector('#font-select[data-state]:not(:disabled), #font-select[data-slot="select-display"]') !== null);
   await page.waitForFunction(canvasRendered);
 }
 
 /** Wait for a saved variant editor plus its rendered specimen. */
 export async function bootVariant(page: Page, url: string): Promise<void> {
-  await page.goto(url, { waitUntil: "networkidle" });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("[data-variant-editor]") !== null);
   await page.waitForFunction(canvasRendered);
 }
@@ -281,7 +420,7 @@ export async function createPalettePreset(
   const depthLabel = `${spec.bits}-bit · ${levels} levels`;
   const palettesLink = page.locator('[data-primary-nav="palettes"]');
   if (await palettesLink.count()) await palettesLink.click();
-  else await page.goto(`${url}palettes/`, { waitUntil: "networkidle" });
+  else await page.goto(`${url}palettes/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     () => document.querySelector('main section[aria-label="Grayscale preview"]') !== null,
     null,

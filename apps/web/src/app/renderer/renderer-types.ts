@@ -6,6 +6,7 @@
 // compile time.
 
 import type { FontMetadata } from "../fonts/storage.js";
+import type { KerningMethodRequest } from "../kerning/model.js";
 import type { RenderPixels } from "./client.js";
 
 /** Scan conversion, independent of fitting and bitmap layout. */
@@ -60,6 +61,7 @@ export interface RenderSpec {
   gray_gamma: number;
   missing_glyphs: "error" | "skip";
   kerning: boolean;
+  kerning_method?: KerningMethodRequest;
   metric_rounding: "subpixel" | "pixel";
   wrap: "clip" | "word" | "char";
   align: "left" | "center" | "right";
@@ -78,6 +80,7 @@ export interface PlaydateExportRequest {
     "gray_gamma" | "missing_glyphs" | "kerning" | "metric_rounding" | "mono_raster"> & { characters: string };
   pipeline: RenderPipeline;
   letter_spacing_px: number;
+  kerning_method?: KerningMethodRequest;
 }
 
 /** Narrow replaceable renderer surface. The worker runtime satisfies it

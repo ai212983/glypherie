@@ -3,6 +3,7 @@
 // candidate renderer and the separated pipeline, fractional Gray tracking
 // otherwise, and the automatic Mono engine policy for candidate 1-bit unless
 // upstream Mono is forced.
+import { KERNING_METHODS, resolveKerning, type KerningPreference } from "../kerning/model.ts";
 import type {
   MonoDropout,
   MonoRaster,
@@ -36,7 +37,7 @@ export interface RenderRequestOptions {
   role?: RendererRole;
   rasterization?: Rasterization;
   letterSpacingPx?: number | string;
-  kerning?: boolean;
+  kerning?: KerningPreference;
   stemFitting?: StemFitting;
   diagonalFitting?: boolean;
   monoRaster?: MonoRaster;
@@ -152,6 +153,13 @@ export function toRenderSpec({
   const colors = resolveRenderColors(palette, profile);
   const separated = rasterization !== undefined;
   const effectiveRole = separated ? "candidate" : role;
+  const resolvedKerning = resolveKerning(kerning);
+  if (resolvedKerning.kerning_method && !separated) {
+    const method = KERNING_METHODS[resolvedKerning.kerning_method.method];
+    if (method.requiresExplicitPipeline) {
+      throw new Error(`${method.label} requires the current preview pipeline. Select Source kerning for a historical renderer.`);
+    }
+  }
   const previewPolicy = separated && profile === "mono_1bit"
     ? resolveWorkingPreviewPolicy({
       fitting: stemFitting === "upstream_mono" ? "upstream_mono"
@@ -179,7 +187,7 @@ export function toRenderSpec({
     mono_threshold: monoThreshold ?? previewPolicy?.mono_threshold ?? 128,
     gray_gamma: grayGamma ?? previewPolicy?.gray_gamma ?? 1.0,
     missing_glyphs: previewPolicy?.missing_glyphs ?? "error",
-    kerning: kerning ?? true,
+    ...resolvedKerning,
     metric_rounding: previewPolicy?.metric_rounding ?? "subpixel",
     wrap: "word",
     align: "left",

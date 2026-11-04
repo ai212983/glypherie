@@ -83,7 +83,7 @@ test("shared font size control supports presets, custom sizes and persistence ac
   assert.equal(await input.inputValue(), "1");
   await input.fill("20.5");
   await input.blur();
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await input.waitFor();
   assert.equal(await input.inputValue(), "20.5");
   await page.waitForFunction((fontId) => {
@@ -97,7 +97,7 @@ test("shared font size control supports presets, custom sizes and persistence ac
   await input.fill("18.5");
   await input.blur();
   await page.waitForFunction(() => document.querySelector("[data-save-status]")?.textContent === "Saved");
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await input.inputValue(), "18.5");
   await slider.press("ArrowRight");
@@ -107,7 +107,7 @@ test("shared font size control supports presets, custom sizes and persistence ac
   await input.fill("22.5");
   await input.blur();
   await page.waitForFunction(() => window.location.search.includes("22.5"));
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await input.inputValue(), "22.5");
   assert.deepEqual(errors, []);
@@ -229,7 +229,7 @@ test("palette selection and keyboard focus are visible", { skip: !browserAvailab
   }
   const variantUrl = page.url();
   await createPalettePreset(page, url, { name: "Grayscale", bits: 2 });
-  await page.goto(variantUrl, { waitUntil: "networkidle" });
+  await page.goto(variantUrl, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   const palette = page.getByRole("combobox", { name: "Palette", exact: true });
   assert.equal(await palette.isEnabled(), true, "adding a palette enables selection");
@@ -271,7 +271,7 @@ test("kerning toggles persist without listing source pairs", { skip: !browserAva
   assert.equal(await page.locator(".font-kerning").count(), 0);
   await page.getByRole("switch", { name: "Kerning", exact: true }).uncheck();
   await page.waitForFunction(() => document.querySelector("[data-save-status]")?.textContent === "Saved");
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await page.getByRole("switch", { name: "Kerning", exact: true }).isChecked(), false);
 });
@@ -293,7 +293,7 @@ test("palette preset persists in the variant across reloads, not in the URL", { 
   assert.equal(await page.getByRole("group", { name: "Palette", exact: true }).count(), 1);
   const editorUrl = page.url();
   await createPalettePreset(page, url, { name: "Output gray", bits: 3 });
-  await page.goto(editorUrl, { waitUntil: "networkidle" });
+  await page.goto(editorUrl, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
     timeout: 20000,
   });
@@ -303,10 +303,15 @@ test("palette preset persists in the variant across reloads, not in the URL", { 
     null,
     { timeout: 20000 },
   );
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
     timeout: 20000,
   });
+  await page.waitForFunction(
+    () => document.querySelector("[data-output-palette] [data-palette-name]")?.textContent === "Output gray",
+    null,
+    { timeout: 20000 },
+  );
   assert.equal(await page.locator("[data-output-palette] [data-palette-name]").textContent(), "Output gray");
   assert.equal(await hashParam(page, "palette"), null, "saved palette reference lives in the database, not the URL");
 });
@@ -398,7 +403,7 @@ test("specimen dropdown and fitting switches preserve edits, keyboard selection 
   assert.equal(await diagonals.isChecked(), false, "explicit off stays off");
   const editorUrl = page.url();
   await createPalettePreset(page, url, { name: "Fitting gray", bits: 3 });
-  await page.goto(editorUrl, { waitUntil: "networkidle" });
+  await page.goto(editorUrl, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered, null, { timeout: 20000 });
   await selectPalettePreset(page, "Fitting gray");
   assert.equal(await hints.count(), 0, "grayscale fitting hides the hints switch");
@@ -409,7 +414,7 @@ test("specimen dropdown and fitting switches preserve edits, keyboard selection 
   assert.equal(await diagonals.isChecked(), false, "Mono retains its diagonal choice across profile changes");
   assert.equal(await page.locator("select:visible").count(), 0, "all app dropdowns use custom triggers");
   await page.waitForFunction(() => document.querySelector("[data-save-status]")?.textContent === "Saved");
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await page.getByRole("switch", { name: "Use font hints", exact: true }).isChecked(), false);
   assert.equal(await page.getByRole("switch", { name: "Fit diagonal strokes", exact: true }).isChecked(), false);

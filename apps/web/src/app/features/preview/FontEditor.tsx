@@ -1,7 +1,10 @@
 import * as React from "react";
-import { ALargeSmall, FileText, MoveHorizontal, Palette, ScanLine, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { ALargeSmall, FileText, Monitor, MoveHorizontal, Palette, ScanLine, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { useDisplayPreferences } from "../../shell/DisplayPreferences";
 import type { StoredFont } from "../../fonts/storage.js";
+import { deviceById, DEVICE_CATALOG } from "../../devices/catalog.js";
+import { DeviceControls } from "./DeviceControls";
+import { DevicePreview } from "./DevicePreview";
 import { currentPreviewSettings, type VariantSettings } from "../../variants/model.js";
 import { useRenderer } from "../../renderer/renderer-context.js";
 import { classificationLabel, displayName } from "../../fonts/metadata";
@@ -90,7 +93,9 @@ export function FontEditor({
   fontReady, fontLoadError, previewStatus, onStatus,
   appearance = "classic", sidebarHead, sidebarStart, specimenInheritance,
 }: FontEditorProps): React.JSX.Element {
-  const { zoom, canvas: { palette: paletteId, inverse } } = useDisplayPreferences();
+  const { zoom, canvas: { palette: paletteId, inverse }, device: deviceViewing, onDevice } = useDisplayPreferences();
+  const catalogDevice = deviceById(DEVICE_CATALOG, deviceViewing.device);
+  const unknownDevice = deviceViewing.device !== null && !catalogDevice ? deviceViewing.device : null;
   const { available: rendererAvailable } = useRenderer();
   const { presets, ready: palettesReady, error: paletteError, retry: retryPalettes } = usePalettes();
   const preset = resolvePalette(presets, storedSettings.paletteId);
@@ -103,7 +108,11 @@ export function FontEditor({
     onSettings(currentPreviewSettings({ ...settings, ...next }));
   };
 
-  const exportControl = <PlaydateExport key={font.id} fontId={font.id} name={displayName(font)} settings={settings} ready={fontReady} />;
+  const availableRanges = React.useMemo(
+    () => (font.metadata.coverage?.ranges ?? []).map(([start, end]) => ({ start, end })),
+    [font],
+  );
+  const exportControl = <PlaydateExport key={font.id} fontId={font.id} name={displayName(font)} settings={settings} ready={fontReady} availableRanges={availableRanges} />;
   const disabled = rendererAvailable !== true;
   const specimenProps = {
     controlId: font.id,
@@ -134,6 +143,37 @@ export function FontEditor({
   const layoutControls = <LayoutControls fontId={font.id} spacingPx={settings.letterSpacingPx}
     kerning={settings.kerning} onSpacing={(letterSpacingPx) => patch({ letterSpacingPx })}
     onKerning={(kerning) => patch({ kerning })} />;
+  const deviceControls = (
+    <DeviceControls
+      deviceId={catalogDevice ? catalogDevice.id : null}
+      unknownDevice={unknownDevice}
+      scale={deviceViewing.scale}
+      onDevice={(device) => onDevice({ device })}
+      onScale={(scale) => onDevice({ scale })}
+    />
+  );
+  const devicePreview = catalogDevice && (
+    <DevicePreview
+      key={catalogDevice.id}
+      fontId={font.id}
+      text={sampleText}
+      sizePx={settings.sizePx}
+      axes={settings.axes}
+      profile={settings.profile}
+      role={settings.renderer}
+      spacing={settings.letterSpacingPx}
+      kerning={settings.kerning}
+      stemFitting={settings.stemFitting}
+      diagonalFitting={settings.diagonalFitting}
+      monoRaster={settings.monoRaster}
+      rasterization={settings.rasterization}
+      zoom={zoom}
+      palette={colors}
+      deviceId={catalogDevice.id}
+      scale={deviceViewing.scale}
+      onStatus={onStatus}
+    />
+  );
   const pipelineControls = (
     <>
       <ControlSection title="Fitting" icon={ScanLine} layer="fitting" appearance={appearance}>
@@ -144,6 +184,9 @@ export function FontEditor({
       </ControlSection>
       <ControlSection title="Layout" icon={MoveHorizontal} layer="layout" appearance={appearance}>
         {layoutControls}
+      </ControlSection>
+      <ControlSection title="Device" icon={Monitor} layer="device" appearance={appearance}>
+        {deviceControls}
       </ControlSection>
     </>
   );
@@ -216,6 +259,12 @@ export function FontEditor({
                 </div>
               </CardContent>
             </SpecimenBlock>
+            {devicePreview && (
+              <section aria-label={`${catalogDevice?.label} preview`} data-device-section className="overflow-x-auto py-2">
+                <h3 className="m-0 mb-2 text-[14px] leading-5 font-bold text-studio-foreground">{catalogDevice?.label}</h3>
+                {devicePreview}
+              </section>
+            )}
             <Card role="group" aria-labelledby={`rendering-${font.id}`}>
               <CardHeader>
                 <CardTitle asChild>
@@ -231,6 +280,9 @@ export function FontEditor({
                 </RenderingSection>
                 <RenderingSection title="Spacing" id={`spacing-options-${font.id}`} layer="layout">
                   {layoutControls}
+                </RenderingSection>
+                <RenderingSection title="Device" id={`device-options-${font.id}`} layer="device">
+                  {deviceControls}
                 </RenderingSection>
               </CardContent>
             </Card>
@@ -310,6 +362,12 @@ export function FontEditor({
             )}
           </SpecimenBlock>
         </section>
+        {devicePreview && (
+          <section aria-label={`${catalogDevice?.label} preview`} data-device-section className="mt-0 mb-7 overflow-x-auto py-2">
+            <h3 className="mb-[.65rem] text-[1.1rem] font-[650] tracking-[-.01em]">{catalogDevice?.label}</h3>
+            {devicePreview}
+          </section>
+        )}
         {exportControl}
       </section>
     </>

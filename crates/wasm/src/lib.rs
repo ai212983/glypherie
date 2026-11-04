@@ -234,7 +234,14 @@ fn validate_export_keys(request: &JsValue) -> Result<(), JsValue> {
         }
         Ok(())
     }
-    check(request, &["config", "pipeline", "letter_spacing_px"])?;
+    check(
+        request,
+        &["config", "pipeline", "letter_spacing_px", "kerning_method"],
+    )?;
+    validate_kerning_keys(&js_sys::Reflect::get(
+        request,
+        &JsValue::from_str("kerning_method"),
+    )?)?;
     let config = js_sys::Reflect::get(request, &JsValue::from_str("config"))?;
     check(
         &config,
@@ -257,6 +264,38 @@ fn validate_export_keys(request: &JsValue) -> Result<(), JsValue> {
     let mono = js_sys::Reflect::get(&config, &JsValue::from_str("mono_raster"))?;
     if !mono.is_undefined() {
         check(&mono, &["dropout", "include_stubs", "font_instructions"])?;
+    }
+    Ok(())
+}
+
+fn validate_kerning_keys(value: &JsValue) -> Result<(), JsValue> {
+    if value.is_undefined() {
+        return Ok(());
+    }
+    if !value.is_object() || value.is_null() || js_sys::Array::is_array(value) {
+        return Err(js_error("kerning_method must be an object"));
+    }
+    let method = js_sys::Reflect::get(value, &JsValue::from_str("method"))?.as_string();
+    let allowed: &[&str] = match method.as_deref() {
+        Some("source") => &["method"],
+        Some("typefacet") => &[
+            "method",
+            "normal_distance_em",
+            "intrusion_tolerance_em",
+            "minimum_distance_em",
+            "max_x_extrema_overlap_em",
+        ],
+        Some("hu_hersch") => &["method", "strength"],
+        Some("fontforge") => &["method", "strength"],
+        _ => return Err(js_error("unknown kerning method")),
+    };
+    for key in js_sys::Reflect::own_keys(value)? {
+        if !key
+            .as_string()
+            .is_some_and(|name| allowed.contains(&name.as_str()))
+        {
+            return Err(js_error("unknown kerning method field"));
+        }
     }
     Ok(())
 }
@@ -284,6 +323,7 @@ fn validate_spec_keys(spec: &JsValue) -> Result<(), JsValue> {
                 | "gray_gamma"
                 | "missing_glyphs"
                 | "kerning"
+                | "kerning_method"
                 | "metric_rounding"
                 | "wrap"
                 | "align"
@@ -301,6 +341,10 @@ fn validate_spec_keys(spec: &JsValue) -> Result<(), JsValue> {
             )));
         }
     }
+    validate_kerning_keys(&js_sys::Reflect::get(
+        spec,
+        &JsValue::from_str("kerning_method"),
+    )?)?;
     let pipeline = js_sys::Reflect::get(spec, &JsValue::from_str("pipeline"))?;
     if !pipeline.is_undefined() && !pipeline.is_null() {
         if !pipeline.is_object() || js_sys::Array::is_array(&pipeline) {
@@ -371,6 +415,8 @@ struct RenderSpec {
     missing_glyphs: MissingGlyphs,
     #[serde(default = "default_kerning")]
     kerning: bool,
+    #[serde(default)]
+    kerning_method: font_generator::KerningMethod,
     #[serde(default)]
     metric_rounding: MetricRounding,
     #[serde(default)]
@@ -451,6 +497,9 @@ fn render_prepared(
     font: &surface::PreparedFont,
     spec: &RenderSpec,
 ) -> Result<RenderedText, String> {
+    spec.kerning_method
+        .validate(spec.pipeline.is_some())
+        .map_err(|e| e.to_string())?;
     if spec.pipeline.is_some() && (spec.renderer.is_some() || spec.stem_fitting.is_some()) {
         return Err(
             "pipeline cannot be combined with a historical renderer or stem_fitting".into(),
@@ -489,7 +538,12 @@ fn render_prepared(
     };
     if let Some(pipeline) = spec.pipeline {
         return font
-            .render_text_with_pipeline_and_spacing(&request, pipeline, spec.letter_spacing_px)
+            .render_text_with_pipeline_and_kerning(
+                &request,
+                pipeline,
+                spec.letter_spacing_px,
+                spec.kerning_method,
+            )
             .map_err(|e| e.to_string());
     }
     // Baseline is the approved production path; other roles reuse its
@@ -638,6 +692,128 @@ mod tests {
         assert_eq!(spec.background, [255, 255, 255, 255]);
         assert!(spec.palette.is_none());
         assert_eq!(spec.letter_spacing_px, 0.0);
+    }
+
+    #[test]
+    fn kerning_method_validation_applies_to_blank_and_historical_requests() {
+        let mut spec = minimal_spec("", 64, 32);
+        spec.kerning_method = font_generator::KerningMethod::Typefacet(Default::default());
+        assert!(render_parsed(FIXTURE, &spec)
+            .unwrap_err()
+            .contains("explicit bitmap-layout"));
+        spec.pipeline = Some(Default::default());
+        spec.output_bits = 3;
+        assert!(
+            render_parsed(FIXTURE, &spec).is_err(),
+            "invalid Gray scan stages still fail"
+        );
+        assert!(spec_from(json!({"text":"", "width":64,"height":32,
+            "kerning_method":{"method":"other"}}))
+        .is_err());
+    }
+
+    #[test]
+    fn analytic_method_requests_are_strict_even_for_blank_text() {
+        for method in [
+            json!({"method":"hu_hersch"}),
+            json!({"method":"hu_hersch","strength":0.5}),
+            json!({"method":"fontforge"}),
+            json!({"method":"fontforge","strength":0.5}),
+        ] {
+            let mut spec = spec_from(json!({"text":"", "width":64,"height":32,
+                "kerning_method":method}))
+            .unwrap();
+            assert!(render_parsed(FIXTURE, &spec)
+                .unwrap_err()
+                .contains("explicit bitmap-layout"));
+            spec.pipeline = Some(Default::default());
+            assert!(spec.kerning_method.validate(true).is_ok());
+        }
+        for method in [
+            json!({"method":"hu_hersch","strength":null}),
+            json!({"method":"hu_hersch","strength":1,"foreign":1}),
+            json!({"method":"fontforge","strength":1,"foreign":1}),
+            json!({"method":"fontforge","strength":null}),
+        ] {
+            assert!(spec_from(json!({"text":"", "width":64,"height":32,
+                "kerning_method":method}))
+            .is_err());
+        }
+        for method in ["fontforge", "hu_hersch"] {
+            for strength in [-0.1, 1.1] {
+                let spec = spec_from(json!({"text":"", "width":64,"height":32,
+                    "kerning_method":{"method":method,"strength":strength}}))
+                .unwrap();
+                assert!(spec.kerning_method.validate(true).is_err());
+            }
+        }
+    }
+
+    #[cfg(feature = "preview")]
+    #[test]
+    fn selected_method_reaches_prepared_renderer() {
+        let mut spec = minimal_spec("nn oo type", 256, 48);
+        spec.pipeline = Some(Default::default());
+        spec.kerning_method = font_generator::KerningMethod::Typefacet(Default::default());
+        let rendered = render_parsed(ROBOTO, &spec).unwrap();
+        let request = TextRenderRequest {
+            config: Config {
+                size_px: spec.size_px,
+                ..Config::default()
+            },
+            text: spec.text.clone(),
+            width: spec.width,
+            height: spec.height,
+            wrap: WrapMode::Word,
+            align: HAlign::Left,
+            foreground: spec.foreground,
+            background: spec.background,
+            palette: None,
+        };
+        let native = surface::render_text_with_pipeline_and_kerning(
+            ROBOTO,
+            &request,
+            spec.pipeline.unwrap(),
+            0.0,
+            spec.kerning_method,
+        )
+        .unwrap();
+        assert_eq!(rendered, native);
+        spec.kerning_method = font_generator::KerningMethod::Source;
+        assert_ne!(render_parsed(ROBOTO, &spec).unwrap().lines, rendered.lines);
+    }
+
+    #[cfg(feature = "preview")]
+    #[test]
+    fn gray_typefacet_forwards_fitted_geometry_and_validates_blank_settings() {
+        let font = surface::PreparedFont::new(ROBOTO.to_vec());
+        for bits in [2, 3, 4] {
+            let mut spec = minimal_spec("AV Éé type", 256, 48);
+            spec.output_bits = bits;
+            let pipeline = font_generator::renderer::RenderPipeline {
+                fitting: StemFittingStrategy::UpstreamMono,
+                rasterization: font_generator::renderer::Rasterization::Coverage,
+                diagonal_fitting: false,
+            };
+            spec.pipeline = Some(pipeline);
+            spec.kerning_method = font_generator::KerningMethod::Typefacet(Default::default());
+            let selected = render_prepared(&font, &spec).unwrap();
+            spec.kerning_method = font_generator::KerningMethod::Source;
+            let source = render_prepared(&font, &spec).unwrap();
+            assert_ne!(
+                source.lines, selected.lines,
+                "selected method reaches Gray depth {bits}"
+            );
+            spec.text.clear();
+            spec.kerning_method = font_generator::KerningMethod::Typefacet(Default::default());
+            assert!(render_prepared(&font, &spec).unwrap().lines.is_empty());
+            spec.kerning_method =
+                font_generator::KerningMethod::Typefacet(font_generator::TypefacetSettings {
+                    normal_distance_em: f64::NAN,
+                    ..Default::default()
+                });
+            assert!(render_prepared(&font, &spec).is_err());
+        }
     }
 
     #[test]

@@ -41,6 +41,8 @@ ${url ? `<link data-page-metadata rel="canonical" href="${url}">\n<meta data-pag
     transformIndexHtml(html, context) {
       const page = context.path === `${base}fonts/` || context.path === "/fonts/" ? PUBLIC_PAGES.fonts
         : context.path === `${base}palettes/` || context.path === "/palettes/" ? PUBLIC_PAGES.palettes
+        : context.path === `${base}screen/` || context.path === "/screen/" ? PUBLIC_PAGES.screen
+        : context.path === `${base}scenes/` || context.path === "/scenes/" ? PUBLIC_PAGES.scenes
         : PUBLIC_PAGES.home;
       const image = siteUrl ? `<meta property="og:image" content="${escapeAttribute(new URL("icons/icon-512.png", siteUrl).href)}">\n<meta property="og:image:alt" content="Glypherie bitmap font app icon">` : "";
       return html.replace("<!-- page-metadata -->", `${head(page)}
@@ -52,7 +54,7 @@ ${image}`);
     generateBundle(_options, bundle) {
       const entry = bundle["index.html"];
       if (!entry || entry.type !== "asset" || typeof entry.source !== "string") throw new Error("Missing HTML entry for page metadata.");
-      for (const page of [PUBLIC_PAGES.fonts, PUBLIC_PAGES.palettes]) {
+      for (const page of [PUBLIC_PAGES.fonts, PUBLIC_PAGES.palettes, PUBLIC_PAGES.screen, PUBLIC_PAGES.scenes]) {
         const html = entry.source.replace(/<(title|meta|link)\b[^>]*\bdata-page-metadata\b[^>]*>(?:[^<]*<\/title>)?\s*/g, "");
         this.emitFile({ type: "asset", fileName: `${page.path}index.html`, source: html.replace("</head>", `${head(page)}\n</head>`) });
       }

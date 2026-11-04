@@ -1,3 +1,4 @@
+import { cloneKerning, validateKerningPreference, type KerningPreference } from "../kerning/model.ts";
 import type { FontMetadata, StoredFont } from "../fonts/storage.ts";
 import type {
   MonoDropout,
@@ -19,7 +20,7 @@ export interface VariantSettings {
   profile: OutputProfile;
   /** Defined palette identity; absent historical settings use Monochrome. */
   paletteId?: number;
-  kerning: boolean;
+  kerning: KerningPreference;
   stemFitting: StemFitting;
   // New variants follow the working policy; historical rows without the flag stay off.
   diagonalFitting: boolean;
@@ -37,6 +38,7 @@ export function currentPreviewSettings(settings: VariantSettings): VariantSettin
   return {
     ...settings,
     paletteId: settings.paletteId ?? 0,
+    kerning: cloneKerning(settings.kerning ?? true),
     renderer: "candidate",
     rasterization: settings.profile === "mono_1bit" ? "free_type_mono" : "coverage",
     diagonalFitting: settings.diagonalFitting ?? false,
@@ -84,6 +86,7 @@ export type VariantStorageErrorCode =
   | "invalid-input"
   | "blocked"
   | "quota-exceeded"
+  | "referenced"
   | "unavailable";
 
 export class VariantStorageError extends Error {
@@ -145,7 +148,9 @@ export function validateVariantSettings(settings: VariantSettings, metadata: Fon
   }
   if (!(PROFILES as readonly string[]).includes(typed.profile)) fail("profile must be a known output profile");
   if (typed.paletteId !== undefined && (!Number.isInteger(typed.paletteId) || typed.paletteId < 0)) fail("paletteId must identify a palette");
-  if (typeof typed.kerning !== "boolean") fail("kerning must be a boolean");
+  try { validateKerningPreference(typed.kerning); } catch (error) {
+    fail(error instanceof Error ? error.message : "kerning must carry valid method settings");
+  }
   if (!(STEM_FITTINGS as readonly string[]).includes(typed.stemFitting)) {
     fail("stemFitting must be a known stem-fitting strategy");
   }

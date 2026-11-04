@@ -19,6 +19,8 @@ pub mod fitting_source;
 pub(crate) mod font_hints;
 #[cfg(feature = "candidate")]
 pub(crate) mod font_scan;
+pub mod kerning;
+pub use kerning::{FontforgeSettings, HuHerschSettings, KerningMethod, TypefacetSettings};
 pub mod layout_spacing;
 pub mod metadata;
 #[cfg(feature = "candidate")]

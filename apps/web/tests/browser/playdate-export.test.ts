@@ -22,16 +22,15 @@ test("Playdate downloads run through the real worker, include kerning, and recov
   const button = page.locator("[data-export-playdate]");
   // The default export is full printable ASCII, including the left-overhanging j.
   await button.waitFor({ state: "visible" });
-  const characters = page.locator("[data-export-characters]");
-  const optimize = page.getByRole("button", { name: "Sort characters and remove duplicates", exact: true });
-  assert.equal(await page.getByRole("textbox", { name: "95 characters", exact: true }).count(), 1);
-  await characters.fill("éz A😀Aé\uE000😀z ");
-  assert.equal(await page.getByRole("textbox", { name: "6 characters", exact: true }).count(), 1);
-  await optimize.click();
-  assert.equal(await characters.inputValue(), " Azé\uE000😀");
-  await optimize.click();
-  assert.equal(await characters.inputValue(), " Azé\uE000😀");
-  await characters.fill(Array.from({ length: 95 }, (_, i) => String.fromCodePoint(i + 32)).join(""));
+  const count = page.locator("[data-coverage-count]");
+  assert.match(await count.innerText(), /95 characters/);
+  assert.equal(await page.locator("[data-coverage-missing]").count(), 0);
+  // A custom range extends the structured coverage; controls are rejected.
+  await page.locator("[data-coverage-custom]").fill("(0x00E9-0x00E9)");
+  await page.locator("[data-coverage-add]").click();
+  assert.match(await count.innerText(), /96 characters/);
+  await page.locator("[data-coverage-remove='0']").click();
+  assert.match(await count.innerText(), /95 characters/);
   const downloadEvent = page.waitForEvent("download");
   await button.click();
   const download = await downloadEvent;
@@ -46,24 +45,30 @@ test("Playdate downloads run through the real worker, include kerning, and recov
   const length = Number(/^datalen=(\d+)$/m.exec(fnt)![1]);
   assert.equal(data.length, length);
   assert.equal(Buffer.from(data, "base64").subarray(1, 4).toString(), "PNG");
-  await page.locator("[data-export-characters]").fill("AV\nTo");
+  // Control scalars stay outside the export subset with an explicit error. U+000D is a
+  // control Roboto Flex actually covers (cmap gid 1), so the availability preflight keeps
+  // it and the export window rejects it; U+000A is merely missing from this font.
+  await page.locator("[data-coverage-custom]").fill("(0x000D-0x000D)");
+  await page.locator("[data-coverage-add]").click();
   await button.click();
   await page.locator("[data-export-error]").waitFor();
-  assert.match(await page.locator("[data-export-error]").innerText(), /U\+000A/);
-  await page.locator("[data-export-characters]").fill("");
+  assert.match(await page.locator("[data-export-error]").innerText(), /outside the Playdate/);
+  await page.locator("[data-coverage-remove='0']").click();
+  // Empty coverage disables the export.
+  await page.locator("[data-coverage-preset='ascii']").click();
+  assert.match(await count.innerText(), /0 characters/);
   assert.equal(await button.isDisabled(), true);
-  assert.equal(await optimize.isDisabled(), true);
-  assert.equal(await page.getByRole("textbox", { name: "0 characters", exact: true }).count(), 1);
+  await page.locator("[data-coverage-preset='ascii']").click();
   // Saved variants use the same export surface and honor their current settings.
-  await page.goto(`${url}fonts/`);
+  await page.goto(`${url}fonts/`, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   await openNewVariant(page, id);
-  await page.locator("[data-export-characters]").fill(" AVToj");
   const variantDownload = page.waitForEvent("download");
   await page.locator("[data-export-playdate]").click();
   assert.match((await variantDownload).suggestedFilename(), /\.fnt$/);
   const variantUrl = page.url();
   await createPalettePreset(page, url, { name: "Export gray", bits: 3 });
-  await page.goto(variantUrl, { waitUntil: "networkidle" });
+  await page.goto(variantUrl, { waitUntil: "domcontentloaded" });
   await selectPalettePreset(page, "Export gray");
   assert.equal(await page.locator("[data-export-playdate]").isDisabled(), true);
   assert.deepEqual(errors, []);

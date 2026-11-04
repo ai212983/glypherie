@@ -1,11 +1,18 @@
 import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
-import test, { beforeEach } from "node:test";
+import { createHash } from "node:crypto";
+import test, { after, beforeEach } from "node:test";
 import Dexie from "dexie";
 import { fontDatabase } from "../../src/app/database.ts";
-import { saveFont, type FontMetadata } from "../../src/app/fonts/storage.ts";
+import { kvPut } from "../../src/app/domain/backend.ts";
+import { importLegacySnapshot } from "../../src/app/domain/importer.ts";
+import { callDomain } from "../../src/app/domain/runtime.ts";
+import { getBackend, closeDomainForTests, resetDomainForTests } from "../../src/app/domain/node-backend.ts";
+import { readLegacySnapshot } from "../../src/app/legacy-database.ts";
+import { getFont, saveFont, type FontMetadata } from "../../src/app/fonts/storage.ts";
 import { createPalette, deletePalette, listPalettes, updatePalette } from "../../src/app/palettes/repository.ts";
 import { MONOCHROME, resolvePalette } from "../../src/app/palettes/model.ts";
+import { PREVIEW_MONO_RASTER } from "../../src/app/renderer/render-spec.ts";
 import { curveLevels, editCurveLevel, linearCurve, pinCurveLevel } from "../../src/app/features/grayscale/response-curve.ts";
 import { paletteProfile, presetColors } from "../../src/app/palettes/render.ts";
 import { toRenderSpec } from "../../src/app/renderer/render-spec.ts";
@@ -26,17 +33,79 @@ async function saveFixtureFont(seed = 0) {
 
 Dexie.dependencies.indexedDB = globalThis.indexedDB;
 Dexie.dependencies.IDBKeyRange = globalThis.IDBKeyRange;
-beforeEach(async () => { fontDatabase.close(); await Dexie.delete("font-library"); });
+beforeEach(async () => {
+  await resetDomainForTests();
+  await fontDatabase.close();
+  await Dexie.delete("font-library");
+  await fontDatabase.open();
+});
 
-test("palette names, depth, fractional curves, slopes and handles survive reopening", async () => {
+after(async () => {
+  await closeDomainForTests();
+});
+
+test("palette names, depth, fractional curves, slopes and handles survive reopening", async (t) => {
+  const { promises: fs } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { default: path } = await import("node:path");
+  const { createDomainBackend } = await import("../../src/app/domain/backend.ts");
+  const { configureDomain } = await import("../../src/app/domain/node-backend.ts");
+  const dir = await fs.mkdtemp(path.join(tmpdir(), "glypherie-domain-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const dataDir = path.join(dir, "pgdata");
+  await configureDomain(await createDomainBackend({ dataDir }));
   assert.deepEqual(await listPalettes(), [MONOCHROME]);
   const id = await createPalette();
   const curve = pinCurveLevel(editCurveLevel(linearCurve(16), 5, 171), 7);
   await updatePalette(id, { name: "Paper", curve: () => curve });
-  fontDatabase.close();
+  await configureDomain(await createDomainBackend({ dataDir }));
   assert.deepEqual((await listPalettes()).find((row) => row.id === id), { id, name: "Paper", curve });
   await assert.rejects(updatePalette(0, { name: "Changed" }), /read-only/);
   await assert.rejects(deletePalette(0), /read-only/);
+});
+
+test("deleted palette IDs are never reused", async () => {
+  assert.equal(await createPalette(), 1, "first custom preset follows Monochrome (id 0)");
+  assert.equal(await createPalette(), 2);
+  await deletePalette(1);
+  assert.equal(await createPalette(), 3, "a deleted ID stays retired instead of being reissued");
+  assert.deepEqual((await listPalettes()).map((preset) => preset.id), [0, 2, 3]);
+});
+
+test("concurrent creations after a delete stay unique and above the live max", async () => {
+  assert.equal(await createPalette(), 1);
+  await deletePalette(1);
+  const ids = await Promise.all([createPalette(), createPalette(), createPalette(), createPalette()]);
+  assert.deepEqual([...ids].sort((a, b) => a - b), [2, 3, 4, 5]);
+});
+
+test("the identity sequence survives reopening the store", async (t) => {
+  const { promises: fs } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { default: path } = await import("node:path");
+  const { createDomainBackend } = await import("../../src/app/domain/backend.ts");
+  const { configureDomain } = await import("../../src/app/domain/node-backend.ts");
+  const dir = await fs.mkdtemp(path.join(tmpdir(), "glypherie-palette-ids-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const dataDir = path.join(dir, "pgdata");
+  await configureDomain(await createDomainBackend({ dataDir }));
+  assert.equal(await createPalette(), 1);
+  await deletePalette(1);
+  await configureDomain(await createDomainBackend({ dataDir }));
+  assert.equal(await createPalette(), 2, "reopening must not reset the sequence to the live max");
+  assert.deepEqual((await listPalettes()).map((preset) => preset.id), [0, 2]);
+});
+
+test("import keeps every legacy ID and allocates above the highest one", async () => {
+  await fontDatabase.palettes.put({ id: 5, name: "Legacy Five", curve: linearCurve(4) });
+  await fontDatabase.palettes.put({ id: 7, name: "Legacy Seven", curve: linearCurve(16) });
+  const result = await importLegacySnapshot(getBackend(), await readLegacySnapshot());
+  assert.equal(result.skipped, false);
+  assert.deepEqual((await listPalettes()).map((preset) => preset.id), [0, 5, 7]);
+  assert.equal((await listPalettes()).find((preset) => preset.id === 7)?.name, "Legacy Seven");
+  assert.equal(await createPalette(), 8, "creation continues above the imported range");
+  await deletePalette(8);
+  assert.equal(await createPalette(), 9, "deleted post-import IDs stay retired too");
 });
 
 test("concurrent creations have stable unique IDs and curve edits compose", async () => {
@@ -114,9 +183,12 @@ test("stale drafts conflict after a palette deletion instead of resurrecting it"
 test("reads normalize unknown palette references to Monochrome", async () => {
   const font = await saveFixtureFont();
   const variant = await createVariant(font.id);
-  await fontDatabase.variants.update(variant.id, {
-    settings: { ...variant.settings, paletteId: 999, profile: "gray_4bit" },
-  } as never);
+  // Point the style preference at a profile that does not exist.
+  await kvPut(getBackend().db, `preview:${variant.id}`, JSON.stringify({
+    sampleText: variant.sampleText,
+    inheritSampleText: variant.inheritSampleText,
+    outputProfileId: "missing-profile",
+  }));
   const loaded = await getVariant(variant.id);
   assert.equal(loaded?.settings.paletteId, 0);
   assert.equal(loaded?.settings.profile, "mono_1bit");
@@ -153,7 +225,6 @@ test("font settings keep a stable palette ID and follow the preset's live depth"
   const base = defaultVariantSettings(font);
   const variant = await createVariant(font.id, { settings: { ...base, paletteId: id } });
   assert.equal(variant.settings.profile, "gray_4bit");
-  fontDatabase.close();
   assert.equal((await getVariant(variant.id))?.settings.paletteId, id);
   assert.equal((await getVariant(variant.id))?.settings.profile, "gray_4bit");
 
@@ -162,18 +233,61 @@ test("font settings keep a stable palette ID and follow the preset's live depth"
   assert.equal((await getVariant(variant.id))?.settings.profile, "gray_2bit");
 });
 
-test("v2 upgrades retain fonts and variants, seed Monochrome and migrate undefined output", async () => {
-  const legacy = new Dexie("font-library");
-  legacy.version(2).stores({ fonts: "id, addedAt, source", meta: "key", variants: "id, fontId" });
-  await legacy.table("fonts").put({ id: "font", bytes: new ArrayBuffer(12) });
-  await legacy.table("meta").put({ key: "seed", value: "kept" });
-  await legacy.table("variants").put({ id: "variant", fontId: "font", settings: { profile: "gray_3bit", sizePx: 20, axes: {} } });
-  legacy.close();
+test("importing a legacy library without custom palettes still starts custom IDs at 1", async () => {
+  const result = await importLegacySnapshot(getBackend(), await readLegacySnapshot());
+  assert.equal(result.skipped, false);
+  assert.deepEqual((await listPalettes()).map((preset) => preset.id), [0]);
+  assert.equal(await createPalette(), 1, "an import holding only Monochrome must not consume ID 1");
+});
+
+test("legacy rows import with Monochrome fallback and the seed marker preserved", async () => {
+  const bytes = new Uint8Array(12).buffer as ArrayBuffer;
+  const fontId = createHash("sha256").update(Buffer.from(bytes)).digest("hex");
+  await fontDatabase.fonts.put({
+    id: fontId,
+    name: "Legacy",
+    fileName: "legacy.ttf",
+    bytes,
+    metadata: fixtureMetadata(),
+    source: "uploaded",
+    addedAt: 7,
+  });
+  await fontDatabase.meta.put({ key: "bundled-fonts", value: "kept-seed" });
+  // Legacy rows without a palette reference resolve to Monochrome on import.
+  await fontDatabase.variants.put({
+    id: "variant",
+    fontId: fontId,
+    name: "Legacy V",
+    settingsVersion: 1,
+    settings: {
+      sizePx: 20,
+      axes: { wght: 400 },
+      letterSpacingPx: 0,
+      profile: "mono_1bit",
+      kerning: true,
+      stemFitting: "font_hints_first",
+      diagonalFitting: false,
+      monoRaster: { ...PREVIEW_MONO_RASTER },
+      renderer: "candidate",
+      rasterization: "free_type_mono",
+    },
+    sampleText: "Hi",
+    revision: 3,
+    createdAt: 1,
+    updatedAt: 2,
+  });
+  const result = await importLegacySnapshot(getBackend(), await readLegacySnapshot());
+  assert.equal(result.skipped, false);
+  // The legacy Monochrome preset row maps onto the seeded graph profile.
+  assert.deepEqual([result.fonts, result.variants, result.palettes], [1, 1, 1]);
   assert.deepEqual(await listPalettes(), [MONOCHROME]);
-  assert.equal((await fontDatabase.fonts.get("font"))?.bytes.byteLength, 12);
-  assert.equal((await fontDatabase.meta.get("seed"))?.value, "kept");
-  const row = await fontDatabase.variants.get("variant");
+  assert.equal((await getFont(fontId))?.bytes.byteLength, 12);
+  assert.equal(await callDomain("getSeedMarker", []), "kept-seed");
+  const row = await getVariant("variant");
+  assert.equal(row?.revision, 3);
+  assert.equal(row?.fontId, fontId);
   assert.equal(row?.settings.paletteId, 0);
   assert.equal(row?.settings.profile, "mono_1bit");
   assert.equal(row?.settings.sizePx, 20);
+  assert.equal(row?.sampleText, "Hi");
 });

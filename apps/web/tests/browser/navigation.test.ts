@@ -74,12 +74,14 @@ test("a quick edit survives browser Back and Forward through the database", { sk
   await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
     timeout: 20000,
   });
+  await page.waitForFunction(() => (document.querySelector("[data-text]") as HTMLTextAreaElement | null)?.value === "kept edit probe");
   assert.equal(await page.locator("[data-text]").inputValue(), "kept edit probe");
   assert.equal(await page.locator("[data-variant-error]").count(), 0, "Back never restores stale settings");
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
     timeout: 20000,
   });
+  await page.waitForFunction(() => (document.querySelector("[data-text]") as HTMLTextAreaElement | null)?.value === "kept edit probe");
   assert.equal(await page.locator("[data-text]").inputValue(), "kept edit probe");
 });
 
@@ -93,7 +95,7 @@ test("hash route wins over a conflicting legacy outer font query", { skip: !brow
   const ids = await cardIds(page);
   const first = 0;
   const second = 1;
-  await page.goto(`${url}?font=${ids[first]}#/font/${ids[second]}/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}?font=${ids[first]}#/font/${ids[second]}/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     (name) => document.querySelector(".family h2")?.textContent === name,
     names[second],
@@ -136,7 +138,7 @@ test("a debounced preview write cannot undo navigation to the catalog", { skip: 
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await bootLibrary(page, url);
   const ids = await cardIds(page);
-  await page.goto(`${url}?font=${ids[0]}`, { waitUntil: "networkidle" });
+  await page.goto(`${url}?font=${ids[0]}`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector('#font-select[data-state]:not(:disabled)') !== null);
   await page.locator("[data-text]").fill("Navigation race probe");
   await page.locator('[data-primary-nav="fonts"]').click();
@@ -152,21 +154,21 @@ test("unknown and removed font urls recover visibly on the catalog", { skip: !br
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await page.goto(`${url}#/font/${"0".repeat(64)}/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/font/${"0".repeat(64)}/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   const notice = await page.locator("[data-route-notice]").textContent();
   assert.ok(notice?.includes("not found in this library"), `visible recovery, got: ${notice}`);
   assert.equal(await page.locator("[data-font-card]").count(), 5);
 
-  await page.goto(`${url}?font=${"0".repeat(64)}`, { waitUntil: "networkidle" });
+  await page.goto(`${url}?font=${"0".repeat(64)}`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.equal(await page.locator("[data-font-card]").count(), 5);
 
-  await page.goto(`${url}?v=1&font=${"f".repeat(64)}`, { waitUntil: "networkidle" });
+  await page.goto(`${url}?v=1&font=${"f".repeat(64)}`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.equal(await page.locator("[data-font-card]").count(), 5);
 
-  await page.goto(`${url}#/nope`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/nope`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   const malformed = await page.locator("[data-route-notice]").textContent();
   assert.ok(malformed?.includes("Page not found"), `malformed route recovery, got: ${malformed}`);
@@ -179,7 +181,7 @@ test("unknown variant urls recover visibly without creating data", { skip: !brow
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await bootLibrary(page, url);
   const ids = await cardIds(page);
-  await page.goto(`${url}#/font/${ids[0]}/variant/missing-variant/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/font/${ids[0]}/variant/missing-variant/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("[data-variant-deleted]") !== null, null, {
     timeout: 20000,
   });
@@ -187,7 +189,7 @@ test("unknown variant urls recover visibly without creating data", { skip: !brow
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.equal(await page.locator("[data-variant-link]").count(), 0, "loading a route never creates variants");
 
-  await page.goto(`${url}#/font/${"0".repeat(64)}/variant/whatever/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/font/${"0".repeat(64)}/variant/whatever/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   const notice = await page.locator("[data-route-notice]").textContent();
   assert.ok(notice?.includes("not found in this library"), `recovery shown, got: ${notice}`);
@@ -215,7 +217,7 @@ test("variant reload keeps the variant and its saved settings", { skip: !browser
     names[source],
   );
   await page.waitForFunction(canvasRendered);
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
     timeout: 20000,
   });
@@ -238,7 +240,7 @@ test("Pages clean deep links boot and reload without a service worker", { skip: 
     }
   });
   const foreign = "Héllo & + ? # / ~and~";
-  await page.goto(`${url}palettes/?utm=${encodeURIComponent(foreign)}`, { waitUntil: "networkidle" });
+  await page.goto(`${url}palettes/?utm=${encodeURIComponent(foreign)}`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector('main section[aria-label="Grayscale preview"]') !== null);
   assert.equal(await hashPath(page), "/palettes/");
   assert.equal(new URL(page.url()).hash, "");
@@ -252,7 +254,7 @@ test("Pages clean deep links boot and reload without a service worker", { skip: 
   const ids = await cardIds(page);
   const settings = JSON.stringify({ [ids[0]!]: { size: 23.5, text: foreign } });
   documents.length = 0;
-  await page.goto(`${url}font/${ids[0]}/?v=1&families=${encodeURIComponent(settings)}`, { waitUntil: "networkidle" });
+  await page.goto(`${url}font/${ids[0]}/?v=1&families=${encodeURIComponent(settings)}`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.deepEqual(documents, [
     { path: `/preview/font/${ids[0]}/`, status: 404 },
@@ -261,12 +263,12 @@ test("Pages clean deep links boot and reload without a service worker", { skip: 
   assert.equal(await page.locator("[data-text]").inputValue(), foreign);
   assert.equal(await page.getByRole("spinbutton", { name: "Size", exact: true }).inputValue(), "23.5");
   assert.equal(new URL(page.url()).hash, "");
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await page.locator("[data-text]").inputValue(), foreign);
   assert.equal(await hashPath(page), `/font/${ids[0]}/`);
 
-  await page.goto(`${url}unknown/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}unknown/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("[data-route-notice]") !== null);
   assert.match(await page.locator("[data-route-notice]").textContent() ?? "", /Page not found/);
   assert.equal(await hashPath(page), "/fonts/");

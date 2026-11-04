@@ -114,7 +114,7 @@ function exportSettings(diagonalFitting: boolean): VariantSettings {
 test("export carries the same pipeline flag as the preview", () => {
   for (const diagonalFitting of [false, true]) {
     const settings = exportSettings(diagonalFitting);
-    const request = playdateRequest(settings, "AV");
+    const request = playdateRequest(settings, { presetIds: [], extraRanges: [{ start: 0x41, end: 0x56 }] });
     const preview = toRenderSpec({ text: "AV", width: 200, height: 100, sizePx: settings.sizePx,
       axes: settings.axes, profile: settings.profile, rasterization: "free_type_mono",
       stemFitting: settings.stemFitting, diagonalFitting: settings.diagonalFitting,

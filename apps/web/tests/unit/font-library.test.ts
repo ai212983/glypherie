@@ -1,11 +1,16 @@
 import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import test, { beforeEach } from "node:test";
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test, { after, beforeEach } from "node:test";
 import Dexie from "dexie";
+import { fontDatabase } from "../../src/app/database.ts";
+import { createDomainBackend } from "../../src/app/domain/backend.ts";
+import { configureDomain, closeDomainForTests, resetDomainForTests } from "../../src/app/domain/node-backend.ts";
 import {
   FontStorageError,
-  fontDatabase,
   getFont,
   isFontDatabaseBlocked,
   listFonts,
@@ -68,9 +73,15 @@ function stubFetch(handler: (url: string) => Promise<StubResponse>): { calls: st
 const okResponse = (bytes: ArrayBuffer): StubResponse => ({ ok: true, status: 200, arrayBuffer: async () => bytes });
 
 beforeEach(async () => {
+  await resetDomainForTests();
   await fontDatabase.close();
   await Dexie.delete("font-library");
+  await fontDatabase.open();
   assert.equal(isFontDatabaseBlocked(), false);
+});
+
+after(async () => {
+  await closeDomainForTests();
 });
 
 test("saves an uploaded font under its SHA-256 content id", async () => {
@@ -101,10 +112,14 @@ test("deduplicates identical bytes atomically and never downgrades uploaded sour
   assert.equal((await listFonts()).length, 1);
 });
 
-test("fonts survive close and reopen", async () => {
+test("fonts survive close and reopen from the same data directory", async (t) => {
+  const dir = await fs.mkdtemp(path.join(tmpdir(), "glypherie-domain-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const dataDir = path.join(dir, "pgdata");
+  await configureDomain(await createDomainBackend({ dataDir }));
   const bytes = fontBytes(3);
   const stored = await saveFont({ bytes, fileName: "persist.ttf", name: "Persist", metadata: metadata(), source: "uploaded" });
-  await fontDatabase.close();
+  await configureDomain(await createDomainBackend({ dataDir }));
   const reopened = await getFont(stored.id);
   assert.deepEqual(reopened, stored);
   assert.ok(reopened);

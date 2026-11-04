@@ -25,7 +25,12 @@ export function fontPwaPlugin(): Plugin[] {
       ],
     },
     workbox: {
-      globPatterns: ["**/*.{html,js,css,wasm,ttf,otf,woff,woff2,svg,png,webmanifest,txt}"],
+      // The domain owner's PGlite engine (~16MB: wasm plus the filesystem
+      // .data bundle) is precached, not runtime-cached: the worker boots
+      // before the service worker controls its client, so on-demand
+      // CacheFirst entries never populate and an offline cold boot has
+      // nothing to read. Each file stays under maximumFileSizeToCache below.
+      globPatterns: ["**/*.{html,js,css,wasm,data,ttf,otf,woff,woff2,svg,png,webmanifest,txt}"],
       globIgnores: ["content/**", "comparison-content/**"],
       maximumFileSizeToCacheInBytes: 16 * 1024 * 1024,
       navigateFallback: "index.html",

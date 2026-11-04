@@ -1,6 +1,7 @@
 import { UserFacingError, userError } from "../user-error";
 import * as React from "react";
-import { useLiveQuery } from "dexie-react-hooks";
+import { getDomainVersion, subscribeDomain } from "../domain/events.js";
+import { ensureDomainMigrated } from "../domain/migrate.js";
 import {
   getFont,
   listFonts,
@@ -44,35 +45,41 @@ export function useFontLibrary(): FontLibrary {
   // it for inspection and font loading, never creating or terminating one.
   const { service: client, session, available } = useRenderer();
   const rendererAvailable = available;
-  // Reactive font list: variant writes touch only the variants store, so
-  // editing a variant never re-reads font binaries. Worker load state below
-  // stays separate from this database data.
+  // Reactive font list over the domain store: variant writes touch only the
+  // split style entities, so editing a variant never re-reads font binaries.
+  // Worker load state below stays separate from this database data.
   const [fontsQueryError, setFontsQueryError] = React.useState("");
   const [fontsAttempt, setFontsAttempt] = React.useState(0);
   // Boot readiness: the font list stays uninitialized until the seed attempt
   // settles, so route resolution never runs against a partial catalog and
   // genuine font URLs cannot fall back to the library mid-seed.
   const [seedSettled, setSeedSettled] = React.useState(false);
+  const domainVersion = React.useSyncExternalStore(subscribeDomain, getDomainVersion);
+  const [fonts, setFonts] = React.useState<StoredFont[] | null>(null);
   const retryFonts = React.useCallback(() => {
     setFontsQueryError("");
     setFontsAttempt((value) => value + 1);
   }, []);
-  const liveFonts = useLiveQuery(
-    async (): Promise<StoredFont[] | null> => {
-      if (!seedSettled) return null;
-      try {
-        const list = await listFonts();
+  React.useEffect(() => {
+    if (!seedSettled) {
+      setFonts(null);
+      return;
+    }
+    let live = true;
+    void listFonts().then(
+      (list) => {
+        if (!live) return;
         setFontsQueryError("");
-        return list;
-      } catch (error) {
+        setFonts(list);
+      },
+      (error: unknown) => {
+        if (!live) return;
         setFontsQueryError(userError(error, "Couldn’t load fonts."));
-        return null;
-      }
-    },
-    [fontsAttempt, seedSettled],
-    undefined,
-  );
-  const fonts = liveFonts === undefined ? null : liveFonts;
+        setFonts(null);
+      },
+    );
+    return () => { live = false; };
+  }, [fontsAttempt, seedSettled, domainVersion]);
   const [loadedIds, setLoadedIds] = React.useState<ReadonlySet<string>>(new Set());
   const [seedNote, setSeedNote] = React.useState("");
   const [loadStates, setLoadStates] = React.useState<Record<string, FontLoadStatus>>({});
@@ -129,6 +136,13 @@ export function useFontLibrary(): FontLibrary {
     const renderer = client;
     let cancelled = false;
     (async () => {
+      try {
+        // Legacy Dexie rows migrate into the domain store first, so seeding
+        // keys off the migrated marker and never duplicates imported fonts.
+        await ensureDomainMigrated();
+      } catch (error) {
+        if (!cancelled) setSeedNote(userError(error, "Couldn’t migrate saved fonts."));
+      }
       try {
         await seedBundledFonts(
           BUNDLED_FONTS.map(({ url, name, fileName }) => ({ url: relativeFontUrl(url), name, fileName })),

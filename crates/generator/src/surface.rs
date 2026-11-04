@@ -44,6 +44,23 @@ impl PreparedFont {
         )
     }
 
+    /// Explicit pair method with the same capture and validation as native rendering.
+    pub fn render_text_with_pipeline_and_kerning(
+        &self,
+        request: &TextRenderRequest,
+        pipeline: crate::renderer::RenderPipeline,
+        letter_spacing_px: f32,
+        kerning_method: crate::KerningMethod,
+    ) -> Result<RenderedText, Error> {
+        render_pipeline_in_session(
+            &CaptureSession::from_font(self),
+            request,
+            pipeline,
+            letter_spacing_px,
+            kerning_method,
+        )
+    }
+
     /// Same explicit pipeline as the raw-byte entry point, with shared identity.
     pub fn render_text_with_pipeline_and_spacing(
         &self,
@@ -56,6 +73,7 @@ impl PreparedFont {
             request,
             pipeline,
             letter_spacing_px,
+            crate::KerningMethod::Source,
         )
     }
 }
@@ -192,6 +210,7 @@ pub fn render_text(font_data: &[u8], request: &TextRenderRequest) -> Result<Rend
         0.0,
         None,
         None,
+        crate::KerningMethod::Source,
     )
 }
 
@@ -237,6 +256,7 @@ pub fn render_text_with_renderer_and_spacing(
         letter_spacing_px,
         None,
         None,
+        crate::KerningMethod::Source,
     )
 }
 
@@ -294,6 +314,7 @@ fn render_fitting_in_session(
         letter_spacing_px,
         strategy,
         None,
+        crate::KerningMethod::Source,
     )
 }
 
@@ -327,6 +348,24 @@ pub fn render_text_with_pipeline_and_spacing(
         request,
         pipeline,
         letter_spacing_px,
+        crate::KerningMethod::Source,
+    )
+}
+
+/// Explicit pipeline with a selected pair-table method. Legacy wrappers use Source.
+pub fn render_text_with_pipeline_and_kerning(
+    font_data: &[u8],
+    request: &TextRenderRequest,
+    pipeline: crate::renderer::RenderPipeline,
+    letter_spacing_px: f32,
+    kerning_method: crate::KerningMethod,
+) -> Result<RenderedText, Error> {
+    render_pipeline_in_session(
+        &CaptureSession::new(font_data),
+        request,
+        pipeline,
+        letter_spacing_px,
+        kerning_method,
     )
 }
 
@@ -335,7 +374,9 @@ fn render_pipeline_in_session(
     request: &TextRenderRequest,
     pipeline: crate::renderer::RenderPipeline,
     letter_spacing_px: f32,
+    kerning_method: crate::KerningMethod,
 ) -> Result<RenderedText, Error> {
+    kerning_method.validate(true)?;
     pipeline.validate(&request.config)?;
     #[cfg(not(feature = "candidate"))]
     {
@@ -359,6 +400,7 @@ fn render_pipeline_in_session(
             letter_spacing_px,
             (request.config.output_bits == 1).then_some(pipeline.fitting),
             Some(pipeline),
+            kerning_method,
         )
     }
 }
@@ -491,7 +533,9 @@ fn render_inner(
     letter_spacing_px: f32,
     strategy: Option<StemFittingStrategy>,
     pipeline: Option<crate::renderer::RenderPipeline>,
+    kerning_method: crate::KerningMethod,
 ) -> Result<RenderedText, Error> {
+    kerning_method.validate(pipeline.is_some())?;
     let font_data = session.data;
     let admitted = admit_request(request, role, letter_spacing_px, strategy, pipeline)?;
     let request = admitted.as_ref();
@@ -527,6 +571,16 @@ fn render_inner(
     config.characters = repertoire.iter().collect();
     let is_candidate = role == Some(RendererRole::Candidate);
     let mono = config.output_bits == 1;
+    #[cfg(feature = "candidate")]
+    let analysis_plan = if is_candidate {
+        Some(crate::kerning::AnalysisPlan::new(
+            font_data,
+            kerning_method,
+            &config,
+        )?)
+    } else {
+        None
+    };
     // Candidate: source advances/kerning and line metrics come from
     // source preparation (no raster), then the fitted capture supplies
     // the one bitmap per unique character. Other roles keep the
@@ -694,7 +748,7 @@ fn render_inner(
         let properties = font_spacing_properties(font_data, &generated.config)?;
         // The one finalized bitmap table, resolved exactly as in the
         // exported strike; placement applies its pair values once.
-        let finalized = finalize_bitmap_metrics(
+        let mut finalized = finalize_bitmap_metrics(
             &report.records,
             &source_advances,
             &source_kern,
@@ -702,6 +756,29 @@ fn render_inner(
             properties.monospace,
             properties.tabular_digits,
         );
+        let analysis = match pipeline {
+            #[cfg(feature = "candidate")]
+            Some(pipeline) => crate::kerning::capture_analysis(
+                session,
+                &generated.config,
+                pipeline,
+                analysis_plan
+                    .as_ref()
+                    .ok_or_else(|| fail("missing kerning analysis plan"))?,
+                &report.records,
+            )?,
+            _ => crate::kerning::AnalysisCapture::default(),
+        };
+        crate::kerning::resolve(
+            font_data,
+            &generated.config,
+            kerning_method,
+            &generated.glyphs,
+            &report.records,
+            &mut finalized,
+            properties,
+            &analysis,
+        )?;
         if uniform {
             let advances = crate::layout_spacing::apply_uniform_tracking(
                 &finalized.advances_26_6,

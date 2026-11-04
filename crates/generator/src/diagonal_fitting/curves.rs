@@ -1026,18 +1026,13 @@ fn certify(contours: &[Contour], depth: usize) -> Report {
             if i == j || (other.curve && j < i) {
                 continue;
             }
-            // Conservative broad phase after the CGAL AABB-tree principle
-            // ([CGAL AABB](https://doc.cgal.org/latest/AABB_tree/index.html)):
-            // strictly separated exact boxes prove disjoint hulls, so the
-            // separating-axis test below must accept as well. Restricted to
-            // strictly convex hulls, where edge-normal separation is
-            // complete; degenerate point/segment hulls keep the exact
-            // fail-closed narrow phase, since no edge normal need separate
-            // them (e.g. disjoint collinear segments share one normal).
-            if entry.hull.len() >= 3
-                && other.hull.len() >= 3
-                && boxes_strictly_separate(&entry.bbox, &other.bbox)
-            {
+            // Shene's convex-hull containment (module source) makes a
+            // strict exact box gap a separation proof for every hull
+            // dimension. This also certifies disjoint collinear segment
+            // hulls, whose edge normals alone cannot separate them.
+            // Touching boxes keep the contact/adjacency checks below;
+            // original curves and their monotonicity gates stay intact.
+            if boxes_strictly_separate(&entry.bbox, &other.bbox) {
                 continue;
             }
             if entry_disjoint(
@@ -1428,6 +1423,103 @@ pub fn compare_commands(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn subdivided_rectangle(gap: f32) -> Vec<FittedCommand> {
+        vec![
+            FittedCommand::MoveTo(0.0, 0.0),
+            FittedCommand::LineTo(0.0, 1.0),
+            FittedCommand::QuadTo(0.0, 1.0 + gap / 2.0, 0.0, 1.0 + gap),
+            FittedCommand::QuadTo(0.0, 1.5 + gap, 0.0, 2.0 + gap),
+            FittedCommand::LineTo(1.0, 2.0 + gap),
+            FittedCommand::LineTo(1.0, 0.0),
+            FittedCommand::Close,
+        ]
+    }
+
+    fn affine_commands(commands: &[FittedCommand], m: [f32; 6]) -> Vec<FittedCommand> {
+        let point = |x, y| (m[0] * x + m[1] * y + m[4], m[2] * x + m[3] * y + m[5]);
+        commands
+            .iter()
+            .map(|c| match *c {
+                FittedCommand::MoveTo(x, y) => {
+                    let (x, y) = point(x, y);
+                    FittedCommand::MoveTo(x, y)
+                }
+                FittedCommand::LineTo(x, y) => {
+                    let (x, y) = point(x, y);
+                    FittedCommand::LineTo(x, y)
+                }
+                FittedCommand::QuadTo(x1, y1, x, y) => {
+                    let (x1, y1) = point(x1, y1);
+                    let (x, y) = point(x, y);
+                    FittedCommand::QuadTo(x1, y1, x, y)
+                }
+                FittedCommand::CurveTo(x1, y1, x2, y2, x, y) => {
+                    let (x1, y1) = point(x1, y1);
+                    let (x2, y2) = point(x2, y2);
+                    let (x, y) = point(x, y);
+                    FittedCommand::CurveTo(x1, y1, x2, y2, x, y)
+                }
+                FittedCommand::Close => FittedCommand::Close,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn collinear_curve_hulls_with_positive_gaps_certify() {
+        // Shene's convex-hull property: these monotone quadratic arcs are
+        // exactly straight. Their nonincident hulls have a positive gap,
+        // even though edge-normal SAT cannot separate collinear segments.
+        for gap in [1.0, 1.0 / 65536.0] {
+            for matrix in [
+                [1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 1.0, 37.5, -17.25],
+                [0.5, 0.0, 0.0, 0.5, 0.0, 0.0],
+                [0.0, -1.0, 1.0, 0.0, 0.0, 0.0],
+                [1.0, 1.0, -1.0, 1.0, 0.0, 0.0],
+                [-1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                [1.0, 3.0, 2.0, 1.0, 0.0, 0.0],
+            ] {
+                let commands = affine_commands(&subdivided_rectangle(gap), matrix);
+                let contours = parse_commands(&commands).unwrap();
+                for depth in [0, 1, 2] {
+                    let report = certify(&contours, depth);
+                    assert!(report.ok, "gap={gap} matrix={matrix:?}: {}", report.reason);
+                }
+                assert!(compare_commands(&commands, &commands, &commands));
+                check_certify_equiv(&commands, &[0, 1, 2]);
+            }
+        }
+    }
+
+    #[test]
+    fn collinear_curve_hulls_keep_contact_guards() {
+        let plain = subdivided_rectangle(1.0);
+        let mut touch = plain.clone();
+        touch.extend([
+            FittedCommand::MoveTo(0.0, 2.5),
+            FittedCommand::LineTo(-1.0, 3.0),
+            FittedCommand::LineTo(-1.0, 2.0),
+            FittedCommand::Close,
+        ]);
+        let mut cross = plain.clone();
+        cross.extend([
+            FittedCommand::MoveTo(-1.0, 2.5),
+            FittedCommand::LineTo(0.5, 2.5),
+            FittedCommand::LineTo(0.5, 2.75),
+            FittedCommand::Close,
+        ]);
+        let mut overlap = plain.clone();
+        overlap[3] = FittedCommand::QuadTo(0.0, 1.5, 0.0, 1.0);
+        let mut nonmonotone = plain;
+        nonmonotone[3] = FittedCommand::QuadTo(0.0, 4.0, 0.0, 3.0);
+        for commands in [touch, cross, overlap, nonmonotone] {
+            let contours = parse_commands(&commands).unwrap();
+            assert!(!certify(&contours, 0).ok);
+            assert!(!compare_commands(&commands, &commands, &commands));
+            check_certify_equiv(&commands, &[0, 1, 2]);
+        }
+    }
 
     #[test]
     fn constant_lines_preserve_certificate_adjacency_without_hiding_short_edges() {
@@ -2135,7 +2227,36 @@ mod tests {
         assert_eq!(exact_f64(&third), None);
     }
 
-    /// Pre-optimization pair loop: hull rebuilt per pair, no box shortcut.
+    /// Independent exact intersection reference for lower-dimensional hulls.
+    /// CGAL's linear-kernel intersection semantics include boundary contact:
+    /// https://doc.cgal.org/latest/Kernel_23/group__do__intersect__linear__grp.html
+    /// Endpoint containment and proper edge crossings cover points/segments;
+    /// unlike the production certificate, this oracle uses no box shortcut.
+    fn oracle_hulls_disjoint(p: &[Rat], q: &[Rat]) -> bool {
+        if p.is_empty() || q.is_empty() {
+            return false;
+        }
+        if p.len() >= 3 && q.len() >= 3 {
+            return strictly_disjoint_exact(p, q);
+        }
+        if p.iter().any(|v| !strictly_outside_exact(v, q))
+            || q.iter().any(|v| !strictly_outside_exact(v, p))
+        {
+            return false;
+        }
+        for (a, b) in poly_edges(p) {
+            for (c, d) in poly_edges(q) {
+                if orient_exact(&a, &b, &c) * orient_exact(&a, &b, &d) < 0
+                    && orient_exact(&c, &d, &a) * orient_exact(&c, &d, &b) < 0
+                {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Ordered pair loop: hull rebuilt per pair, no box shortcut or filters.
     #[cfg(test)]
     fn oracle_certify(
         contours: &[Contour],
@@ -2179,7 +2300,7 @@ mod tests {
                     continue;
                 }
                 let other_hull = convex_hull_exact(&other.pts);
-                if strictly_disjoint_exact(&hull, &other_hull) {
+                if oracle_hulls_disjoint(&hull, &other_hull) {
                     continue;
                 }
                 match adjacent(entry, other, contours, last_piece) {
@@ -2737,6 +2858,20 @@ mod kernel_boundary {
         let overlap = hull_bbox(&pts(&[[2.0, 0.0], [6.0, 0.0], [6.0, 1.0], [2.0, 1.0]]));
         assert!(!boxes_strictly_separate(&a, &overlap));
         assert!(!boxes_strictly_separate(&overlap, &a));
+    }
+
+    #[test]
+    fn box_separation_handles_lower_dimensional_hulls_exactly() {
+        let point = hull_bbox(&pts(&[[0.0, 0.0]]));
+        let segment = hull_bbox(&pts(&[[0.0, 1.0], [0.0, 2.0]]));
+        assert!(boxes_strictly_separate(&point, &segment));
+        assert!(boxes_strictly_separate(&segment, &point));
+        let gap = 2.0_f64.powi(-100);
+        let other = hull_bbox(&pts(&[[gap, 0.0]]));
+        assert!(boxes_strictly_separate(&point, &other));
+        let touch = hull_bbox(&pts(&[[0.0, 0.0], [0.0, 1.0]]));
+        assert!(!boxes_strictly_separate(&point, &touch));
+        assert!(!boxes_strictly_separate(&touch, &segment));
     }
 
     #[test]

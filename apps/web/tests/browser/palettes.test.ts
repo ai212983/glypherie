@@ -6,6 +6,7 @@ import {
   browserAvailable,
   buildApp,
   canvasRendered,
+  captureDomainWorker,
   cardIds,
   createPalettePreset,
   hashParam,
@@ -15,6 +16,7 @@ import {
   selectPalettePreset,
   servePrefix,
   setZoom,
+  variantState,
 } from "../helpers/spa-helpers.ts";
 
 async function grayscaleReady(page: Parameters<typeof hashPath>[0]): Promise<void> {
@@ -173,7 +175,7 @@ test("primary nav switches between fonts and palettes with active state", { skip
   assert.equal(await hashPath(page), "/palettes/");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   assert.ok(await fontsNav.isVisible(), "fonts nav stays usable at mobile width");
   assert.ok(await palettesNav.isVisible(), "palettes nav stays usable at mobile width");
@@ -187,11 +189,11 @@ test("palettes loads directly and drops stale font snapshot params", { skip: !br
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   assert.equal(await hashPath(page), "/palettes/");
 
-  await page.goto(`${url}#/palettes/?v=1&font=abc&utm=keep`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/?v=1&font=abc&utm=keep`, { waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   assert.equal(await hashPath(page), "/palettes/");
   assert.equal(await hashParam(page, "v"), null);
@@ -204,7 +206,7 @@ test("preset specimen rows select, edit, and stay local-only", { skip: !browserA
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
 
   assert.ok(await page.getByRole("heading", { name: "Presets" }).isVisible(), "preset card carries its title");
@@ -378,7 +380,7 @@ test("preset specimen rows select, edit, and stay local-only", { skip: !browserA
   assert.equal(await main.getByRole("textbox", { name: "Name", exact: true }).inputValue(), "Keep this preset", "deleting another row preserves the active preset");
   assert.equal(await group.locator("[data-preset-row]").count(), 2);
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   const reloaded = page.getByRole("group", { name: "Presets" });
   await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 2, null, { timeout: 20000 });
@@ -402,40 +404,10 @@ async function waitSaved(page: Page): Promise<void> {
   );
 }
 
-interface VariantRowState {
-  revision: number;
-  inheritSampleText: boolean;
-  paletteId: number;
-  profile: string;
-}
-
-async function variantRow(page: Page, id: string): Promise<VariantRowState> {
-  return page.evaluate(async (variantId): Promise<VariantRowState> => {
-    const open = indexedDB.open("font-library");
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      open.onsuccess = () => resolve(open.result);
-      open.onerror = () => reject(open.error);
-    });
-    try {
-      const row = await new Promise<{
-        revision: number;
-        inheritSampleText: boolean;
-        settings: { paletteId: number; profile: string };
-      }>((resolve, reject) => {
-        const fetched = db.transaction("variants", "readonly").objectStore("variants").get(variantId);
-        fetched.onsuccess = () => resolve(fetched.result);
-        fetched.onerror = () => reject(fetched.error);
-      });
-      return {
-        revision: row.revision,
-        inheritSampleText: row.inheritSampleText,
-        paletteId: row.settings.paletteId,
-        profile: row.settings.profile,
-      };
-    } finally {
-      db.close();
-    }
-  }, id);
+// Variant reads go through the same SharedWorker owner the app uses (the
+// retired Dexie "font-library" database no longer receives writes).
+async function variantRow(page: Page, id: string): Promise<{ revision: number; inheritSampleText: boolean; paletteId: number; profile: string }> {
+  return variantState(page, id);
 }
 
 test("palette depth edits settle variant autosave without revision drift", { skip: !browserAvailable }, async (t) => {
@@ -443,6 +415,7 @@ test("palette depth edits settle variant autosave without revision drift", { ski
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await captureDomainWorker(context);
   const editor = await context.newPage();
   await bootLibrary(editor, url);
   const fontId = (await cardIds(editor))[0]!;
@@ -513,7 +486,7 @@ test("palette depth edits settle variant autosave without revision drift", { ski
   assert.equal(after.inheritSampleText, false, "the explicit text override survives normalization");
   assert.equal(after.profile, "gray_4bit");
 
-  await editor.reload({ waitUntil: "networkidle" });
+  await editor.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(editor);
   assert.equal(await editor.locator("[data-text]").inputValue(), "live depth probe");
   assert.equal(await editor.locator("[data-output-palette] [data-palette-name]").textContent(), "Live gray");
@@ -547,6 +520,7 @@ test("palette deletion falls back another tab to Monochrome with a conflict", { 
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await captureDomainWorker(context);
   const editor = await context.newPage();
   await bootLibrary(editor, url);
   const fontId = (await cardIds(editor))[0]!;
@@ -630,7 +604,7 @@ test("empty-library history navigation leaves palettes for the index", { skip: !
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.route("**/*.ttf", (route) => route.abort());
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   assert.equal(await page.locator("[data-font-card]").count(), 0, "seed failure settles to an empty library");
 
@@ -692,7 +666,7 @@ test("preset frame follows display settings with independent sample text", { ski
   assert.equal(await page.getByRole("complementary", { name: "Grayscale presets" }).getByRole("textbox", { name: "Sample text", exact: true }).inputValue(), "Zz 99", "main text leaves preset text alone");
   assert.ok((await mainPreview.getAttribute("aria-label"))?.includes("Hello"));
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   assert.equal(await page.getByRole("complementary", { name: "Grayscale presets" }).getByRole("textbox", { name: "Sample text", exact: true }).inputValue(), "Aa 0123", "preset text stays local-only");
   const reloaded = page.getByRole("group", { name: "Presets" });
@@ -704,7 +678,7 @@ test("preview font selector renders bundled fonts in the main preview and preset
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   await presetCanvasRendered(page, 0);
   const preview = page.getByRole("group", { name: "Preview", exact: true });
@@ -730,7 +704,7 @@ test("preset rows and main preview fit text bounds and wrap within their frames"
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   await presetCanvasRendered(page, 0);
   const caps16 = await presetBackingHeight(page, 0);
@@ -783,7 +757,7 @@ test("preview spacing stays consistent across fonts and zoom", { skip: !browserA
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   const preview = page.getByRole("region", { name: "Grayscale preview" });
   await preview.getByRole("textbox", { name: "Sample text", exact: true }).fill("Ágj");
@@ -832,7 +806,7 @@ test("preset viewport matches tinted paper on narrow inverse rows", { skip: !bro
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   await presetCanvasRendered(page, 0);
 
@@ -851,7 +825,7 @@ test("main sample text wraps multiline and canvas follows content", { skip: !bro
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
 
   const input = page.getByRole("region", { name: "Grayscale preview" }).getByRole("textbox", { name: "Sample text", exact: true });
@@ -926,7 +900,7 @@ test("a debounced preview write cannot undo navigation to palettes", { skip: !br
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await bootLibrary(page, url);
   const ids = await cardIds(page);
-  await page.goto(`${url}#/font/${ids[0]}/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/font/${ids[0]}/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector('#font-select[data-state]:not(:disabled)') !== null);
   await page.locator("[data-text]").fill("Palettes race probe");
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Palettes" }).click();
@@ -941,7 +915,7 @@ test("bit depth selector preserves curves, selection, and preset ownership", { s
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   const selector = page.getByRole("group", { name: "Bit-depth & gray levels", exact: true });
   const pills = selector.getByRole("radiogroup", { name: "Quantization depth", exact: true });
   const depth = (bits: number) => pills.getByRole("radio", { name: `${bits}-bit · ${2 ** bits} levels`, exact: true });
@@ -1023,8 +997,17 @@ test("bit depth selector preserves curves, selection, and preset ownership", { s
   await reset.click();
   await waitGrayValue("0");
   assert.equal(await gray.inputValue(), "0", "header reset restores the selected endpoint");
+  // The input reflects the blur before the reset commit lands, so wait for
+  // the committed ramp itself rather than trusting the first "0".
+  const linearRamp = [255, 219, 182, 146, 109, 73, 36, 0].map((gray) => `rgb(${gray}, ${gray}, ${gray})`);
+  await page.waitForFunction(
+    (want) => JSON.stringify([...document.querySelectorAll('[role="group"][aria-label="Gray level swatches"] button')]
+      .map((button) => getComputedStyle(button).backgroundColor)) === JSON.stringify(want),
+    linearRamp,
+    { timeout: 20000 },
+  );
   assert.deepEqual(await swatches.getByRole("button").evaluateAll((buttons) => buttons.map((button) => getComputedStyle(button).backgroundColor)),
-    [255, 219, 182, 146, 109, 73, 36, 0].map((gray) => `rgb(${gray}, ${gray}, ${gray})`), "header reset restores the entire ramp at the current depth");
+    linearRamp, "header reset restores the entire ramp at the current depth");
   await depth(3).focus();
   await page.keyboard.press("ArrowRight");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "4-bit · 16 levels");
@@ -1081,8 +1064,16 @@ test("sparse response handles and exact edits use one graph at every depth", { s
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Add preset" }).click();
+  // The creation round-trips through the domain worker: wait for the new
+  // preset to be selected before touching depth, or the click lands while
+  // Monochrome is still active and silently no-ops.
+  await page.waitForFunction(
+    () => document.querySelector('[aria-label="2-bit · 4 levels"]')?.getAttribute("aria-checked") === "true",
+    null,
+    { timeout: 20000 },
+  );
   const panel = page.getByRole("group", { name: "Bit-depth & gray levels", exact: true });
   const graph = panel.getByRole("group", { name: "Gray response graph", exact: true });
   const gray = panel.getByRole("spinbutton", { name: "Gray value", exact: true });
@@ -1123,8 +1114,16 @@ test("sparse response handles and exact edits use one graph at every depth", { s
 
   for (const bits of [1, 2, 3, 4]) {
     await panel.getByRole("radio", { name: `${bits}-bit · ${2 ** bits} levels`, exact: true }).click();
-    if (await reset.isEnabled()) await reset.click();
     const count = 2 ** bits;
+    // Wait for the new depth to render before touching reset: the reset
+    // closure reads the rendered level count, so clicking early writes the
+    // previous depth's linear ramp over the change.
+    await page.waitForFunction(
+      (want) => document.querySelectorAll('[role="slider"][aria-label$="gray value"]').length === want,
+      count,
+      { timeout: 20000 },
+    );
+    if (await reset.isEnabled()) await reset.click();
     const index = Math.floor(count / 2);
     await wantValues(linear(count));
     const initial = await values();

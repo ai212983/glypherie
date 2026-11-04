@@ -54,7 +54,7 @@ test("OS dark boots dark; toggle switches both ways and persists", { skip: !brow
   await page.waitForFunction(() => !document.documentElement.classList.contains("dark"));
   assert.equal(await page.locator("[data-theme-toggle]").getAttribute("aria-label"), "Switch to dark mode");
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.equal(await isDark(page), false, "explicit light choice persists across reload");
 
@@ -90,7 +90,7 @@ test("follows OS changes until an explicit override", { skip: !browserAvailable 
   await page.emulateMedia({ colorScheme: "light" });
   await page.waitForTimeout(300);
   assert.equal(await isDark(page), true, "explicit choice ignores later OS changes");
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.equal(await isDark(page), true, "explicit choice persists across reload");
 });
@@ -178,7 +178,7 @@ test("toggle works while bootstrapping and without storage", { skip: !browserAva
   await page.waitForFunction(() => document.documentElement.classList.contains("dark"));
   await booted;
   assert.equal(await isDark(page), true, "in-memory choice survives bootstrap without storage");
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   assert.equal(await isDark(page), false, "reload falls back to the OS preference without storage");
   assert.deepEqual(errors, []);

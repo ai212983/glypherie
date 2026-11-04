@@ -13,6 +13,7 @@ import {
   type PreviewSnapshot,
 } from "../../src/app/features/preview/state/snapshot-codec.ts";
 import { detailPath, indexPath, palettesPath } from "../../src/app/navigation/router.ts";
+import { editKerning, selectKerningMethod } from "../../src/app/kerning/model.ts";
 
 const METAS: FamilyMeta[] = [
   {
@@ -45,6 +46,34 @@ const METAS: FamilyMeta[] = [
   },
 ];
 const DEFAULTS: GlobalDefaults = { font: "alpha", profile: "mono_1bit" };
+
+test("kerning methods and retained controls round-trip in complete preview links", () => {
+  const value = defaultSnapshot(METAS, DEFAULTS);
+  const typefacet = editKerning(selectKerningMethod(false, "typefacet"), {
+    method: "typefacet", settings: { normalDistanceEm: 0.175, intrusionToleranceEm: 0.05, minimumDistanceEm: 0.025, maxXExtremaOverlapEm: 0.125 },
+  });
+  const fontforge = editKerning(selectKerningMethod(typefacet, "fontforge"), {
+    method: "fontforge", settings: { strength: 0.65 },
+  });
+  const hu = editKerning(selectKerningMethod(fontforge, "hu_hersch"), {
+    method: "hu_hersch", settings: { strength: 0.35 },
+  });
+  for (const kerning of [hu, selectKerningMethod(hu, "fontforge"), selectKerningMethod(hu, "typefacet"), selectKerningMethod(hu, "source")]) {
+    for (const profile of ["mono_1bit", "gray_2bit", "gray_3bit", "gray_4bit"] as const) {
+      value.profile = profile;
+      value.kerning = kerning;
+      const params = encodeUrlSnapshot(value, "?utm=keep&kerning=1");
+      assert.equal(params.getAll("kerning").length, 1);
+      assert.equal(params.get("utm"), "keep");
+      const parsed = parseUrlSnapshot(params, "", METAS, DEFAULTS);
+      assert.deepEqual(parsed?.kerning, kerning);
+      assert.deepEqual(previewVariantSettings(parsed!.families.alpha!, parsed!, "candidate").kerning, kerning);
+    }
+  }
+  assert.equal(parseUrlSnapshot("?v=1&kerning=0", "", METAS, DEFAULTS)?.kerning, false);
+  assert.equal(parseUrlSnapshot("?v=1&kerning=1", "", METAS, DEFAULTS)?.kerning, true);
+  assert.equal(parseUrlSnapshot("?v=1&kerning=%7Bbad%7D", "", METAS, DEFAULTS)?.kerning, true);
+});
 
 function familyOf(snapshot: PreviewSnapshot, id: string): FamilySnapshot {
   const family = snapshot.families[id];

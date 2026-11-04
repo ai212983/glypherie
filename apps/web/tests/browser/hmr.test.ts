@@ -43,8 +43,9 @@ test("switching a cached production app to dev retires its worker and preserves 
   page.on("requestfailed", (request) => errors.push(`${request.url()}: ${request.failure()?.errorText}`));
   await bootLibrary(page, url);
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
+  await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   const id = (await cardIds(page))[0]!;
   await openNewVariant(page, id);
   await page.locator('[data-variant-name]').fill("Keep through dev recovery");
@@ -70,7 +71,7 @@ test("switching a cached production app to dev retires its worker and preserves 
   assert.equal(await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length), 0);
   // An unregistered worker can control the document whose reload overlapped
   // activation; the next navigation must be entirely free of that worker.
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator('[data-hmr-status="connected"]').waitFor({ timeout: 30000 });
   assert.equal(await page.evaluate(() => navigator.serviceWorker.controller), null);
   assert.deepEqual(errors, []);

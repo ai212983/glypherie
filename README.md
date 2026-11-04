@@ -41,6 +41,7 @@ npm test
 
 ### Documentation
 
+- [Product domain model](docs/domain-model.md)
 - [Generator](crates/generator/README.md)
 - [Web preview](apps/web/README.md)
 - [WASM renderer](crates/wasm/README.md)

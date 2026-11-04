@@ -6,6 +6,7 @@ import {
   browserAvailable,
   buildApp,
   canvasRendered,
+  captureDomainWorker,
   cardIds,
   createPalettePreset,
   hashParam,
@@ -14,6 +15,7 @@ import {
   selectPalettePreset,
   servePrefix,
   setZoom,
+  variantState,
 } from "../helpers/spa-helpers.ts";
 
 // Capture the latest worker render spec's mono_raster: "absent" when the
@@ -101,7 +103,7 @@ test("Automatic fitting has a persistent selective font-hints toggle only for hi
   await page.keyboard.press('Space');
   await page.waitForFunction(() => (window as any).__lastSpec?.pipeline.fitting === 'upstream_mono');
   assert.equal(await hashParam(page,'stem'), 'upstream_mono');
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await toggle.isChecked(), false);
   await toggle.click();
@@ -119,7 +121,7 @@ test("Automatic fitting has a persistent selective font-hints toggle only for hi
   assert.equal(await toggle.isChecked(), true);
   await toggle.click();
   await page.waitForFunction(() => document.querySelector('[data-save-status]')?.textContent === 'Saved');
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await toggle.isChecked(), false);
   await bootDetail(page, `${url}#/font/${literata}/?v=1`);
@@ -152,7 +154,7 @@ test("Mono previews follow font instructions with smart short-stroke fallback, i
   await page.waitForFunction(canvasRendered);
   await assertControlLayers(page);
   assert.equal(await lastMonoRaster(page), JSON.stringify(fixedScan));
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await lastMonoRaster(page), JSON.stringify(fixedScan));
 });
@@ -162,6 +164,7 @@ test("header zoom is global across routes and tabs, survives reload and never wr
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await captureDomainWorker(context);
   const page = await context.newPage();
   await page.addInitScript(SPEC_SCRIPT);
   await bootLibrary(page, url);
@@ -187,20 +190,18 @@ test("header zoom is global across routes and tabs, survives reload and never wr
   assert.equal(await page.locator("#zoom").getAttribute("data-value"), "4", "Back does not restore old zoom");
   await page.locator('[data-primary-nav="fonts"]').click();
   await page.locator("[data-font-card]").first().waitFor();
-  await openNewVariant(page, ids[0]!);
+  const variantId = await openNewVariant(page, ids[0]!);
   await page.waitForFunction(canvasRendered);
   assert.equal(await page.locator("#zoom").getAttribute("data-value"), "4");
-  const storedRows = () => page.evaluate(() => new Promise<string>((resolve, reject) => {
-    const request = indexedDB.open("font-library");
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
-      const db = request.result;
-      const rows = db.transaction("variants").objectStore("variants").getAll();
-      rows.onsuccess = () => { db.close(); resolve(JSON.stringify(rows.result)); };
-      rows.onerror = () => { db.close(); reject(rows.error); };
-    };
-  }));
-  const beforeRows = await storedRows();
+  // Display prefs live outside the graph store; the retired Dexie
+  // "font-library" read can no longer observe variant writes. Compare the
+  // variant through its owner instead.
+  await page.waitForFunction(
+    () => document.querySelector("[data-save-status]")?.textContent?.startsWith("Saved"),
+    null,
+    { timeout: 20000 },
+  );
+  const before = await variantState(page, variantId);
   const variantUrl = page.url();
   const second = await context.newPage();
   await bootLibrary(second, url);
@@ -210,8 +211,8 @@ test("header zoom is global across routes and tabs, survives reload and never wr
   await setZoom(page, "2");
   assert.equal(await page.locator("#zoom").getAttribute("data-value"), "2");
   assert.equal(page.url(), variantUrl);
-  assert.equal(await storedRows(), beforeRows, "display changes never autosave a variant");
-  await page.reload({ waitUntil: "networkidle" });
+  assert.deepEqual(await variantState(page, variantId), before, "display changes never autosave a variant");
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await page.locator("#zoom").getAttribute("data-value"), "2");
   await context.close();

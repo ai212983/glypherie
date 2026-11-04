@@ -5,7 +5,10 @@ export type Route =
   | { page: "index"; notice?: string }
   | { page: "font"; font: string }
   | { page: "variant"; font: string; variant: string }
-  | { page: "palettes" };
+  | { page: "palettes" }
+  | { page: "screen" }
+  | { page: "scenes" }
+  | { page: "scene"; scene: string };
 
 export interface RouteParts {
   path: string;
@@ -25,6 +28,9 @@ export type ParsedRoute =
   | { name: "font"; font: string }
   | { name: "variant"; font: string; variant: string }
   | { name: "palettes" }
+  | { name: "screen" }
+  | { name: "scenes" }
+  | { name: "scene"; scene: string }
   | null;
 
 export function parseRoute(hash: string): ParsedRoute {
@@ -32,6 +38,16 @@ export function parseRoute(hash: string): ParsedRoute {
   if (path === "" || path === "/") return { name: "home" };
   if (/^\/fonts\/?$/.test(path)) return { name: "index" };
   if (/^\/palettes\/?$/.test(path)) return { name: "palettes" };
+  if (/^\/screen\/?$/.test(path)) return { name: "screen" };
+  if (/^\/scenes\/?$/.test(path)) return { name: "scenes" };
+  const scene = path.match(/^\/scene\/([^/]+)\/?$/);
+  if (scene) {
+    try {
+      return { name: "scene", scene: decodeURIComponent(scene[1] ?? "") };
+    } catch {
+      return null;
+    }
+  }
   const variant = path.match(/^\/font\/([^/]+)\/variant\/([^/]+)\/?$/);
   if (variant) {
     try {
@@ -97,6 +113,14 @@ export function resolveRoute(
   // The palettes lab is font-independent: it resolves without fonts and wins
   // over stale legacy outer font queries or snapshot params on the way in.
   if (parsed?.name === "palettes") return { page: "palettes" };
+  if (parsed?.name === "screen") return { page: "screen" };
+  // Scenes are font-independent: they resolve without fonts, like the
+  // palettes lab and the screen viewer.
+  if (parsed?.name === "scenes") return { page: "scenes" };
+  if (parsed?.name === "scene") {
+    if (parsed.scene) return { page: "scene", scene: parsed.scene };
+    return { page: "index", notice: "Page not found. Showing all fonts." };
+  }
   if (parsed?.name === "index") return { page: "index" };
   if (parsed === null) {
     if (isRoutePath(hash ?? "")) {
@@ -153,6 +177,28 @@ export function variantPathKeeping(
   }
   const text = result.toString();
   return text ? `${variantPath(font, variant)}?${text}` : variantPath(font, variant);
+}
+
+/** Canonical screen path, keeping foreign params (e.g. role, utm) while dropping snapshot state. */
+export function screenPath(baseSearch: string | URLSearchParams): string {
+  return sectionPath("screen/", baseSearch);
+}
+
+/** Canonical scenes path, keeping foreign params while dropping snapshot state. */
+export function scenesPath(baseSearch: string | URLSearchParams): string {
+  return sectionPath("scenes/", baseSearch);
+}
+
+/** Canonical path for one saved scene; its settings live in the browser-local database, never in the URL. */
+export function scenePath(scene: string, baseSearch: string | URLSearchParams): string {
+  const base = outerParams(baseSearch ?? "");
+  const owned = new Set(OWNED_PARAMS);
+  const result = new URLSearchParams();
+  for (const [key, value] of base.entries()) {
+    if (!owned.has(key)) result.append(key, value);
+  }
+  const text = result.toString();
+  return `${appBase}scene/${encodeURIComponent(scene)}/${text ? `?${text}` : ""}`;
 }
 
 /** Canonical palettes path, keeping foreign params (e.g. role, utm) while dropping snapshot state. */

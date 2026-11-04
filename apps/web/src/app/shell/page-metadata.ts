@@ -14,6 +14,16 @@ export const PUBLIC_PAGES = {
     title: "Palettes — Glypherie",
     description: "Create and compare monochrome and grayscale palettes with 2, 4, 8 or 16 levels for bitmap font previews in Glypherie.",
   },
+  screen: {
+    path: "screen/",
+    title: "Screen — Glypherie",
+    description: "View supported reflective device shells with their native screen geometry in Glypherie.",
+  },
+  scenes: {
+    path: "scenes/",
+    title: "Scenes — Glypherie",
+    description: "Arrange text labels into scenes and export their text styles as bitmap fonts in Glypherie.",
+  },
 } as const;
 
 export const PREVIEW_DESCRIPTION = "Configure bitmap font rendering, compare the preview, and export a font in Glypherie. Fonts and settings stay in this browser.";

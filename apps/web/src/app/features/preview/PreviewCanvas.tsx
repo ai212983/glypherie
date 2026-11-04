@@ -1,4 +1,5 @@
 import * as React from "react";
+import type { KerningPreference } from "../../kerning/model.js";
 import type { MonoRaster, OutputProfile, Rasterization, RendererRole, RGBA, StemFitting } from "../../renderer/renderer-types.js";
 import { FontCanvas } from "../../renderer/FontCanvas.js";
 
@@ -9,7 +10,7 @@ export interface PreviewInputs {
   profile: OutputProfile;
   role: RendererRole;
   spacing: number;
-  kerning: boolean;
+  kerning: KerningPreference;
   stemFitting: StemFitting;
   diagonalFitting: boolean;
   monoRaster: MonoRaster;
@@ -47,6 +48,7 @@ export function PreviewCanvas(props: PreviewCanvasProps): React.JSX.Element {
       zoom={zoom}
       mode="exact"
       ready
+      clearOnError
       debounceMs={150}
       palette={palette}
       viewportProps={framed ? {
@@ -68,7 +70,7 @@ export function PreviewCanvas(props: PreviewCanvasProps): React.JSX.Element {
       }}
       onError={(message, info) => {
         console.warn("Preview failed", info.renderer, message);
-        onStatus("Couldn’t render preview.");
+        onStatus(message.includes("requires the current preview pipeline") ? message : "Couldn’t render preview.");
       }}
     />
   );

@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import {
+  blockDomainStorage,
   bootDetail,
   bootLibrary,
   browserAvailable,
@@ -47,10 +48,203 @@ async function waitEditor(page: Page): Promise<void> {
   await page.waitForFunction(canvasRendered, null, { timeout: 20000 });
 }
 
+async function sliderValue(page: Page, attribute: string): Promise<string | null> {
+  return page.locator(`[${attribute}]`).getByRole("slider").getAttribute("aria-valuenow");
+}
+
+async function setKerningSlider(page: Page, attribute: string, value: number): Promise<void> {
+  const slider = page.locator(`[${attribute}]`).getByRole("slider");
+  const minimum = Number(await slider.getAttribute("aria-valuemin"));
+  const step = attribute === "data-hu-hersch-strength" ? 5 : attribute === "data-fontforge-strength" ? 0.05 : 0.005;
+  await slider.focus();
+  await slider.press("Home");
+  for (let i = 0; i < Math.round((value - minimum) / step); i++) await slider.press("ArrowRight");
+  assert.equal(Number(await slider.getAttribute("aria-valuenow")), value);
+}
+
 /** Last bundled font id: SHA-256 of its canonical bytes, the library identity. */
 async function lastFontId(): Promise<string> {
   return sha256(await fs.readFile(path.join(fontDir, "SourceSans3.ttf")));
 }
+
+test("kerning method controls retain settings across switches and saved editor reloads", { skip: !browserAvailable }, async (t) => {
+  const output = await buildApp(t);
+  const url = await servePrefix(t, output);
+  const browser = await launch(t);
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await bootLibrary(page, url);
+  const { id } = await flexId(page);
+  await openNewVariant(page, id);
+  await waitEditor(page);
+
+  const choose = async (method: "Source" | "TypeFacet · experimental"): Promise<void> => {
+    await page.locator("[data-kerning-method]").click();
+    await page.getByRole("option", { name: method, exact: true }).click();
+  };
+  assert.equal(await page.locator("[data-typefacet-controls]").count(), 0);
+  await page.locator("[data-kerning]").uncheck();
+  await choose("TypeFacet · experimental");
+  assert.equal(await page.locator("[data-kerning]").count(), 0, "the inactive source switch is removed");
+  assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.1");
+  await setKerningSlider(page, "data-typefacet-normal", 0.15);
+  await setKerningSlider(page, "data-typefacet-intrusion", 0.025);
+  await setKerningSlider(page, "data-typefacet-minimum", 0.025);
+  await setKerningSlider(page, "data-typefacet-overlap", 0.075);
+  assert.equal(await page.locator("[data-typefacet-controls] input[type=number]").count(), 0);
+  assert.equal(await page.locator("[data-typefacet-controls]").getByRole("slider").count(), 4);
+  assert.equal(await page.getByRole("slider", { name: "Minimum clearance", exact: true }).getAttribute("aria-valuemax"), "0.15");
+  await waitSaved(page);
+  await choose("Source");
+  assert.equal(await page.locator("[data-typefacet-controls]").count(), 0, "inactive TypeFacet controls are removed");
+  assert.equal(await page.locator("[data-kerning]").isChecked(), false, "the source setting is retained");
+  await choose("TypeFacet · experimental");
+  assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.15");
+  assert.equal(await sliderValue(page, "data-typefacet-intrusion"), "0.025");
+  assert.equal(await sliderValue(page, "data-typefacet-minimum"), "0.025");
+  assert.equal(await sliderValue(page, "data-typefacet-overlap"), "0.075");
+  await waitSaved(page);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitEditor(page);
+  assert.match(await page.locator("[data-kerning-method]").textContent() ?? "", /TypeFacet/);
+  assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.15");
+  assert.equal(await sliderValue(page, "data-typefacet-intrusion"), "0.025");
+  assert.equal(await sliderValue(page, "data-typefacet-minimum"), "0.025");
+  assert.equal(await sliderValue(page, "data-typefacet-overlap"), "0.075");
+  assert.equal(await page.locator("[data-status]").textContent(), "", "the selected method renders successfully");
+
+  await page.locator("[data-text]").fill("nn oo aa");
+  await waitSaved(page);
+  await page.getByRole("button", { name: "Reset specimen", exact: true }).click();
+  await waitSaved(page);
+  assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.15", "specimen Reset preserves method settings");
+
+  const editorUrl = page.url();
+  await createPalettePreset(page, url, { name: "Kerning gray", bits: 3 });
+  await page.goto(editorUrl, { waitUntil: "domcontentloaded" });
+  await waitEditor(page);
+  await selectPalettePreset(page, "Kerning gray");
+  await waitSaved(page);
+  assert.match(await page.locator("[data-kerning-method]").textContent() ?? "", /TypeFacet/);
+  assert.equal(await page.locator("[data-typefacet-normal]").getByRole("slider").isDisabled(), false);
+  assert.equal(await page.locator("[data-typefacet-intrusion]").getByRole("slider").isDisabled(), false);
+  assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.15", "Gray retains the method settings");
+  await setKerningSlider(page, "data-typefacet-normal", 0.175);
+  await waitSaved(page);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitEditor(page);
+  assert.equal(await page.locator("[data-output-palette] [data-palette-name]").textContent(), "Kerning gray");
+  assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.175");
+  assert.equal(await sliderValue(page, "data-typefacet-intrusion"), "0.025");
+  assert.equal(await sliderValue(page, "data-typefacet-minimum"), "0.025");
+  assert.equal(await sliderValue(page, "data-typefacet-overlap"), "0.075");
+  assert.equal(await page.locator("[data-status]").textContent(), "", "TypeFacet renders Gray after reload");
+  assert.equal(await page.locator("[data-typefacet-controls] [role=alert]").count(), 0);
+  await choose("Source");
+  assert.equal(await page.locator("[data-kerning]").isChecked(), false);
+  await choose("TypeFacet · experimental");
+  assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.175", "switching methods in Gray retains edits");
+  await selectPalettePreset(page, "Monochrome");
+  await waitSaved(page);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitEditor(page);
+  assert.match(await page.locator("[data-kerning-method]").textContent() ?? "", /TypeFacet/);
+  assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.175", "returning to Mono retains Gray edits");
+  assert.equal(await sliderValue(page, "data-typefacet-intrusion"), "0.025");
+  assert.equal(await sliderValue(page, "data-typefacet-minimum"), "0.025");
+  assert.equal(await sliderValue(page, "data-typefacet-overlap"), "0.075");
+  assert.equal(await page.locator("[data-status]").textContent(), "", "the same method renders Mono again");
+  await page.getByRole("button", { name: "Reset TypeFacet settings", exact: true }).click();
+  await waitSaved(page);
+  for (const [attribute, value] of [["data-typefacet-normal", "0.1"], ["data-typefacet-intrusion", "0.1"],
+    ["data-typefacet-minimum", "0"], ["data-typefacet-overlap", "0.1"]]) {
+    assert.equal(await sliderValue(page, attribute!), value);
+  }
+  assert.equal(await page.getByRole("button", { name: "Reset TypeFacet settings", exact: true }).isDisabled(), true);
+  await page.locator("[data-text]").fill("ac ck");
+  await waitSaved(page);
+  await page.locator("[data-typefacet-normal]").getByRole("slider").press("End");
+  await page.locator("[data-typefacet-minimum]").getByRole("slider").press("End");
+  await waitSaved(page);
+  const fixedNormal = page.locator("[data-typefacet-normal]").getByRole("slider");
+  assert.equal(await fixedNormal.getAttribute("aria-valuenow"), "0.5");
+  assert.equal(await fixedNormal.getAttribute("aria-valuemin"), "0.5");
+  assert.equal(await fixedNormal.getAttribute("aria-valuemax"), "0.5");
+  assert.equal(await fixedNormal.getAttribute("aria-disabled"), "true");
+  assert.equal(await page.locator("[data-typefacet-controls]").evaluate((element) => element.outerHTML.includes("NaN")), false);
+  await page.getByRole("button", { name: "Reset TypeFacet settings", exact: true }).click();
+  await waitSaved(page);
+  assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.1");
+  assert.equal(await page.locator("[data-typefacet-normal]").getByRole("slider").isDisabled(), false);
+  assert.deepEqual(errors, []);
+});
+
+test("additional kerning methods select their own controls and render after Mono and Gray reloads", { skip: !browserAvailable }, async (t) => {
+  const output = await buildApp(t);
+  const url = await servePrefix(t, output);
+  const browser = await launch(t);
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await bootLibrary(page, url);
+  const { id } = await flexId(page);
+  await openNewVariant(page, id);
+  await waitEditor(page);
+  const choose = async (label: string): Promise<void> => {
+    await page.locator("[data-kerning-method]").click();
+    await page.getByRole("option", { name: label, exact: true }).click();
+    await waitSaved(page);
+  };
+  await choose("TypeFacet · experimental");
+  await setKerningSlider(page, "data-typefacet-normal", 0.15);
+  await waitSaved(page);
+  await choose("Hu/Hersch · experimental");
+  assert.equal(await sliderValue(page, "data-hu-hersch-strength"), "100", "legacy/default Hu/Hersch keeps the full correction");
+  assert.equal(await page.getByRole("slider", { name: "Correction strength", exact: true }).getAttribute("aria-valuemax"), "100");
+  await setKerningSlider(page, "data-hu-hersch-strength", 35);
+  await waitSaved(page);
+  await choose("FontForge source-relative · experimental");
+  await setKerningSlider(page, "data-fontforge-strength", 0.65);
+  await waitSaved(page);
+
+  const editorUrl = page.url();
+  await createPalettePreset(page, url, { name: "Other kerning gray", bits: 3 });
+  await page.goto(editorUrl, { waitUntil: "domcontentloaded" });
+  await waitEditor(page);
+
+  for (const palette of ["Monochrome", "Other kerning gray"]) {
+    await selectPalettePreset(page, palette);
+    await waitSaved(page);
+    for (const label of ["Hu/Hersch · experimental", "FontForge source-relative · experimental"]) {
+      await choose(label);
+      assert.equal(await page.locator("[data-typefacet-controls]").count(), 0);
+      assert.equal(await page.locator("[data-kerning]").count(), 0);
+      assert.equal(await page.locator("[data-hu-hersch-controls]").count(), label.startsWith("Hu/") ? 1 : 0);
+      assert.equal(await page.locator("[data-fontforge-controls]").count(), label.startsWith("FontForge") ? 1 : 0);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await waitEditor(page);
+      assert.equal(await page.locator("[data-kerning-method]").textContent(), label);
+      assert.equal(await page.locator("[data-status]").textContent(), "", `${label} renders ${palette}`);
+      if (label.startsWith("FontForge")) assert.equal(await sliderValue(page, "data-fontforge-strength"), "0.65");
+      else assert.equal(await sliderValue(page, "data-hu-hersch-strength"), "35", "Hu/Hersch strength survives profile, method and reload changes");
+    }
+  }
+  await choose("TypeFacet · experimental");
+  assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.15", "other method switches preserve TypeFacet parameters");
+  await choose("Hu/Hersch · experimental");
+  await setKerningSlider(page, "data-hu-hersch-strength", 0);
+  await waitSaved(page);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitEditor(page);
+  assert.equal(await sliderValue(page, "data-hu-hersch-strength"), "0", "the Source endpoint remains selected and saved as Hu/Hersch");
+  assert.equal(await page.locator("[data-status]").textContent(), "");
+  await page.getByRole("button", { name: "Reset Hu/Hersch strength", exact: true }).click();
+  await waitSaved(page);
+  assert.equal(await sliderValue(page, "data-hu-hersch-strength"), "100");
+  assert.equal(await page.getByRole("button", { name: "Reset Hu/Hersch strength", exact: true }).isDisabled(), true);
+  assert.deepEqual(errors, []);
+});
 
 test("rapid typing saves the final value and reload shows it", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
@@ -75,7 +269,7 @@ test("rapid typing saves the final value and reload shows it", { skip: !browserA
   assert.equal(await page.locator("[data-variant-name]").inputValue(), "QA variant heavy");
   assert.equal(await page.locator("[data-text]").inputValue(), "heavy");
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(page);
   assert.equal(await page.locator("[data-variant-name]").inputValue(), "QA variant heavy");
   assert.equal(await page.locator("[data-text]").inputValue(), "heavy");
@@ -101,6 +295,7 @@ test("latest edits survive immediate Back and Forward navigation", { skip: !brow
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   await page.goForward();
   await waitEditor(page);
+  await page.waitForFunction(() => (document.querySelector("[data-text]") as HTMLTextAreaElement | null)?.value === "back-forward-probe-value");
   assert.equal(await page.locator("[data-text]").inputValue(), "back-forward-probe-value");
   await waitSaved(page);
   assert.equal(await page.locator("[data-text]").inputValue(), "back-forward-probe-value");
@@ -119,7 +314,7 @@ test("a cross-tab write surfaces a conflict notice with explicit reload", { skip
   await waitSaved(first);
 
   const second = await context.newPage();
-  await second.goto(`${url}#/font/${id}/variant/${variantId}/`, { waitUntil: "networkidle" });
+  await second.goto(`${url}#/font/${id}/variant/${variantId}/`, { waitUntil: "domcontentloaded" });
   await waitEditor(second);
   await waitSaved(second);
 
@@ -193,7 +388,7 @@ test("a blank variant name fails visibly and saves again once fixed", { skip: !b
   assert.equal(await page.locator("[data-variant-name]").inputValue(), "Recovered name");
   assert.equal(await page.locator("[data-text]").inputValue(), "renamed sample");
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(page);
   assert.equal(await page.locator("[data-variant-name]").inputValue(), "Recovered name");
 });
@@ -208,7 +403,7 @@ test("a cold missing variant route recovers with a working library link", { skip
   await probe.close();
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   await page.goto(`${url}#/font/${ids[0]}/variant/00000000-0000-4000-8000-000000000000/`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
   });
   await page.waitForFunction(() => document.querySelector("[data-variant-deleted]") !== null, null, {
     timeout: 20000,
@@ -223,15 +418,14 @@ test("denied storage shows a query error with Retry instead of hanging", { skip:
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await context.addInitScript(() => {
-    window.indexedDB.open = () => {
-      throw new Error("IDB denied");
-    };
-  });
+  // The domain owner lives in a SharedWorker (PGlite); stubbing the main
+  // thread's indexedDB cannot fail it. Block the domain worker instead so
+  // its calls reject unavailable while the renderer worker stays alive.
+  await blockDomainStorage(context);
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${url}fonts/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}fonts/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("[data-library-error]") !== null, null, {
     timeout: 20000,
   });
@@ -241,7 +435,7 @@ test("denied storage shows a query error with Retry instead of hanging", { skip:
     text.includes("Browser storage is unavailable."),
     `the supported user message is shown, got: ${text}`,
   );
-  assert.ok(!text.includes("IDB denied"), "the underlying cause is not exposed");
+  assert.ok(!text.includes("Domain storage"), "the underlying cause is not exposed");
   await page.locator("[data-library-retry]").click();
   await page.waitForFunction(() => document.querySelector("[data-library-error]") !== null, null, {
     timeout: 20000,
@@ -302,12 +496,12 @@ test("legacy preview Save as variant copies settings without implicit writes", {
   assert.equal(await page.locator("[data-text]").inputValue(), "preview copy probe", "text copies to the saved row");
   await waitSaved(page);
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(page);
   assert.equal(await page.locator("[data-size-px]").inputValue(), "28", "copied settings persist");
   assert.equal(await page.locator("[data-text]").inputValue(), "preview copy probe");
 
-  await page.goto(`${url}#/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   // The saved-variant list arrives through its own reactive query, so wait
   // for it explicitly instead of assuming it settles with the cards.
@@ -344,7 +538,7 @@ test("variant specimens inherit root text and Reset preserves variant settings",
   await page.locator("[data-text]").fill("Variant override");
   await waitSaved(page);
   assert.equal(await preset.textContent(), "Custom");
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(page);
   assert.equal(await page.locator("[data-text]").inputValue(), "Variant override", "override survives reload");
 
@@ -359,7 +553,7 @@ test("variant specimens inherit root text and Reset preserves variant settings",
   assert.equal(await page.locator('[data-axis="wght"]').inputValue(), defaultWght);
   assert.equal(await page.locator("[data-text]").inputValue(), "Updated root gj 456");
 
-  await page.goto(`${url}#/font/${id}/variant/${firstId}/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/font/${id}/variant/${firstId}/`, { waitUntil: "domcontentloaded" });
   await waitEditor(page);
   assert.equal(await page.locator("[data-text]").inputValue(), "Variant override", "root changes preserve overrides");
   await page.getByRole("button", { name: "Reset specimen", exact: true }).click();
@@ -370,7 +564,7 @@ test("variant specimens inherit root text and Reset preserves variant settings",
   assert.equal(await page.getByRole("switch", { name: "Kerning", exact: true }).isChecked(), false);
   assert.equal(await page.locator("[data-text]").inputValue(), "Updated root gj 456");
 
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(page);
   assert.equal(await preset.textContent(), "Default", "inheritance survives reload");
   assert.equal(await page.locator("[data-text]").inputValue(), "Updated root gj 456");
@@ -692,7 +886,7 @@ test("extra tracking persists, survives profile changes, and stays layout-only",
   assert.equal(await page.locator("[data-spacing]").inputValue(), "0", "new variants start at neutral tracking");
   await page.locator("[data-text]").fill("Ag");
   await waitSaved(page);
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(page);
   const neutral = await specimenDigest(page);
   assert.ok(neutral.ink > 0, "the short specimen paints before tracking changes");
@@ -707,19 +901,19 @@ test("extra tracking persists, survives profile changes, and stays layout-only",
 
   const editorUrl = page.url();
   await createPalettePreset(page, url, { name: "Tracking gray", bits: 3 });
-  await page.goto(editorUrl, { waitUntil: "networkidle" });
+  await page.goto(editorUrl, { waitUntil: "domcontentloaded" });
   await waitEditor(page);
   await selectPalettePreset(page, "Tracking gray");
   await waitSaved(page);
   assert.equal(await page.locator("[data-spacing-number]").inputValue(), "2", "profile edits keep tracking");
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(page);
   assert.equal(await page.locator("[data-spacing-number]").inputValue(), "2", "tracking persists across reload");
   assert.equal(await page.locator("[data-output-palette] [data-palette-name]").textContent(), "Tracking gray");
 
   await selectPalettePreset(page, "Monochrome");
   await waitSaved(page);
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(page);
   const wide = await specimenDigest(page);
   await setRange(page, "[data-spacing]", "-2");
@@ -729,7 +923,7 @@ test("extra tracking persists, survives profile changes, and stays layout-only",
   const negative = await specimenDigest(page);
   assert.notDeepEqual(negative.hash, neutral.hash, "negative tracking shifts laid-out pixels");
   assert.equal(negative.ink, neutral.ink, "tightening keeps every ink texel on one unwrapped line");
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(page);
   assert.equal(await page.locator("[data-spacing-number]").inputValue(), "-2", "negative tracking persists");
 

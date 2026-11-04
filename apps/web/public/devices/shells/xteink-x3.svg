@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 653 992" role="img" aria-labelledby="x3-title">
+  <title id="x3-title">Xteink X3 enclosure outline</title>
+  <!-- Original vector shell: X3 pocket reader (97.6 x 63.7 mm slab, official
+       front render proportions). Black body, flush bottom rocker pair in a
+       recessed tray, one page key on each side edge, two nubs on the top
+       edge. No front branding. -->
+  <defs>
+    <linearGradient id="x3-body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2b30"/>
+      <stop offset="0.12" stop-color="#232327"/>
+      <stop offset="1" stop-color="#17171a"/>
+    </linearGradient>
+    <linearGradient id="x3-key" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#35353b"/>
+      <stop offset="0.5" stop-color="#26262b"/>
+      <stop offset="1" stop-color="#1b1b1f"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(8,8)">
+    <path fill="url(#x3-body)" fill-rule="evenodd" d="M32,0 H605 Q637,0 637,32 V944 Q637,976 605,976 H32 Q0,976 0,944 V32 Q0,0 32,0 Z M76.8,57.2 H560.2 Q570.2,57.2 570.2,67.2 V802.3 Q570.2,812.3 560.2,812.3 H76.8 Q66.8,812.3 66.8,802.3 V67.2 Q66.8,57.2 76.8,57.2 Z"/>
+    <rect x="63.8" y="54.2" width="509.4" height="761.1" rx="12" fill="none" stroke="#0a0a0c" stroke-width="6"/>
+    <rect x="10" y="831" width="616" height="135" rx="16" fill="#131316"/>
+    <rect x="16" y="833.5" width="604" height="2" rx="1" fill="#33333a" opacity="0.8"/>
+    <g>
+      <rect x="114.2" y="929.1" width="189.1" height="32.6" rx="16.3" fill="url(#x3-key)" stroke="#45454e" stroke-width="1.6"/>
+      <rect x="332.2" y="929.1" width="188.8" height="32.6" rx="16.3" fill="url(#x3-key)" stroke="#45454e" stroke-width="1.6"/>
+      <rect x="122.2" y="931.1" width="173.1" height="2.2" rx="1.1" fill="#4a4a53" opacity="0.7"/>
+      <rect x="340.2" y="931.1" width="172.8" height="2.2" rx="1.1" fill="#4a4a53" opacity="0.7"/>
+    </g>
+    <rect x="-5.9" y="163.8" width="13.9" height="156.7" rx="4" fill="url(#x3-key)" stroke="#45454e" stroke-width="1.4"/>
+    <rect x="629" y="163.8" width="13.9" height="156.7" rx="4" fill="url(#x3-key)" stroke="#45454e" stroke-width="1.4"/>
+    <rect x="89.8" y="-2" width="73.7" height="8" rx="2" fill="url(#x3-key)" stroke="#45454e" stroke-width="1.4"/>
+    <rect x="471.3" y="-6" width="76.9" height="12" rx="2" fill="url(#x3-key)" stroke="#45454e" stroke-width="1.4"/>
+  </g>
+</svg>

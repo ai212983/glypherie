@@ -1,4 +1,5 @@
 import * as React from "react";
+import { cloneKerning, isDefaultKerning } from "../../kerning/model";
 import type { StoredFont } from "../../fonts/storage.js";
 import type { RendererRole } from "../../renderer/renderer-types.js";
 import type { VariantSettings } from "../../variants/model.js";
@@ -64,7 +65,7 @@ export function FontPage({
   const { axes: defaultAxes, ...defaultFields } = defaultFamilySnapshot(meta);
   const { axes, ...fields } = family;
   const singleFont = (library.fonts?.length ?? 0) <= 1;
-  const resetDisabled = snapshot.kerning
+  const resetDisabled = isDefaultKerning(snapshot.kerning)
     && Object.entries(defaultFields).every(([key, value]) => fields[key as keyof typeof fields] === value)
     && Object.keys({ ...defaultAxes, ...axes }).every((tag) => axes[tag] === defaultAxes[tag]);
   const onSettings = (next: VariantSettings): void => {
@@ -74,7 +75,7 @@ export function FontPage({
     onPatch({
       profile: next.profile,
       paletteId: next.paletteId,
-      kerning: next.kerning,
+      kerning: cloneKerning(next.kerning),
       stemFitting: next.stemFitting,
       diagonalFitting: next.diagonalFitting,
       monoRaster: next.monoRaster,

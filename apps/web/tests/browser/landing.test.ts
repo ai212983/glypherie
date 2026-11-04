@@ -17,7 +17,7 @@ test("GitHub stars refresh when returning after starring the repository", { skip
   await context.route("https://api.github.com/repos/ai212983/glypherie", (route) =>
     route.fulfill({ json: { stargazers_count: stars } }));
   const page = await context.newPage();
-  await page.goto(url);
+  await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.getByRole("img", { name: "0 GitHub stars", exact: true }).waitFor();
   stars = 1;
   await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -43,7 +43,7 @@ test("GitHub button shows public stars and falls back when counts are unavailabl
     });
     const page = await context.newPage();
     const response = page.waitForResponse("https://api.github.com/repos/ai212983/glypherie");
-    await page.goto(url);
+    await page.goto(url, { waitUntil: "domcontentloaded" });
     await (await response).finished();
     const source = page.getByRole("link", { name: /^GitHub/ });
     assert.equal(await source.getAttribute("href"), "https://github.com/ai212983/glypherie");
@@ -68,7 +68,7 @@ test("landing, library and brand links keep distinct destinations under a hostin
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(url);
+  await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.locator("[data-landing]").waitFor();
   assert.equal(await hashPath(page), "/");
   assert.equal(await page.locator("main > section").first().getAttribute("aria-labelledby"), "rasterizer-comparison-title", "comparison is the first primary section");
@@ -112,12 +112,12 @@ test("landing, library and brand links keep distinct destinations under a hostin
   await page.goForward();
   await page.locator("[data-font-card]").first().waitFor();
   assert.equal(documentLoads, 0, "app navigation preserves the document");
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("[data-font-card]").first().waitFor();
   assert.equal(await hashPath(page), "/fonts/", "library bookmarks survive direct Pages loads");
 
   const ids = await cardIds(page);
-  await page.goto(`${url}?font=${ids[0]}`);
+  await page.goto(`${url}?font=${ids[0]}`, { waitUntil: "domcontentloaded" });
   await page.locator("[data-text]").waitFor();
   await page.locator("[data-text]").fill("Pending preview edit");
   await page.getByRole("banner").getByRole("link", { name: "Glypherie", exact: true }).click();
@@ -151,7 +151,7 @@ test("clearing local cache confirms and resets all Glypherie data without cleari
   await bootLibrary(page, url);
   await page.getByRole("banner").getByRole("link", { name: "Glypherie", exact: true }).click();
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => navigator.serviceWorker.controller !== null);
   await page.evaluate(async (scope) => {
     localStorage.setItem("font-preview.reset-fixture", "saved settings");
@@ -205,7 +205,7 @@ test("the introduction stays usable when font storage and the renderer are unava
     window.indexedDB.open = () => { throw new Error("IDB denied"); };
   });
   const page = await context.newPage();
-  await page.goto(`${url}?utm=intro`);
+  await page.goto(`${url}?utm=intro`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Bitmap fonts for low-resolution displays." }).waitFor();
   assert.equal(new URL(page.url()).pathname, "/");
   assert.equal(await page.locator("[data-library-error]").count(), 0);
@@ -225,7 +225,7 @@ test("comparison previews use the Fonts page colors, inverse mode, zoom and fram
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 1 });
-  await page.goto(url);
+  await page.goto(url, { waitUntil: "domcontentloaded" });
   await setZoom(page, "1");
   await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>("[data-rasterizer] img")].every((image) => image.complete && image.naturalWidth > 0));
   const presets = [
@@ -278,7 +278,7 @@ test("comparison previews use the Fonts page colors, inverse mode, zoom and fram
   assert.equal(await page.getByRole("switch", { name: "Inverse canvas colors" }).getAttribute("aria-checked"), "true");
   assert.deepEqual(await page.locator("[data-card-frame]").first().evaluate(styleOf), frame, "landing and Fonts use the identical specimen frame");
   await page.getByRole("banner").getByRole("link", { name: "Glypherie", exact: true }).click();
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("[data-rasterizer-frame]").first().waitFor();
   assert.equal(await page.locator("[data-preview-zoom]").getAttribute("data-value"), "3");
   assert.deepEqual(await page.locator('[data-rasterizer-frame="pdfontconv"]').evaluate(styleOf), frame, "display preferences survive navigation and reload");
@@ -291,7 +291,7 @@ test("landing switches all converter samples across families and native sizes", 
   const url = await servePrefix(t, output);
   const browser = await launch(t);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await page.goto(url);
+  await page.goto(url, { waitUntil: "domcontentloaded" });
   await setZoom(page, "1");
   const comparison = page.locator("[data-rasterizer-comparison]");
   const sizeControls = page.getByRole("radiogroup", { name: "Sample font size" });

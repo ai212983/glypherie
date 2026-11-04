@@ -46,7 +46,12 @@ test("obvious actions keep accessible names without tooltips; informative hints 
   await page.getByRole("tooltip").waitFor({ state: "hidden" });
   assert.equal(await fitting.evaluate((element) => element === document.activeElement), true, "Escape preserves trigger focus");
 
-  await page.goto(`${url}#/palettes/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(
+    () => document.querySelector('main section[aria-label="Grayscale preview"]') !== null,
+    null,
+    { timeout: 20000 },
+  );
   await page.getByRole("button", { name: "Add preset", exact: true }).click();
   const removePreset = page.getByRole("button", { name: "Delete preset Grayscale 1", exact: true });
   await accessibleAction(removePreset, "Delete preset Grayscale 1");

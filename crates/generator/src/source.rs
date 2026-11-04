@@ -67,7 +67,7 @@ struct Identities {
 fn prepare_identities(
     session: &crate::reference::CaptureSession<'_>,
     config: &Config,
-) -> Result<Identities, Error> {
+) -> Result<Identities, spacing::ShapingFailure> {
     let data = session.data;
     crate::validate_config(config)?;
     let font = crate::open_font(data)?;
@@ -81,7 +81,7 @@ fn prepare_identities(
     let size = Size::new(config.size_px);
     let metrics = font.metrics(size, &location);
     if metrics.units_per_em == 0 {
-        return Err(fail("font has invalid units per em"));
+        return Err(fail("font has invalid units per em").into());
     }
     let advances = font.glyph_metrics(size, &location);
     let outlines = font.outline_glyphs();
@@ -93,7 +93,7 @@ fn prepare_identities(
         spacing::validate_request(ch)?;
         if font.charmap().map(ch).is_none_or(|g| g.to_u32() == 0) {
             if config.missing_glyphs == crate::MissingGlyphs::Error {
-                return Err(fail(format!("missing glyph U+{:04X}", ch as u32)));
+                return Err(fail(format!("missing glyph U+{:04X}", ch as u32)).into());
             }
             missing_codepoints.push(ch as u32);
             continue;
@@ -101,7 +101,7 @@ fn prepare_identities(
         spacing::validate_character(ch)?;
         present.push(ch);
     }
-    let resolved = spacing::resolve_scalars(data, &config.axes, config.kerning, &present)?;
+    let resolved = spacing::resolve_scalars_checked(data, &config.axes, config.kerning, &present)?;
     let mut glyphs = Vec::with_capacity(resolved.len());
     for scalar in &resolved {
         let gid = skrifa_baseline::GlyphId::new(scalar.glyph_id);
@@ -120,7 +120,7 @@ fn prepare_identities(
         });
     }
     if glyphs.is_empty() {
-        return Err(fail("repertoire contains no available glyphs"));
+        return Err(fail("repertoire contains no available glyphs").into());
     }
     Ok(Identities {
         source_sha256: session.source_sha256().to_owned(),
@@ -137,7 +137,7 @@ fn prepare_identities(
 
 /// Validate and resolve a repertoire to source advances, global
 /// metrics, missing glyphs and kerning, with no rasterization.
-#[cfg(any(feature = "candidate", test))]
+#[cfg(test)]
 pub(crate) fn prepare_source(data: &[u8], config: &Config) -> Result<SourceFont, Error> {
     prepare_source_in_session(&crate::reference::CaptureSession::new(data), config)
 }
@@ -156,6 +156,58 @@ pub(crate) fn prepare_source_in_session(
         missing_codepoints: identities.missing_codepoints,
         kerning,
     })
+}
+
+/// Calibration is an auxiliary domain, so a representability limitation does
+/// not invalidate an independently valid output repertoire. Fatal errors do.
+#[cfg(any(feature = "candidate", test))]
+pub(crate) enum CalibrationSource {
+    Available(SourceFont),
+    Unavailable(&'static str),
+}
+
+#[cfg(any(feature = "candidate", test))]
+pub(crate) fn prepare_calibration_source_in_session(
+    session: &crate::reference::CaptureSession<'_>,
+    config: &Config,
+    requested_pairs: Option<&BTreeSet<(u32, u32)>>,
+) -> Result<CalibrationSource, Error> {
+    crate::validate_config(config)?;
+    let font = crate::open_font(session.data)?;
+    crate::validate_axes(&font, &config.axes)?;
+    if !config.characters.chars().any(|ch| {
+        font.charmap()
+            .map(ch)
+            .is_some_and(|glyph| glyph.to_u32() != 0)
+    }) {
+        return Ok(CalibrationSource::Unavailable("missing_calibration_glyph"));
+    }
+    let identities = match prepare_identities(session, config) {
+        Ok(identities) => identities,
+        Err(spacing::ShapingFailure::Unsupported(_)) => {
+            return Ok(CalibrationSource::Unavailable(
+                "calibration_unsupported_shaping",
+            ))
+        }
+        Err(spacing::ShapingFailure::Fatal(error)) => return Err(error),
+    };
+    if !identities.missing_codepoints.is_empty() {
+        return Ok(CalibrationSource::Unavailable("missing_calibration_glyph"));
+    }
+    let Some(kerning) =
+        spacing::extract_calibration(session.data, config, &identities.resolved, requested_pairs)?
+    else {
+        return Ok(CalibrationSource::Unavailable(
+            "calibration_unsupported_shaping",
+        ));
+    };
+    Ok(CalibrationSource::Available(SourceFont {
+        source_sha256: identities.source_sha256,
+        metrics: identities.metrics,
+        glyphs: identities.glyphs,
+        missing_codepoints: identities.missing_codepoints,
+        kerning,
+    }))
 }
 
 /// Test-only logical raster accounting. A logical call rasterizes one

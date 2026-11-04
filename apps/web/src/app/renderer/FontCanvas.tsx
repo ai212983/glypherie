@@ -1,5 +1,6 @@
 // cspell:words dctx nctx
 import * as React from "react";
+import type { KerningPreference } from "../kerning/model.js";
 import { LoaderCircle } from "lucide-react";
 import { useRenderer, type RendererService } from "./renderer-context.js";
 import {
@@ -10,6 +11,7 @@ import {
 import {
   backingSize,
   cssSize,
+  deviceBackingScale,
   magnification,
   nativeHeightCap,
   nativeWidthFor,
@@ -35,7 +37,7 @@ export interface FontCanvasProps {
   profile: OutputProfile;
   role: RendererRole;
   spacing: number;
-  kerning: boolean;
+  kerning: KerningPreference;
   stemFitting: StemFitting;
   // Optional so stories without the control keep compiling; opt-in only.
   diagonalFitting?: boolean;
@@ -43,6 +45,15 @@ export interface FontCanvasProps {
   rasterization?: Rasterization;
   zoom: number;
   mode: FontCanvasMode;
+  // Fixed native framebuffer for device previews: the render request always
+  // targets this size, so viewport resize and zoom never rewrap text or
+  // resize the bitmap. Only honored in exact mode.
+  nativeSize?: { width: number; height: number };
+  // CSS px per source pixel for device previews. Backing stays an integer
+  // multiple of the framebuffer; only presentation scales.
+  cssScale?: number;
+  // Hide the render-indicator slot for embedded (shell aperture) layouts.
+  compact?: boolean;
   // Complete coverage palette (exactly 2 Mono / 8 Gray entries, entry 0 is
   // the paper); omitted paints the default ink on paper.
   palette?: readonly RGBA[];
@@ -206,6 +217,38 @@ function paintExact(
   });
 }
 
+// Device-aperture paint: integer backing over the fixed framebuffer, CSS
+// presentation size set independently so shell and screen scale together.
+// Stale exact-mode transforms are cleared wholesale; the shell owns layout.
+function paintDevice(
+  display: HTMLCanvasElement,
+  native: HTMLCanvasElement,
+  data: RenderPixels,
+  shown: number,
+  mag: number,
+  cssWidth: number,
+  cssHeight: number,
+  background: readonly [number, number, number, number],
+): void {
+  if (!Number.isInteger(shown) || shown <= 0 || shown > data.height) throw new Error("Invalid shown height.");
+  if (!Number.isInteger(mag) || mag < 1) throw new Error("Invalid magnification.");
+  if (!(cssWidth > 0) || !(cssHeight > 0)) throw new Error("Invalid device display size.");
+  blit(native, data);
+  const backing = backingSize(data.width, shown, mag);
+  if (display.width !== backing.width) display.width = backing.width;
+  if (display.height !== backing.height) display.height = backing.height;
+  display.style.transform = "";
+  display.style.position = "";
+  display.style.transformOrigin = "";
+  display.style.left = "";
+  display.style.top = "";
+  commitDisplay(display, background, backing.width, backing.height, (dctx) => {
+    dctx.drawImage(native, 0, 0, data.width, shown, 0, 0, backing.width, backing.height);
+  });
+  display.style.width = `${cssWidth}px`;
+  display.style.height = `${cssHeight}px`;
+}
+
 interface Measured {
   width: number;
   estimate: number;
@@ -213,6 +256,7 @@ interface Measured {
   keyExtra: unknown;
   cssW: number;
   mag: number;
+  deviceScale: number | null;
 }
 
 function lineCount(text: string): number {
@@ -231,13 +275,15 @@ interface RenderHookOptions {
   profile: OutputProfile;
   role: RendererRole;
   spacing: number;
-  kerning: boolean;
+  kerning: KerningPreference;
   stemFitting: StemFitting;
   diagonalFitting?: boolean;
   monoRaster: MonoRaster;
   rasterization?: Rasterization;
   zoom: number;
   mode: FontCanvasMode;
+  nativeSize?: { width: number; height: number };
+  cssScale?: number;
   palette?: readonly RGBA[];
   debounceMs: number;
   exposeFullHeight: boolean;
@@ -272,7 +318,8 @@ function useFontRender(options: RenderHookOptions): {
 
   const {
     service, session, available, enabled, fontId, text, sizePx, axes, profile, role,
-    spacing, kerning, stemFitting, diagonalFitting, monoRaster, rasterization, zoom, mode, palette, debounceMs,
+    spacing, kerning, stemFitting, diagonalFitting, monoRaster, rasterization, zoom, mode, nativeSize, cssScale,
+    palette, debounceMs,
   } = options;
   const active = enabled && service !== null && available === true;
 
@@ -290,6 +337,19 @@ function useFontRender(options: RenderHookOptions): {
     if (!viewport) return null;
     const ratio = deviceRatio();
     if (mode === "exact") {
+      // Fixed device framebuffer: viewport size never enters the request.
+      if (nativeSize !== undefined) {
+        const scale = Number(cssScale);
+        if (!Number.isFinite(scale) || scale <= 0) return null;
+        const width = Math.min(4096, Math.max(1, Math.floor(Number(nativeSize.width) || 1)));
+        const height = Math.min(4096, Math.max(1, Math.floor(Number(nativeSize.height) || 1)));
+        const mag = deviceBackingScale(scale, ratio);
+        return {
+          width, estimate: height, cap: height,
+          keyExtra: { fixed: true, cssScale: scale, dpr: ratio, mag },
+          cssW: width * scale, mag, deviceScale: scale,
+        };
+      }
       const gutter = 1 + 1 / ratio;
       const cssW = viewport.clientWidth - gutter;
       if (cssW <= 0) return null;
@@ -297,14 +357,14 @@ function useFontRender(options: RenderHookOptions): {
       const width = nativeWidthFor(cssW, mag, ratio);
       const cap = nativeHeightCap(width, mag);
       const estimate = Math.min(cap, Math.max(1, lineCount(text) * Math.ceil(sizePx * 2)));
-      return { width, estimate, cap, keyExtra: { cssW, dpr: ratio, mag }, cssW, mag };
+      return { width, estimate, cap, keyExtra: { cssW, dpr: ratio, mag }, cssW, mag, deviceScale: null };
     }
     const cssW = viewport.clientWidth;
     if (cssW <= 0) return null;
     const width = logicalBounds(cssW, zoom);
     const cap = nativeCap(width);
     const estimate = Math.min(cap, Math.max(1, lineCount(text) * Math.ceil(sizePx * 2)));
-    return { width, estimate, cap, keyExtra: { displayW: cssW }, cssW, mag: zoom };
+    return { width, estimate, cap, keyExtra: { displayW: cssW }, cssW, mag: zoom, deviceScale: null };
   };
 
   React.useLayoutEffect(() => {
@@ -350,6 +410,7 @@ function useFontRender(options: RenderHookOptions): {
       });
     } catch (error) {
       scheduler.cancel();
+      if (canvasRef.current && outcomeRef.current.clearOnError) clearDisplay(canvasRef.current);
       const message = error instanceof Error ? error.message : String(error ?? "");
       outcomeRef.current.onError?.(message, { renderer: role });
       return;
@@ -361,6 +422,8 @@ function useFontRender(options: RenderHookOptions): {
     const mag = measured.mag;
     const paintMode = mode;
     const paintZoom = zoom;
+    const paintDeviceScale = measured.deviceScale;
+    const paintNativeWidth = measured.width;
     scheduler.request({
       key,
       fontId,
@@ -377,7 +440,10 @@ function useFontRender(options: RenderHookOptions): {
         if (!display) return;
         const native = nativeRef.current ?? document.createElement("canvas");
         nativeRef.current = native;
-        if (paintMode === "exact") {
+        if (paintMode === "exact" && paintDeviceScale !== null) {
+          paintDevice(display, native, data, shown, mag,
+            paintNativeWidth * paintDeviceScale, shown * paintDeviceScale, paintBackground);
+        } else if (paintMode === "exact") {
           paintExact(display, native, data, shown, mag, paintBackground);
         } else {
           paintNormal(display, native, data, shown, paintZoom, cssWidth, paintBackground);
@@ -403,7 +469,7 @@ function useFontRender(options: RenderHookOptions): {
   }, [
     service, session, available, active, measureTick,
     fontId, text, sizePx, axes, profile, role, spacing, kerning, stemFitting, diagonalFitting, monoRaster, rasterization,
-    zoom, mode, palette, debounceMs,
+    zoom, mode, nativeSize, cssScale, palette, debounceMs,
   ]);
 
   React.useEffect(() => {
@@ -465,6 +531,8 @@ export function FontCanvas(props: FontCanvasProps): React.JSX.Element {
     rasterization: props.rasterization,
     zoom: props.zoom,
     mode: props.mode,
+    nativeSize: props.nativeSize,
+    cssScale: props.cssScale,
     palette: props.palette,
     debounceMs: props.debounceMs,
     exposeFullHeight: props.exposeFullHeight ?? false,
@@ -476,6 +544,7 @@ export function FontCanvas(props: FontCanvasProps): React.JSX.Element {
 
   return (
     <div data-font-canvas className="min-w-0">
+      {!props.compact && (
       <div className="flex h-4 items-center justify-end" data-render-indicator-slot>
         {showSpinner && (
           <span role="status" data-render-spinner className="inline-flex text-muted-foreground">
@@ -484,6 +553,7 @@ export function FontCanvas(props: FontCanvasProps): React.JSX.Element {
           </span>
         )}
       </div>
+      )}
       <div ref={viewportRef} {...props.viewportProps} aria-busy={pending}>
         <canvas ref={canvasRef} {...props.canvasProps}>
           {props.canvasFallback}

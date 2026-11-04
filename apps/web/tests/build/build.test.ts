@@ -26,14 +26,31 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
   const cssNames = await filesByExtension(output, ".css");
   assert.equal(cssNames.length, 1, "one hashed stylesheet");
   const wasm = await filesByExtension(output, ".wasm");
-  assert.equal(wasm.length, 1, "one hashed renderer binary");
+  const rendererWasm = wasm.filter((name) => name.startsWith("font_wasm_bg-"));
+  assert.equal(rendererWasm.length, 1, "one hashed renderer binary");
   const rendererPackage = process.env.FONT_WASM_PREVIEW_DIR
     ?? path.join(repoRoot, "crates", "wasm", "pkg-web-preview-simd128");
   assert.equal(
-    sha256(await fs.readFile(path.join(output, "assets", wasm[0]!))),
+    sha256(await fs.readFile(path.join(output, "assets", rendererWasm[0]!))),
     sha256(await fs.readFile(path.join(rendererPackage, "font_wasm_bg.wasm"))),
     "configured renderer bytes reach the build unchanged (standard SIMD by default)",
   );
+  // The domain worker's PGlite engine ships as hashed assets precached on
+  // install: an offline cold boot of the domain owner must read every
+  // engine file from cache, and on-demand runtime caching never populates
+  // before the worker boots. Each file stays under the precache size cap.
+  const engineWasm = wasm.filter((name) => name.startsWith("pglite-") || name.startsWith("initdb-"));
+  assert.equal(engineWasm.length, 2, "PGlite engine binaries emitted");
+  const dataBundle = (await filesByExtension(output, ".data")).find((name) => name.startsWith("pglite-"));
+  assert.ok(dataBundle, "PGlite data bundle emitted");
+  const serviceWorker = await fs.readFile(path.join(output, "sw.js"), "utf8");
+  for (const name of [...engineWasm, dataBundle!]) {
+    assert.match(serviceWorker, new RegExp(name.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")), `${name} is precached for offline cold boot`);
+    assert.ok(
+      (await fs.stat(path.join(output, "assets", name))).size < 16 * 1024 * 1024,
+      `${name} stays under the precache size cap`,
+    );
+  }
 
   const fontPackages: Array<[string, string]> = [
     ["Roboto.ttf", "OFL-Roboto.txt"],
@@ -79,6 +96,12 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
   const rendererLicense = await fs.readFile(path.join(output, "renderer-license.txt"), "utf8");
   assert.ok(rendererLicense.includes("FreeType 2.15.0"));
   assert.ok(rendererLicense.includes("The FreeType Project LICENSE"));
+  assert.ok(rendererLicense.includes("TypeFacet"));
+  assert.ok(rendererLicense.includes("Charles Matthew Chen"));
+  assert.ok(rendererLicense.includes("Apache License"));
+  assert.ok(rendererLicense.includes("FontForge"));
+  assert.ok(rendererLicense.includes("George Williams"));
+  assert.ok(rendererLicense.includes("The name of the author may not be used to endorse"));
 
   const cssName = cssNames[0];
   assert.ok(cssName, "hashed stylesheet name");
@@ -106,7 +129,7 @@ test("Pages transport preserves URLs beneath root and project hosting prefixes",
     const output = await buildApp(t, base, `https://example.test${base}/`);
     const index = await fs.readFile(path.join(output, "index.html"), "utf8");
     const fallback = await fs.readFile(path.join(output, "404.html"), "utf8");
-    for (const [route, title] of [["", "Glypherie — Bitmap fonts for low-resolution displays"], ["fonts/", "Font library — Glypherie"], ["palettes/", "Palettes — Glypherie"]]) {
+    for (const [route, title] of [["", "Glypherie — Bitmap fonts for low-resolution displays"], ["fonts/", "Font library — Glypherie"], ["palettes/", "Palettes — Glypherie"], ["screen/", "Screen — Glypherie"], ["scenes/", "Scenes — Glypherie"]]) {
       const page = await fs.readFile(path.join(output, route!, "index.html"), "utf8");
       assert.equal((page.match(/<title\b/g) ?? []).length, 1);
       assert.ok(page.includes(`>${title}</title>`));

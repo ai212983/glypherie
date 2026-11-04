@@ -469,7 +469,7 @@ test("index settings survive navigation and reload", { skip: !browserAvailable }
   for (const id of ids) {
     assert.equal(after.loads[id] ?? 0, id === ids[0] ? 1 : 0, `native loading is limited to generated variants`);
   }
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("[data-index-text]").waitFor();
   await expectLibrarySettings("a reload");
   await expectFrameCaption("a reload");
@@ -496,7 +496,7 @@ test("index settings survive navigation and reload", { skip: !browserAvailable }
     "a new tab restores inverse",
   );
   await reopened.locator("[data-index-text]").fill("");
-  await reopened.reload();
+  await reopened.reload({ waitUntil: "domcontentloaded" });
   await reopened.locator("[data-index-text]").waitFor();
   assert.equal(await reopened.locator("[data-index-text]").inputValue(), "", "an intentionally empty sample stays empty");
   await context.close();
@@ -766,7 +766,7 @@ test("canvas appearance presets repaint with exact colors, geometry and persiste
   await waitForSettled(page, ids);
   await expectColors(COOL_INK, COOL_PAPER, "canvas palette ignores the app theme");
 
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("[data-index-text]").waitFor();
   assert.deepEqual(await canvasAppearance(page), { palette: "cool-paper", inverse: true }, "appearance survives a reload");
   await waitForSettled(page, ids);
@@ -858,7 +858,7 @@ test("saved variants render their own specimens in the library", { skip: !browse
   await page.locator("[data-size-px]").fill("24");
   const secondUrl = page.url();
   await createPalettePreset(page, url, { name: "Soft gray levels", bits: 3 });
-  await page.goto(secondUrl, { waitUntil: "networkidle" });
+  await page.goto(secondUrl, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
     timeout: 20000,
   });
@@ -1003,13 +1003,46 @@ test("saved variants render their own specimens in the library", { skip: !browse
   assert.equal(await page.locator("[data-variant-name]").inputValue(), "Compact", "keyboard opens the focused row");
   await backToLibrary(2);
 
+  // The palette store resolves after mount, so the gray variant first paints
+  // a Monochrome fallback (mono_1bit) and repaints once presets land. The
+  // bitmap is only a valid baseline once the saved 8-level identity painted.
+  await page.waitForFunction(
+    (variantId: string) => {
+      const canvas = document.querySelector(`[data-library-variant-canvas="${variantId}"]`);
+      if (!canvas || canvas.getAttribute("data-rendered") !== "true") return false;
+      const key = canvas.getAttribute("data-render-key");
+      return key !== null && (JSON.parse(key) as { profile?: string }).profile === "gray_3bit";
+    },
+    second,
+    { timeout: 30000 },
+  );
   const siblingBefore = await variantDigest(page, second);
+  const siblingKeyBefore = JSON.parse(
+    (await page.locator(`[data-library-variant-canvas="${second}"]`).getAttribute("data-render-key"))!,
+  ) as Record<string, unknown>;
   await page.locator(`[data-variant-link="${first}"]`).click();
   await page.waitForFunction(() => document.querySelector("[data-variant-editor]") !== null);
   assert.equal(await page.locator("[data-variant-name]").inputValue(), "Compact", "the title opens its own editor");
   await page.locator("[data-text]").fill("");
   await waitSaved();
   await backToLibrary(1);
+  // Readiness above covers only display palette/inverse/zoom, so it can pass
+  // on the Monochrome fallback paint from this remount. Wait for the saved
+  // render identity itself before comparing pixels.
+  await page.waitForFunction(
+    ([variantId, expected]: [string, Record<string, unknown>]) => {
+      const canvas = document.querySelector(`[data-library-variant-canvas="${variantId}"]`);
+      if (!canvas || canvas.getAttribute("data-rendered") !== "true") return false;
+      const raw = canvas.getAttribute("data-render-key");
+      if (raw === null) return false;
+      const key = JSON.parse(raw) as Record<string, unknown>;
+      return ["text", "size", "profile", "palette", "inverse", "zoom", "rasterization"].every(
+        (field) => JSON.stringify(key[field]) === JSON.stringify(expected[field]),
+      );
+    },
+    [second, siblingKeyBefore] as [string, Record<string, unknown>],
+    { timeout: 30000 },
+  );
   assert.equal(await page.locator(`[data-library-variant-canvas="${first}"]`).count(), 0, "an emptied variant unmounts only its bitmap");
   assert.equal(await page.locator(`[data-library-variant-caption="${first}"]`).innerText(), "12 px / 1-bit");
   assert.equal(await page.locator(`[data-variant-link="${first}"]`).getAttribute("aria-label"), "Compact");
@@ -1037,7 +1070,7 @@ test("saved variants render their own specimens in the library", { skip: !browse
   }
   assert.equal(after.kerningRequests, 0, "variant specimens never scan kerning pairs");
 
-  await page.reload();
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("[data-index-text]").waitFor();
   await waitForSettled(page, ids);
   await page.waitForFunction(
@@ -1212,7 +1245,7 @@ test("header Canvas controls follow every preview and stay usable at narrow widt
   await page.getByRole("combobox", { name: "Canvas preset" }).click();
   await page.getByRole("option", { name: "Warm", exact: true }).click();
   await page.locator("[data-canvas-inverse]").click();
-  await page.goto(`${url}#/font/${ids[0]}/?v=1`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/font/${ids[0]}/?v=1`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.deepEqual(await canvasAppearance(page), { palette: "warm-paper", inverse: true });
   await page.waitForFunction(() => {
@@ -1235,7 +1268,7 @@ test("header Canvas controls follow every preview and stay usable at narrow widt
   await checkHeader();
   await page.getByRole("combobox", { name: "Canvas preset" }).click();
   await page.getByRole("option", { name: "Cool", exact: true }).click();
-  await page.reload({ waitUntil: "networkidle" });
+  await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.deepEqual(await canvasAppearance(page), { palette: "cool-paper", inverse: true });
   const second = await context.newPage();

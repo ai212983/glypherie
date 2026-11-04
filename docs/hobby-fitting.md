@@ -693,6 +693,11 @@ incident endpoints stay bit-identical to upstream. Uncertified contacts, loops, 
 intermediate vertices abstain; curve fitting is still unsupported. This sufficient certificate is a project adaptation
 of these geometric properties, not a claim of general curve-arrangement support.
 
+A strict gap between exact hull bounding boxes certifies separation for every hull dimension, including a monotone
+quadratic flattened by hinting to a segment. Collinear segment hulls need this proof because their edge-normal axes
+cannot distinguish a positive longitudinal gap. Touching boxes retain the existing contact and adjacency predicates; the
+original curve commands, monotonicity requirement and topology comparison remain authoritative.
+
 Changed straight borders additionally clear the fixed upstream curves throughout their linear sweep. Exact hull
 separation may admit an isolated shared endpoint only when it is pinned on both old and new segments; a positive dot
 product between their remaining rays excludes collapse or reversal. Tangent-side agreement is unnecessary when the
@@ -1202,6 +1207,22 @@ neither fitting coefficients nor scan conversion change during review. Inspect s
 curve and terminal shape, attachments and reading rhythm across nearby sizes, weights and hint modes. Source Sans
 remains a control for changes outside the reported Roboto cases. Record demonstrated defects separately from unresolved
 optical tradeoffs; this assessment does not itself authorize renderer adoption.
+
+#### Shared stroke placement
+
+The shared-placement candidate extends attached fitting with one bounded X solve over straight borders and their
+quadratic attachments. Hersch §§5–6 supplies parallel borders and geometric grid phase; Hobby §§3.5–3.6 and §6 supplies
+approximate reflection, relative-width distortion and shared curve controls. It retains fitted Y, vertical attachment X,
+topology and the original movement allowance. The source-relative width terms stay soft when an integer width would be
+infeasible: paired borders may rotate together while their common slope remains controlled by the shape objective.
+Source-certified approximately reflected arms share a geometric phase; their source mismatch remains in the reflection
+objective. The half-pixel phase and the extension from fixed-direction to shared-slope constraints are project
+adaptations, selected from geometry before scanning and never from rendered pixels.
+
+This candidate must move eligible curved attachments with the straight stroke, retain source contrast and certified
+joins, and distinguish an infeasible placement from an unsupported source. The preceding fitting sequence remains the
+fallback and historical replay authority. Optical acceptance includes whole-stroke weight, joins, tips and reflected
+stepping; successful width or topology checks alone do not establish it.
 
 ### Source contrast and crossing assessment
 

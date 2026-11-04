@@ -6,10 +6,56 @@ import {
   toRenderSpec,
 } from "../../src/app/renderer/render-spec.ts";
 import type { RGBA } from "../../src/app/renderer/renderer-types.ts";
+import { editKerning, KERNING_METHODS, normalizeKerning, selectKerningMethod } from "../../src/app/kerning/model.ts";
 
 function baseOptions() {
   return { text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit" as const, width: 360, height: 120 };
 }
+
+test("kerning selection forwards only active settings independently of output profile", () => {
+  const options = { ...baseOptions(), rasterization: "free_type_mono" as const };
+  const state = editKerning(selectKerningMethod(false, "typefacet"), {
+    method: "typefacet", settings: { normalDistanceEm: 0.15, intrusionToleranceEm: 0.025, minimumDistanceEm: 0.02, maxXExtremaOverlapEm: 0.125 },
+  });
+  const typefacet = toRenderSpec({ ...options, kerning: state });
+  assert.equal(typefacet.kerning, true, "source fallback is enabled independently of the retained Source toggle");
+  assert.deepEqual(typefacet.kerning_method, {
+    method: "typefacet", normal_distance_em: 0.15, intrusion_tolerance_em: 0.025, minimum_distance_em: 0.02, max_x_extrema_overlap_em: 0.125,
+  });
+  const source = toRenderSpec({ ...options, kerning: selectKerningMethod(state, "source") });
+  assert.deepEqual(source, toRenderSpec({ ...options, kerning: false }));
+  assert.deepEqual(toRenderSpec({ ...options, kerning: normalizeKerning(true) }), toRenderSpec({ ...options, kerning: true }));
+  assert.ok(!Object.hasOwn(source, "kerning_method"));
+  for (const profile of ["gray_2bit", "gray_3bit", "gray_4bit"] as const) {
+    const gray = toRenderSpec({ ...options, profile, kerning: state });
+    assert.deepEqual(gray.kerning_method, typefacet.kerning_method);
+    assert.equal(gray.kerning, true);
+    assert.equal(gray.pipeline?.rasterization, "coverage");
+    assert.ok(!Object.hasOwn(gray, "mono_raster"));
+    assert.deepEqual(toRenderSpec({ ...options, profile, kerning: selectKerningMethod(state, "source") }),
+      toRenderSpec({ ...options, profile, kerning: false }), "Source retains historical request identity for Gray");
+  }
+  assert.throws(() => toRenderSpec({ ...options, rasterization: undefined, kerning: state }), /TypeFacet requires.*current preview pipeline/);
+});
+
+test("every optical method forwards its own request across profiles and rejects historical routing", () => {
+  const settings = [
+    editKerning(selectKerningMethod(false, "hu_hersch"), { method: "hu_hersch", settings: { strength: 0.35 } }),
+    editKerning(selectKerningMethod(false, "fontforge"), { method: "fontforge", settings: { strength: 0.65 } }),
+  ];
+  for (const kerning of settings) {
+    for (const profile of ["mono_1bit", "gray_2bit", "gray_3bit", "gray_4bit"] as const) {
+      const options = { ...baseOptions(), profile, kerning, rasterization: "free_type_mono" as const, letterSpacingPx: 1 };
+      const request = toRenderSpec(options);
+      assert.deepEqual(request.kerning_method, kerning.method === "hu_hersch"
+        ? { method: "hu_hersch", strength: 0.35 } : { method: "fontforge", strength: 0.65 });
+      assert.equal(request.kerning, true);
+      assert.equal(request.letter_spacing_px, 1, "tracking remains separate from method settings");
+      assert.throws(() => toRenderSpec({ ...options, rasterization: undefined }),
+        (error: unknown) => error instanceof Error && error.message.startsWith(`${KERNING_METHODS[kerning.method].label} requires`));
+    }
+  }
+});
 
 test("separated stages forward extra tracking and do not send a historical role", () => {
   const options = {
