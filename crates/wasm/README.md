@@ -16,7 +16,7 @@ Prerequisites:
 
 ```sh
 crates/wasm/build.sh web      # browser ESM -> crates/wasm/pkg-web/
-crates/wasm/build.sh nodejs   # Node (smoke + examples) -> crates/wasm/pkg-nodejs/
+crates/wasm/build.sh nodejs   # Node smoke tests -> crates/wasm/pkg-nodejs/
 crates/wasm/build.sh bundler  # bundler pipeline -> crates/wasm/pkg-bundler/
 ```
 
@@ -47,7 +47,7 @@ Verify the Node package:
 node crates/wasm/smoke/render.mjs [font-path]   # needs the nodejs pkg
 node crates/wasm/smoke/parity.mjs              # exact native/WASM comparison; needs Cargo
 node crates/wasm/smoke/upright_stem.mjs        # Literata preview-pipeline parity (upright-stem regression case); needs preview build + Cargo
-node --check crates/wasm/smoke/render.mjs crates/wasm/examples/hello.mjs
+node --check crates/wasm/smoke/render.mjs
 ```
 
 The parity harness recomputes native results for 67 cases spanning the shipped fonts, axes, fractional sizes, hinting,
