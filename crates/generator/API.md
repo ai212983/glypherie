@@ -265,12 +265,15 @@ supports the same 1/2/3/4-bit explicit pipelines. The monochrome strike wrapper 
 
 Serialized selections are strict, method-specific objects:
 
-| Selection                                                                      | Parameters                                                                                                                    |
-| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `{"method":"source"}`                                                          | No additional parameters.                                                                                                     |
-| `{"method":"typefacet","normal_distance_em":0.1,"intrusion_tolerance_em":0.1}` | Finite normal distance `0.01..=0.5` em and intrusion tolerance `0..=0.5` em. Both default to `0.1` em.                        |
-| `{"method":"hu_hersch","strength":1.0}`                                        | Finite strength `0..=1`, default `1`; `0` preserves Source exactly. Uses the fixed full-outline, density-conserving endpoint. |
-| `{"method":"fontforge","strength":1.0}`                                        | Finite strength `0..=1`, default `1`; `0` preserves Source exactly.                                                           |
+| Selection                                                                        | Parameters                                                                                             |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `{"method":"source"}`                                                            | No additional parameters.                                                                              |
+| `{"method":"typefacet","normal_distance_em":0.1,"intrusion_tolerance_em":0.1}`   | Finite normal distance `0.01..=0.5` em and intrusion tolerance `0..=0.5` em. Both default to `0.1` em. |
+| `{"method":"hu_hersch","aperture_depth_factor":0.21,"global_depth_factor":0.25}` | Finite aperture factor `0..=1`, default `0.21`; finite global factor `0..=1`, default `0.25`.          |
+| `{"method":"fontforge"}`                                                         | No additional parameters.                                                                              |
+
+Retired `strength` blends on either analytic method are rejected: unknown fields fail, so no saved blend can load as new
+defaults. Supported pairs always receive the full method. New Hu/Hersch depth factors must be finite numbers in `0..=1`.
 
 TypeFacet additionally accepts `minimum_distance_em` (finite `0..=normal_distance_em`, default `0`) and
 `max_x_extrema_overlap_em` (finite `0..=0.5`, default `0.1`). Omitted new fields preserve historical two-parameter
@@ -294,15 +297,16 @@ Latin lowercase/uppercase scalars, including accented letters, use their corresp
 use the experimental digit class. Other pair classes or unavailable calibration retain Source. Mono body windows use
 delivered reference glyphs; Gray uses fitted reference bounds independently of gamma, threshold and output depth.
 
-Hu/Hersch `strength` blends finalized Source adjustment with its continuous optical adjustment before signed pixel
-rounding and the existing feasibility bound. Strength `1` preserves the full correction, including its calibration;
-strength `0` preserves Source exactly and needs no auxiliary calibration or feasibility work. Legacy requests omitting
-strength retain the full correction. Strength changes no target density, geometry or glyph metrics.
+Hu/Hersch always applies its full continuous optical correction to supported pairs before signed pixel rounding and the
+existing feasibility bound; there is no Source blend. Its aperture depth factor scales the cavity cutoff against the
+cavity aperture height (patent transformation C) and its global depth factor caps wall depth against the class body
+height (patent transformation D); both factors enter the shared target calibration and the candidate walls. Depth
+changes move no advances, glyph images or bearing offsets.
 
 FontForge-derived spacing preserves each source pair's measured contour separation rather than imposing one shared
-target. It uses source and fitted outlines in font units, blending the analytic adjustment with finalized Source by
-`strength`. The source `kerning` switch affects that source-relative target as well as the Source endpoint. Missing
-shared measurement bands retain Source.
+target. It uses source and fitted outlines in font units and always applies the full analytic correction. The source
+`kerning` switch affects that source-relative target as well as the Source endpoint. Missing shared measurement bands
+retain Source.
 
 Each method selects completed adjustments on the existing whole-pixel bitmap grid, with its own solving and feasibility
 policy. Advances, glyph images and bearing offsets are unchanged. Supported pairs replace the source adjustment
@@ -310,10 +314,10 @@ entirely, including a zero result; abstentions retain it. A failed calculation a
 Placement adds finalized adjustments once; tracking is applied afterward. The source `kerning` switch controls fallback
 tables and does not disable TypeFacet or Hu/Hersch.
 
-Nonzero-strength Hu/Hersch and FontForge allow face/corner contact. Their Mono bound forbids occupied-cell overlap and
-same-row wall inversion; Gray uses a certified conservative bound on continuous raw fitted-outline wall order, without
-converting coverage to binary cells. It may retain a wider integer placement when the tighter bound cannot be certified.
-This policy does not modify Source or either method's zero-strength endpoint.
+Hu/Hersch and FontForge allow face/corner contact. Their Mono bound forbids occupied-cell overlap and same-row wall
+inversion; Gray uses a certified conservative bound on continuous raw fitted-outline wall order, without converting
+coverage to binary cells. It may retain a wider integer placement when the tighter bound cannot be certified. This
+policy does not modify Source.
 
 TypeFacet parameters are manual; it runs no density calibration. Missing feasible integer positions or exceeded
 computation limits return an error. The

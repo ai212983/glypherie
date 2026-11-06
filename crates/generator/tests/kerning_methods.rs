@@ -1,16 +1,33 @@
 //! Method selection resolves complete pair adjustments before shared placement.
-use font_generator::{HuHerschSettings, KerningMethod, TypefacetSettings};
+use font_generator::{FontforgeSettings, HuHerschSettings, KerningMethod, TypefacetSettings};
 
 #[test]
-fn hu_strength_defaults_legacy_requests_and_validates_finite_range() {
+fn hu_depth_defaults_legacy_requests_and_validates_finite_range() {
     let legacy: KerningMethod =
         serde_json::from_value(serde_json::json!({"method":"hu_hersch"})).unwrap();
-    assert_eq!(
-        legacy,
-        KerningMethod::HuHersch(HuHerschSettings { strength: 1.0 })
-    );
-    for strength in [0.0, 0.05, 0.5, 1.0] {
-        let method = KerningMethod::HuHersch(HuHerschSettings { strength });
+    assert_eq!(legacy, KerningMethod::HuHersch(HuHerschSettings::default()));
+    // The retired `strength` blend is rejected, never loaded as defaults.
+    for strength in [
+        serde_json::json!(0.0),
+        serde_json::json!(0.35),
+        serde_json::json!(1.0),
+        serde_json::json!(null),
+        serde_json::json!("0.35"),
+        serde_json::json!(true),
+    ] {
+        assert!(
+            serde_json::from_value::<KerningMethod>(
+                serde_json::json!({"method":"hu_hersch","strength":strength})
+            )
+            .is_err(),
+            "hu_hersch strength {strength} must not parse"
+        );
+    }
+    for (aperture, global) in [(0.0, 0.0), (0.21, 0.25), (0.35, 0.4), (1.0, 1.0)] {
+        let method = KerningMethod::HuHersch(HuHerschSettings {
+            aperture_depth_factor: aperture,
+            global_depth_factor: global,
+        });
         method.validate(true).unwrap();
         assert!(method.validate(false).is_err());
         assert_eq!(
@@ -18,16 +35,50 @@ fn hu_strength_defaults_legacy_requests_and_validates_finite_range() {
             method
         );
     }
-    for strength in [-0.01, 1.01, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        assert!(KerningMethod::HuHersch(HuHerschSettings { strength })
-            .validate(true)
-            .is_err());
+    for (aperture, global) in [
+        (-0.01, 0.25),
+        (0.21, 1.01),
+        (f64::NAN, 0.25),
+        (0.21, f64::INFINITY),
+        (f64::NEG_INFINITY, f64::NEG_INFINITY),
+    ] {
+        assert!(KerningMethod::HuHersch(HuHerschSettings {
+            aperture_depth_factor: aperture,
+            global_depth_factor: global,
+        })
+        .validate(true)
+        .is_err());
     }
+    // Unknown siblings still fail alongside the retired key.
     for value in [
-        serde_json::json!({"method":"hu_hersch","strength":null}),
-        serde_json::json!({"method":"hu_hersch","strength":1,"unknown":true}),
+        serde_json::json!({"method":"hu_hersch","aperture_depth_factor":0.21,"unknown":true}),
+        serde_json::json!({"method":"hu_hersch","aperture_depth_factor":"0.21","global_depth_factor":0.25}),
     ] {
         assert!(serde_json::from_value::<KerningMethod>(value).is_err());
+    }
+}
+
+#[test]
+fn fontforge_rejects_strength_and_keeps_the_parameterless_method() {
+    let current: KerningMethod =
+        serde_json::from_value(serde_json::json!({"method":"fontforge"})).unwrap();
+    assert_eq!(
+        current,
+        KerningMethod::Fontforge(FontforgeSettings::default())
+    );
+    current.validate(true).unwrap();
+    for rejected in [
+        serde_json::json!({"method":"fontforge","strength":0.0}),
+        serde_json::json!({"method":"fontforge","strength":0.35}),
+        serde_json::json!({"method":"fontforge","strength":1.0}),
+        serde_json::json!({"method":"fontforge","strength":null}),
+        serde_json::json!({"method":"fontforge","strength":"1"}),
+        serde_json::json!({"method":"fontforge","target":0}),
+    ] {
+        assert!(
+            serde_json::from_value::<KerningMethod>(rejected).is_err(),
+            "fontforge strength must not parse"
+        );
     }
 }
 
@@ -513,7 +564,7 @@ mod runtime {
     }
 
     #[test]
-    fn hu_strength_preserves_fixed_pitch_and_tabular_fallbacks() {
+    fn hu_depths_preserve_fixed_pitch_and_tabular_fallbacks() {
         for fixed_pitch in [false, true] {
             let bytes = uniform_advance_fixture(fixed_pitch);
             for bits in [1, 3] {
@@ -539,11 +590,14 @@ mod runtime {
                     .unwrap()
                 };
                 let source = generate(KerningMethod::Source);
-                for strength in [0., 0.5, 1.] {
-                    assert_eq!(
-                        generate(KerningMethod::HuHersch(HuHerschSettings { strength })),
-                        source
-                    );
+                for settings in [
+                    HuHerschSettings::default(),
+                    HuHerschSettings {
+                        aperture_depth_factor: 0.35,
+                        global_depth_factor: 0.4,
+                    },
+                ] {
+                    assert_eq!(generate(KerningMethod::HuHersch(settings)), source);
                 }
             }
         }

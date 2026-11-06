@@ -95,8 +95,11 @@ const kerningPreferenceObjectSchema = z
       minimumDistanceEm: z.number().optional(),
       maxXExtremaOverlapEm: z.number().optional(),
     }),
-    hu_hersch: z.object({ strength: z.number().optional() }).optional(),
-    fontforge: z.object({ strength: z.number().optional() }).optional(),
+    hu_hersch: z.strictObject({
+      apertureDepthFactor: z.number().optional(),
+      globalDepthFactor: z.number().optional(),
+    }).optional(),
+    fontforge: z.strictObject({}).optional(),
   })
   .refine(
     (value) => {

@@ -133,12 +133,13 @@ Preview render requests accept optional `kerning_method`:
   method: "typefacet", normal_distance_em: 0.1, intrusion_tolerance_em: 0.1,
   minimum_distance_em: 0, max_x_extrema_overlap_em: 0.1,
 }
-{ method: "hu_hersch", strength: 1.0 }
-{ method: "fontforge", strength: 1.0 }
+{ method: "hu_hersch", aperture_depth_factor: 0.21, global_depth_factor: 0.25 }
+{ method: "fontforge" }
 ```
 
 Non-Source methods require an explicit bitmap-layout pipeline and resolve current font bytes in WASM through the shared
 native implementation. Historical roles, invalid parameters and unknown fields fail, including for blank text. The
+retired `strength` blend is rejected at the request boundary: each supported pair gets the full method. The
 [generator pair-method contract](../generator/API.md#pair-kerning-methods) owns parameter ranges, profile support,
 coverage, fallbacks and computation limits. `font.kerning_pairs` continues describing source data independently of this
 choice.

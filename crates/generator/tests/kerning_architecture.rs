@@ -19,8 +19,12 @@ fn data() -> &'static [u8] {
 fn method(name: &str) -> KerningMethod {
     let value = match name {
         "hu_hersch" => serde_json::json!({ "method": name }),
-        "hu_hersch_half" => serde_json::json!({ "method": "hu_hersch", "strength": 0.5 }),
-        "fontforge" => serde_json::json!({ "method": name, "strength": 1.0 }),
+        "hu_hersch_deep" => serde_json::json!({
+            "method": "hu_hersch",
+            "aperture_depth_factor": 0.35,
+            "global_depth_factor": 0.4,
+        }),
+        "fontforge" => serde_json::json!({ "method": name }),
         _ => panic!("unexpected test method"),
     };
     serde_json::from_value(value).unwrap()
@@ -136,7 +140,7 @@ fn unsupported_scripts_keep_source_without_cross_script_calibration_pairs() {
         )
         .unwrap()
     };
-    for name in ["hu_hersch", "hu_hersch_half"] {
+    for name in ["hu_hersch", "hu_hersch_deep"] {
         assert_eq!(render(KerningMethod::Source), render(method(name)));
     }
 }
@@ -181,7 +185,7 @@ fn missing_auxiliary_glyph_does_not_change_the_requested_missing_glyph_policy() 
     };
     assert_eq!(render(method("hu_hersch")), render(KerningMethod::Source));
     assert_eq!(
-        render(method("hu_hersch_half")),
+        render(method("hu_hersch_deep")),
         render(KerningMethod::Source)
     );
     assert!(render(method("hu_hersch")).missing_codepoints.is_empty());
@@ -224,7 +228,7 @@ fn unrepresentable_auxiliary_pair_retains_source_for_valid_requested_text() {
     };
     let source = render(KerningMethod::Source).unwrap();
     assert_eq!(render(method("hu_hersch")).unwrap(), source);
-    assert_eq!(render(method("hu_hersch_half")).unwrap(), source);
+    assert_eq!(render(method("hu_hersch_deep")).unwrap(), source);
     let invalid = Config {
         characters: "zz".into(),
         ..config
@@ -306,7 +310,7 @@ fn hu_calibration_uses_full_designed_kerning_independently_of_source_toggle() {
 
 #[test]
 fn gray_methods_do_not_measure_quantized_coverage() {
-    for name in ["hu_hersch", "hu_hersch_half", "fontforge"] {
+    for name in ["hu_hersch", "hu_hersch_deep", "fontforge"] {
         let mut reference = None;
         for bits in [2, 3, 4] {
             let original = config("AVcaen osri", bits);
@@ -336,7 +340,7 @@ fn gray_methods_do_not_measure_quantized_coverage() {
 fn methods_complete_pair_tables_before_tracking_preview_and_export() {
     let text = "ca en os nx AV";
     let config = config(text, 1);
-    for name in ["hu_hersch", "hu_hersch_half", "fontforge"] {
+    for name in ["hu_hersch", "hu_hersch_deep", "fontforge"] {
         let plain = generate(&config, method(name), 0.0);
         let source = generate(&config, KerningMethod::Source, 0.0);
         assert_eq!(
@@ -402,12 +406,25 @@ fn methods_complete_pair_tables_before_tracking_preview_and_export() {
 }
 
 #[test]
-fn disabled_analytic_methods_are_exact_source_without_postsolve_feasibility_changes() {
+fn retired_strength_is_rejected_while_full_methods_keep_source_separation() {
+    // Retired blends fail at the schema boundary; the current full methods
+    // still resolve and stay distinct from Source identity.
     for name in ["fontforge", "hu_hersch"] {
-        let disabled = serde_json::from_value(serde_json::json!({
-            "method": name, "strength": 0.0,
-        }))
-        .unwrap();
+        for strength in [
+            serde_json::json!(0.0),
+            serde_json::json!(0.35),
+            serde_json::json!(1.0),
+            serde_json::json!(null),
+            serde_json::json!("0.35"),
+        ] {
+            assert!(
+                serde_json::from_value::<KerningMethod>(serde_json::json!({
+                    "method": name, "strength": strength,
+                }))
+                .is_err(),
+                "{name} strength {strength} must not parse"
+            );
+        }
         for bits in [1, 3] {
             for source_enabled in [false, true] {
                 for tracking in [-1., 0., 1.] {
@@ -415,9 +432,10 @@ fn disabled_analytic_methods_are_exact_source_without_postsolve_feasibility_chan
                         kerning: source_enabled,
                         ..config("AV ff ca", bits)
                     };
-                    assert_eq!(
-                        generate(&config, disabled, tracking),
-                        generate(&config, KerningMethod::Source, tracking)
+                    assert_ne!(
+                        generate(&config, method(name), tracking),
+                        generate(&config, KerningMethod::Source, tracking),
+                        "{name} full method must not pin Source identity"
                     );
                 }
             }
@@ -426,16 +444,23 @@ fn disabled_analytic_methods_are_exact_source_without_postsolve_feasibility_chan
 }
 
 #[test]
-fn hu_legacy_endpoint_and_invalid_strength_on_blank_reused_fonts() {
+fn hu_depth_defaults_and_invalid_depths_on_blank_reused_fonts() {
     for bits in [1, 3] {
         let config = config("AV ca en os 012", bits);
         assert_eq!(
             generate(&config, method("hu_hersch"), 0.),
             generate(
                 &config,
-                KerningMethod::HuHersch(HuHerschSettings { strength: 1. }),
+                KerningMethod::HuHersch(HuHerschSettings::default()),
                 0.
             )
+        );
+        // A non-default depth selection reaches the shared resolver instead
+        // of reproducing the default table.
+        assert_ne!(
+            generate(&config, method("hu_hersch_deep"), 0.).kerning,
+            generate(&config, method("hu_hersch"), 0.).kerning,
+            "depth factors must reach the resolver at depth {bits}"
         );
         let prepared = surface::PreparedFont::new(data().to_vec());
         let req = TextRenderRequest {
@@ -449,22 +474,26 @@ fn hu_legacy_endpoint_and_invalid_strength_on_blank_reused_fonts() {
             background: [255, 255, 255, 255],
             palette: None,
         };
-        let source = prepared
-            .render_text_with_pipeline_and_kerning(&req, pipeline(bits), 0., KerningMethod::Source)
-            .unwrap();
-        assert_eq!(
-            prepared
-                .render_text_with_pipeline_and_kerning(
-                    &req,
-                    pipeline(bits),
-                    0.,
-                    KerningMethod::HuHersch(HuHerschSettings { strength: 0. })
-                )
-                .unwrap(),
-            source
-        );
-        for strength in [-0.1, 1.1, f64::NAN, f64::INFINITY] {
-            let invalid = KerningMethod::HuHersch(HuHerschSettings { strength });
+        // Invalid depth factors fail even for blank text on a reused font.
+        for invalid in [
+            HuHerschSettings {
+                aperture_depth_factor: -0.1,
+                global_depth_factor: 0.25,
+            },
+            HuHerschSettings {
+                aperture_depth_factor: 0.21,
+                global_depth_factor: 1.1,
+            },
+            HuHerschSettings {
+                aperture_depth_factor: f64::NAN,
+                global_depth_factor: 0.25,
+            },
+            HuHerschSettings {
+                aperture_depth_factor: 0.21,
+                global_depth_factor: f64::INFINITY,
+            },
+        ] {
+            let invalid = KerningMethod::HuHersch(invalid);
             assert!(prepared
                 .render_text_with_pipeline_and_kerning(&req, pipeline(bits), 0., invalid)
                 .is_err());
@@ -487,7 +516,7 @@ fn hu_legacy_endpoint_and_invalid_strength_on_blank_reused_fonts() {
 #[test]
 fn mono_methods_allow_contact_without_occupied_cell_overlap_or_row_inversion() {
     let config = config("abcdefghijklmnopqrstuvwxyz", 1);
-    for name in ["hu_hersch", "hu_hersch_half", "fontforge"] {
+    for name in ["hu_hersch", "hu_hersch_deep", "fontforge"] {
         let font = generate(&config, method(name), 0.0);
         for a in &font.glyphs {
             for b in &font.glyphs {

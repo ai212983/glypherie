@@ -109,22 +109,34 @@ test("saved kerning methods retain controls across updates without aliases or va
   }, saved.revision), "invalid-settings");
 });
 
-test("saved Hu/Hersch strength migrates legacy defaults and survives inactive method updates", async () => {
+test("saved Hu/Hersch depths default, strength is rejected, inactive settings survive", async () => {
   const font = await saveFixture();
   const legacy = await createVariant(font.id, { settings: { ...defaultVariantSettings(font), kerning: {
     ...normalizeKerning(true), method: "hu_hersch", hu_hersch: {},
   } } });
-  assert.deepEqual(normalizeKerning(legacy.settings.kerning).hu_hersch, { strength: 1 });
-  const edited = editKerning(legacy.settings.kerning, { method: "hu_hersch", settings: { strength: 0.35 } });
+  assert.deepEqual(normalizeKerning(legacy.settings.kerning).hu_hersch, { apertureDepthFactor: 0.21, globalDepthFactor: 0.25 });
+  for (const strength of [0, 0.35, 1, null, "0.35"]) {
+    await assertRejectsCode(createVariant(font.id, { settings: { ...defaultVariantSettings(font), kerning: {
+      ...normalizeKerning(true), method: "hu_hersch", hu_hersch: { strength } as never,
+    } } }), "invalid-settings");
+  }
+  await assertRejectsCode(createVariant(font.id, { settings: { ...defaultVariantSettings(font), kerning: {
+    ...normalizeKerning(true), method: "fontforge", fontforge: { strength: 0 } as never,
+  } } }), "invalid-settings");
+  const edited = editKerning(legacy.settings.kerning, { method: "hu_hersch",
+    settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 } });
   const saved = await updateVariant(legacy.id, { settings: { ...legacy.settings, kerning: edited } }, legacy.revision);
-  edited.hu_hersch.strength = 0.8;
-  assert.equal(normalizeKerning((await getVariant(saved.id))!.settings.kerning).hu_hersch.strength, 0.35);
+  edited.hu_hersch.apertureDepthFactor = 0.8;
+  assert.deepEqual(normalizeKerning((await getVariant(saved.id))!.settings.kerning).hu_hersch,
+    { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 });
   const source = selectKerningMethod(saved.settings.kerning, "source");
   const inactive = await updateVariant(saved.id, { settings: { ...saved.settings, kerning: source } }, saved.revision);
-  assert.equal(normalizeKerning((await getVariant(inactive.id))!.settings.kerning).hu_hersch.strength, 0.35);
-  assert.equal(selectKerningMethod(inactive.settings.kerning, "hu_hersch").hu_hersch.strength, 0.35);
+  assert.deepEqual(normalizeKerning((await getVariant(inactive.id))!.settings.kerning).hu_hersch,
+    { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 });
+  assert.deepEqual(selectKerningMethod(inactive.settings.kerning, "hu_hersch").hu_hersch,
+    { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 });
   await assertRejectsCode(updateVariant(inactive.id, {
-    settings: { ...inactive.settings, kerning: { ...source, hu_hersch: { strength: 1.1 } } },
+    settings: { ...inactive.settings, kerning: { ...source, hu_hersch: { apertureDepthFactor: 1.1, globalDepthFactor: 0.25 } } },
   }, inactive.revision), "invalid-settings");
 });
 

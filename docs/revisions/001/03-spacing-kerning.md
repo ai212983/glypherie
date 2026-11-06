@@ -816,6 +816,16 @@ the previous result; zero strength preserves Source exactly and bypasses auxilia
 wall construction remain fixed. This is a project composition control, not a new optical model or calibration, and does
 not resolve the existing local-spacing assessment. Saved variants, URLs and export retain the same selection.
 
+**Depth controls replace strength blends, 2026-11-06:** the user rejects blending between Source and the selected
+method, so both analytic adapters now apply their full correction to every supported pair. Hu/Hersch gains the two
+method-owned depth controls from the patent's preferred embodiment: aperture-relative cavity depth (default `0.21`) and
+body-height maximum visual depth (default `0.25`), each finite `0..=1`. Both enter the candidate walls and the density
+calibration; class body height remains the global cap basis. FontForge keeps its source-relative objective with no new
+clearance or shared-target control. Retired `strength` values are rejected at every admission boundary (2026-11-06 hard
+cut): they no longer parse, so no saved blend can load as new defaults, including former zero-strength Source identity.
+Method names lose their experimental suffixes without asserting optical approval. Defaults reproduce the previous
+full-strength tables; pending local-spacing concerns are unchanged.
+
 **Geometry and placement separation, 2026-11-01:** the user identifies that method selection should not be coupled to
 Mono output. The
 [completed interface](../../designs/text-layout/contextual-spacing-and-healing.md#interchangeable-kerning-methods)

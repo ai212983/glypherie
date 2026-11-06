@@ -141,23 +141,31 @@ fn band_boundary_empty_and_native_unrepresentable_geometry_abstain() {
 }
 
 #[test]
-fn settings_are_strict_and_strength_zero_is_valid() {
-    for value in [0., 0.5, 1.] {
-        FontforgeSettings { strength: value }.validate().unwrap();
-    }
-    for value in [-0.1, 1.1, f64::INFINITY, f64::NAN] {
-        assert!(FontforgeSettings { strength: value }.validate().is_err());
-    }
+fn settings_reject_strength_and_unknown_fields() {
+    FontforgeSettings::default().validate().unwrap();
     assert_eq!(
         serde_json::from_str::<FontforgeSettings>("{}").unwrap(),
         FontforgeSettings::default()
     );
-    assert!(serde_json::from_str::<FontforgeSettings>("{\"strength\":1,\"target\":0}").is_err());
+    for rejected in [
+        "{\"strength\":0}",
+        "{\"strength\":0.5}",
+        "{\"strength\":1}",
+        "{\"strength\":null}",
+        "{\"strength\":\"1\"}",
+        "{\"strength\":1,\"target\":0}",
+        "{\"target\":0}",
+    ] {
+        assert!(
+            serde_json::from_str::<FontforgeSettings>(rejected).is_err(),
+            "{rejected} must not parse"
+        );
+    }
 }
 
 #[cfg(feature = "candidate")]
 #[test]
-fn four_font_gray_strength_and_source_kerning_smoke() {
+fn four_font_gray_source_kerning_smoke() {
     use crate::{
         candidate,
         renderer::{Rasterization, RenderPipeline},
@@ -204,37 +212,29 @@ fn four_font_gray_strength_and_source_kerning_smoke() {
                 KerningMethod::Source,
             )
             .unwrap();
-            for strength in [0., 0.5, 1.] {
-                let start = std::time::Instant::now();
-                let actual = candidate::generate_bitmap_font_with_pipeline_and_kerning(
-                    data,
-                    &config,
-                    pipeline,
-                    0.,
-                    KerningMethod::Fontforge(FontforgeSettings { strength }),
-                )
-                .unwrap_or_else(|e| {
-                    panic!("{name} Gray source={source_enabled} strength={strength}: {e}")
-                });
-                assert_eq!(
-                    source.glyphs, actual.glyphs,
-                    "{name}: spacing must not change outlines, bitmap, offsets or advances"
-                );
-                assert!(actual.kerning.iter().all(|p| p.adjustment_26_6 % 64 == 0));
-                if strength == 0. {
-                    assert_eq!(
-                        source, actual,
-                        "{name}: zero must bypass feasibility and all analysis"
-                    );
-                }
-                if strength == 1. {
-                    endpoints.push(actual.kerning.clone());
-                }
-                eprintln!(
-                    "FontForge {name} Gray3 source={source_enabled} strength={strength}: {:?}",
-                    start.elapsed()
-                );
-            }
+            let start = std::time::Instant::now();
+            let actual = candidate::generate_bitmap_font_with_pipeline_and_kerning(
+                data,
+                &config,
+                pipeline,
+                0.,
+                KerningMethod::Fontforge(FontforgeSettings::default()),
+            )
+            .unwrap_or_else(|e| panic!("{name} Gray source={source_enabled}: {e}"));
+            assert_eq!(
+                source.glyphs, actual.glyphs,
+                "{name}: spacing must not change outlines, bitmap, offsets or advances"
+            );
+            assert!(actual.kerning.iter().all(|p| p.adjustment_26_6 % 64 == 0));
+            assert_ne!(
+                source, actual,
+                "{name}: the full correction must move at least one pair"
+            );
+            endpoints.push(actual.kerning.clone());
+            eprintln!(
+                "FontForge {name} Gray3 source={source_enabled}: {:?}",
+                start.elapsed()
+            );
         }
         assert_ne!(
             endpoints[0], endpoints[1],

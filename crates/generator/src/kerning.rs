@@ -114,10 +114,7 @@ impl AnalysisPlan {
             classes: Vec::new(),
             source_geometry: false,
         };
-        if matches!(method, KerningMethod::Source | KerningMethod::Typefacet(_))
-            || matches!(method,KerningMethod::Fontforge(settings) if settings.strength == 0.0)
-            || matches!(method,KerningMethod::HuHersch(settings) if settings.strength == 0.0)
-        {
+        if matches!(method, KerningMethod::Source | KerningMethod::Typefacet(_)) {
             return Ok(plan);
         }
         crate::validate_config(config)?;
@@ -127,7 +124,7 @@ impl AnalysisPlan {
         }
         match method {
             KerningMethod::Source | KerningMethod::Typefacet(_) => {}
-            KerningMethod::Fontforge(settings) => plan.source_geometry = settings.strength > 0.0,
+            KerningMethod::Fontforge(_) => plan.source_geometry = true,
             KerningMethod::HuHersch(_) => {
                 // Class discovery is linear in supplied text, never its pair
                 // cross product. Use the adapter's exact Unicode classifier.
@@ -380,13 +377,6 @@ pub(crate) fn resolve(
         KerningMethod::HuHersch(settings) => settings.validate()?,
         KerningMethod::Fontforge(settings) => settings.validate()?,
     }
-    if matches!(method,KerningMethod::Fontforge(settings) if settings.strength == 0.0)
-        || matches!(method,KerningMethod::HuHersch(settings) if settings.strength == 0.0)
-    {
-        // The method's disabled endpoint is exact Source identity, without
-        // source geometry, calibration, rounding or feasibility work.
-        return Ok(());
-    }
     let font = crate::open_font(data)?;
     let location = font.axes().location(
         config
@@ -544,17 +534,15 @@ mod tests {
 
     #[cfg(feature = "candidate")]
     #[test]
-    fn zero_hu_strength_requires_no_font_or_auxiliary_analysis() {
-        let method = KerningMethod::HuHersch(HuHerschSettings { strength: 0.0 });
-        let plan = AnalysisPlan::new(&[], method, &Config::default()).unwrap();
-        assert!(plan.classes.is_empty());
-        assert!(!plan.source_geometry);
-        assert!(AnalysisPlan::new(
-            &[],
-            KerningMethod::HuHersch(Default::default()),
-            &Config::default()
-        )
-        .is_err());
+    fn source_and_typefacet_require_no_auxiliary_analysis() {
+        for method in [
+            KerningMethod::Source,
+            KerningMethod::Typefacet(TypefacetSettings::default()),
+        ] {
+            let plan = AnalysisPlan::new(&[], method, &Config::default()).unwrap();
+            assert!(plan.classes.is_empty());
+            assert!(!plan.source_geometry);
+        }
     }
 
     #[test]

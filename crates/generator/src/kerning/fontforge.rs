@@ -22,31 +22,15 @@ const MAX_BAND_VISITS: usize = 2_000_000;
 const MAX_TOTAL_BANDS: usize = 2_000_000;
 const MAX_TOTAL_VISITS: usize = 100_000_000;
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+/// The source-relative endpoint has no parameters: the full correction
+/// always applies to supported pairs. Each source pair keeps its own
+/// measured separation; there is no shared target or blend control.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct FontforgeSettings {
-    /// Metric-to-source-relative endpoint blend. Zero is exact Source identity.
-    #[serde(default = "full_strength")]
-    pub strength: f64,
-}
-
-fn full_strength() -> f64 {
-    1.0
-}
-
-impl Default for FontforgeSettings {
-    fn default() -> Self {
-        Self { strength: 1.0 }
-    }
-}
+pub struct FontforgeSettings {}
 
 impl FontforgeSettings {
     pub fn validate(&self) -> Result<(), Error> {
-        if !self.strength.is_finite() || !(0.0..=1.0).contains(&self.strength) {
-            return Err(fail(
-                "FontForge strength must be finite and between 0 and 1",
-            ));
-        }
         Ok(())
     }
 }
@@ -468,8 +452,6 @@ pub(super) fn resolve(
         for b in context.glyphs {
             let reason = if context.properties.monospace {
                 "fixed_pitch"
-            } else if settings.strength == 0.0 {
-                "optical_disabled"
             } else if char::from_u32(a.codepoint).is_some_and(char::is_whitespace)
                 || char::from_u32(b.codepoint).is_some_and(char::is_whitespace)
             {
@@ -488,7 +470,7 @@ pub(super) fn resolve(
             );
         }
     }
-    if settings.strength == 0.0 || context.properties.monospace {
+    if context.properties.monospace {
         return Ok(result);
     }
     let mut scope = super::placement::participating_codepoints(
@@ -606,26 +588,24 @@ pub(super) fn resolve(
             if advance % 64 != 0 {
                 return Err(fail("FontForge requires whole-pixel finalized advances"));
             }
-            let metric_adjustment = context
+            if context
                 .pair_adjustments_26_6
                 .get(&(a, b))
                 .copied()
-                .unwrap_or(0);
-            if metric_adjustment % 64 != 0 {
+                .unwrap_or(0)
+                % 64
+                != 0
+            {
                 return Err(fail(
                     "FontForge requires whole-pixel finalized pair adjustments",
                 ));
             }
-            let metric_step = f64::from(advance) / 64.0 + f64::from(metric_adjustment) / 64.0;
             let source_step = f64::from(source_advance) / 64.0 + f64::from(source_kern) / 64.0;
             let optical_step = finite(source_step + (source_offset - fitted_offset) / unit)?;
             // Rounding the adjustment preserves the existing signed tie policy
-            // when an integer left advance makes the origin negative.
-            let adjustment = finite(
-                (metric_step - f64::from(advance) / 64.0) * (1.0 - settings.strength)
-                    + (optical_step - f64::from(advance) / 64.0) * settings.strength,
-            )?
-            .round();
+            // when an integer left advance makes the origin negative. The full
+            // source-relative correction always applies to supported pairs.
+            let adjustment = finite(optical_step - f64::from(advance) / 64.0)?.round();
             let minimum = if context.output_bits == 1 {
                 super::placement::minimum(&cells[&a], &cells[&b])
             } else {

@@ -9,13 +9,25 @@ export interface TypeFacetSettings {
 type TypeFacetPreference = Pick<TypeFacetSettings, "normalDistanceEm" | "intrusionToleranceEm"> &
   Partial<Pick<TypeFacetSettings, "minimumDistanceEm" | "maxXExtremaOverlapEm">>;
 
-export interface FontForgeSettings {
-  strength: number;
-}
+export type FontForgeSettings = Record<string, never>;
 
 export interface HuHerschSettings {
-  strength: number;
+  apertureDepthFactor: number;
+  globalDepthFactor: number;
 }
+
+/** Published Hu/Hersch construction constants (US5768490A, transformations C/D). */
+export const HU_HERSCH_DEFAULTS = {
+  apertureDepthFactor: 0.21,
+  globalDepthFactor: 0.25,
+} as const;
+
+/** Project bounds for the depth-to-height ratios; the patent supplies the
+ * defaults, not these adjustment limits. */
+export const HU_HERSCH_APERTURE_MIN = 0;
+export const HU_HERSCH_APERTURE_MAX = 1;
+export const HU_HERSCH_GLOBAL_MIN = 0;
+export const HU_HERSCH_GLOBAL_MAX = 1;
 
 /** Each method owns its settings; tracking remains outside kerning. */
 export interface KerningSettingsMap {
@@ -28,10 +40,12 @@ export interface KerningSettingsMap {
 export type KerningMethod = keyof KerningSettingsMap;
 export type KerningState = { method: KerningMethod } & KerningSettingsMap;
 
-/** Historical booleans and two-method saved values migrate on normalization. */
+/** Historical booleans and two-method values migrate on normalization. The retired
+ * `strength` blend is rejected wherever it appears. */
 export type KerningPreference = boolean | (
   Pick<KerningState, "method" | "source"> & { typefacet: TypeFacetPreference } &
-  { hu_hersch?: Partial<HuHerschSettings> } & Partial<Pick<KerningState, "fontforge">>
+  { hu_hersch?: Partial<HuHerschSettings> } &
+  { fontforge?: FontForgeSettings }
 );
 
 export type KerningEdit = {
@@ -40,8 +54,8 @@ export type KerningEdit = {
 
 export type KerningMethodRequest =
   | { method: "typefacet"; normal_distance_em: number; intrusion_tolerance_em: number; minimum_distance_em: number; max_x_extrema_overlap_em: number }
-  | { method: "hu_hersch"; strength: number }
-  | { method: "fontforge"; strength: number };
+  | { method: "hu_hersch"; aperture_depth_factor: number; global_depth_factor: number }
+  | { method: "fontforge" };
 
 interface KerningMethodDescription {
   label: string;
@@ -57,15 +71,15 @@ export const KERNING_METHODS = {
     description: "Keeps the font's source kerning and fitted bearing corrections.",
   },
   typefacet: {
-    label: "TypeFacet", experimental: true, requiresExplicitPipeline: true,
+    label: "TypeFacet", experimental: false, requiresExplicitPipeline: true,
     description: "Manual optical spacing; adjust these parameters for the font.",
   },
   hu_hersch: {
-    label: "Hu/Hersch", experimental: true, requiresExplicitPipeline: true,
+    label: "Hu/Hersch", experimental: false, requiresExplicitPipeline: true,
     description: "Calibrates optical spacing to the font's reference alphabet density.",
   },
   fontforge: {
-    label: "FontForge source-relative", experimental: true, requiresExplicitPipeline: true,
+    label: "FontForge source-relative", experimental: false, requiresExplicitPipeline: true,
     description: "Targets each source pair's original optical separation after fitting.",
   },
 } as const satisfies Record<KerningMethod, KerningMethodDescription>;
@@ -79,13 +93,14 @@ export function assertNever(value: never): never {
 }
 
 // TypeFacet's upstream manual parameters; these are not a font-specific fit.
+// Hu/Hersch depths are the published US5768490A construction constants.
 export function defaultKerningState(): KerningState {
   return {
     method: "source",
     source: { enabled: true },
     typefacet: { normalDistanceEm: 0.1, intrusionToleranceEm: 0.1, minimumDistanceEm: 0, maxXExtremaOverlapEm: 0.1 },
-    hu_hersch: { strength: 1 },
-    fontforge: { strength: 1 },
+    hu_hersch: { ...HU_HERSCH_DEFAULTS },
+    fontforge: {},
   };
 }
 
@@ -119,19 +134,28 @@ export function validateKerningPreference(value: unknown): asserts value is Kern
     throw new Error("TypeFacet maximum horizontal overlap must be between 0 and 0.5 em.");
   }
   if (value.hu_hersch !== undefined) {
-    if (!isRecord(value.hu_hersch) || Object.keys(value.hu_hersch).some((key) => key !== "strength")) {
-      throw new Error("Hu/Hersch only accepts correction strength.");
+    if (!isRecord(value.hu_hersch)) throw new Error("Hu/Hersch settings are missing.");
+    const known = new Set(["apertureDepthFactor", "globalDepthFactor"]);
+    for (const key of Object.keys(value.hu_hersch)) {
+      if (!known.has(key)) throw new Error(`Hu/Hersch does not accept ${key}.`);
     }
-    const strength = value.hu_hersch.strength === undefined ? 1 : value.hu_hersch.strength;
-    if (typeof strength !== "number" || !Number.isFinite(strength) || strength < 0 || strength > 1) {
-      throw new Error("Hu/Hersch correction strength must be between 0 and 1.");
+    const aperture = value.hu_hersch.apertureDepthFactor === undefined
+      ? HU_HERSCH_DEFAULTS.apertureDepthFactor : value.hu_hersch.apertureDepthFactor;
+    if (typeof aperture !== "number" || !Number.isFinite(aperture)
+      || aperture < HU_HERSCH_APERTURE_MIN || aperture > HU_HERSCH_APERTURE_MAX) {
+      throw new Error("Hu/Hersch cavity depth must be between 0 and 1.");
+    }
+    const global = value.hu_hersch.globalDepthFactor === undefined
+      ? HU_HERSCH_DEFAULTS.globalDepthFactor : value.hu_hersch.globalDepthFactor;
+    if (typeof global !== "number" || !Number.isFinite(global)
+      || global < HU_HERSCH_GLOBAL_MIN || global > HU_HERSCH_GLOBAL_MAX) {
+      throw new Error("Hu/Hersch maximum visual depth must be between 0 and 1.");
     }
   }
   if (value.fontforge !== undefined) {
     if (!isRecord(value.fontforge)) throw new Error("FontForge settings are missing.");
-    const strength = value.fontforge.strength;
-    if (typeof strength !== "number" || !Number.isFinite(strength) || strength < 0 || strength > 1) {
-      throw new Error("FontForge strength must be between 0 and 1.");
+    for (const key of Object.keys(value.fontforge)) {
+      throw new Error(`FontForge does not accept ${key}.`);
     }
   }
 }
@@ -148,8 +172,11 @@ export function normalizeKerning(value: KerningPreference = true): KerningState 
       minimumDistanceEm: value.typefacet.minimumDistanceEm ?? 0,
       maxXExtremaOverlapEm: value.typefacet.maxXExtremaOverlapEm ?? 0.1,
     },
-    hu_hersch: { strength: value.hu_hersch?.strength ?? 1 },
-    fontforge: { strength: value.fontforge?.strength ?? 1 },
+    hu_hersch: {
+      apertureDepthFactor: value.hu_hersch?.apertureDepthFactor ?? HU_HERSCH_DEFAULTS.apertureDepthFactor,
+      globalDepthFactor: value.hu_hersch?.globalDepthFactor ?? HU_HERSCH_DEFAULTS.globalDepthFactor,
+    },
+    fontforge: {},
   };
 }
 
@@ -202,8 +229,10 @@ export function resolveKerning(value: KerningPreference = true): {
         max_x_extrema_overlap_em: state.typefacet.maxXExtremaOverlapEm,
       },
     };
-    case "hu_hersch": return { kerning: true, kerning_method: { method: "hu_hersch", strength: state.hu_hersch.strength } };
-    case "fontforge": return { kerning: true, kerning_method: { method: "fontforge", strength: state.fontforge.strength } };
+    case "hu_hersch": return { kerning: true, kerning_method: { method: "hu_hersch",
+      aperture_depth_factor: state.hu_hersch.apertureDepthFactor,
+      global_depth_factor: state.hu_hersch.globalDepthFactor } };
+    case "fontforge": return { kerning: true, kerning_method: { method: "fontforge" } };
     default: return assertNever(state.method);
   }
 }

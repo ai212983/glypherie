@@ -286,8 +286,9 @@ fn validate_kerning_keys(value: &JsValue) -> Result<(), JsValue> {
             "minimum_distance_em",
             "max_x_extrema_overlap_em",
         ],
-        Some("hu_hersch") => &["method", "strength"],
-        Some("fontforge") => &["method", "strength"],
+        Some("hu_hersch") => &["method", "aperture_depth_factor", "global_depth_factor"],
+        // Parameterless: any key beyond `method` fails.
+        Some("fontforge") => &["method"],
         _ => return Err(js_error("unknown kerning method")),
     };
     for key in js_sys::Reflect::own_keys(value)? {
@@ -764,9 +765,8 @@ mod tests {
     fn analytic_method_requests_are_strict_even_for_blank_text() {
         for method in [
             json!({"method":"hu_hersch"}),
-            json!({"method":"hu_hersch","strength":0.5}),
+            json!({"method":"hu_hersch","aperture_depth_factor":0.35,"global_depth_factor":0.4}),
             json!({"method":"fontforge"}),
-            json!({"method":"fontforge","strength":0.5}),
         ] {
             let mut spec = spec_from(json!({"text":"", "width":64,"height":32,
                 "kerning_method":method}))
@@ -777,24 +777,39 @@ mod tests {
             spec.pipeline = Some(Default::default());
             assert!(spec.kerning_method.validate(true).is_ok());
         }
+        // The retired `strength` blend is rejected, never loaded as defaults.
         for method in [
+            json!({"method":"hu_hersch","strength":0.0}),
+            json!({"method":"hu_hersch","strength":0.35}),
+            json!({"method":"hu_hersch","strength":1.0}),
             json!({"method":"hu_hersch","strength":null}),
-            json!({"method":"hu_hersch","strength":1,"foreign":1}),
-            json!({"method":"fontforge","strength":1,"foreign":1}),
+            json!({"method":"hu_hersch","strength":"0.5"}),
+            json!({"method":"fontforge","strength":0.0}),
+            json!({"method":"fontforge","strength":0.5}),
+            json!({"method":"fontforge","strength":1.0}),
             json!({"method":"fontforge","strength":null}),
+            json!({"method":"hu_hersch","strength":null,"foreign":1}),
+            json!({"method":"hu_hersch","aperture_depth_factor":0.21,"foreign":1}),
+            json!({"method":"fontforge","strength":1,"foreign":1}),
+            json!({"method":"fontforge","target":0}),
         ] {
             assert!(spec_from(json!({"text":"", "width":64,"height":32,
                 "kerning_method":method}))
             .is_err());
         }
-        for method in ["fontforge", "hu_hersch"] {
-            for strength in [-0.1, 1.1] {
-                let spec = spec_from(json!({"text":"", "width":64,"height":32,
-                    "kerning_method":{"method":method,"strength":strength}}))
-                .unwrap();
-                assert!(spec.kerning_method.validate(true).is_err());
-            }
+        for invalid in [
+            json!({"method":"hu_hersch","aperture_depth_factor":-0.1,"global_depth_factor":0.25}),
+            json!({"method":"hu_hersch","aperture_depth_factor":0.21,"global_depth_factor":1.1}),
+        ] {
+            let spec = spec_from(json!({"text":"", "width":64,"height":32,
+                "kerning_method":invalid}))
+            .unwrap();
+            assert!(spec.kerning_method.validate(true).is_err());
         }
+        // Nonfinite depths fail deserialization even for blank text.
+        assert!(spec_from(json!({"text":"", "width":64,"height":32,
+            "kerning_method":{"method":"hu_hersch","aperture_depth_factor":f64::NAN,"global_depth_factor":0.25}}))
+        .is_err());
     }
 
     #[cfg(feature = "preview")]

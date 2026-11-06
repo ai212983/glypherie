@@ -13,7 +13,7 @@ import {
   type PreviewSnapshot,
 } from "../../src/app/features/preview/state/snapshot-codec.ts";
 import { detailPath, indexPath, palettesPath } from "../../src/app/navigation/router.ts";
-import { editKerning, selectKerningMethod } from "../../src/app/kerning/model.ts";
+import { editKerning, resolveKerning, selectKerningMethod } from "../../src/app/kerning/model.ts";
 
 const METAS: FamilyMeta[] = [
   {
@@ -53,10 +53,10 @@ test("kerning methods and retained controls round-trip in complete preview links
     method: "typefacet", settings: { normalDistanceEm: 0.175, intrusionToleranceEm: 0.05, minimumDistanceEm: 0.025, maxXExtremaOverlapEm: 0.125 },
   });
   const fontforge = editKerning(selectKerningMethod(typefacet, "fontforge"), {
-    method: "fontforge", settings: { strength: 0.65 },
+    method: "fontforge", settings: {},
   });
   const hu = editKerning(selectKerningMethod(fontforge, "hu_hersch"), {
-    method: "hu_hersch", settings: { strength: 0.35 },
+    method: "hu_hersch", settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 },
   });
   for (const kerning of [hu, selectKerningMethod(hu, "fontforge"), selectKerningMethod(hu, "typefacet"), selectKerningMethod(hu, "source")]) {
     for (const profile of ["mono_1bit", "gray_2bit", "gray_3bit", "gray_4bit"] as const) {
@@ -73,6 +73,21 @@ test("kerning methods and retained controls round-trip in complete preview links
   assert.equal(parseUrlSnapshot("?v=1&kerning=0", "", METAS, DEFAULTS)?.kerning, false);
   assert.equal(parseUrlSnapshot("?v=1&kerning=1", "", METAS, DEFAULTS)?.kerning, true);
   assert.equal(parseUrlSnapshot("?v=1&kerning=%7Bbad%7D", "", METAS, DEFAULTS)?.kerning, true);
+});
+
+test("retired strength blends in preview links are rejected back to the default", () => {
+  const retiredHu = encodeURIComponent(JSON.stringify({
+    method: "hu_hersch", source: { enabled: false },
+    typefacet: { normalDistanceEm: 0.1, intrusionToleranceEm: 0.1 },
+    hu_hersch: { strength: 0.35 },
+  }));
+  const retiredForge = encodeURIComponent(JSON.stringify({
+    method: "fontforge", source: { enabled: true },
+    typefacet: { normalDistanceEm: 0.1, intrusionToleranceEm: 0.1 },
+    fontforge: { strength: 0 },
+  }));
+  assert.equal(parseUrlSnapshot(`?v=1&kerning=${retiredHu}`, "", METAS, DEFAULTS)?.kerning, true);
+  assert.equal(parseUrlSnapshot(`?v=1&kerning=${retiredForge}`, "", METAS, DEFAULTS)?.kerning, true);
 });
 
 function familyOf(snapshot: PreviewSnapshot, id: string): FamilySnapshot {

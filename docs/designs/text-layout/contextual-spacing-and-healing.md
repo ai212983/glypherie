@@ -157,11 +157,11 @@ areas and heights remain separately averaged. The patent's generic construction 
 shortcut described in the 1995 paper is not used by this candidate. ASCII `00` remains an experimental numeral
 extension. Missing reference geometry and unsupported categories retain metric placement.
 
-The solver blends the continuous optical endpoint with maintained metric placement, rounds the adjustment to whole
-pixels and applies the existing separately disclosed full-bitmap clearance bound. Optical zero preserves metric
-identity. Tracking remains a subsequent deliberate offset. Diagnostics retain filtered area, equivalent mean gap,
-reference mechanism, published depth factors, ideal/rounded/emitted steps and clearance residuals. The old comparison
-methods retain their calculations and the maintained renderer remains outside this experiment.
+The solver applies the full continuous optical correction to supported pairs, rounds the adjustment to whole pixels and
+applies the existing separately disclosed full-bitmap clearance bound; unsupported pairs retain Source. Tracking remains
+a subsequent deliberate offset. Diagnostics retain filtered area, equivalent mean gap, reference mechanism, selected
+depth factors, ideal/rounded/emitted steps and clearance residuals. The old comparison methods retain their calculations
+and the maintained renderer remains outside this experiment.
 
 Reported pairs remain optical assessment cases, including `cc`, `zz`, `ff`, `bd`/`du`, `jo`, `yd`, `le`, `pi`, `ip`,
 `te`, `tp`, `OE`, `OR` and numerals. Assess those failures alongside unseen words, other families and neighboring sizes.
@@ -482,20 +482,19 @@ The explicit Hu/Hersch adapter adopts `hu_fitted_full_density_conserved_touch` f
 constructs the cavity-limited wall on the complete fitted outline before measuring the class body window. The
 [construction-order note](../../references/hu-hersch-construction-order.md) and
 [US5768490A](https://patents.google.com/patent/US5768490A/en) ground concavity-only 45-degree filtering, aperture depth
-`.21` and global depth `.25` of class height. Keep these published constants and the declared sampling policy fixed;
-this adapter adds no parameter fitting or glyph exceptions. The complete fixed alphabet's mean source origin step
-anchors the analytic solve. Density conservation is the project's constraint, not a claim that Hu prescribes that
-calibration. Lowercase, uppercase, digits and the two ordered mixed-case products have separate declared domains.
-Unavailable domains and unsupported classes retain Source. Previous local spacing concerns remain pending optical
-assessment; port fidelity cannot resolve them.
+and global depth of class height. The two depth controls default to the published `.21` and `.25`; each accepts finite
+`0..=1` as a fraction of its geometric basis (cavity aperture height, class body height). This range is a project
+control bound, not a published limit or a guarantee of horizontal containment. Both the candidate walls and the density
+calibration use the selected values; class body height remains the global cap basis. The declared sampling policy stays
+fixed; this adapter adds no per-font optimizer, work-limit knobs or glyph exceptions. The complete fixed alphabet's mean
+source origin step anchors the analytic solve. Density conservation is the project's constraint, not a claim that Hu
+prescribes that calibration. Lowercase, uppercase, digits and the two ordered mixed-case products have separate declared
+domains. Unavailable domains and unsupported classes retain Source. Previous local spacing concerns remain pending
+optical assessment; port fidelity cannot resolve them.
 
-Hu/Hersch correction strength is a project composition control, defaulting to the existing full correction. For eligible
-pairs, interpolate the finalized Source adjustment with the continuous Hu/Hersch adjustment before the method's signed
-whole-pixel rounding and existing feasibility bound. Keep the full-strength expression unchanged at strength one; at
-zero, return Source exactly without auxiliary calibration or feasibility intervention. Unsupported pairs retain Source
-at every strength. Strength does not change reference density, wall transforms, sampling or glyph geometry. This follows
-the existing method-owned correction blend used by the FontForge-derived adapter; it is not a published Hu parameter or
-an automatic fit. Intermediate strengths can produce the same integer placement over a range of values.
+The full Hu/Hersch correction always applies to supported pairs; there is no Source blend. Retired `strength` values in
+saved settings and URLs are rejected at the admission boundary, so no saved blend can load as new defaults. Depth
+choices change targets and walls but no advances, glyph images or bearing offsets.
 
 Mono retains the experiment's tight delivered `n`/`H`/`0` body windows. Gray derives those windows from fitted reference
 outlines, making its analysis independent of gamma and coverage quantization. This Gray adaptation has separate
@@ -506,18 +505,17 @@ class, while source-tabular digits remain protected.
 The FontForge-derived adapter is explicitly source-relative. Preserve the pinned
 [AutoKern envelope estimator](https://github.com/fontforge/fontforge/blob/c41bdb922285f35defd1e1385adfd13bde1ab32a/fontforge/autowidth2.c)
 in font units, including band flooring, upper-band exclusion, inverse-square weights and nearest-even separation
-rounding. Match each source pair's measured separation after fitting, then blend the analytic adjustment with finalized
-Source by its own strength control. Zero strength preserves Source exactly. Undefined shared-band measurements abstain
-instead of treating absence as zero separation. This is a different objective from Hu/Hersch's shared class density;
-neither can substitute for the other behind one generic target control.
+rounding. Match each source pair's measured separation after fitting; the full analytic correction always applies to
+supported pairs, with no Source blend and no clearance or shared-target control. Undefined shared-band measurements
+abstain instead of treating absence as zero separation. This is a different objective from Hu/Hersch's shared class
+density; neither can substitute for the other behind one generic target control.
 
 The two analytic adapters permit face and corner contact. Mono feasibility uses delivered binary same-row walls to
 forbid occupied-cell overlap and wall-order inversion. Gray uses a certified conservative continuous same-row bound on
 raw fitted outlines, without converting coverage to binary cells. It can retain a wider integer bound when interval
 refinement cannot certify the tighter one; it does not guarantee minimal Gray clearance. These are declared project
 placement adaptations, not claims that FontForge or Hu specifies a discrete blank-pixel policy. Each adapter owns when
-its bound participates in its solve; Source and zero-strength FontForge retain Source without a new feasibility
-intervention. The zero-strength Hu/Hersch endpoint likewise preserves Source without a feasibility intervention.
+its bound participates in its solve; abstentions retain Source without a new feasibility intervention.
 
 The editor stores selected method and retained per-method settings as one controlled value, migrating the historical
 kerning boolean to the current method. Derive active controls and render configuration from that value; reject stale

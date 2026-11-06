@@ -19,6 +19,6 @@ python3 crates/generator/tests/fontforge/capture.py \
 cargo test --locked --manifest-path crates/generator/Cargo.toml --lib kerning::fontforge::
 ```
 
-The native estimator fixture does not validate the project's source-relative target, strength blend or feasibility
-adaptations. Their scope belongs to the
+The native estimator fixture does not validate the project's source-relative target or feasibility adaptations. Their
+scope belongs to the
 [kerning design](../../../../docs/designs/text-layout/contextual-spacing-and-healing.md#interchangeable-kerning-methods).

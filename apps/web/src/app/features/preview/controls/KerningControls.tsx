@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { TooltipHint } from "../../../../components/TooltipHint";
 import {
   assertNever, defaultKerningState, editKerning, isKerningMethod, KERNING_METHODS, normalizeKerning, selectKerningMethod,
-  type FontForgeSettings, type HuHerschSettings, type KerningEdit, type KerningPreference, type KerningState, type TypeFacetSettings,
+  HU_HERSCH_APERTURE_MAX, HU_HERSCH_APERTURE_MIN, HU_HERSCH_GLOBAL_MAX, HU_HERSCH_GLOBAL_MIN,
+  type HuHerschSettings, type KerningEdit, type KerningPreference, type KerningState, type TypeFacetSettings,
 } from "../../../kerning/model";
 
 function SourceControls({ fontId, enabled, onChange }: {
@@ -94,36 +95,36 @@ function TypeFacetControls({ fontId, settings, onChange }: {
 function HuHerschControls({ fontId, settings, onChange }: {
   fontId: string; settings: HuHerschSettings; onChange: (settings: HuHerschSettings) => void;
 }): React.JSX.Element {
+  const defaults = defaultKerningState().hu_hersch;
+  const isDefault = settings.apertureDepthFactor === defaults.apertureDepthFactor
+    && settings.globalDepthFactor === defaults.globalDepthFactor;
   return (
-    <div className="flex flex-col gap-3 text-[.8rem]" data-hu-hersch-controls>
-      <KerningSlider id={`hu-hersch-strength-${fontId}`} dataAttribute="data-hu-hersch-strength"
-        label="Correction strength" description="Blends Source spacing at 0% with the full Hu/Hersch correction at 100%. Density calibration and cavity depth factors stay fixed."
-        value={Number((settings.strength * 100).toFixed(10))} min={0} max={100} step={5} defaultValue={100} unit="%"
-        onChange={(percent) => onChange({ strength: percent / 100 })} />
-      <p className="text-muted-foreground">For Latin letter pairs and experimental proportional digits. Tabular digit pairs, unsupported pairs and unavailable calibration retain Source spacing.</p>
-      <div className="flex justify-end">
-        <TooltipHint content="Reset Hu/Hersch correction strength to 100%.">
-          <ResetButton aria-label="Reset Hu/Hersch strength" disabled={settings.strength === 1} onClick={() => onChange({ strength: 1 })} />
+    <div className="flex flex-col gap-4 text-[.8rem]" data-hu-hersch-controls>
+      <KerningSlider id={`hu-hersch-cavity-${fontId}`} dataAttribute="data-hu-hersch-cavity"
+        label="Cavity depth" description="How deep open cavities may read, as a fraction of the cavity opening height (patent depth factor, default 0.21). Lower values fill cavities more."
+        value={settings.apertureDepthFactor} min={HU_HERSCH_APERTURE_MIN} max={HU_HERSCH_APERTURE_MAX} step={0.01}
+        defaultValue={defaults.apertureDepthFactor} unit=""
+        onChange={(apertureDepthFactor) => onChange({ ...settings, apertureDepthFactor })} />
+      <KerningSlider id={`hu-hersch-visual-${fontId}`} dataAttribute="data-hu-hersch-visual"
+        label="Maximum visual depth" description="How far glyph walls may recess, as a fraction of the reference body height (patent global factor, default 0.25). Both controls also move the shared density target."
+        value={settings.globalDepthFactor} min={HU_HERSCH_GLOBAL_MIN} max={HU_HERSCH_GLOBAL_MAX} step={0.01}
+        defaultValue={defaults.globalDepthFactor} unit=""
+        onChange={(globalDepthFactor) => onChange({ ...settings, globalDepthFactor })} />
+      <p className="text-muted-foreground">For Latin letter pairs and proportional digits. Tabular digit pairs, unsupported pairs and unavailable calibration retain Source spacing.</p>
+      <div className="flex items-center justify-between gap-2 text-muted-foreground">
+        <p>Spacing changes appear in whole pixels.</p>
+        <TooltipHint content="Reset both Hu/Hersch depth controls to their defaults.">
+          <ResetButton aria-label="Reset Hu/Hersch depths" disabled={isDefault} onClick={() => onChange(defaults)} />
         </TooltipHint>
       </div>
     </div>
   );
 }
 
-function FontForgeControls({ fontId, settings, onChange }: {
-  fontId: string; settings: FontForgeSettings; onChange: (settings: FontForgeSettings) => void;
-}): React.JSX.Element {
+function FontForgeControls(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-3 text-[.8rem]" data-fontforge-controls>
-      <KerningSlider id={`fontforge-strength-${fontId}`} dataAttribute="data-fontforge-strength"
-        label="Optical strength" description="Blends Source spacing at 0 with the source-relative optical correction at 1."
-        value={settings.strength} min={0} max={1} step={0.05} defaultValue={1} unit=""
-        onChange={(strength) => onChange({ strength })} />
-      <div className="flex justify-end">
-        <TooltipHint content="Reset optical strength to 1.">
-          <ResetButton aria-label="Reset FontForge strength" disabled={settings.strength === 1} onClick={() => onChange({ strength: 1 })} />
-        </TooltipHint>
-      </div>
+      <p className="text-muted-foreground">Always applies the full source-relative correction to supported pairs. Tabular digit pairs, unsupported pairs and missing measurements retain Source spacing.</p>
     </div>
   );
 }
@@ -138,8 +139,7 @@ function ActiveMethodControls({ fontId, state, onEdit }: {
       onChange={(settings) => onEdit({ method: "typefacet", settings })} />;
     case "hu_hersch": return <HuHerschControls fontId={fontId} settings={state.hu_hersch}
       onChange={(settings) => onEdit({ method: "hu_hersch", settings })} />;
-    case "fontforge": return <FontForgeControls fontId={fontId} settings={state.fontforge}
-      onChange={(settings) => onEdit({ method: "fontforge", settings })} />;
+    case "fontforge": return <FontForgeControls />;
     default: return assertNever(state.method);
   }
 }
@@ -162,7 +162,7 @@ export function KerningControls({ fontId, value, onChange }: {
           <SelectContent>
             {Object.entries(KERNING_METHODS).map(([method, description]) => (
               <SelectItem key={method} value={method}>
-                {description.label}{description.experimental ? " · experimental" : ""}
+                {description.label}
               </SelectItem>
             ))}
           </SelectContent>

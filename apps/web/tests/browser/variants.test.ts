@@ -55,7 +55,7 @@ async function sliderValue(page: Page, attribute: string): Promise<string | null
 async function setKerningSlider(page: Page, attribute: string, value: number): Promise<void> {
   const slider = page.locator(`[${attribute}]`).getByRole("slider");
   const minimum = Number(await slider.getAttribute("aria-valuemin"));
-  const step = attribute === "data-hu-hersch-strength" ? 5 : attribute === "data-fontforge-strength" ? 0.05 : 0.005;
+  const step = attribute === "data-hu-hersch-cavity" || attribute === "data-hu-hersch-visual" ? 0.01 : 0.005;
   await slider.focus();
   await slider.press("Home");
   for (let i = 0; i < Math.round((value - minimum) / step); i++) await slider.press("ArrowRight");
@@ -79,13 +79,13 @@ test("kerning method controls retain settings across switches and saved editor r
   await openNewVariant(page, id);
   await waitEditor(page);
 
-  const choose = async (method: "Source" | "TypeFacet · experimental"): Promise<void> => {
+  const choose = async (method: "Source" | "TypeFacet"): Promise<void> => {
     await page.locator("[data-kerning-method]").click();
     await page.getByRole("option", { name: method, exact: true }).click();
   };
   assert.equal(await page.locator("[data-typefacet-controls]").count(), 0);
   await page.locator("[data-kerning]").uncheck();
-  await choose("TypeFacet · experimental");
+  await choose("TypeFacet");
   assert.equal(await page.locator("[data-kerning]").count(), 0, "the inactive source switch is removed");
   assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.1");
   await setKerningSlider(page, "data-typefacet-normal", 0.15);
@@ -99,7 +99,7 @@ test("kerning method controls retain settings across switches and saved editor r
   await choose("Source");
   assert.equal(await page.locator("[data-typefacet-controls]").count(), 0, "inactive TypeFacet controls are removed");
   assert.equal(await page.locator("[data-kerning]").isChecked(), false, "the source setting is retained");
-  await choose("TypeFacet · experimental");
+  await choose("TypeFacet");
   assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.15");
   assert.equal(await sliderValue(page, "data-typefacet-intrusion"), "0.025");
   assert.equal(await sliderValue(page, "data-typefacet-minimum"), "0.025");
@@ -143,7 +143,7 @@ test("kerning method controls retain settings across switches and saved editor r
   assert.equal(await page.locator("[data-typefacet-controls] [role=alert]").count(), 0);
   await choose("Source");
   assert.equal(await page.locator("[data-kerning]").isChecked(), false);
-  await choose("TypeFacet · experimental");
+  await choose("TypeFacet");
   assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.175", "switching methods in Gray retains edits");
   await selectPalettePreset(page, "Monochrome");
   await waitSaved(page);
@@ -196,16 +196,18 @@ test("additional kerning methods select their own controls and render after Mono
     await page.getByRole("option", { name: label, exact: true }).click();
     await waitSaved(page);
   };
-  await choose("TypeFacet · experimental");
+  await choose("TypeFacet");
   await setKerningSlider(page, "data-typefacet-normal", 0.15);
   await waitSaved(page);
-  await choose("Hu/Hersch · experimental");
-  assert.equal(await sliderValue(page, "data-hu-hersch-strength"), "100", "legacy/default Hu/Hersch keeps the full correction");
-  assert.equal(await page.getByRole("slider", { name: "Correction strength", exact: true }).getAttribute("aria-valuemax"), "100");
-  await setKerningSlider(page, "data-hu-hersch-strength", 35);
+  await choose("Hu/Hersch");
+  assert.equal(await sliderValue(page, "data-hu-hersch-cavity"), "0.21", "default Hu/Hersch keeps the published cavity depth");
+  assert.equal(await sliderValue(page, "data-hu-hersch-visual"), "0.25", "default Hu/Hersch keeps the published visual depth");
+  assert.equal(await page.getByRole("slider", { name: "Cavity depth", exact: true }).getAttribute("aria-valuemax"), "1");
+  await setKerningSlider(page, "data-hu-hersch-cavity", 0.35);
+  await setKerningSlider(page, "data-hu-hersch-visual", 0.4);
   await waitSaved(page);
-  await choose("FontForge source-relative · experimental");
-  await setKerningSlider(page, "data-fontforge-strength", 0.65);
+  await choose("FontForge source-relative");
+  assert.equal(await page.locator("[data-fontforge-controls]").getByRole("slider").count(), 0, "FontForge has no blend control");
   await waitSaved(page);
 
   const editorUrl = page.url();
@@ -216,7 +218,7 @@ test("additional kerning methods select their own controls and render after Mono
   for (const palette of ["Monochrome", "Other kerning gray"]) {
     await selectPalettePreset(page, palette);
     await waitSaved(page);
-    for (const label of ["Hu/Hersch · experimental", "FontForge source-relative · experimental"]) {
+    for (const label of ["Hu/Hersch", "FontForge source-relative"]) {
       await choose(label);
       assert.equal(await page.locator("[data-typefacet-controls]").count(), 0);
       assert.equal(await page.locator("[data-kerning]").count(), 0);
@@ -226,23 +228,26 @@ test("additional kerning methods select their own controls and render after Mono
       await waitEditor(page);
       assert.equal(await page.locator("[data-kerning-method]").textContent(), label);
       assert.equal(await page.locator("[data-status]").textContent(), "", `${label} renders ${palette}`);
-      if (label.startsWith("FontForge")) assert.equal(await sliderValue(page, "data-fontforge-strength"), "0.65");
-      else assert.equal(await sliderValue(page, "data-hu-hersch-strength"), "35", "Hu/Hersch strength survives profile, method and reload changes");
+      if (!label.startsWith("FontForge")) {
+        assert.equal(await sliderValue(page, "data-hu-hersch-cavity"), "0.35", "Hu/Hersch cavity depth survives profile, method and reload changes");
+        assert.equal(await sliderValue(page, "data-hu-hersch-visual"), "0.4", "Hu/Hersch visual depth survives profile, method and reload changes");
+      }
     }
   }
-  await choose("TypeFacet · experimental");
+  await choose("TypeFacet");
   assert.equal(await sliderValue(page, "data-typefacet-normal"), "0.15", "other method switches preserve TypeFacet parameters");
-  await choose("Hu/Hersch · experimental");
-  await setKerningSlider(page, "data-hu-hersch-strength", 0);
+  await choose("Hu/Hersch");
+  await setKerningSlider(page, "data-hu-hersch-cavity", 0);
   await waitSaved(page);
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitEditor(page);
-  assert.equal(await sliderValue(page, "data-hu-hersch-strength"), "0", "the Source endpoint remains selected and saved as Hu/Hersch");
+  assert.equal(await sliderValue(page, "data-hu-hersch-cavity"), "0", "edited depths remain selected and saved as Hu/Hersch");
   assert.equal(await page.locator("[data-status]").textContent(), "");
-  await page.getByRole("button", { name: "Reset Hu/Hersch strength", exact: true }).click();
+  await page.getByRole("button", { name: "Reset Hu/Hersch depths", exact: true }).click();
   await waitSaved(page);
-  assert.equal(await sliderValue(page, "data-hu-hersch-strength"), "100");
-  assert.equal(await page.getByRole("button", { name: "Reset Hu/Hersch strength", exact: true }).isDisabled(), true);
+  assert.equal(await sliderValue(page, "data-hu-hersch-cavity"), "0.21");
+  assert.equal(await sliderValue(page, "data-hu-hersch-visual"), "0.25");
+  assert.equal(await page.getByRole("button", { name: "Reset Hu/Hersch depths", exact: true }).isDisabled(), true);
   assert.deepEqual(errors, []);
 });
 

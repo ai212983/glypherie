@@ -92,7 +92,7 @@ for (const name of ['Literata','Roboto']) for (const output_bits of [1,3]) {
 }
 for (const name of ['Literata','Roboto','RobotoFlex','SourceSans3']) {
   for (const output_bits of [1,3]) for (const kerning_method of [
-    {method:'hu_hersch'}, {method:'fontforge',strength:1},
+    {method:'hu_hersch'}, {method:'fontforge'},
   ]) {
     const spec = {
       text:'lynx tuft frogs ca nx en os se ri ig AV 0123',width:180,height:100,
@@ -107,16 +107,16 @@ for (const name of ['Literata','Roboto','RobotoFlex','SourceSans3']) {
   }
 }
 for (const output_bits of [2,4]) for (const kerning_method of [
-  {method:'hu_hersch'}, {method:'fontforge',strength:.5},
+  {method:'hu_hersch'}, {method:'fontforge'},
 ]) {
   cases.push({id:`analytic-gray-depth-${output_bits}-${kerning_method.method}`,font_file:resolve(root,'fonts/Literata.ttf'),spec:{
     text:'ca en os se nx Éé',width:180,height:100,size_px:16,axes:{wght:400,opsz:16},output_bits,
     kerning:true,hinting:'auto',pipeline:{fitting:'upstream_mono',rasterization:'coverage'},kerning_method,
   }});
 }
-// Keep source and zero-strength endpoints, output-independent auxiliary capture,
+// Keep source and full-method endpoints, output-independent auxiliary capture,
 // and tracked export on the public seam rather than inferring them from profiles.
-for (const kerning_method of [{method:'source'},{method:'fontforge',strength:0},{method:'fontforge',strength:.5},{method:'hu_hersch'}]) {
+for (const kerning_method of [{method:'source'},{method:'fontforge'},{method:'hu_hersch'}]) {
   for (const letter_spacing_px of [0,1]) {
     const spec={
       text:'ca en os se nx',width:180,height:100,size_px:16,axes:{wght:400,opsz:16},output_bits:1,
@@ -126,7 +126,7 @@ for (const kerning_method of [{method:'source'},{method:'fontforge',strength:0},
     const {text,width,height,pipeline,...config}=spec;
     delete config.letter_spacing_px;
     delete config.kerning_method;
-    cases.push({id:`endpoint-export-${kerning_method.method}-${kerning_method.strength ?? 'default'}-${letter_spacing_px}`,
+    cases.push({id:`endpoint-export-${kerning_method.method}-${letter_spacing_px}`,
       font_file:resolve(root,'fonts/Literata.ttf'),spec,
       export_request:{config:{...config,characters:text},pipeline,letter_spacing_px,kerning_method},
     });
@@ -137,9 +137,11 @@ cases.push({id:'hu-unsupported-script-retains-source',font_file:resolve(root,'fo
   kerning:true,hinting:'auto',pipeline:{fitting:'upstream_mono',rasterization:'coverage'},
   kerning_method:{method:'hu_hersch'},
 },expect_source_identity:true});
-// Hu strength owns a Source endpoint, a continuous pre-rounding blend, and
-// the unchanged full endpoint. Include export through the same method seam.
-for (const name of ['Literata','Roboto']) for (const output_bits of [1,3]) for (const strength of [0,.5,1]) {
+// Hu/Hersch depth controls own the full endpoint. Include export through the
+// same method seam for both default and explicit depths.
+for (const name of ['Literata','Roboto']) for (const output_bits of [1,3]) for (const kerning_method of [
+  {method:'hu_hersch'}, {method:'hu_hersch',aperture_depth_factor:.35,global_depth_factor:.4},
+]) {
   const spec={
     text:'AV To ca en os se nx',width:240,height:100,size_px:16,
     axes:{wght:400,...(name==='Literata'?{opsz:16}:{})},output_bits,
@@ -147,12 +149,13 @@ for (const name of ['Literata','Roboto']) for (const output_bits of [1,3]) for (
     pipeline:output_bits===1
       ? {fitting:'font_hints_auto',rasterization:'free_type_mono_terminals',diagonal_fitting:true}
       : {fitting:'upstream_mono',rasterization:'coverage'},
-    kerning_method:{method:'hu_hersch',strength},
+    kerning_method,
   };
-  const item={id:`hu-strength-${name}-${output_bits}-${strength}`,font_file:resolve(root,`fonts/${name}.ttf`),spec};
+  const tag=kerning_method.aperture_depth_factor===undefined?'default':'depths';
+  const item={id:`hu-${tag}-${name}-${output_bits}`,font_file:resolve(root,`fonts/${name}.ttf`),spec};
   if(output_bits===1){
-    const {text,width,height,pipeline,letter_spacing_px,kerning_method,...config}=spec;
-    item.export_request={config:{...config,characters:text},pipeline,letter_spacing_px,kerning_method};
+    const {text,width,height,pipeline,letter_spacing_px,kerning_method:method,...config}=spec;
+    item.export_request={config:{...config,characters:text},pipeline,letter_spacing_px,kerning_method:method};
   }
   cases.push(item);
 }
@@ -174,19 +177,12 @@ try {
     try {
       assert.equal(hash(output.pixels()),reference.pixel_sha256,c.id);
       assert.deepEqual(output.layout(),reference.layout,c.id);
-      if (c.expect_source_identity || ['fontforge','hu_hersch'].includes(c.spec.kerning_method?.method) && c.spec.kerning_method.strength===0) {
+      if (c.expect_source_identity) {
         const source=font.render({...c.spec,kerning_method:{method:'source'}});
         try {
           assert.equal(hash(output.pixels()),hash(source.pixels()),`${c.id} Source pixels`);
           assert.deepEqual(output.layout(),source.layout(),`${c.id} Source layout`);
         } finally {source.free();}
-      }
-      if(c.spec.kerning_method.method==='hu_hersch' && c.spec.kerning_method.strength===undefined){
-        const explicit=font.render({...c.spec,kerning_method:{method:'hu_hersch',strength:1}});
-        try{
-          assert.equal(hash(output.pixels()),hash(explicit.pixels()),`${c.id} legacy Hu strength`);
-          assert.deepEqual(output.layout(),explicit.layout(),`${c.id} legacy Hu layout`);
-        }finally{explicit.free();}
       }
       if (c.spec.kerning_method.method==='typefacet' && c.spec.kerning_method.minimum_distance_em===undefined) {
         const explicit=font.render({...c.spec,kerning_method:{...c.spec.kerning_method,
@@ -201,10 +197,6 @@ try {
     if (c.export_request) {
       assert.equal(reference.export_error,null,`${c.id}: ${reference.export_error}`);
       assert.equal(hash(font.export_playdate(c.export_request)),reference.export_sha256,`${c.id} export`);
-      if(c.export_request.kerning_method.method==='hu_hersch' && c.export_request.kerning_method.strength===0){
-        assert.equal(hash(font.export_playdate(c.export_request)),hash(font.export_playdate({...c.export_request,
-          kerning_method:{method:'source'}})),`${c.id} Source export`);
-      }
       exported++;
     }
   }
@@ -217,10 +209,12 @@ try {
     {method:'typefacet',normal_distance_em:.1,intrusion_tolerance_em:.1,max_x_extrema_overlap_em:-.01},
     {method:'typefacet',normal_distance_em:.1,intrusion_tolerance_em:.1,max_x_extrema_overlap_em:.501},
     {method:'typefacet',normal_distance_em:.1,intrusion_tolerance_em:.1,max_x_extrema_overlap_em:Infinity},
+    {method:'hu_hersch',strength:0},{method:'hu_hersch',strength:.35},{method:'hu_hersch',strength:1},
     {method:'hu_hersch',strength:NaN},{method:'hu_hersch',strength:Infinity},
     {method:'hu_hersch',strength:-.1},{method:'hu_hersch',strength:1.1},
-    {method:'hu_hersch',strength:null},{method:'hu_hersch',strength:1,foreign:1},
-    {method:'fontforge',strength:1,foreign:1},
+    {method:'hu_hersch',strength:null},{method:'hu_hersch',strength:'0.5'},{method:'hu_hersch',strength:1,foreign:1},
+    {method:'fontforge',strength:0},{method:'fontforge',strength:1},{method:'fontforge',strength:null},
+    {method:'fontforge',strength:'1'},{method:'fontforge',strength:1,foreign:1},
     {method:'fontforge',strength:NaN},{method:'fontforge',strength:-.1},{method:'fontforge',strength:1.1}]) {
     assert.throws(()=>font.render({...spec,text:'',kerning_method}));
     assert.throws(()=>font.export_playdate({config:{characters:'ca',size_px:16,output_bits:1},pipeline:spec.pipeline,kerning_method}));
@@ -229,8 +223,8 @@ try {
   const report={status:'passed',exactNativeWasmCases:rendered,exactNativeWasmExports:exported,
     methods:['source','typefacet','hu_hersch','fontforge'],fonts:4,sizes:[12,16,20],outputBits:[1,2,3,4],
     typefacetSettings:new Set(cases.filter(c=>c.spec.kerning_method.method==='typefacet').map(c=>JSON.stringify(c.spec.kerning_method))).size,
-    typefacetExtraControls:true,legacyTypefacetDefaultsIdentical:true,huStrengths:[0,.5,1],
-    legacyHuStrengthIdentical:true,huZeroStrengthSourceIdentical:true,tracking:[0,1],decimalTieCase:true,
+    typefacetExtraControls:true,legacyTypefacetDefaultsIdentical:true,huDepthEndpoints:['default','explicit'],
+    retiredStrengthRejected:true,tracking:[0,1],decimalTieCase:true,
     invalidRequestsRejected:true,nativeReferenceMs,wasmTotalMs:performance.now()-started,
     wasmPackage:relative(root,wasmPackage),
     wasmSha256:hash(readFileSync(resolve(wasmPackage,'font_wasm_bg.wasm'))),

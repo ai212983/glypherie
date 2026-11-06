@@ -40,15 +40,15 @@ test("kerning selection forwards only active settings independently of output pr
 
 test("every optical method forwards its own request across profiles and rejects historical routing", () => {
   const settings = [
-    editKerning(selectKerningMethod(false, "hu_hersch"), { method: "hu_hersch", settings: { strength: 0.35 } }),
-    editKerning(selectKerningMethod(false, "fontforge"), { method: "fontforge", settings: { strength: 0.65 } }),
+    editKerning(selectKerningMethod(false, "hu_hersch"), { method: "hu_hersch", settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 } }),
+    selectKerningMethod(false, "fontforge"),
   ];
   for (const kerning of settings) {
     for (const profile of ["mono_1bit", "gray_2bit", "gray_3bit", "gray_4bit"] as const) {
       const options = { ...baseOptions(), profile, kerning, rasterization: "free_type_mono" as const, letterSpacingPx: 1 };
       const request = toRenderSpec(options);
       assert.deepEqual(request.kerning_method, kerning.method === "hu_hersch"
-        ? { method: "hu_hersch", strength: 0.35 } : { method: "fontforge", strength: 0.65 });
+        ? { method: "hu_hersch", aperture_depth_factor: 0.35, global_depth_factor: 0.4 } : { method: "fontforge" });
       assert.equal(request.kerning, true);
       assert.equal(request.letter_spacing_px, 1, "tracking remains separate from method settings");
       assert.throws(() => toRenderSpec({ ...options, rasterization: undefined }),

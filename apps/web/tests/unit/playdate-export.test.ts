@@ -94,10 +94,11 @@ test("Playdate export forwards TypeFacet at the same seam as the live preview", 
 
 test("each additional method shares its preview selection with export", () => {
   for (const kerning of [
-    ...[0, 0.35, 1].map((strength) => editKerning(selectKerningMethod(false, "hu_hersch"), {
-      method: "hu_hersch", settings: { strength },
-    })),
-    editKerning(selectKerningMethod(false, "fontforge"), { method: "fontforge", settings: { strength: 0.4 } }),
+    selectKerningMethod(false, "hu_hersch"),
+    editKerning(selectKerningMethod(false, "hu_hersch"), {
+      method: "hu_hersch", settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 },
+    }),
+    selectKerningMethod(false, "fontforge"),
   ]) {
     const settings = { ...defaultVariantSettings(), kerning };
     const coverage = normalizeCoverage({ presetIds: [], extraRanges: [{ start: 0x20, end: 0x7e }] });

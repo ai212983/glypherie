@@ -23,8 +23,8 @@ test("historical two-method values migrate without changing their active request
     typefacet: { normalDistanceEm: 0.175, intrusionToleranceEm: 0.025 },
   };
   const migrated = normalizeKerning(historical);
-  assert.deepEqual(migrated.hu_hersch, { strength: 1 });
-  assert.deepEqual(migrated.fontforge, { strength: 1 });
+  assert.deepEqual(migrated.hu_hersch, { apertureDepthFactor: 0.21, globalDepthFactor: 0.25 });
+  assert.deepEqual(migrated.fontforge, {});
   assert.deepEqual(migrated.typefacet, { ...defaultKerningState().typefacet, ...historical.typefacet });
   assert.equal(migrated.method, "typefacet");
   assert.deepEqual(resolveKerning(historical), resolveKerning(migrated));
@@ -36,9 +36,10 @@ test("all compiled methods retain independent settings and only emit their activ
   const typefacet = editKerning(selectKerningMethod(false, "typefacet"), {
     method: "typefacet", settings: { normalDistanceEm: 0.15, intrusionToleranceEm: 0.025 },
   });
-  const state = editKerning(selectKerningMethod(typefacet, "fontforge"), {
-    method: "fontforge", settings: { strength: 0.35 },
+  const deep = editKerning(selectKerningMethod(typefacet, "hu_hersch"), {
+    method: "hu_hersch", settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 },
   });
+  const state = selectKerningMethod(deep, "fontforge");
   assert.deepEqual(Object.keys(KERNING_METHODS), ["source", "typefacet", "hu_hersch", "fontforge"]);
   assert.equal(isKerningMethod("counterspace"), false, "unported Python engines are not working editor options");
   for (const method of Object.keys(KERNING_METHODS)) {
@@ -49,22 +50,22 @@ test("all compiled methods retain independent settings and only emit their activ
       ...selected,
       ...(method !== "source" ? { source: { enabled: true } } : {}),
       ...(method !== "typefacet" ? { typefacet: { normalDistanceEm: 0.3, intrusionToleranceEm: 0.2 } } : {}),
-      ...(method !== "hu_hersch" ? { hu_hersch: { strength: 0.25 } } : {}),
-      ...(method !== "fontforge" ? { fontforge: { strength: 0.9 } } : {}),
+      ...(method !== "hu_hersch" ? { hu_hersch: { apertureDepthFactor: 0.05, globalDepthFactor: 0.1 } } : {}),
     };
     assert.deepEqual(resolveKerning(inactiveChanged), resolveKerning(selected), "inactive settings cannot affect request/cache identity");
-    assert.equal(selected.fontforge.strength, 0.35);
+    assert.deepEqual(selected.fontforge, {});
     assert.equal(selected.typefacet.normalDistanceEm, 0.15);
+    assert.deepEqual(selected.hu_hersch, { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 });
     if (method !== "fontforge") {
-      assert.throws(() => editKerning(selected, { method: "fontforge", settings: { strength: 0.5 } }), /no longer active/);
+      assert.throws(() => editKerning(selected, { method: "fontforge", settings: {} }), /no longer active/);
     }
   }
-  assert.deepEqual(resolveKerning(state), { kerning: true, kerning_method: { method: "fontforge", strength: 0.35 } });
-  assert.deepEqual(resolveKerning(selectKerningMethod(state, "hu_hersch")), { kerning: true, kerning_method: { method: "hu_hersch", strength: 1 } });
+  assert.deepEqual(resolveKerning(state), { kerning: true, kerning_method: { method: "fontforge" } });
+  assert.deepEqual(resolveKerning(selectKerningMethod(state, "hu_hersch")), { kerning: true, kerning_method: { method: "hu_hersch", aperture_depth_factor: 0.35, global_depth_factor: 0.4 } });
   assert.deepEqual(resolveKerning(selectKerningMethod(state, "source")), { kerning: false });
   const copy = normalizeKerning(state);
-  copy.fontforge.strength = 0.6;
-  assert.equal(state.fontforge.strength, 0.35);
+  copy.hu_hersch.apertureDepthFactor = 0.6;
+  assert.equal(state.hu_hersch.apertureDepthFactor, 0.35);
 });
 
 test("method switches retain independent settings and resolve only the active method", () => {
@@ -111,53 +112,72 @@ test("kerning settings are copied and malformed active or retained settings are 
     { ...state, typefacet: { ...state.typefacet, maxXExtremaOverlapEm: NaN } },
     { ...state, typefacet: { ...state.typefacet, maxXExtremaOverlapEm: null } },
     { ...state, hu_hersch: null },
-    { ...state, hu_hersch: { strength: NaN } },
-    { ...state, hu_hersch: { strength: -0.01 } },
-    { ...state, hu_hersch: { strength: 1.01 } },
-    { ...state, hu_hersch: { strength: null } },
-    { ...state, hu_hersch: { strength: "0.5" } },
-    { ...state, hu_hersch: { strength: 0.5, depth: 0.21 } },
+    { ...state, hu_hersch: { apertureDepthFactor: NaN, globalDepthFactor: 0.25 } },
+    { ...state, hu_hersch: { apertureDepthFactor: -0.01, globalDepthFactor: 0.25 } },
+    { ...state, hu_hersch: { apertureDepthFactor: 0.21, globalDepthFactor: 1.01 } },
+    { ...state, hu_hersch: { apertureDepthFactor: null, globalDepthFactor: 0.25 } },
+    { ...state, hu_hersch: { apertureDepthFactor: "0.21", globalDepthFactor: 0.25 } },
+    { ...state, hu_hersch: { apertureDepthFactor: 0.21, globalDepthFactor: 0.25, depth: 0.21 } },
+    { ...state, hu_hersch: { apertureDepthFactor: 0.21, globalDepthFactor: 0.25, strength: 0.35 } },
+    { ...state, hu_hersch: { apertureDepthFactor: 0.21, globalDepthFactor: 0.25, strength: null } },
+    { ...state, hu_hersch: { strength: 0 } },
     { ...state, fontforge: null },
-    { ...state, fontforge: { strength: NaN } },
-    { ...state, fontforge: { strength: -0.01 } },
-    { ...state, fontforge: { strength: 1.01 } },
+    { ...state, fontforge: { depth: 0.21 } },
+    { ...state, fontforge: { strength: 0 } },
+    { ...state, fontforge: { strength: 0.4 } },
+    { ...state, fontforge: { strength: null } },
+    { ...state, method: "source", hu_hersch: { apertureDepthFactor: 0.21, globalDepthFactor: 0.25, strength: 1 } },
+    { ...state, method: "source", fontforge: { strength: 1 } },
   ]) {
     assert.throws(() => validateKerningPreference(invalid));
     assert.equal(decodeKerning(JSON.stringify(invalid)), null);
   }
   validateKerningPreference({ ...state, typefacet: { normalDistanceEm: 0.01, intrusionToleranceEm: 0 } });
   validateKerningPreference({ ...state, typefacet: { normalDistanceEm: 0.5, intrusionToleranceEm: 0.5 } });
-  validateKerningPreference({ ...state, fontforge: { strength: 0 } });
-  validateKerningPreference({ ...state, fontforge: { strength: 1 } });
-  validateKerningPreference({ ...state, hu_hersch: { strength: 0 } });
-  validateKerningPreference({ ...state, hu_hersch: { strength: 1 } });
+  validateKerningPreference({ ...state, fontforge: {} });
+  validateKerningPreference({ ...state, hu_hersch: { apertureDepthFactor: 0, globalDepthFactor: 1 } });
 });
 
-test("Hu/Hersch legacy settings migrate to full correction and strength survives independent method edits", () => {
+test("Hu/Hersch depths default, edit independently and reject the retired strength blend", () => {
   const base = { ...defaultKerningState(), method: "hu_hersch" as const };
   for (const hu_hersch of [undefined, {}]) {
-    const legacy = { ...base, hu_hersch };
-    assert.deepEqual(normalizeKerning(legacy).hu_hersch, { strength: 1 });
-    assert.deepEqual(resolveKerning(legacy), { kerning: true, kerning_method: { method: "hu_hersch", strength: 1 } });
-    assert.deepEqual(decodeKerning(JSON.stringify(legacy)), normalizeKerning(base));
+    const omitted = { ...base, hu_hersch };
+    assert.deepEqual(normalizeKerning(omitted).hu_hersch, { apertureDepthFactor: 0.21, globalDepthFactor: 0.25 });
+    assert.deepEqual(resolveKerning(omitted), { kerning: true,
+      kerning_method: { method: "hu_hersch", aperture_depth_factor: 0.21, global_depth_factor: 0.25 } });
+    assert.deepEqual(decodeKerning(JSON.stringify(omitted)), normalizeKerning(base));
+  }
+  for (const strength of [0, 0.35, 1, null, "0.35", true]) {
+    const retired = { ...base, hu_hersch: { strength } };
+    assert.throws(() => validateKerningPreference(retired), `strength ${String(strength)} must not validate`);
+    assert.equal(decodeKerning(JSON.stringify(retired)), null);
+    assert.throws(() => normalizeKerning(retired as never));
+  }
+  for (const method of ["hu_hersch", "fontforge"] as const) {
+    const retired = method === "hu_hersch"
+      ? { ...base, method, hu_hersch: { apertureDepthFactor: 0.21, globalDepthFactor: 0.25, strength: 1 } }
+      : { ...defaultKerningState(), method, fontforge: { strength: 1 } };
+    assert.throws(() => validateKerningPreference(retired));
+    assert.equal(decodeKerning(JSON.stringify(retired)), null);
   }
   const active = editKerning(selectKerningMethod(false, "hu_hersch"), {
-    method: "hu_hersch", settings: { strength: 0.35 },
+    method: "hu_hersch", settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 },
   });
   const copy = cloneKerning(active);
   assert.notEqual(typeof copy, "boolean");
   if (typeof copy === "boolean") throw new Error("expected independent settings");
-  copy.hu_hersch = { strength: 0.9 };
-  assert.equal(active.hu_hersch.strength, 0.35);
+  copy.hu_hersch = { apertureDepthFactor: 0.05, globalDepthFactor: 0.1 };
+  assert.deepEqual(active.hu_hersch, { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 });
   assert.deepEqual(decodeKerning(encodeKerning(active)), active);
   assert.deepEqual(selectKerningMethod(selectKerningMethod(active, "fontforge"), "hu_hersch"), active);
-  for (const strength of [0, 0.35, 1]) {
-    const edited = editKerning(active, { method: "hu_hersch", settings: { strength } });
-    assert.deepEqual(resolveKerning(edited), { kerning: true, kerning_method: { method: "hu_hersch", strength } });
+  for (const depths of [{ apertureDepthFactor: 0, globalDepthFactor: 0 }, { apertureDepthFactor: 1, globalDepthFactor: 1 }]) {
+    const edited = editKerning(active, { method: "hu_hersch", settings: depths });
+    assert.deepEqual(resolveKerning(edited), { kerning: true, kerning_method: { method: "hu_hersch",
+      aperture_depth_factor: depths.apertureDepthFactor, global_depth_factor: depths.globalDepthFactor } });
     assert.equal(edited.source.enabled, false, "the inactive Source switch remains independent");
   }
   assert.throws(() => editKerning(selectKerningMethod(active, "source"), {
-    method: "hu_hersch", settings: { strength: 0.5 },
+    method: "hu_hersch", settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 },
   }), /no longer active/);
 });
 

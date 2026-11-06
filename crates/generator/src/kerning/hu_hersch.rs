@@ -17,30 +17,53 @@ use crate::{fail, reference::ReferenceRecord, Error};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HuHerschSettings {
-    /// Source-to-optical correction blend; zero preserves Source exactly.
-    #[serde(default = "full_strength")]
-    pub strength: f64,
+/// Published construction constants from Hersch/Betrisey US5768490A:
+/// aperture-relative cavity DepthFactor (transformation C) and body-height
+/// GlobalDepthParameter (transformation D). The adjustable 0..=1 range is a
+/// project bound; the patent supplies the defaults, not this range.
+/// See docs/references/hu-hersch-construction-order.md.
+pub const APERTURE_DEPTH_FACTOR_DEFAULT: f64 = 0.21;
+pub const GLOBAL_DEPTH_FACTOR_DEFAULT: f64 = 0.25;
+
+fn aperture_default() -> f64 {
+    APERTURE_DEPTH_FACTOR_DEFAULT
 }
 
-fn full_strength() -> f64 {
-    1.0
+fn global_default() -> f64 {
+    GLOBAL_DEPTH_FACTOR_DEFAULT
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct HuHerschSettings {
+    /// Cavity-depth fraction of the cavity aperture height (patent C).
+    #[serde(default = "aperture_default")]
+    pub aperture_depth_factor: f64,
+    /// Maximum wall-depth fraction of the class body height (patent D).
+    #[serde(default = "global_default")]
+    pub global_depth_factor: f64,
 }
 
 impl Default for HuHerschSettings {
     fn default() -> Self {
-        Self { strength: 1.0 }
+        Self {
+            aperture_depth_factor: APERTURE_DEPTH_FACTOR_DEFAULT,
+            global_depth_factor: GLOBAL_DEPTH_FACTOR_DEFAULT,
+        }
     }
 }
 
 impl HuHerschSettings {
     pub fn validate(&self) -> Result<(), Error> {
-        if !self.strength.is_finite() || !(0.0..=1.0).contains(&self.strength) {
-            return Err(fail(
-                "Hu/Hersch strength must be finite and between 0 and 1",
-            ));
+        for (label, value) in [
+            ("aperture depth factor", self.aperture_depth_factor),
+            ("global depth factor", self.global_depth_factor),
+        ] {
+            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                return Err(fail(format!(
+                    "Hu/Hersch {label} must be finite and between 0 and 1"
+                )));
+            }
         }
         Ok(())
     }
@@ -216,12 +239,12 @@ fn slope_filter(ys: &[f64], raw: &[f64]) -> Vec<f64> {
     result
 }
 
-fn aperture_filter(ys: &[f64], slope: &[f64]) -> Vec<f64> {
+fn aperture_filter(ys: &[f64], slope: &[f64], aperture_depth_factor: f64) -> Vec<f64> {
     // Full-outline construction redetects C's bays on the output of B.
     let mut result = slope.to_vec();
     for bay in bays(ys, slope) {
         let (start, stop) = slice_indices(ys, bay);
-        let cutoff = bay.a.max(bay.b) - 0.21 * (bay.hi - bay.lo);
+        let cutoff = bay.a.max(bay.b) - aperture_depth_factor * (bay.hi - bay.lo);
         let inner = bay.a.min(bay.b);
         if inner >= cutoff {
             for value in &mut result[start..stop] {
@@ -262,6 +285,7 @@ fn profile(
     outline: &Outline,
     window: (f64, f64),
     budget: &mut Budget,
+    settings: &HuHerschSettings,
 ) -> Result<Option<Profile>, Error> {
     let Some(bounds) = outline.bounds else {
         return Ok(None);
@@ -329,15 +353,15 @@ fn profile(
     let outward_left: Vec<_> = left.iter().map(|x| -x).collect();
     let slope_left = slope_filter(&ys, &outward_left);
     let slope_right = slope_filter(&ys, &right);
-    let aperture_left = aperture_filter(&ys, &slope_left);
-    let aperture_right = aperture_filter(&ys, &slope_right);
+    let aperture_left = aperture_filter(&ys, &slope_left, settings.aperture_depth_factor);
+    let aperture_right = aperture_filter(&ys, &slope_right, settings.aperture_depth_factor);
     let filtered_left: Vec<_> = aperture_left[before..before + count]
         .iter()
-        .map(|x| (-x).min(bounds.minx + 0.25 * height))
+        .map(|x| (-x).min(bounds.minx + settings.global_depth_factor * height))
         .collect();
     let filtered_right: Vec<_> = aperture_right[before..before + count]
         .iter()
-        .map(|x| x.max(bounds.maxx - 0.25 * height))
+        .map(|x| x.max(bounds.maxx - settings.global_depth_factor * height))
         .collect();
     let mean_left = sum(filtered_left.iter().copied()) / count as f64;
     let mean_right = sum(filtered_right.iter().copied()) / count as f64;
@@ -450,6 +474,7 @@ fn calibrate(
     capture: &super::CalibrationCapture,
     mono: bool,
     budget: &mut Budget,
+    settings: &HuHerschSettings,
 ) -> Result<Option<((f64, f64), f64)>, Error> {
     if capture.unavailable_reason.is_some() {
         return Ok(None);
@@ -475,7 +500,7 @@ fn calibrate(
     let mut profiles = HashMap::new();
     for &cp in &repertoire {
         let outline = budget.outline(&records[&cp].fitted_commands)?;
-        let Some(value) = profile(&outline.0, window, budget)? else {
+        let Some(value) = profile(&outline.0, window, budget, settings)? else {
             return Ok(None);
         };
         profiles.insert(cp, value);
@@ -524,9 +549,7 @@ pub(super) fn resolve(
     let mut result = super::PairAdjustments::new();
     for left in context.glyphs {
         for right in context.glyphs {
-            let reason = if settings.strength == 0.0 {
-                "optical_disabled"
-            } else if context.properties.tabular_digits
+            let reason = if context.properties.tabular_digits
                 && (48..=57).contains(&left.codepoint)
                 && (48..=57).contains(&right.codepoint)
             {
@@ -539,9 +562,6 @@ pub(super) fn resolve(
                 PairDecision::RetainSource(reason),
             );
         }
-    }
-    if settings.strength == 0.0 {
-        return Ok(result);
     }
     let records: HashMap<_, _> = context.records.iter().map(|r| (r.codepoint, r)).collect();
     let mut outlines = HashMap::new();
@@ -556,7 +576,7 @@ pub(super) fn resolve(
             .and_then(|c| c.unavailable_reason)
             .unwrap_or("calibration_unavailable");
         let calibrated = captured
-            .map(|c| calibrate(c, mono, &mut budget))
+            .map(|c| calibrate(c, mono, &mut budget, settings))
             .transpose()?
             .flatten();
         let mut profiles = HashMap::new();
@@ -577,7 +597,7 @@ pub(super) fn resolve(
                     }
                     profiles.insert(
                         glyph.codepoint,
-                        profile(&outlines[&glyph.codepoint].0, window, &mut budget)?,
+                        profile(&outlines[&glyph.codepoint].0, window, &mut budget, settings)?,
                     );
                 }
             }
@@ -616,29 +636,22 @@ pub(super) fn resolve(
                 }
                 // Retain the experiment's signed adjustment rounding, including
                 // ties away from zero; there is no common post-method rounder.
+                // The full optical correction always applies to supported
+                // pairs; abstentions above retain Source.
                 let optical_adjustment = finite(ideal - f64::from(advance) / 64.)?;
-                let metric_adjustment = context
+                if context
                     .pair_adjustments_26_6
                     .get(&key)
                     .copied()
-                    .unwrap_or(0);
-                if metric_adjustment % 64 != 0 {
+                    .unwrap_or(0)
+                    % 64
+                    != 0
+                {
                     return Err(fail(
                         "Hu/Hersch requires whole-pixel finalized pair adjustments",
                     ));
                 }
-                // This strength control is a project adaptation, matching the
-                // established FontForge adapter's Source/continuous-optical
-                // blend. Do not blend already rounded endpoint placements.
-                let adjustment = if settings.strength == 1.0 {
-                    optical_adjustment
-                } else {
-                    finite(
-                        f64::from(metric_adjustment) / 64. * (1.0 - settings.strength)
-                            + optical_adjustment * settings.strength,
-                    )?
-                }
-                .round();
+                let adjustment = optical_adjustment.round();
                 if adjustment.abs() > f64::from(i32::MAX / 64) {
                     return Err(fail("Hu/Hersch origin exceeds layout range"));
                 }
@@ -814,9 +827,14 @@ mod tests {
                 .collect();
             let mut targets = vec![];
             for ((class, name), capture) in classes.iter().zip(&calibrations) {
-                let actual = calibrate(capture, true, &mut Budget::default())
-                    .unwrap()
-                    .unwrap();
+                let actual = calibrate(
+                    capture,
+                    true,
+                    &mut Budget::default(),
+                    &HuHerschSettings::default(),
+                )
+                .unwrap()
+                .unwrap();
                 let expected = case["classes"][*name]["target_px"].as_f64().unwrap();
                 assert!(
                     (actual.1 - expected).abs() < 1e-10,
@@ -859,77 +877,54 @@ mod tests {
                     case["family"]
                 );
             }
-            // The independently captured Python table retains continuous
-            // optical origins too. It distinguishes blending those origins
-            // from blending already rounded/guarded endpoints.
-            let metric_pairs: HashMap<_, _> = case["pairs"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .enumerate()
-                .map(|(i, pair)| {
-                    (
-                        (
-                            pair[0].as_u64().unwrap() as u32,
-                            pair[1].as_u64().unwrap() as u32,
-                        ),
-                        if i % 2 == 0 { -64 } else { 128 },
-                    )
-                })
-                .collect();
-            context.pair_adjustments_26_6 = &metric_pairs;
-            let mut differs_from_rounded_blend = 0;
-            for strength in [0.25, 0.5, 0.75] {
-                let blended =
-                    resolve(&context, &calibrations, &HuHerschSettings { strength }).unwrap();
-                for pair in case["pairs"].as_array().unwrap() {
-                    let a = pair[0].as_u64().unwrap() as u32;
-                    let b = pair[1].as_u64().unwrap() as u32;
-                    let advance = advances[&a] / 64;
-                    let metric = metric_pairs[&(a, b)] / 64;
-                    let optical = pair[2].as_f64().unwrap() - f64::from(advance);
-                    let mut expected = advance
-                        + (f64::from(metric) * (1. - strength) + optical * strength).round() as i32;
-                    let ga = glyphs.iter().find(|g| g.codepoint == a).unwrap();
-                    let gb = glyphs.iter().find(|g| g.codepoint == b).unwrap();
-                    let mut minimum = i32::MIN;
-                    for ay in 0..ga.height as usize {
-                        let by = ga.top + ay as i32 - gb.top;
-                        if !(0..gb.height as i32).contains(&by) {
-                            continue;
-                        }
-                        let ar = &ga.pixels[ay * ga.width as usize..(ay + 1) * ga.width as usize];
-                        let by = by as usize;
-                        let br = &gb.pixels[by * gb.width as usize..(by + 1) * gb.width as usize];
-                        if let (Some(ax), Some(bx)) = (
-                            ar.iter().rposition(|v| *v > 0),
-                            br.iter().position(|v| *v > 0),
-                        ) {
-                            minimum = minimum.max(ga.left + ax as i32 + 1 - gb.left - bx as i32);
-                        }
-                    }
-                    expected = expected.max(minimum);
-                    let super::super::PairDecision::Replace(adjustment) = blended[&(a, b)] else {
-                        panic!("reference pair unexpectedly retained Source at partial strength")
-                    };
-                    assert_eq!(
-                        (advances[&a] + adjustment) / 64,
-                        expected,
-                        "{} {a}/{b} strength{strength}",
-                        case["family"]
-                    );
-                    let rounded = pair[3].as_f64().unwrap() - f64::from(advance);
-                    let rounded_blend = (advance
-                        + (f64::from(metric) * (1. - strength) + rounded * strength).round()
-                            as i32)
-                        .max(minimum);
-                    differs_from_rounded_blend += usize::from(expected != rounded_blend);
-                }
+            // Non-default depth factors must propagate into both the shared
+            // calibration target and candidate walls. Assert a general change
+            // (target moves and at least one emitted step moves) rather than
+            // preferred pixels for any reported pair.
+            let deep = HuHerschSettings {
+                aperture_depth_factor: 0.35,
+                global_depth_factor: 0.4,
+            };
+            let mut target_moved = false;
+            for (capture, (_, before)) in calibrations.iter().zip(&targets) {
+                let after = calibrate(capture, true, &mut Budget::default(), &deep)
+                    .unwrap()
+                    .unwrap();
+                target_moved |= (after.1 - before.1).abs() > 1e-9;
             }
             assert!(
-                differs_from_rounded_blend > 0,
-                "fixture must detect blending already rounded endpoints"
+                target_moved,
+                "{} calibration target ignores depth factors",
+                case["family"]
             );
+            let moved = resolve(&context, &calibrations, &deep).unwrap();
+            let full = resolve(&context, &calibrations, &HuHerschSettings::default()).unwrap();
+            assert!(
+                case["pairs"].as_array().unwrap().iter().any(|pair| {
+                    let key = (
+                        pair[0].as_u64().unwrap() as u32,
+                        pair[1].as_u64().unwrap() as u32,
+                    );
+                    moved.get(&key) != full.get(&key)
+                }),
+                "{} placements ignore depth factors",
+                case["family"]
+            );
+            // The retired `strength` blend is rejected at the schema boundary:
+            // no saved value may silently load as new defaults.
+            for rejected in [
+                serde_json::json!({"method":"hu_hersch","strength":0.0}),
+                serde_json::json!({"method":"hu_hersch","strength":0.35}),
+                serde_json::json!({"method":"hu_hersch","strength":1.0}),
+                serde_json::json!({"method":"hu_hersch","strength":null}),
+                serde_json::json!({"method":"hu_hersch","strength":"0.35"}),
+            ] {
+                assert!(
+                    serde_json::from_value::<super::super::KerningMethod>(rejected).is_err(),
+                    "{} retired strength must not parse",
+                    case["family"]
+                );
+            }
         }
     }
 
@@ -939,7 +934,7 @@ mod tests {
         let raw = vec![0., 0., 2., 0., 1., 0., 2.];
         let slope = slope_filter(&ys, &raw);
         assert_eq!(slope, vec![0., 0., 2., 1.5, 1., 1.5, 2.]);
-        let filtered = aperture_filter(&ys, &slope);
+        let filtered = aperture_filter(&ys, &slope, APERTURE_DEPTH_FACTOR_DEFAULT);
         assert!((filtered[4] - (2. - 0.21 * 3.)).abs() < 1e-14);
         assert_eq!(
             slope_filter(&ys, &[0., 1., 2., 3., 4., 5., 6.]),
@@ -957,13 +952,14 @@ mod tests {
             C::Close,
         ])
         .unwrap();
-        let p = profile(&outline, (0., 3.), &mut Budget::default())
+        let settings = HuHerschSettings::default();
+        let p = profile(&outline, (0., 3.), &mut Budget::default(), &settings)
             .unwrap()
             .unwrap();
         // The missing upper lip is retained before construction, not replaced
         // by a spurious body-window endpoint. Published global D still uses H=3.
         assert!(p.right[p.right.len() - 1] > 2.0);
-        assert!(profile(&outline, (0., 200.), &mut Budget::default()).is_err());
+        assert!(profile(&outline, (0., 200.), &mut Budget::default(), &settings).is_err());
         let moved = Outline::new(&[
             C::MoveTo(4., 0.),
             C::LineTo(8., 0.),
@@ -972,7 +968,7 @@ mod tests {
             C::Close,
         ])
         .unwrap();
-        let q = profile(&moved, (0., 3.), &mut Budget::default())
+        let q = profile(&moved, (0., 3.), &mut Budget::default(), &settings)
             .unwrap()
             .unwrap();
         assert!((q.mean_left - p.mean_left - 5.).abs() < 1e-12);
