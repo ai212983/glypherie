@@ -1,4 +1,7 @@
 use super::*;
+use crate::{
+    mono_spacing::FontSpacingProperties, reference::RasterPolicy, reference::ReferenceRecord, Glyph,
+};
 
 fn commands(value: &serde_json::Value) -> Vec<FittedCommand> {
     value
@@ -138,6 +141,358 @@ fn band_boundary_empty_and_native_unrepresentable_geometry_abstain() {
     assert!(analyze(&wide, 1., 1000).unwrap().is_none());
     assert!(analyze(&rectangle(0., 0., 100., 100.), f64::NAN, 1000).is_err());
     assert!(analyze(&rectangle(0., 0., 100., 1_000_000.), 1., 1000).is_err());
+}
+
+fn test_glyph(codepoint: u32) -> Glyph {
+    Glyph {
+        codepoint,
+        glyph_id: codepoint,
+        advance_26_6: 640,
+        left: 0,
+        top: 0,
+        width: 0,
+        height: 0,
+        pixels: Vec::new(),
+    }
+}
+
+fn test_record(codepoint: u32, fitted_commands: Vec<FittedCommand>) -> ReferenceRecord {
+    ReferenceRecord {
+        side_bearing_deltas_26_6: None,
+        raster_policy: RasterPolicy::Coverage,
+        mono_rasterizer: None,
+        mono_raster: None,
+        font_scan: None,
+        diagonal_pairs: None,
+        codepoint,
+        glyph_id: codepoint,
+        selected_engine: String::new(),
+        target: String::new(),
+        smooth_mode: None,
+        symmetric_rendering: None,
+        preserve_linear_metrics: None,
+        draw_pedantic: false,
+        skrifa_version: String::new(),
+        skrifa_registry_checksum: String::new(),
+        zeno_version: String::new(),
+        zeno_format: String::new(),
+        output_bits: 3,
+        mono_threshold: 128,
+        gray_gamma: 1.,
+        fitted_commands,
+        source_commands: None,
+        width_fitting: None,
+        selective_fitting: None,
+        diagonal_fitting: None,
+        top_alignment: None,
+        baseline_alignment: None,
+        extremity_phase: None,
+        coverage: vec![],
+        coverage_sha256: String::new(),
+        left: 0,
+        top: 0,
+        width: 0,
+        height: 0,
+        pixels: vec![],
+        advance_26_6: 640,
+        hinted_has_overlaps: false,
+        hinted_lsb: None,
+        hinted_advance_width: None,
+    }
+}
+
+fn resolve_with(
+    glyphs: &[Glyph],
+    records: &[ReferenceRecord],
+    source_commands: &HashMap<u32, Vec<FittedCommand>>,
+    source_advances_26_6: &HashMap<u32, i32>,
+    advances_26_6: &HashMap<u32, i32>,
+    properties: FontSpacingProperties,
+    output_bits: u8,
+    size_px: f64,
+) -> Result<super::super::PairAdjustments, Error> {
+    let empty_pairs = HashMap::new();
+    let context = super::super::MethodContext {
+        glyphs,
+        records,
+        source_commands,
+        source_advances_26_6,
+        source_pairs_26_6: &empty_pairs,
+        advances_26_6,
+        pair_adjustments_26_6: &empty_pairs,
+        output_bits,
+        units_per_em: 1000,
+        size_px,
+        ascender_26_6: 0,
+        properties,
+        source_kerning: false,
+    };
+    super::resolve(&context, &FontforgeSettings::default())
+}
+
+fn spacing_properties(monospace: bool) -> FontSpacingProperties {
+    FontSpacingProperties {
+        monospace,
+        tabular_digits: false,
+    }
+}
+
+#[test]
+fn monospace_resolve_retains_every_pair_without_analysis() {
+    let glyphs = vec![test_glyph(65), test_glyph(66)];
+    let actual = resolve_with(
+        &glyphs,
+        &[],
+        &HashMap::new(),
+        &HashMap::new(),
+        &HashMap::new(),
+        spacing_properties(true),
+        1,
+        16.,
+    )
+    .unwrap();
+    assert_eq!(actual.len(), 4);
+    for decision in actual.values() {
+        assert_eq!(
+            *decision,
+            super::super::PairDecision::RetainSource("fixed_pitch")
+        );
+    }
+}
+
+#[test]
+fn seed_reasons_cover_whitespace_and_tabular_digits() {
+    let glyphs = vec![test_glyph(32), test_glyph(48), test_glyph(49)];
+    let actual = resolve_with(
+        &glyphs,
+        &[],
+        &HashMap::new(),
+        &HashMap::new(),
+        &HashMap::new(),
+        FontSpacingProperties {
+            monospace: false,
+            tabular_digits: true,
+        },
+        3,
+        16.,
+    )
+    .unwrap();
+    assert_eq!(actual.len(), 9);
+    for (pair, expected) in [
+        ((32, 32), "whitespace"),
+        ((32, 48), "whitespace"),
+        ((48, 32), "whitespace"),
+        ((48, 48), "source_tabular_digits"),
+        ((48, 49), "source_tabular_digits"),
+        ((49, 48), "source_tabular_digits"),
+        ((49, 49), "source_tabular_digits"),
+    ] {
+        assert_eq!(
+            actual[&pair],
+            super::super::PairDecision::RetainSource(expected),
+            "{pair:?}"
+        );
+    }
+}
+
+#[test]
+fn resolve_rejects_unscalable_and_missing_geometry() {
+    let glyphs = vec![test_glyph(65)];
+    let advances: HashMap<u32, i32> = [(65, 640)].into_iter().collect();
+    assert!(
+        resolve_with(
+            &glyphs,
+            &[],
+            &HashMap::new(),
+            &HashMap::new(),
+            &advances,
+            spacing_properties(false),
+            3,
+            0.,
+        )
+        .is_err(),
+        "a zero size must fail the coordinate scale check"
+    );
+    let outline = rectangle(0., 0., 100., 100.);
+    for (present, expected) in [
+        (HashMap::new(), "FontForge source outline is missing"),
+        (
+            [(65, outline)].into_iter().collect(),
+            "FontForge fitted outline is missing",
+        ),
+    ] {
+        assert_eq!(
+            resolve_with(
+                &glyphs,
+                &[],
+                &present,
+                &HashMap::new(),
+                &advances,
+                spacing_properties(false),
+                3,
+                16.,
+            )
+            .unwrap_err()
+            .0,
+            expected
+        );
+    }
+}
+
+#[test]
+fn gray_pairs_apply_full_correction_and_skip_tabular_digits() {
+    let glyphs = vec![test_glyph(65), test_glyph(48), test_glyph(49)];
+    let outline = rectangle(0., 0., 100., 100.);
+    let source_commands: HashMap<u32, Vec<FittedCommand>> =
+        [(65, outline.clone()), (48, outline.clone()), (49, outline)]
+            .into_iter()
+            .collect();
+    let records: Vec<_> = [65, 48, 49]
+        .into_iter()
+        .map(|cp| test_record(cp, source_commands[&cp].clone()))
+        .collect();
+    let advances: HashMap<u32, i32> = [(65, 640), (48, 640), (49, 640)].into_iter().collect();
+    let actual = resolve_with(
+        &glyphs,
+        &records,
+        &source_commands,
+        &advances,
+        &advances,
+        FontSpacingProperties {
+            monospace: false,
+            tabular_digits: true,
+        },
+        3,
+        16.,
+    )
+    .unwrap();
+    assert_eq!(actual.len(), 9);
+    for pair in [(48, 48), (48, 49), (49, 48), (49, 49)] {
+        assert_eq!(
+            actual[&pair],
+            super::super::PairDecision::RetainSource("source_tabular_digits"),
+            "{pair:?} must skip solving"
+        );
+    }
+    for pair in [(65, 65), (65, 48), (48, 65)] {
+        let super::super::PairDecision::Replace(adjustment) = actual[&pair] else {
+            panic!(
+                "{pair:?} must carry the full correction, got {:?}",
+                actual[&pair]
+            );
+        };
+        assert_eq!(adjustment % 64, 0, "{pair:?} must stay whole-pixel");
+    }
+}
+
+fn envelope_for_test(imin: i32, edges: Vec<Option<(i16, i16)>>) -> Envelope {
+    Envelope {
+        bounds: Bounds {
+            minx: 0.,
+            miny: 0.,
+            maxx: 100.,
+            maxy: 100.,
+        },
+        imin,
+        imax: imin + edges.len() as i32 - 1,
+        edges,
+    }
+}
+
+#[test]
+fn solve_honors_the_pinned_endpoint_rule() {
+    // Constant polynomials carry their value to both endpoints.
+    assert_eq!(solve([0., 0., 0., 5e-5], 0., 10., 0.).unwrap(), Some(0.));
+    assert_eq!(solve([0., 0., 0., -5e-5], 0., 10., 0.).unwrap(), Some(0.));
+    // Exactly on the rule boundary the endpoints do not count as hits.
+    assert_eq!(solve([0., 0., 0., 1e-4], 0., 10., 0.).unwrap(), None);
+    assert_eq!(solve([0., 0., 0., -1e-4], 0., 10., 0.).unwrap(), None);
+    // Far values abstain without bracketing.
+    assert_eq!(solve([0., 0., 0., 0.5], 0., 10., 0.).unwrap(), None);
+    // The linear fast path pins to the interval.
+    assert_eq!(solve([0., 0., 2., 0.], 0., 10., 4.).unwrap(), Some(2.));
+    assert_eq!(solve([0., 0., 2., 0.], 0., 10., 40.).unwrap(), None);
+    // A genuine cubic must not take the linear path: 3t^3 + 2t - 4 crosses
+    // near 0.901, far from the linear -c[3]/c[2] = 2.
+    let root = solve([3., 0., 2., 0.], 0., 10., 4.).unwrap().unwrap();
+    assert!(
+        (root - 0.901).abs() < 0.01,
+        "cubic root {root} must not use the linear shortcut"
+    );
+}
+
+#[test]
+fn separation_rejects_a_nonpositive_weight_divisor() {
+    // sep = b - a = 0 - 20 = -20 with em 1000 gives divisor -20 + 20 = 0.
+    // The trailing band stays empty: the shared top boundary is excluded
+    // from the weighted mean by construction.
+    let left = envelope_for_test(0, vec![Some((0, 20)), None]);
+    let right = envelope_for_test(0, vec![Some((0, 0)), None]);
+    assert_eq!(
+        separation(&left, &right, 1000).unwrap_err().0,
+        "FontForge weight divisor must be positive"
+    );
+    // A negative divisor fails the same guard.
+    let right = envelope_for_test(0, vec![Some((0, -5)), None]);
+    assert_eq!(
+        separation(&left, &right, 1000).unwrap_err().0,
+        "FontForge weight divisor must be positive"
+    );
+}
+
+#[test]
+fn step_encoding_holds_the_integer_placement_range() {
+    let (min, max) = (f64::from(i32::MIN / 64), f64::from(i32::MAX / 64));
+    assert!(encode_step_adjustment(min, 0).is_ok());
+    assert!(encode_step_adjustment(max, 0).is_ok());
+    for step in [min - 1., max + 1., f64::NAN] {
+        assert_eq!(
+            encode_step_adjustment(step, 0).unwrap_err().0,
+            "FontForge integer placement range exceeded",
+            "step {step} must fail the range guard"
+        );
+    }
+}
+
+#[test]
+fn mono_pairs_apply_full_correction_without_cell_overlap() {
+    let glyph = |codepoint: u32| Glyph {
+        codepoint,
+        glyph_id: codepoint,
+        advance_26_6: 640,
+        left: 0,
+        top: 0,
+        width: 2,
+        height: 2,
+        pixels: vec![1, 1, 1, 1],
+    };
+    let glyphs = vec![glyph(65), glyph(66)];
+    let outline = rectangle(0., 0., 100., 100.);
+    let source_commands: HashMap<u32, Vec<FittedCommand>> =
+        [(65, outline.clone()), (66, outline)].into_iter().collect();
+    let records: Vec<_> = [65, 66]
+        .into_iter()
+        .map(|cp| test_record(cp, source_commands[&cp].clone()))
+        .collect();
+    let advances: HashMap<u32, i32> = [(65, 640), (66, 640)].into_iter().collect();
+    let actual = resolve_with(
+        &glyphs,
+        &records,
+        &source_commands,
+        &advances,
+        &advances,
+        spacing_properties(false),
+        1,
+        16.,
+    )
+    .unwrap();
+    assert_eq!(actual.len(), 4);
+    for (pair, decision) in &actual {
+        let super::super::PairDecision::Replace(adjustment) = decision else {
+            panic!("{pair:?} must carry the full correction, got {decision:?}");
+        };
+        assert_eq!(adjustment % 64, 0, "{pair:?} must stay whole-pixel");
+    }
 }
 
 #[test]

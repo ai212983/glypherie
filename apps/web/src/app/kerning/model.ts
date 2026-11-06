@@ -59,7 +59,6 @@ export type KerningMethodRequest =
 
 interface KerningMethodDescription {
   label: string;
-  experimental: boolean;
   requiresExplicitPipeline: boolean;
   description: string;
 }
@@ -67,19 +66,19 @@ interface KerningMethodDescription {
 /** Only methods compiled into the shared native/WASM renderer belong here. */
 export const KERNING_METHODS = {
   source: {
-    label: "Source", experimental: false, requiresExplicitPipeline: false,
+    label: "Source", requiresExplicitPipeline: false,
     description: "Keeps the font's source kerning and fitted bearing corrections.",
   },
   typefacet: {
-    label: "TypeFacet", experimental: false, requiresExplicitPipeline: true,
+    label: "TypeFacet", requiresExplicitPipeline: true,
     description: "Manual optical spacing; adjust these parameters for the font.",
   },
   hu_hersch: {
-    label: "Hu/Hersch", experimental: false, requiresExplicitPipeline: true,
+    label: "Hu/Hersch", requiresExplicitPipeline: true,
     description: "Calibrates optical spacing to the font's reference alphabet density.",
   },
   fontforge: {
-    label: "FontForge source-relative", experimental: false, requiresExplicitPipeline: true,
+    label: "FontForge source-relative", requiresExplicitPipeline: true,
     description: "Targets each source pair's original optical separation after fitting.",
   },
 } as const satisfies Record<KerningMethod, KerningMethodDescription>;
@@ -108,56 +107,70 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Shared finite-range rule for every em and depth-factor bound below. */
+function isFiniteRange(value: unknown, min: number, max: number): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max;
+}
+
+function validateSourceSetting(value: unknown): void {
+  if (!isRecord(value) || typeof value.enabled !== "boolean") {
+    throw new Error("Source kerning must carry an enabled flag.");
+  }
+}
+
+function validateTypeFacetSettings(value: unknown): void {
+  if (!isRecord(value)) throw new Error("TypeFacet settings are missing.");
+  const normal = value.normalDistanceEm;
+  if (!isFiniteRange(normal, 0.01, 0.5)) {
+    throw new Error("TypeFacet normal distance must be between 0.01 and 0.5 em.");
+  }
+  if (!isFiniteRange(value.intrusionToleranceEm, 0, 0.5)) {
+    throw new Error("TypeFacet intrusion tolerance must be between 0 and 0.5 em.");
+  }
+  const minimum = value.minimumDistanceEm === undefined ? 0 : value.minimumDistanceEm;
+  if (!isFiniteRange(minimum, 0, normal)) {
+    throw new Error("TypeFacet minimum clearance must be between 0 and the normal distance.");
+  }
+  const overlap = value.maxXExtremaOverlapEm === undefined ? 0.1 : value.maxXExtremaOverlapEm;
+  if (!isFiniteRange(overlap, 0, 0.5)) {
+    throw new Error("TypeFacet maximum horizontal overlap must be between 0 and 0.5 em.");
+  }
+}
+
+function validateHuHerschSettings(value: unknown): void {
+  if (!isRecord(value)) throw new Error("Hu/Hersch settings are missing.");
+  const known = new Set(["apertureDepthFactor", "globalDepthFactor"]);
+  for (const key of Object.keys(value)) {
+    if (!known.has(key)) throw new Error(`Hu/Hersch does not accept ${key}.`);
+  }
+  const aperture = value.apertureDepthFactor === undefined
+    ? HU_HERSCH_DEFAULTS.apertureDepthFactor : value.apertureDepthFactor;
+  if (!isFiniteRange(aperture, HU_HERSCH_APERTURE_MIN, HU_HERSCH_APERTURE_MAX)) {
+    throw new Error("Hu/Hersch cavity depth must be between 0 and 1.");
+  }
+  const global = value.globalDepthFactor === undefined
+    ? HU_HERSCH_DEFAULTS.globalDepthFactor : value.globalDepthFactor;
+  if (!isFiniteRange(global, HU_HERSCH_GLOBAL_MIN, HU_HERSCH_GLOBAL_MAX)) {
+    throw new Error("Hu/Hersch maximum visual depth must be between 0 and 1.");
+  }
+}
+
+function validateFontforgeSettings(value: unknown): void {
+  if (!isRecord(value)) throw new Error("FontForge settings are missing.");
+  for (const key of Object.keys(value)) {
+    throw new Error(`FontForge does not accept ${key}.`);
+  }
+}
+
 export function validateKerningPreference(value: unknown): asserts value is KerningPreference {
   if (typeof value === "boolean") return;
   if (!isRecord(value) || !isKerningMethod(value.method)) {
     throw new Error("Unknown kerning method.");
   }
-  if (!isRecord(value.source) || typeof value.source.enabled !== "boolean") {
-    throw new Error("Source kerning must carry an enabled flag.");
-  }
-  if (!isRecord(value.typefacet)) throw new Error("TypeFacet settings are missing.");
-  const normal = value.typefacet.normalDistanceEm;
-  const intrusion = value.typefacet.intrusionToleranceEm;
-  if (typeof normal !== "number" || !Number.isFinite(normal) || normal < 0.01 || normal > 0.5) {
-    throw new Error("TypeFacet normal distance must be between 0.01 and 0.5 em.");
-  }
-  if (typeof intrusion !== "number" || !Number.isFinite(intrusion) || intrusion < 0 || intrusion > 0.5) {
-    throw new Error("TypeFacet intrusion tolerance must be between 0 and 0.5 em.");
-  }
-  const minimum = value.typefacet.minimumDistanceEm === undefined ? 0 : value.typefacet.minimumDistanceEm;
-  const overlap = value.typefacet.maxXExtremaOverlapEm === undefined ? 0.1 : value.typefacet.maxXExtremaOverlapEm;
-  if (typeof minimum !== "number" || !Number.isFinite(minimum) || minimum < 0 || minimum > normal) {
-    throw new Error("TypeFacet minimum clearance must be between 0 and the normal distance.");
-  }
-  if (typeof overlap !== "number" || !Number.isFinite(overlap) || overlap < 0 || overlap > 0.5) {
-    throw new Error("TypeFacet maximum horizontal overlap must be between 0 and 0.5 em.");
-  }
-  if (value.hu_hersch !== undefined) {
-    if (!isRecord(value.hu_hersch)) throw new Error("Hu/Hersch settings are missing.");
-    const known = new Set(["apertureDepthFactor", "globalDepthFactor"]);
-    for (const key of Object.keys(value.hu_hersch)) {
-      if (!known.has(key)) throw new Error(`Hu/Hersch does not accept ${key}.`);
-    }
-    const aperture = value.hu_hersch.apertureDepthFactor === undefined
-      ? HU_HERSCH_DEFAULTS.apertureDepthFactor : value.hu_hersch.apertureDepthFactor;
-    if (typeof aperture !== "number" || !Number.isFinite(aperture)
-      || aperture < HU_HERSCH_APERTURE_MIN || aperture > HU_HERSCH_APERTURE_MAX) {
-      throw new Error("Hu/Hersch cavity depth must be between 0 and 1.");
-    }
-    const global = value.hu_hersch.globalDepthFactor === undefined
-      ? HU_HERSCH_DEFAULTS.globalDepthFactor : value.hu_hersch.globalDepthFactor;
-    if (typeof global !== "number" || !Number.isFinite(global)
-      || global < HU_HERSCH_GLOBAL_MIN || global > HU_HERSCH_GLOBAL_MAX) {
-      throw new Error("Hu/Hersch maximum visual depth must be between 0 and 1.");
-    }
-  }
-  if (value.fontforge !== undefined) {
-    if (!isRecord(value.fontforge)) throw new Error("FontForge settings are missing.");
-    for (const key of Object.keys(value.fontforge)) {
-      throw new Error(`FontForge does not accept ${key}.`);
-    }
-  }
+  validateSourceSetting(value.source);
+  validateTypeFacetSettings(value.typefacet);
+  if (value.hu_hersch !== undefined) validateHuHerschSettings(value.hu_hersch);
+  if (value.fontforge !== undefined) validateFontforgeSettings(value.fontforge);
 }
 
 export function normalizeKerning(value: KerningPreference = true): KerningState {

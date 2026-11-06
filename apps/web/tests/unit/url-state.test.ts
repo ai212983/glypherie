@@ -13,7 +13,7 @@ import {
   type PreviewSnapshot,
 } from "../../src/app/features/preview/state/snapshot-codec.ts";
 import { detailPath, indexPath, palettesPath } from "../../src/app/navigation/router.ts";
-import { editKerning, resolveKerning, selectKerningMethod } from "../../src/app/kerning/model.ts";
+import { editKerning, selectKerningMethod } from "../../src/app/kerning/model.ts";
 
 const METAS: FamilyMeta[] = [
   {

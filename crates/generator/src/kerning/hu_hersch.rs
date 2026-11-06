@@ -252,56 +252,73 @@ fn aperture_filter(ys: &[f64], slope: &[f64], aperture_depth_factor: f64) -> Vec
             }
             continue;
         }
-        let forward = bay.a >= bay.b;
-        let mut coords = vec![bay.lo];
-        coords.extend_from_slice(&ys[start..stop]);
-        coords.push(bay.hi);
-        let mut values = vec![bay.a];
-        values.extend_from_slice(&slope[start..stop]);
-        values.push(bay.b);
-        if !forward {
-            coords = coords.into_iter().rev().map(|v| -v).collect();
-            values.reverse();
-        }
-        let departure = coords.windows(2).zip(values.windows(2)).find_map(|(y, x)| {
-            (x[0] >= cutoff && x[1] < cutoff)
-                .then(|| y[0] + (y[1] - y[0]) * (x[0] - cutoff) / (x[0] - x[1]))
-        });
-        if let Some(departure) = departure {
-            let end = coords[coords.len() - 1];
-            for i in start..stop {
-                let y = if forward { ys[i] } else { -ys[i] };
-                if departure <= y && y <= end {
-                    result[i] = result[i]
-                        .max(cutoff + (y - departure) * (inner - cutoff) / (end - departure));
-                }
-            }
-        }
+        asymmetric_connector(ys, slope, bay, cutoff, inner, start, stop, &mut result);
     }
     result
 }
 
-fn profile(
-    outline: &Outline,
-    window: (f64, f64),
-    budget: &mut Budget,
-    settings: &HuHerschSettings,
-) -> Result<Option<Profile>, Error> {
-    let Some(bounds) = outline.bounds else {
-        return Ok(None);
-    };
-    let (lo, hi) = window;
-    let height = finite(hi - lo)?;
-    if height <= 0. {
-        return Err(fail("Hu/Hersch body window must have positive height"));
+/// Patent Fig. 2b's asymmetric cavity connector: from the cutoff's departure
+/// on the higher lip, ramp down to the recessed lip. Shallow cavities that
+/// never reach the cutoff are filled flat by the caller instead.
+fn asymmetric_connector(
+    ys: &[f64],
+    slope: &[f64],
+    bay: Bay,
+    cutoff: f64,
+    inner: f64,
+    start: usize,
+    stop: usize,
+    result: &mut [f64],
+) {
+    let forward = bay.a >= bay.b;
+    let mut coords = vec![bay.lo];
+    coords.extend_from_slice(&ys[start..stop]);
+    coords.push(bay.hi);
+    let mut values = vec![bay.a];
+    values.extend_from_slice(&slope[start..stop]);
+    values.push(bay.b);
+    if !forward {
+        coords = coords.into_iter().rev().map(|v| -v).collect();
+        values.reverse();
     }
-    let count = finite(height * SAMPLES_PER_PIXEL)?.ceil() as usize;
+    let departure = coords.windows(2).zip(values.windows(2)).find_map(|(y, x)| {
+        (x[0] >= cutoff && x[1] < cutoff)
+            .then(|| y[0] + (y[1] - y[0]) * (x[0] - cutoff) / (x[0] - x[1]))
+    });
+    if let Some(departure) = departure {
+        let end = coords[coords.len() - 1];
+        for i in start..stop {
+            let y = if forward { ys[i] } else { -ys[i] };
+            if departure <= y && y <= end {
+                result[i] =
+                    result[i].max(cutoff + (y - departure) * (inner - cutoff) / (end - departure));
+            }
+        }
+    }
+}
+
+/// The construction sampling policy: midpoint samples over the class body
+/// window with full-outline margins on both sides, so wall construction sees
+/// the contour beyond the body integral.
+struct SampleGrid {
+    ys: Vec<f64>,
+    before: usize,
+    count: usize,
+    height: f64,
+}
+
+/// The body sample-count allocation policy: the window must sample to a
+/// representable row count.
+fn check_sample_count(count: usize) -> Result<(), Error> {
     if count == 0 || count > MAX_SAMPLES {
         return Err(fail("Hu/Hersch sample limit exceeded"));
     }
-    let dy = height / count as f64;
-    let before = finite((lo - bounds.miny).max(0.) / dy)?.ceil() as usize;
-    let after = finite((bounds.maxy - hi).max(0.) / dy)?.ceil() as usize;
+    Ok(())
+}
+
+/// The full-outline allocation policy: body samples plus both construction
+/// margins must stay bounded.
+fn check_construction_total(before: usize, count: usize, after: usize) -> Result<usize, Error> {
     let total = before
         .checked_add(count)
         .and_then(|v| v.checked_add(after))
@@ -309,6 +326,12 @@ fn profile(
     if total > MAX_SAMPLES {
         return Err(fail("Hu/Hersch full-outline sample limit exceeded"));
     }
+    Ok(total)
+}
+
+/// Midpoint body samples with full-outline margins on both sides. The grid
+/// must stay strictly increasing to remain representable.
+fn grid_ys(lo: f64, dy: f64, count: usize, before: usize, after: usize) -> Result<Vec<f64>, Error> {
     let body: Vec<_> = (0..count).map(|i| lo + (i as f64 + 0.5) * dy).collect();
     let mut ys: Vec<_> = (1..=before)
         .rev()
@@ -319,9 +342,41 @@ fn profile(
     if ys.windows(2).any(|v| v[0] >= v[1]) {
         return Err(fail("Hu/Hersch sample grid is unrepresentable"));
     }
-    let mut left = vec![f64::INFINITY; total];
-    let mut right = vec![f64::NEG_INFINITY; total];
-    let mut occupied = vec![false; total];
+    Ok(ys)
+}
+
+fn sample_grid(bounds: super::outline::Bounds, window: (f64, f64)) -> Result<SampleGrid, Error> {
+    let (lo, hi) = window;
+    let height = finite(hi - lo)?;
+    if height <= 0. {
+        return Err(fail("Hu/Hersch body window must have positive height"));
+    }
+    let count = finite(height * SAMPLES_PER_PIXEL)?.ceil() as usize;
+    check_sample_count(count)?;
+    let dy = height / count as f64;
+    let before = finite((lo - bounds.miny).max(0.) / dy)?.ceil() as usize;
+    let after = finite((bounds.maxy - hi).max(0.) / dy)?.ceil() as usize;
+    check_construction_total(before, count, after)?;
+    let ys = grid_ys(lo, dy, count, before, after)?;
+    Ok(SampleGrid {
+        ys,
+        before,
+        count,
+        height,
+    })
+}
+
+/// Scanline wall accumulation over the construction grid: each outline
+/// portion contributes its x extents to the rows it crosses. Empty rows keep
+/// sentinel walls for the finishing substitution.
+fn scan_walls(
+    outline: &Outline,
+    ys: &[f64],
+    budget: &mut Budget,
+) -> Result<(Vec<f64>, Vec<f64>, Vec<bool>), Error> {
+    let mut left = vec![f64::INFINITY; ys.len()];
+    let mut right = vec![f64::NEG_INFINITY; ys.len()];
+    let mut occupied = vec![false; ys.len()];
     let mut visits = 0;
     for portion in &outline.portions {
         let (miny, maxy) = portion.y_range();
@@ -344,34 +399,81 @@ fn profile(
             occupied[i] = true;
         }
     }
-    for i in 0..total {
+    Ok((left, right, occupied))
+}
+
+/// Wall finishing: empty scanlines take the opposite edge (Hu 1998 §4.4),
+/// then the B slope filter, C aperture filter and D body-height clamp run in
+/// construction order before the fsum wall means.
+fn finish_profile(
+    grid: &SampleGrid,
+    left: Vec<f64>,
+    right: Vec<f64>,
+    occupied: Vec<bool>,
+    bounds: super::outline::Bounds,
+    settings: &HuHerschSettings,
+) -> Profile {
+    let mut left = left;
+    let mut right = right;
+    for i in 0..occupied.len() {
         if !occupied[i] {
             left[i] = bounds.maxx;
             right[i] = bounds.minx;
         }
     }
     let outward_left: Vec<_> = left.iter().map(|x| -x).collect();
-    let slope_left = slope_filter(&ys, &outward_left);
-    let slope_right = slope_filter(&ys, &right);
-    let aperture_left = aperture_filter(&ys, &slope_left, settings.aperture_depth_factor);
-    let aperture_right = aperture_filter(&ys, &slope_right, settings.aperture_depth_factor);
-    let filtered_left: Vec<_> = aperture_left[before..before + count]
+    let slope_left = slope_filter(&grid.ys, &outward_left);
+    let slope_right = slope_filter(&grid.ys, &right);
+    let aperture_left = aperture_filter(&grid.ys, &slope_left, settings.aperture_depth_factor);
+    let aperture_right = aperture_filter(&grid.ys, &slope_right, settings.aperture_depth_factor);
+    let filtered_left: Vec<_> = aperture_left[grid.before..grid.before + grid.count]
         .iter()
-        .map(|x| (-x).min(bounds.minx + settings.global_depth_factor * height))
+        .map(|x| (-x).min(bounds.minx + settings.global_depth_factor * grid.height))
         .collect();
-    let filtered_right: Vec<_> = aperture_right[before..before + count]
+    let filtered_right: Vec<_> = aperture_right[grid.before..grid.before + grid.count]
         .iter()
-        .map(|x| x.max(bounds.maxx - settings.global_depth_factor * height))
+        .map(|x| x.max(bounds.maxx - settings.global_depth_factor * grid.height))
         .collect();
-    let mean_left = sum(filtered_left.iter().copied()) / count as f64;
-    let mean_right = sum(filtered_right.iter().copied()) / count as f64;
-    Ok(Some(Profile {
+    let mean_left = sum(filtered_left.iter().copied()) / grid.count as f64;
+    let mean_right = sum(filtered_right.iter().copied()) / grid.count as f64;
+    Profile {
         left: filtered_left,
         right: filtered_right,
-        occupied: occupied[before..before + count].to_vec(),
+        occupied: occupied[grid.before..grid.before + grid.count].to_vec(),
         mean_left,
         mean_right,
-    }))
+    }
+}
+
+fn profile(
+    outline: &Outline,
+    window: (f64, f64),
+    budget: &mut Budget,
+    settings: &HuHerschSettings,
+) -> Result<Option<Profile>, Error> {
+    let Some(bounds) = outline.bounds else {
+        return Ok(None);
+    };
+    let grid = sample_grid(bounds, window)?;
+    let (left, right, occupied) = scan_walls(outline, &grid.ys, budget)?;
+    Ok(Some(finish_profile(
+        &grid, left, right, occupied, bounds, settings,
+    )))
+}
+
+/// The Latin case-combination rule: which cased-letter pairs share a density
+/// class. Script admission and the digit fast path live in
+/// `calibration_class`.
+fn latin_case_pair(a: char, b: char) -> Option<super::CalibrationClass> {
+    use super::CalibrationClass::*;
+    use unicode_general_category::{get_general_category, GeneralCategory};
+    match (get_general_category(a), get_general_category(b)) {
+        (GeneralCategory::LowercaseLetter, GeneralCategory::LowercaseLetter) => Some(Lowercase),
+        (GeneralCategory::UppercaseLetter, GeneralCategory::UppercaseLetter) => Some(Uppercase),
+        (GeneralCategory::LowercaseLetter, GeneralCategory::UppercaseLetter)
+        | (GeneralCategory::UppercaseLetter, GeneralCategory::LowercaseLetter) => Some(Mixed),
+        _ => None,
+    }
 }
 
 /// Only cased Latin letters use the Latin reference alphabets. Other Unicode
@@ -379,7 +481,6 @@ fn profile(
 /// and limited to the ASCII set on which the tabular safeguard is measured.
 pub(super) fn calibration_class(left: u32, right: u32) -> Option<super::CalibrationClass> {
     use super::CalibrationClass::*;
-    use unicode_general_category::{get_general_category, GeneralCategory};
     use unicode_script::{Script, UnicodeScript};
     if (48..=57).contains(&left) && (48..=57).contains(&right) {
         return Some(Digits);
@@ -389,13 +490,7 @@ pub(super) fn calibration_class(left: u32, right: u32) -> Option<super::Calibrat
     if a.script() != Script::Latin || b.script() != Script::Latin {
         return None;
     }
-    match (get_general_category(a), get_general_category(b)) {
-        (GeneralCategory::LowercaseLetter, GeneralCategory::LowercaseLetter) => Some(Lowercase),
-        (GeneralCategory::UppercaseLetter, GeneralCategory::UppercaseLetter) => Some(Uppercase),
-        (GeneralCategory::LowercaseLetter, GeneralCategory::UppercaseLetter)
-        | (GeneralCategory::UppercaseLetter, GeneralCategory::LowercaseLetter) => Some(Mixed),
-        _ => None,
-    }
+    latin_case_pair(a, b)
 }
 
 fn products(class: super::CalibrationClass) -> Vec<(Vec<u32>, Vec<u32>)> {
@@ -470,14 +565,18 @@ fn class_window(
         .map_or(Ok(None), |record| reference_window(record, mono))
 }
 
-fn calibrate(
+/// Admit one class's calibration repertoire: the capture must be available
+/// and every alphabet glyph must carry a source advance. Returns the alphabet
+/// products with their record index and sorted repertoire.
+fn admitted_repertoire(
     capture: &super::CalibrationCapture,
-    mono: bool,
-    budget: &mut Budget,
-    settings: &HuHerschSettings,
-) -> Result<Option<((f64, f64), f64)>, Error> {
+) -> Option<(
+    Vec<(Vec<u32>, Vec<u32>)>,
+    HashMap<u32, &ReferenceRecord>,
+    Vec<u32>,
+)> {
     if capture.unavailable_reason.is_some() {
-        return Ok(None);
+        return None;
     }
     let products = products(capture.class);
     let records: HashMap<_, _> = capture.records.iter().map(|r| (r.codepoint, r)).collect();
@@ -492,23 +591,43 @@ fn calibrate(
         .iter()
         .any(|cp| !records.contains_key(cp) || !capture.source_advances_26_6.contains_key(cp))
     {
-        return Ok(None);
+        return None;
     }
-    let Some(window) = class_window(capture.class, &records, mono)? else {
-        return Ok(None);
-    };
+    Some((products, records, repertoire))
+}
+
+/// Profile every repertoire glyph on the class window; a missing wall
+/// abstains the whole calibration.
+fn profile_repertoire(
+    records: &HashMap<u32, &ReferenceRecord>,
+    repertoire: &[u32],
+    window: (f64, f64),
+    budget: &mut Budget,
+    settings: &HuHerschSettings,
+) -> Result<Option<HashMap<u32, Profile>>, Error> {
     let mut profiles = HashMap::new();
-    for &cp in &repertoire {
+    for &cp in repertoire {
         let outline = budget.outline(&records[&cp].fitted_commands)?;
         let Some(value) = profile(&outline.0, window, budget, settings)? else {
             return Ok(None);
         };
         profiles.insert(cp, value);
     }
-    let count: usize = products.iter().map(|(a, b)| a.len() * b.len()).sum();
+    Ok(Some(profiles))
+}
+
+/// The shared density target over the class alphabet: mean source origin
+/// step plus mean fitted-wall offset, in exact fsum order. A pair without
+/// shared ink rows abstains the whole calibration.
+fn calibration_target(
+    products: &[(Vec<u32>, Vec<u32>)],
+    profiles: &HashMap<u32, Profile>,
+    capture: &super::CalibrationCapture,
+    count: usize,
+) -> Result<Option<f64>, Error> {
     let mut steps = vec![];
     let mut offsets = vec![];
-    for (left, right) in &products {
+    for (left, right) in products {
         for &a in left {
             for &b in right {
                 let pa = &profiles[&a];
@@ -532,20 +651,34 @@ fn calibrate(
         offsets.push((left.len() * right.len()) as f64 * offset);
     }
     let target = finite(sum(steps) / count as f64 + sum(offsets) / count as f64)?;
-    Ok((target > 0.).then_some((window, target)))
+    Ok((target > 0.).then_some(target))
 }
 
-pub(super) fn resolve(
-    context: &super::MethodContext<'_>,
-    calibration: &[super::CalibrationCapture],
+fn calibrate(
+    capture: &super::CalibrationCapture,
+    mono: bool,
+    budget: &mut Budget,
     settings: &HuHerschSettings,
-) -> Result<super::PairAdjustments, Error> {
-    use super::{CalibrationClass::*, PairDecision};
-    settings.validate()?;
-    if context.glyphs.len() > 1024 {
-        return Err(fail("Hu/Hersch repertoire limit exceeded"));
-    }
-    let mono = context.output_bits == 1;
+) -> Result<Option<((f64, f64), f64)>, Error> {
+    let Some((products, records, repertoire)) = admitted_repertoire(capture) else {
+        return Ok(None);
+    };
+    let Some(window) = class_window(capture.class, &records, mono)? else {
+        return Ok(None);
+    };
+    let Some(profiles) = profile_repertoire(&records, &repertoire, window, budget, settings)?
+    else {
+        return Ok(None);
+    };
+    let count: usize = products.iter().map(|(a, b)| a.len() * b.len()).sum();
+    let target = calibration_target(&products, &profiles, capture, count)?;
+    Ok(target.map(|target| (window, target)))
+}
+
+/// Every output pair starts as an explicit Source retention; supported
+/// classes replace their entries below, abstentions keep their reason.
+fn seed_retain_table(context: &super::MethodContext<'_>) -> super::PairAdjustments {
+    use super::PairDecision;
     let mut result = super::PairAdjustments::new();
     for left in context.glyphs {
         for right in context.glyphs {
@@ -563,123 +696,297 @@ pub(super) fn resolve(
             );
         }
     }
-    let records: HashMap<_, _> = context.records.iter().map(|r| (r.codepoint, r)).collect();
-    let mut outlines = HashMap::new();
-    let mut cells = HashMap::new();
-    let mut budget = Budget::default();
-    for class in [Lowercase, Uppercase, Digits, Mixed] {
-        if class == Digits && context.properties.tabular_digits {
-            continue;
+    result
+}
+
+/// Whether a glyph admitted under its own case class also profiles under
+/// Mixed: only the two cased Latin classes cross over.
+fn mixed_case_admit(class: super::CalibrationClass, own: Option<super::CalibrationClass>) -> bool {
+    use super::CalibrationClass::*;
+    class == Mixed && (own == Some(Lowercase) || own == Some(Uppercase))
+}
+
+/// One pair's continuous optical ideal: mean fitted-wall gap against the
+/// class target. Pairs without shared ink rows abstain before rounding.
+/// Pair integration follows the retained math.fsum order rather than
+/// subtracting independently rounded single-wall means.
+fn pair_ideal(a: &Profile, b: &Profile, target: f64) -> Result<Option<f64>, Error> {
+    if !a.occupied.iter().zip(&b.occupied).any(|(a, b)| *a && *b) {
+        return Ok(None);
+    }
+    // Pair integration follows the retained math.fsum order rather
+    // than subtracting independently rounded single-wall means.
+    let offset = sum(a.right.iter().zip(&b.left).map(|(a, b)| b - a)) / a.left.len() as f64;
+    Ok(Some(finite(target - offset)?))
+}
+
+/// Retain the experiment's signed adjustment rounding, including ties away
+/// from zero; there is no common post-method rounder. The full optical
+/// correction always applies to supported pairs.
+fn quantized_step(advance_26_6: i32, optical_adjustment: f64) -> Result<i32, Error> {
+    let adjustment = optical_adjustment.round();
+    if adjustment.abs() > f64::from(i32::MAX / 64) {
+        return Err(fail("Hu/Hersch origin exceeds layout range"));
+    }
+    Ok(advance_26_6 / 64 + adjustment as i32)
+}
+
+/// The per-resolve Hu/Hersch candidate state: prepared output geometry shared
+/// across classes plus the render-mode switch. Calibration targets stay with
+/// their class; this owns only output-side preparation and placement.
+struct Resolver<'a> {
+    context: &'a super::MethodContext<'a>,
+    calibration: &'a [super::CalibrationCapture],
+    settings: &'a HuHerschSettings,
+    records: HashMap<u32, &'a ReferenceRecord>,
+    outlines: HashMap<u32, OutlineGeometry>,
+    cells: HashMap<u32, super::placement::Rows>,
+    budget: Budget,
+    mono: bool,
+}
+
+impl<'a> Resolver<'a> {
+    fn new(
+        context: &'a super::MethodContext<'a>,
+        calibration: &'a [super::CalibrationCapture],
+        settings: &'a HuHerschSettings,
+    ) -> Self {
+        let records: HashMap<_, _> = context.records.iter().map(|r| (r.codepoint, r)).collect();
+        Self {
+            context,
+            calibration,
+            settings,
+            records,
+            outlines: HashMap::new(),
+            cells: HashMap::new(),
+            budget: Budget::default(),
+            mono: context.output_bits == 1,
         }
-        let captured = calibration.iter().find(|c| c.class == class);
-        let retention_reason = captured
+    }
+
+    fn run(&mut self) -> Result<super::PairAdjustments, Error> {
+        use super::CalibrationClass::*;
+        let mut result = seed_retain_table(self.context);
+        for class in [Lowercase, Uppercase, Digits, Mixed] {
+            self.resolve_class(class, &mut result)?;
+        }
+        Ok(result)
+    }
+
+    fn resolve_class(
+        &mut self,
+        class: super::CalibrationClass,
+        result: &mut super::PairAdjustments,
+    ) -> Result<(), Error> {
+        if class == super::CalibrationClass::Digits && self.context.properties.tabular_digits {
+            return Ok(());
+        }
+        let (calibrated, retention) = self.calibrate_class(class)?;
+        let profiles = if let Some((window, _)) = calibrated {
+            self.build_class_profiles(class, window)?
+        } else {
+            HashMap::new()
+        };
+        for left in self.context.glyphs {
+            for right in self.context.glyphs {
+                self.place_class_pair(
+                    (left.codepoint, right.codepoint),
+                    class,
+                    calibrated,
+                    retention,
+                    &profiles,
+                    result,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Run one class's density calibration, reporting both the shared target
+    /// and the retention reason its pairs keep when calibration is unavailable.
+    fn calibrate_class(
+        &mut self,
+        class: super::CalibrationClass,
+    ) -> Result<(Option<((f64, f64), f64)>, &'static str), Error> {
+        let captured = self.calibration.iter().find(|c| c.class == class);
+        let retention = captured
             .and_then(|c| c.unavailable_reason)
             .unwrap_or("calibration_unavailable");
         let calibrated = captured
-            .map(|c| calibrate(c, mono, &mut budget, settings))
+            .map(|c| calibrate(c, self.mono, &mut self.budget, self.settings))
             .transpose()?
             .flatten();
-        let mut profiles = HashMap::new();
-        if let Some((window, _)) = calibrated {
-            for glyph in context.glyphs {
-                let own_class = calibration_class(glyph.codepoint, glyph.codepoint);
-                if own_class != Some(class)
-                    && !(class == Mixed && matches!(own_class, Some(Lowercase | Uppercase)))
-                {
-                    continue;
-                }
-                if let Some(record) = records.get(&glyph.codepoint) {
-                    if !outlines.contains_key(&glyph.codepoint) {
-                        outlines.insert(glyph.codepoint, budget.outline(&record.fitted_commands)?);
-                        if mono {
-                            cells.insert(glyph.codepoint, super::placement::cell_rows(glyph)?);
-                        }
-                    }
-                    profiles.insert(
-                        glyph.codepoint,
-                        profile(&outlines[&glyph.codepoint].0, window, &mut budget, settings)?,
-                    );
-                }
-            }
-        }
-        for left in context.glyphs {
-            for right in context.glyphs {
-                if calibration_class(left.codepoint, right.codepoint) != Some(class) {
-                    continue;
-                }
-                let key = (left.codepoint, right.codepoint);
-                let Some((_, target)) = calibrated else {
-                    result.insert(key, PairDecision::RetainSource(retention_reason));
-                    continue;
-                };
-                let a = profiles.get(&left.codepoint).and_then(Option::as_ref);
-                let b = profiles.get(&right.codepoint).and_then(Option::as_ref);
-                let (Some(a), Some(b)) = (a, b) else {
-                    result.insert(key, PairDecision::RetainSource("empty_geometry"));
-                    continue;
-                };
-                if !a.occupied.iter().zip(&b.occupied).any(|(a, b)| *a && *b) {
-                    result.insert(key, PairDecision::RetainSource("no_shared_ink_rows"));
-                    continue;
-                }
-                // Pair integration follows the retained math.fsum order rather
-                // than subtracting independently rounded single-wall means.
-                let offset =
-                    sum(a.right.iter().zip(&b.left).map(|(a, b)| b - a)) / a.left.len() as f64;
-                let ideal = finite(target - offset)?;
-                let advance = *context
-                    .advances_26_6
-                    .get(&left.codepoint)
-                    .ok_or_else(|| fail("missing Hu/Hersch finalized advance"))?;
-                if advance % 64 != 0 {
-                    return Err(fail("Hu/Hersch requires whole-pixel finalized advances"));
-                }
-                // Retain the experiment's signed adjustment rounding, including
-                // ties away from zero; there is no common post-method rounder.
-                // The full optical correction always applies to supported
-                // pairs; abstentions above retain Source.
-                let optical_adjustment = finite(ideal - f64::from(advance) / 64.)?;
-                if context
-                    .pair_adjustments_26_6
-                    .get(&key)
-                    .copied()
-                    .unwrap_or(0)
-                    % 64
-                    != 0
-                {
-                    return Err(fail(
-                        "Hu/Hersch requires whole-pixel finalized pair adjustments",
-                    ));
-                }
-                let adjustment = optical_adjustment.round();
-                if adjustment.abs() > f64::from(i32::MAX / 64) {
-                    return Err(fail("Hu/Hersch origin exceeds layout range"));
-                }
-                let mut step = advance / 64 + adjustment as i32;
-                let minimum = if mono {
-                    super::placement::minimum(&cells[&left.codepoint], &cells[&right.codepoint])
-                } else {
-                    outlines[&left.codepoint]
-                        .minimum_with_budget(&outlines[&right.codepoint], &mut budget.0)
-                        .map_err(|error| {
-                            fail(format!(
-                                "Hu/Hersch pair U+{:04X} U+{:04X}: {}",
-                                left.codepoint, right.codepoint, error.0
-                            ))
-                        })?
-                };
-                if let Some(minimum) = minimum {
-                    step = step.max(minimum);
-                }
-                let adjustment = step
-                    .checked_mul(64)
-                    .and_then(|s| s.checked_sub(advance))
-                    .ok_or_else(|| fail("Hu/Hersch adjustment overflow"))?;
-                result.insert(key, PairDecision::Replace(adjustment));
-            }
-        }
+        Ok((calibrated, retention))
     }
-    Ok(result)
+
+    /// Profile one class's admitted glyphs on its calibrated window. Glyphs
+    /// whose own class differs keep their seeded retention; glyphs without
+    /// records keep an empty profile entry that abstains their pairs below.
+    fn build_class_profiles(
+        &mut self,
+        class: super::CalibrationClass,
+        window: (f64, f64),
+    ) -> Result<HashMap<u32, Option<Profile>>, Error> {
+        let mut profiles = HashMap::new();
+        for glyph in self.context.glyphs {
+            let own_class = calibration_class(glyph.codepoint, glyph.codepoint);
+            if own_class != Some(class) && !mixed_case_admit(class, own_class) {
+                continue;
+            }
+            if let Some(record) = self.records.get(&glyph.codepoint) {
+                self.ensure_outline(glyph, record)?;
+                profiles.insert(
+                    glyph.codepoint,
+                    profile(
+                        &self.outlines[&glyph.codepoint].0,
+                        window,
+                        &mut self.budget,
+                        self.settings,
+                    )?,
+                );
+            }
+        }
+        Ok(profiles)
+    }
+
+    /// Prepare one glyph's fitted outline (and its Mono delivery cells) once
+    /// per resolve, shared by every class that admits the glyph.
+    fn ensure_outline(
+        &mut self,
+        glyph: &crate::Glyph,
+        record: &ReferenceRecord,
+    ) -> Result<(), Error> {
+        if !self.outlines.contains_key(&glyph.codepoint) {
+            self.outlines.insert(
+                glyph.codepoint,
+                self.budget.outline(&record.fitted_commands)?,
+            );
+            if self.mono {
+                self.cells
+                    .insert(glyph.codepoint, super::placement::cell_rows(glyph)?);
+            }
+        }
+        Ok(())
+    }
+
+    /// One pair's class-scoped placement: pairs outside the class keep their
+    /// seed; pairs in the class resolve against its target or keep the
+    /// class's retention reason.
+    fn place_class_pair(
+        &mut self,
+        key: (u32, u32),
+        class: super::CalibrationClass,
+        calibrated: Option<((f64, f64), f64)>,
+        retention: &'static str,
+        profiles: &HashMap<u32, Option<Profile>>,
+        result: &mut super::PairAdjustments,
+    ) -> Result<(), Error> {
+        use super::PairDecision;
+        if calibration_class(key.0, key.1) != Some(class) {
+            return Ok(());
+        }
+        let Some((_, target)) = calibrated else {
+            result.insert(key, PairDecision::RetainSource(retention));
+            return Ok(());
+        };
+        let Some(a) = profiles.get(&key.0).and_then(Option::as_ref) else {
+            result.insert(key, PairDecision::RetainSource("empty_geometry"));
+            return Ok(());
+        };
+        let Some(b) = profiles.get(&key.1).and_then(Option::as_ref) else {
+            result.insert(key, PairDecision::RetainSource("empty_geometry"));
+            return Ok(());
+        };
+        result.insert(key, self.place_pair(key, a, b, target)?);
+        Ok(())
+    }
+
+    /// One supported pair's full optical correction before signed pixel
+    /// rounding and the existing feasibility bound.
+    fn place_pair(
+        &mut self,
+        key: (u32, u32),
+        a: &Profile,
+        b: &Profile,
+        target: f64,
+    ) -> Result<super::PairDecision, Error> {
+        use super::PairDecision;
+        let Some(ideal) = pair_ideal(a, b, target)? else {
+            return Ok(PairDecision::RetainSource("no_shared_ink_rows"));
+        };
+        let advance = self.admitted_advance(key)?;
+        let optical_adjustment = finite(ideal - f64::from(advance) / 64.)?;
+        self.admitted_saved_adjustment(key)?;
+        let step = quantized_step(advance, optical_adjustment)?;
+        let step = self.clamp_to_minimum(key, step)?;
+        let adjustment = step
+            .checked_mul(64)
+            .and_then(|s| s.checked_sub(advance))
+            .ok_or_else(|| fail("Hu/Hersch adjustment overflow"))?;
+        Ok(PairDecision::Replace(adjustment))
+    }
+
+    /// Finalized advances must be whole pixels; the source layout contract
+    /// accumulates integer pen steps.
+    fn admitted_advance(&self, key: (u32, u32)) -> Result<i32, Error> {
+        let advance = *self
+            .context
+            .advances_26_6
+            .get(&key.0)
+            .ok_or_else(|| fail("missing Hu/Hersch finalized advance"))?;
+        if advance % 64 != 0 {
+            return Err(fail("Hu/Hersch requires whole-pixel finalized advances"));
+        }
+        Ok(advance)
+    }
+
+    /// Finalized pair adjustments must be whole pixels as well.
+    fn admitted_saved_adjustment(&self, key: (u32, u32)) -> Result<(), Error> {
+        if self
+            .context
+            .pair_adjustments_26_6
+            .get(&key)
+            .copied()
+            .unwrap_or(0)
+            % 64
+            != 0
+        {
+            return Err(fail(
+                "Hu/Hersch requires whole-pixel finalized pair adjustments",
+            ));
+        }
+        Ok(())
+    }
+
+    /// The Mono/Gray feasibility clamp: Mono forbids occupied-cell overlap,
+    /// Gray uses the certified conservative bound on continuous fitted walls.
+    fn clamp_to_minimum(&mut self, key: (u32, u32), step: i32) -> Result<i32, Error> {
+        let minimum = if self.mono {
+            super::placement::minimum(&self.cells[&key.0], &self.cells[&key.1])
+        } else {
+            self.outlines[&key.0]
+                .minimum_with_budget(&self.outlines[&key.1], &mut self.budget.0)
+                .map_err(|error| {
+                    fail(format!(
+                        "Hu/Hersch pair U+{:04X} U+{:04X}: {}",
+                        key.0, key.1, error.0
+                    ))
+                })?
+        };
+        Ok(minimum.map_or(step, |bound| step.max(bound)))
+    }
+}
+
+pub(super) fn resolve(
+    context: &super::MethodContext<'_>,
+    calibration: &[super::CalibrationCapture],
+    settings: &HuHerschSettings,
+) -> Result<super::PairAdjustments, Error> {
+    settings.validate()?;
+    if context.glyphs.len() > 1024 {
+        return Err(fail("Hu/Hersch repertoire limit exceeded"));
+    }
+    Resolver::new(context, calibration, settings).run()
 }
 
 #[cfg(test)]
@@ -983,5 +1290,78 @@ mod tests {
         assert_eq!(calibration_class('Ω' as u32, 'a' as u32), None);
         assert_eq!(calibration_class('١' as u32, '٢' as u32), None);
         assert_eq!(calibration_class('1' as u32, '2' as u32), Some(Digits));
+    }
+
+    #[test]
+    fn degenerate_windows_and_empty_outlines_cannot_profile() {
+        let outline = Outline::new(&[
+            C::MoveTo(0., 0.),
+            C::LineTo(4., 0.),
+            C::LineTo(4., 4.),
+            C::LineTo(0., 4.),
+            C::Close,
+        ])
+        .unwrap();
+        let settings = HuHerschSettings::default();
+        assert!(
+            profile(&outline, (5., 5.), &mut Budget::default(), &settings).is_err(),
+            "a zero-height window has no body samples"
+        );
+        assert!(
+            profile(&outline, (5., 0.), &mut Budget::default(), &settings).is_err(),
+            "an inverted window has no body samples"
+        );
+        let empty = Outline::new(&[]).unwrap();
+        assert!(
+            profile(&empty, (0., 3.), &mut Budget::default(), &settings)
+                .unwrap()
+                .is_none(),
+            "empty geometry abstains the profile"
+        );
+    }
+
+    #[test]
+    fn pairs_without_shared_ink_rows_abstain_before_rounding() {
+        let walls = |occupied: Vec<bool>| Profile {
+            left: vec![0., 0.],
+            right: vec![0., 0.],
+            occupied,
+            mean_left: 0.,
+            mean_right: 0.,
+        };
+        let left = walls(vec![true, false]);
+        let disjoint = walls(vec![false, true]);
+        assert_eq!(pair_ideal(&left, &disjoint, 3.0).unwrap(), None);
+        let shared = walls(vec![true, false]);
+        assert_eq!(pair_ideal(&left, &shared, 3.0).unwrap(), Some(3.0));
+    }
+
+    #[test]
+    fn optical_steps_hold_the_layout_range_inclusively() {
+        let bound = f64::from(i32::MAX / 64);
+        assert_eq!(quantized_step(0, bound).unwrap(), i32::MAX / 64);
+        assert_eq!(quantized_step(0, -bound).unwrap(), -(i32::MAX / 64));
+        assert!(quantized_step(0, bound - 1.).is_ok());
+        assert!(quantized_step(0, bound + 1.).is_err());
+        assert!(quantized_step(0, -bound - 1.).is_err());
+    }
+
+    #[test]
+    fn unavailable_calibration_abstains_the_target() {
+        let capture = super::super::CalibrationCapture {
+            class: super::super::CalibrationClass::Lowercase,
+            unavailable_reason: Some("test fixture is unavailable"),
+            records: Vec::new(),
+            source_advances_26_6: HashMap::new(),
+            source_pairs_26_6: HashMap::new(),
+        };
+        assert!(calibrate(
+            &capture,
+            true,
+            &mut Budget::default(),
+            &HuHerschSettings::default()
+        )
+        .unwrap()
+        .is_none());
     }
 }
