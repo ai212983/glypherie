@@ -76,6 +76,58 @@ export async function launch(t: TestContext): Promise<Browser> {
   return browser;
 }
 
+export interface PersistentContext {
+  readonly context: BrowserContext;
+  close: () => Promise<void>;
+}
+
+export interface PersistentProfile {
+  readonly profile: string;
+  open: () => Promise<PersistentContext>;
+}
+
+/**
+ * A browser profile directory shared across restarts for cold-boot tests.
+ * Every opened context registers an idempotent closer, and one after-hook
+ * closes all of them before removing the profile, so an early body failure
+ * still releases the headless shell instead of hanging the runner. The
+ * passing path still closes each context explicitly before reopening the
+ * same profile, since two browsers cannot share one profile directory.
+ */
+export async function persistentProfile(
+  t: TestContext,
+  viewport: { width: number; height: number } = { width: 1280, height: 900 },
+): Promise<PersistentProfile> {
+  const profile = await fs.mkdtemp(path.join(os.tmpdir(), "font-offline-profile-"));
+  const closers: Array<() => Promise<void>> = [];
+  t.after(async () => {
+    for (const close of closers.reverse()) {
+      try {
+        await close();
+      } catch {
+        // Already closed on the explicit passing path.
+      }
+    }
+    await fs.rm(profile, { recursive: true, force: true });
+  });
+  return {
+    profile,
+    open: async (): Promise<PersistentContext> => {
+      const context = await chromium.launchPersistentContext(profile, {
+        executablePath: browserPath, headless: true, viewport,
+      });
+      let closed = false;
+      const close = async (): Promise<void> => {
+        if (closed) return;
+        closed = true;
+        await context.close();
+      };
+      closers.push(close);
+      return { context, close };
+    },
+  };
+}
+
 export function canvasRendered(): boolean {
   return (document.querySelector(".interactive-canvas") as HTMLElement | null)?.dataset.rendered === "true";
 }

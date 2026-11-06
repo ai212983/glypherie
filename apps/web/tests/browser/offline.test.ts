@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { chromium } from "playwright-core";
 import {
   bootLibrary,
   bootVariant,
   browserAvailable,
-  browserPath,
   buildApp,
   canvasRendered,
   cardIds,
   cardNames,
   launch,
   openNewVariant,
+  persistentProfile,
   servePrefix,
   tooltipText,
 } from "../helpers/spa-helpers.ts";
@@ -234,62 +234,111 @@ test("installed app cold-boots a fresh domain owner offline with persisted state
   // CacheStorage survive the browser restart below while the SharedWorker
   // owner does not, so the offline boot must start a genuinely fresh
   // worker instead of reusing a warm one.
-  const profile = await fs.mkdtemp(path.join(os.tmpdir(), "font-offline-profile-"));
-  t.after(() => fs.rm(profile, { recursive: true, force: true }));
-  const viewport = { width: 1280, height: 900 };
+  const lease = await persistentProfile(t);
 
-  let names: string[];
-  let fontId: string;
-  let variantId: string;
-  {
-    const context = await chromium.launchPersistentContext(profile, {
-      executablePath: browserPath, headless: true, viewport,
-    });
-    const page = await context.newPage();
-    await bootLibrary(page, url);
-    await page.evaluate(async () => { await navigator.serviceWorker.ready; });
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
-    await page.waitForFunction(() => navigator.serviceWorker?.controller !== null, null, { timeout: 20000 });
-    names = await cardNames(page);
-    fontId = (await cardIds(page))[0]!;
-    variantId = await openNewVariant(page, fontId);
-    await page.waitForFunction(canvasRendered, null, { timeout: 20000 });
-    await page.goto(`${url}scenes/`, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => document.querySelector("[data-screen-page]") !== null);
-    await page.locator("[data-screen-composition-create-name]").fill("Offline");
-    await page.locator("[data-screen-composition-create]").waitFor();
-    await page.waitForFunction(
-      () => !((document.querySelector("[data-screen-composition-create]") as HTMLButtonElement | null)?.disabled ?? true),
-    );
-    await page.locator("[data-screen-composition-create]").click();
-    await page.locator("[data-screen-workspace]").waitFor();
-    // Closing the browser kills the SharedWorker owner; the profile keeps
-    // the database and the precached engine for the offline boot below.
-    await context.close();
-  }
+  const seed = await (async () => {
+    const first = await lease.open();
+    try {
+      const page = await first.context.newPage();
+      await bootLibrary(page, url);
+      await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
+      await page.waitForFunction(() => navigator.serviceWorker?.controller !== null, null, { timeout: 20000 });
+      const names = await cardNames(page);
+      const fontId = (await cardIds(page))[0]!;
+      const variantId = await openNewVariant(page, fontId);
+      await page.waitForFunction(canvasRendered, null, { timeout: 20000 });
+      // The Screen page holds one implicit default composition: switch its
+      // device so the offline boot below has durable state to preserve.
+      await page.goto(`${url}screen/`, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.querySelector("[data-screen-page]") !== null);
+      await page.locator("[data-screen-workspace]").waitFor({ timeout: 20000 });
+      await page.getByRole("combobox", { name: "Device" }).click();
+      await page.getByRole("option", { name: "Inkplate 4 TEMPERA", exact: true }).click();
+      await page.locator('[data-device-preview="inkplate-4-tempera"]').waitFor({ timeout: 20000 });
+      // Reload before killing the owner: the device write must be committed
+      // to the profile, not just painted, before the restart.
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForFunction(() => document.querySelector("[data-screen-page]") !== null);
+      await page.locator('[data-device-preview="inkplate-4-tempera"]').waitFor({ timeout: 20000 });
+      const meta = await page.locator("[data-screen-device-meta]").textContent();
+      assert.ok(meta?.includes("600 × 600 px"), `the default composition keeps its device, got: ${meta}`);
+      // Closing the browser kills the SharedWorker owner; the profile keeps
+      // the database and the precached engine for the offline boot below.
+      await first.close();
+      return { names, fontId, variantId };
+    } finally {
+      await first.close();
+    }
+  })();
 
-  {
-    const context = await chromium.launchPersistentContext(profile, {
-      executablePath: browserPath, headless: true, viewport,
-    });
-    t.after(() => context.close());
-    await context.setOffline(true);
-    const page = await context.newPage();
+  const second = await lease.open();
+  try {
+    await second.context.setOffline(true);
+    const page = await second.context.newPage();
     await page.goto(`${url}fonts/`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0, null, {
       timeout: 30000,
     });
-    assert.deepEqual(await cardNames(page), names, "seeded fonts survive a fresh offline boot");
-    await bootVariant(page, `${url}font/${fontId}/variant/${variantId}/`);
-    await page.goto(`${url}scenes/`, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => document.querySelectorAll("[data-screen-composition]").length > 0, null, {
+    assert.deepEqual(await cardNames(page), seed.names, "seeded fonts survive a fresh offline boot");
+    await bootVariant(page, `${url}font/${seed.fontId}/variant/${seed.variantId}/`);
+    await page.goto(`${url}screen/`, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.querySelector("[data-screen-page]") !== null, null, {
       timeout: 30000,
     });
+    await page.locator('[data-device-preview="inkplate-4-tempera"]').waitFor({ timeout: 30000 });
+    const meta = await page.locator("[data-screen-device-meta]").textContent();
     assert.ok(
-      (await page.locator("[data-screen-composition]").allInnerTexts()).join("\n").includes("Offline"),
-      "the created composition survives a fresh offline boot",
+      meta?.includes("600 × 600 px"),
+      `the default composition device survives a fresh offline boot, got: ${meta}`,
     );
-    await context.setOffline(false);
+    assert.ok(
+      await page.locator("[data-screen-workspace]").getAttribute("data-screen-workspace"),
+      "the default composition workspace opens offline",
+    );
+    await second.context.setOffline(false);
+  } finally {
+    await second.close();
   }
+});
+
+test("a failing persistent-profile body still releases its browser", { skip: !browserAvailable }, async (t) => {
+  // The fixture below fails early with a live persistent context through the
+  // same lifecycle seam as the cold-boot test. The child runner must report
+  // the failure and exit inside a bounded timeout; a leaked headless shell
+  // would hold the runner open until the timeout kills it. The fixture runs
+  // as a plain node script: a nested `node --test` inside a test worker
+  // exits without running anything, while a directly executed test file
+  // still runs its tests and reports the failure.
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "font-offline-cleanup-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const fixture = path.join(dir, "cleanup-regression.test.ts");
+  const helper = new URL("../helpers/spa-helpers.ts", import.meta.url).href;
+  await fs.writeFile(fixture, `import test from "node:test";
+import { browserAvailable, persistentProfile } from ${JSON.stringify(helper)};
+test("fixture fails early with a live persistent context", { skip: !browserAvailable }, async (t) => {
+  const lease = await persistentProfile(t, { width: 800, height: 600 });
+  await lease.open();
+  throw new Error("intentional persistent-context failure");
+});
+`);
+  let status: number | null = 0;
+  let signal: string | null = null;
+  let output = "";
+  try {
+    output = execFileSync(process.execPath, [fixture], {
+      encoding: "utf8",
+      timeout: 60000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (failure) {
+    const typed = failure as { status?: number | null; signal?: string | null; stdout?: unknown; stderr?: unknown };
+    status = typed.status ?? null;
+    signal = typed.signal ?? null;
+    output = `${String(typed.stdout ?? "")}\n${String(typed.stderr ?? "")}`;
+  }
+  assert.equal(signal, null, "the failed child runner exits without a timeout or signal");
+  assert.equal(status, 1, "the fixture fails as intended");
+  assert.ok(output.includes("intentional persistent-context failure"), `the child reports its failure, got: ${output.slice(-2000)}`);
 });
