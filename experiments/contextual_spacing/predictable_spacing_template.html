@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<!-- cspell:words lede -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spacing</title>
+<style>
+:root { color-scheme: light; }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0; color: #161616; background: #fff; line-height: 1.45; }
+header, main { max-width: 72rem; margin: 0 auto; padding: 1rem 1.25rem; }
+header { border-bottom: 1px solid #d4d4d4; }
+h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.1rem; margin: 1.75rem 0 .5rem; }
+h3 { font-size: .95rem; margin: 1.25rem 0 .25rem; }
+p.lede { margin: .25rem 0; max-width: 44rem; }
+p.sample-note { font-size: .85rem; color: #444; margin: .25rem 0 0;
+  max-width: 44rem; }
+.controls { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem;
+  align-items: end; margin-top: 1rem; }
+.control { display: flex; flex-direction: column; gap: .25rem;
+  min-width: min(100%, 14rem); }
+.control-grow { flex: 1 1 16rem; }
+.control label, .control legend { font-weight: 600; font-size: .9rem; }
+.control .ends { display: flex; justify-content: space-between;
+  font-size: .8rem; color: #444; }
+.control output { font-weight: 600; }
+fieldset.control { border: 1px solid #d4d4d4; padding: .5rem .75rem .75rem;
+  margin: 0; }
+fieldset.control label { font-weight: 400; margin-right: 1rem; }
+input[type="range"] { width: 100%; }
+select, button { font: inherit; padding: .3rem .6rem; }
+button { background: #161616; color: #fff; border: 1px solid #161616;
+  cursor: pointer; }
+button.secondary { background: #fff; color: #161616; }
+.compare { display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); }
+figure { margin: 0; min-width: 0; overflow-x: auto; }
+canvas { image-rendering: pixelated; border: none;
+  background: #fff; max-width: none; height: auto; }
+figcaption { font-size: .85rem; color: #333; margin-top: .25rem; }
+.ps-note { font-size: .85rem; color: #333; min-height: 1.4em; }
+.ps-note:empty { display: none; }
+details { border: 1px solid #d4d4d4; padding: .5rem .9rem; margin-top: 1rem; }
+details summary { font-weight: 600; cursor: pointer; }
+.ps-scroll { overflow-x: auto; }
+table { border-collapse: collapse; margin-top: .75rem; font-size: .85rem;
+  min-width: 60rem; }
+.ps-scroll table { min-width: 60rem; }
+th, td { border: 1px solid #d4d4d4; padding: .25rem .5rem; text-align: right;
+  font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+tr.chosen td { background: #e8f0ee; font-weight: 600; }
+tr.invalid td { color: #737373; }
+dl.ps-facts { display: grid; grid-template-columns: max-content 1fr;
+  gap: .15rem .75rem; font-size: .85rem; margin: .5rem 0; }
+dl.ps-facts dt { font-weight: 600; }
+dl.ps-facts dd { margin: 0; overflow-wrap: anywhere; }
+.ps-mono { font-size: .8rem; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<header>
+<h1>Spacing</h1>
+<p class="lede">Adjust optical correction and letter spacing, and compare with the original.</p>
+<p class="sample-note">Experimental · sample fonts and text only. Optical quality pending assessment.</p>
+</header>
+<main>
+<section aria-label="Spacing controls">
+<div class="controls">
+<div class="control control-grow">
+<label for="ps-optical">Optical correction <output id="ps-optical-v">Source</output></label>
+<input type="range" id="ps-optical" aria-label="Optical correction" min="0" max="100" step="1" value="0">
+<div class="ends" aria-hidden="true"><span>Source</span><span>Full</span></div>
+<p class="ps-note">Strength toward the fixed method result. Some corrections widen pairs.</p>
+</div>
+<div class="control control-grow">
+<label for="ps-letter">Letter spacing <output id="ps-letter-v">0 px</output></label>
+<input type="range" id="ps-letter" aria-label="Letter spacing" min="-2" max="4" step="1" value="0">
+<div class="ends" aria-hidden="true"><span>Tighter</span><span>Looser</span></div>
+<p class="ps-note">Whole pixels added once between letters; spaces keep word spacing.</p>
+</div>
+<div class="control">
+<label for="ps-sample">Sample</label>
+<select id="ps-sample"></select>
+</div>
+<fieldset class="control"><legend>Look</legend><span id="ps-profile"></span></fieldset>
+<div class="control">
+<label for="ps-zoom">Zoom</label>
+<select id="ps-zoom"></select>
+</div>
+<div class="control">
+<button id="ps-reset" type="button" class="secondary">Reset</button>
+</div>
+</div>
+</section>
+<section aria-label="Comparison" id="ps-focus">
+<h2 id="ps-focus-title">Roboto 16 px</h2>
+<div class="compare">
+<figure><canvas id="ps-original"></canvas>
+<figcaption id="ps-original-cap">Original.</figcaption></figure>
+<figure><canvas id="ps-adjusted"></canvas>
+<figcaption id="ps-adjusted-cap">Adjusted.</figcaption></figure>
+</div>
+<p class="ps-note" id="ps-sample-note" role="status"></p>
+</section>
+<details id="ps-pairs">
+<summary>Pair inspection</summary>
+<p><label for="ps-pair">Pair</label> <select id="ps-pair"></select></p>
+<div class="compare" id="ps-pair-row">
+<figure><canvas id="ps-pair-metric"></canvas>
+<figcaption>Original pair spacing.</figcaption></figure>
+<figure><canvas id="ps-pair-chosen"></canvas>
+<figcaption>Adjusted pair spacing.</figcaption></figure>
+</div>
+<p class="ps-note" id="ps-pair-note" role="status"></p>
+</details>
+<details id="ps-diagnostics-box">
+<summary>Diagnostics</summary>
+<div id="ps-diagnostics"></div>
+</details>
+<details id="ps-about-box">
+<summary>About this experiment</summary>
+<div id="ps-about">
+<p>This page tests two separated controls. Optical correction blends each
+pair's original placement toward a fixed method result; letter spacing adds
+whole pixels between letters. Letter shapes never change; only the space
+between letters moves, in whole pixels.</p>
+<p>Grayscale currently reuses spacing corrections from the black-and-white
+analysis while keeping the original grayscale letter shapes.</p>
+<p>The comparison keeps the original delivered placement beside the adjusted
+placement. Details of the method, its sources and its limits are in the
+<a href="../../../../../docs/designs/text-layout/contextual-spacing-and-healing.md#predictable-spacing-control-prototype">prototype note</a>.</p>
+</div>
+</details>
+</main>
+<script type="application/json" id="ps-boot">
+__PS_BOOT__
+</script>
+<script>
+__PS_APP_JS__
+</script>
+<script>
+__PS_WIRING_JS__
+</script>
+</body>
+</html>

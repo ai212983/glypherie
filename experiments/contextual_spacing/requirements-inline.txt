@@ -1,0 +1,4 @@
+# Optional compact browser-font reference for inline.py; full export uses stdlib.
+fonttools==4.62.0
+Brotli==1.2.0
+zopfli==0.4.0

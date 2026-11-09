@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YinYang spacing</title>
+<style>
+:root { color-scheme: light; }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0; color: #161616; background: #fff; line-height: 1.45; }
+header, main { max-width: 72rem; margin: 0 auto; padding: 1rem 1.25rem; }
+header { border-bottom: 1px solid #d4d4d4; }
+h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.1rem; margin: 1.75rem 0 .5rem; }
+p.lede { margin: .25rem 0; max-width: 44rem; }
+p.sample-note { font-size: .85rem; color: #444; margin: .25rem 0 0;
+  max-width: 44rem; }
+.text-label { display: block; font-weight: 600; margin-bottom: .35rem; }
+textarea { font: inherit; width: 100%; box-sizing: border-box; resize: vertical;
+  padding: .3rem .6rem; border: 1px solid #737373; white-space: pre;
+  overflow-x: auto; }
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) 225px;
+  gap: 20px; margin-top: 14px; }
+.preview, .settings { min-width: 0; }
+.settings { display: flex; flex-direction: column; gap: 18px; }
+.control-head { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.control-head label { font-weight: 600; font-size: .9rem; }
+.value { display: flex; align-items: center; gap: 4px; }
+.value input { font: inherit; text-align: right; padding: 4px 5px;
+  box-sizing: border-box; border: 1px solid #737373; width: 60px; }
+.value input[aria-invalid="true"] { border-color: #b00020; }
+input[type="range"] { width: 100%; margin: 0; display: block;
+  box-sizing: border-box; }
+input[aria-invalid="true"] { border-color: #b00020; }
+p.helper { font-size: .8rem; color: #444; margin: .15rem 0 0; }
+p.field-error { font-size: .8rem; color: #b00020; margin: .15rem 0 0; }
+p.field-error:empty { display: none; }
+select, button { font: inherit; padding: .3rem .6rem; }
+button { background: #161616; color: #fff; border: 1px solid #161616;
+  cursor: pointer; }
+button.secondary { background: #fff; color: #161616; }
+fieldset.control { border: 1px solid #d4d4d4; padding: .5rem .75rem .75rem;
+  margin: 0; }
+fieldset.control legend { font-weight: 600; font-size: .9rem; }
+fieldset.control label { font-weight: 400; margin-right: 1rem; }
+.plane { background: #fff; min-height: 210px; display: flex; align-items: center;
+  overflow-x: auto; }
+.plane figure { margin: 0; min-width: 0; max-width: 100%; }
+figure { margin: 0; min-width: 0; overflow-x: auto; }
+canvas { image-rendering: pixelated; border: none;
+  background: #fff; max-width: none; height: auto; }
+.yy-colors { display: flex; flex-direction: column; gap: 8px; margin-top: 8px;
+  max-width: 100%; }
+.yy-color-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: .8rem; color: #333; }
+.yy-color-row label { font-weight: 600; min-width: 74px; }
+.yy-color-row input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.yy-color-row output { min-width: 3.5em; text-align: right;
+  font-variant-numeric: tabular-nums; }
+.yy-ramp { display: inline-block; width: 96px; height: 10px;
+  border: 1px solid #d4d4d4; }
+.yy-ramp-cool { background: linear-gradient(90deg, #08306b, #08519c, #2171b5, #4292c6, #6baed6, #9ecae1, #c6dbef, #deebf7, #f7fbff); }
+.yy-ramp-warm { background: linear-gradient(90deg, #800026, #bd0026, #e31a1c, #fc4e2a, #fd8d3c, #feb24c, #fed976, #ffeda0, #ffffcc); }
+.yy-ramp-label { font-size: .75rem; color: #444; }
+.yy-note { font-size: .85rem; color: #333; min-height: 1.4em; }
+.yy-note:empty { display: none; }
+.compare { display: grid; gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); }
+figcaption { font-size: .85rem; color: #333; margin-top: .25rem; }
+details { border: 1px solid #d4d4d4; padding: .5rem .9rem; margin-top: 1rem; }
+details summary { font-weight: 600; cursor: pointer; }
+@media (max-width: 560px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .settings { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  .plane { min-height: 170px; }
+}
+</style>
+</head>
+<body>
+<header>
+<h1>YinYang spacing</h1>
+</header>
+<main>
+<section aria-label="Preview text">
+<label class="text-label" for="yy-text">Preview text</label>
+<textarea id="yy-text" rows="2" wrap="off" spellcheck="false"></textarea>
+<p class="field-error" id="yy-text-e" role="status"></p>
+<p><button id="yy-text-restore" type="button" class="secondary" hidden>Restore sample text</button></p>
+</section>
+<p class="yy-note" id="yy-control-guide">Start with default Edge reach and Distance falloff, then move Interaction target to change placements, comparing several pairs. Edge reach and Distance falloff change the score scale, so retune Interaction target afterward. All three settings apply to every pair.</p>
+<div class="workspace">
+<section class="preview" aria-label="Letter fields">
+<div class="plane"><figure><canvas id="yy-explain-field" role="img" aria-label="Adjusted text with letter fields"></canvas></figure></div>
+<div class="yy-colors" aria-label="Field layers">
+<div class="yy-color-row"><label><input type="checkbox" id="yy-show-fields" checked> Show fields</label></div>
+<div class="yy-color-row"><label><input type="checkbox" id="yy-show-letter" checked> Letter fields</label><span class="yy-ramp yy-ramp-cool" aria-hidden="true"></span><span class="yy-ramp-label">weak to strong</span></div>
+<div class="yy-color-row"><label><input type="checkbox" id="yy-show-contrib" checked> Pair contributions</label><span class="yy-ramp yy-ramp-warm" aria-hidden="true"></span><span class="yy-ramp-label">weak to strong</span></div>
+<div class="yy-color-row"><label for="yy-letter-alpha">Letter fields opacity</label><input type="range" id="yy-letter-alpha" min="0" max="100" step="1" value="65" aria-label="Letter fields opacity, percent"><output id="yy-letter-alpha-v">65%</output></div>
+<div class="yy-color-row"><label for="yy-contrib-alpha">Pair contributions opacity</label><input type="range" id="yy-contrib-alpha" min="0" max="100" step="1" value="100" aria-label="Pair contributions opacity, percent"><output id="yy-contrib-alpha-v">100%</output></div>
+</div>
+<p class="yy-note" id="yy-explain-note" role="status"></p>
+<details id="yy-compare-box">
+<summary>Compare spacing</summary>
+<div class="compare">
+<figure><canvas id="yy-original"></canvas>
+<figcaption id="yy-original-cap">Font's spacing</figcaption></figure>
+<figure><canvas id="yy-adjusted"></canvas>
+<figcaption id="yy-adjusted-cap">Adjusted spacing</figcaption></figure>
+</div>
+<p class="yy-note" id="yy-sample-note" role="status"></p>
+</details>
+</section>
+<aside class="settings" aria-label="Spacing controls">
+<div class="control"><div class="control-head"><label for="yy-spacing">Interaction target</label><span class="value"><input type="text" id="yy-spacing-n" inputmode="decimal" aria-label="Exact interaction target" aria-describedby="yy-spacing-x"><span aria-hidden="true">unitless</span></span></div><input type="range" id="yy-spacing" aria-label="Interaction target"><output id="yy-spacing-v" hidden></output><p class="helper" id="yy-spacing-x">Each pair selects the placement whose score is closest to this number. Scores are local-interaction values; closely matched placements can shift with small moves.</p><p class="field-error" id="yy-spacing-e" role="status"></p></div>
+<div class="control"><div class="control-head"><label for="yy-reach">Edge reach</label><span class="value"><input type="text" id="yy-reach-n" inputmode="decimal" aria-label="Exact edge reach in pixels" aria-describedby="yy-reach-x"><span>px</span></span></div><input type="range" id="yy-reach" aria-label="Edge reach"><output id="yy-reach-v" hidden></output><p class="helper" id="yy-reach-x">Half the width of the square region used to collect letter edges. Larger values include farther edges.</p><p class="field-error" id="yy-reach-e" role="status"></p></div>
+<div class="control"><div class="control-head"><label for="yy-falloff">Distance falloff</label><span class="value"><input type="text" id="yy-falloff-n" inputmode="decimal" aria-label="Exact distance falloff, unitless" aria-describedby="yy-falloff-x"><span aria-hidden="true">unitless</span></span></div><input type="range" id="yy-falloff" aria-label="Distance falloff"><output id="yy-falloff-v" hidden></output><p class="helper" id="yy-falloff-x">Higher values give nearby edges more weight relative to distant edges within Edge reach.</p><p class="field-error" id="yy-falloff-e" role="status"></p></div>
+<div class="control">
+<label class="text-label" for="yy-sample">Font and size</label>
+<select id="yy-sample"></select>
+</div>
+<fieldset class="control"><legend>Look</legend><span id="yy-profile"></span></fieldset>
+<div class="control">
+<label class="text-label" for="yy-zoom">Zoom</label>
+<select id="yy-zoom"></select>
+</div>
+<div class="control">
+<button id="yy-reset" type="button" class="secondary">Reset spacing settings</button>
+</div>
+</aside>
+</div>
+<section aria-label="Focus" id="yy-focus" hidden>
+<h2 id="yy-focus-title">Roboto 16 px</h2>
+</section>
+<details id="yy-select-box">
+<summary>How spacing is selected</summary>
+<p>For each pair, the model tests every whole-pixel position in its ordered range, from the tightest forward step to the widest step its fields can still support. It uses the supported position whose score is closest to the target, skipping overlaps and unsupported steps; with no supported position it keeps the font's spacing.</p>
+</details>
+</main>
+<script type="application/json" id="yy-boot">
+__YY_BOOT__
+</script>
+<script>
+__YY_WASM_GLUE__
+</script>
+<script id="yy-worker-src" type="text/plain">
+__YY_WORKER_SRC__
+</script>
+<script id="yy-wasm-b64" type="text/plain">
+__YY_WASM_B64__
+</script>
+<script>
+__YY_APP_JS__
+</script>
+<script>
+__YY_VISUAL_JS__
+</script>
+<script>
+__YY_COUPLING_JS__
+</script>
+<script>
+__YY_WIRING_JS__
+</script>
+</body>
+</html>

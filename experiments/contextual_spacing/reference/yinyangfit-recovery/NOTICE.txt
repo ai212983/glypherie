@@ -1,0 +1,10 @@
+YinYangFit historical notebook recovery
+
+Original project: Sebastian Kosch, https://github.com/skosch/YinYangFit
+Pinned notebook revision: d9c7e2580f2ad4884c45e5081e8e4613b86632cf
+License: Apache License 2.0; exact upstream license is retained beside this notice.
+
+The recovery adapter executes selected original notebook definitions unchanged.
+The surrounding input, deterministic evaluation, checkpoint and resource-control
+adapters are project additions and are not original-author implementation.
+No trained checkpoint or optical acceptance is implied.

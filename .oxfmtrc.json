@@ -18,6 +18,12 @@
     // them is churn with no readers that care about whitespace.
     "**/extraction.json",
     "**/review.json",
+    // Frozen build input: byte-pinned by SOURCE_CATALOGUE_SHA in
+    // yinyangfit_interactive_v3.py; the formatter must not touch it.
+    "experiments/contextual_spacing/yinyangfit_interactive_v3_source/catalogue.json",
+    // Audited browser-instrumentation helper, vendored byte-identical;
+    // formatting must not alter its exact-match worker-source anchors.
+    "experiments/contextual_spacing/tests/yinyang_adoption_hook_final.js",
     // dprint never covered these languages; keep the migration to its scope
     // plus TypeScript/JavaScript.
     "**/*.css",

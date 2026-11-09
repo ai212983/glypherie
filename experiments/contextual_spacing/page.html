@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Optical spacing comparison · Glypherie</title>
+  <style>__STYLE__</style>
+</head>
+<body>
+<main>
+  <header class="intro">
+    <p class="eyebrow">Glypherie / Text layout experiment</p>
+    <h1>Same forms. Different spacing.</h1>
+    <p>Compare metric placement with optical spacing calibrated to this font’s designed reference pairs. Inspect rhythm, punctuation and word boundaries.</p>
+  </header>
+
+  <section class="controls" aria-label="Comparison controls">
+    <div class="field family-field">
+      <label for="family">Captured font</label>
+      <select id="family"></select>
+      <span id="case-summary" class="hint"></span>
+    </div>
+    <div class="field model-field">
+      <label for="spacing-model">Spacing model</label>
+      <select id="spacing-model"></select>
+      <span id="model-target" class="hint"></span>
+    </div>
+    <div class="field">
+      <label for="kerning">Source kerning <output id="kerning-value" for="kerning">100%</output></label>
+      <input id="kerning" type="range" min="0" max="4" step="1" value="4">
+      <span id="kerning-help" class="hint">Affects metric and blended placement; full optical uses the shared target.</span>
+    </div>
+    <div class="field">
+      <label for="optical">Optical strength <output id="optical-value" for="optical">100%</output></label>
+      <input id="optical" type="range" min="0" max="4" step="1" value="4">
+      <span class="hint">Right-hand comparison</span>
+    </div>
+    <div class="field">
+      <label for="letter">Letter spacing (px)</label>
+      <input id="letter" type="number" min="-16" max="16" step="1" value="0">
+    </div>
+    <div class="field">
+      <label for="word">Word spacing (px)</label>
+      <input id="word" type="number" min="-16" max="16" step="1" value="0">
+    </div>
+    <div class="field">
+      <label for="wrap">Wrap width (px)</label>
+      <input id="wrap" type="number" min="80" max="800" step="1" value="280">
+    </div>
+    <div class="field">
+      <label for="zoom">Enlargement</label>
+      <select id="zoom"><option value="2">2×</option><option value="4" selected>4×</option><option value="8">8×</option></select>
+    </div>
+    <div class="field policy-field">
+      <label class="checkbox-label" for="preserve-tabular"><input id="preserve-tabular" type="checkbox" aria-describedby="tabular-help">Preserve tabular spacing</label>
+      <span id="tabular-help" class="hint">Keep equal-width digits aligned instead of applying optical pair corrections.</span>
+    </div>
+    <div class="field text-field">
+      <label for="preset">Text preset</label>
+      <select id="preset"></select>
+      <label for="sample">Sample text <button id="reset-text" type="button" class="text-button">Reset text</button></label>
+      <textarea id="sample" rows="3" spellcheck="false" aria-describedby="text-help error"></textarea>
+      <span id="text-help" class="hint">This offline preview accepts captured characters only; see capture details below. Line breaks reset context. Each ordinary space receives the word-spacing addition.</span>
+    </div>
+    <div class="toolbar">
+      <p id="status" role="status">Loading captured placements…</p>
+      <button id="reset" type="button">Reset controls</button>
+    </div>
+    <p id="error" role="alert" hidden></p>
+  </section>
+
+  <section id="neighbor-review" class="neighbor-review" aria-label="Neighboring placement review" hidden>
+    <header><h2>Current or one pixel closer?</h2><p class="hint">Diagnostic alternatives only. The solver is unchanged. Tighter examples may overlap; counts and markers show the actual result.</p></header>
+    <label class="checkbox-label" for="neighbor-review-contacts"><input id="neighbor-review-contacts" type="checkbox" checked>Show contact markers in enlarged views</label>
+    <p id="neighbor-review-summary" class="hint"></p>
+    <div id="neighbor-review-rows"></div>
+    <p class="hint">Red marks shared edges, blue marks corner contact and purple marks overlapping ink. Contact is permitted; overlap is forbidden by the current automatic policy. The one-pixel alternative is not clamped to that policy. Word alternatives change only the listed pairs; other pair steps and glyph shapes stay unchanged.</p>
+  </section>
+
+  <section class="comparisons" aria-label="Placement comparison">
+    <article class="comparison" data-placement="metric">
+      <header><div><span class="eyebrow">Reference placement</span><h2>Metric</h2></div><span class="badge">Optical 0%</span></header>
+      <p class="view-label">Native size · 1×</p>
+      <div class="paper native"><canvas id="metric-native" role="img" aria-label="Metric placement at native size"></canvas></div>
+      <p class="view-label enlarged-label">Enlarged · 4×</p>
+      <div class="paper enlarged" data-scroll="metric"><canvas id="metric-enlarged" role="img" aria-label="Metric placement enlarged"></canvas></div>
+      <p class="measurement" id="metric-measure"></p>
+    </article>
+    <article class="comparison" data-placement="optical">
+      <header><div><span class="eyebrow">Experimental placement</span><h2>Optical</h2></div><span class="badge" id="optical-badge">Optical 100%</span></header>
+      <p class="view-label">Native size · 1×</p>
+      <div class="paper native"><canvas id="optical-native" role="img" aria-label="Optical placement at native size"></canvas></div>
+      <p class="view-label enlarged-label">Enlarged · 4×</p>
+      <div class="paper enlarged" data-scroll="optical"><canvas id="optical-enlarged" role="img" aria-label="Optical placement enlarged"></canvas></div>
+      <p class="measurement" id="optical-measure"></p>
+    </article>
+  </section>
+
+  <section id="source-references" class="reference-comparisons" aria-label="Vanilla source spacing references">
+  <article id="source-mono-comparison" class="comparison" aria-label="Mono with vanilla spacing" hidden>
+    <header><div><span class="eyebrow">Diagnostic placement</span><h2>Mono · vanilla spacing</h2></div><span class="badge">Original metrics</span></header>
+    <p class="hint">The same binary glyphs as Metric and Optical, placed with original source advances and full kerning. Fractional positions accumulate and round only when drawing, using source metrics. No optical correction or extra letter/word spacing.</p>
+    <p class="view-label">Native size · 1×</p>
+    <div class="paper native"><canvas id="source-mono-native" role="img" aria-label="Mono with vanilla spacing at native size"></canvas></div>
+    <p class="view-label enlarged-label">Enlarged · 4×</p>
+    <div class="paper enlarged" data-scroll="source-mono"><canvas id="source-mono-enlarged" role="img" aria-label="Mono with vanilla spacing enlarged"></canvas></div>
+    <p class="measurement" id="source-mono-measure"></p>
+  </article>
+  <article id="browser-comparison" class="comparison" aria-label="Browser normal text reference" hidden>
+    <header><div><span class="eyebrow">Normal web text reference</span><h2>Browser · normal text</h2></div><span class="badge">Native rendering</span></header>
+    <p class="hint">Same source font, size and axes. Your browser handles antialiasing, shaping, kerning, ligatures and fractional spacing. No optical correction or added tracking. Normal word wrapping; line breaks are preserved.</p>
+    <p class="view-label">Native size · 1×</p>
+    <div class="paper native"><div id="browser-native" class="browser-text" hidden></div></div>
+    <p class="view-label enlarged-label">Enlarged · 4×</p>
+    <div class="paper enlarged" data-scroll="browser"><div id="browser-zoom-frame" hidden><div id="browser-enlarged" class="browser-text"></div></div></div>
+    <p class="hint">Zoom scales the original layout with the same size and axes. The browser may rerasterize enlarged text.</p>
+    <p id="browser-measure" class="measurement" role="status"></p>
+    <p class="hint">Appearance depends on your browser and display. The font version or settings on Google Fonts may differ.</p>
+    <details><summary>Embedded font license</summary><pre id="browser-license" class="hint"></pre></details>
+  </article>
+  </section>
+  <details id="custom-grayscale-details" class="calibration-details">
+  <summary>Custom 3-bit renderer diagnostic</summary>
+  <article id="grayscale-comparison" class="comparison" aria-label="Custom 3-bit grayscale diagnostic" hidden>
+    <header><div><span class="eyebrow">Custom renderer diagnostic</span><h2>Custom grayscale</h2></div><span class="badge">3-bit · defaults</span></header>
+    <p class="hint">This is our quantized 3-bit renderer, not normal browser text. Same font, size and axes. Vanilla source advances and full kerning, accumulated fractionally and rounded only when drawing. Automatic hinting, gamma 1, no optical correction or extra letter/word spacing. Sample text, wrap width and zoom follow the comparison controls.</p>
+    <p class="view-label">Native size · 1×</p>
+    <div class="paper native"><canvas id="grayscale-native" role="img" aria-label="Custom grayscale rendering at native size"></canvas></div>
+    <p class="view-label enlarged-label">Enlarged · 4×</p>
+    <div class="paper enlarged" data-scroll="grayscale"><canvas id="grayscale-enlarged" role="img" aria-label="Custom grayscale rendering enlarged"></canvas></div>
+    <p class="measurement" id="grayscale-measure"></p>
+  </article>
+  </details>
+
+  <section class="pair-details" aria-label="Pair details">
+    <div class="field">
+      <label for="pair">Inspect pair</label>
+      <select id="pair"></select>
+    </div>
+    <div class="pair-result">
+      <p id="pair-outcome" class="pair-outcome"></p>
+      <p id="pair-explanation" class="hint"></p>
+      <p id="pair-step" class="measurement"></p>
+      <p id="pair-separation" class="measurement"></p>
+      <p id="pair-score" class="measurement" hidden></p>
+      <p id="pair-search" class="measurement" hidden></p>
+      <p id="pair-area" class="measurement" hidden></p>
+      <p id="pair-clearance" class="measurement" hidden></p>
+      <p id="pair-calibration" class="hint"></p>
+      <p id="pair-source-target" class="measurement" hidden></p>
+      <details id="pair-hu-details" class="hint" hidden><summary>Cavity filtering and reference policies</summary><p id="pair-hu-policy"></p></details>
+      <p class="view-label">Selected pair at native size · neighboring integer placements</p>
+      <div class="pair-alternatives">
+        <figure><figcaption id="pair-tighter-label" class="hint"></figcaption><div class="paper"><canvas id="pair-tighter" role="img" aria-label="Selected pair one pixel tighter at native size"></canvas></div><div class="paper"><canvas id="pair-tighter-contacts" role="img" aria-label="Contact pixels one pixel tighter, enlarged"></canvas></div><p id="pair-tighter-contact-count" class="hint"></p></figure>
+        <figure><figcaption id="pair-selected-label" class="hint"></figcaption><div class="paper"><canvas id="pair-selected" role="img" aria-label="Selected pair at emitted spacing and native size"></canvas></div><div class="paper"><canvas id="pair-selected-contacts" role="img" aria-label="Contact pixels at emitted spacing, enlarged"></canvas></div><p id="pair-selected-contact-count" class="hint"></p></figure>
+        <figure><figcaption id="pair-looser-label" class="hint"></figcaption><div class="paper"><canvas id="pair-looser" role="img" aria-label="Selected pair one pixel looser at native size"></canvas></div><div class="paper"><canvas id="pair-looser-contacts" role="img" aria-label="Contact pixels one pixel looser, enlarged"></canvas></div><p id="pair-looser-contact-count" class="hint"></p></figure>
+      </div>
+      <p class="hint">Native views retain original black ink. Enlarged views mark inter-glyph contacts: <span class="contact-face">red = shared edge</span>, <span class="contact-corner">blue = corner contact</span>, <span class="contact-overlap">purple = overlapping ink</span>. Counts describe touching cell pairs, not optical quality.</p>
+      <p class="hint">Neighboring placements are visual comparisons only; a tighter example can violate the retained ink-clearance minimum.</p>
+      <p class="hint">Measurements include deliberate spacing and assume the pair stays on one line. The target describes full optical strength; blending, whole-pixel rounding and ink-clearance constraints can leave an error. Hu/Hersch reports bounded filtered areas and equivalent mean gaps; CounterSpace reports weighted scores. Equal model scores do not establish equal perception. No adjustment crosses a line break.</p>
+    </div>
+  </section>
+
+  <section class="calibration-details" aria-label="Font calibration">
+    <details><summary>Font calibration targets</summary><p id="calibration-summary" class="hint"></p><p id="calibration-targets" class="measurement"></p><p id="model-provenance" class="hint" hidden></p><p class="hint">Each model reports its reference measurements and parameter provenance at the captured axes. Hu/Hersch uses published depth coefficients (US5768490A). Shared-reference spacing measures delivered bitmap cells; Hu source-relative compensation measures source outlines and delivered cells with the same filters to preserve each pair’s designed gap. CounterSpace fits the selected source or delivered calibration geometry at designed reference placements and scores delivered bitmap cells; the earlier comparison methods use source outlines. The comparison models’ 00 numeral anchor is experimental. Unsupported pairs and unavailable references keep metric placement.</p></details>
+  </section>
+
+  <footer>
+    <p>Original captured bitmaps and advances. Whole-pixel placement. Optical quality is pending assessment; healing is not enabled.</p>
+    <details><summary>Capture details and supported characters</summary><p id="provenance"></p><p id="repertoire" class="repertoire"></p><p>Strength controls select completed solver tables at 0%, 25%, 50%, 75% and 100%. Optical measurements and corrections are computed by the Python experiment. The page places retained metrics, applies deliberate offsets to the Mono model views and marks pixel contacts for inspection.</p></details>
+  </footer>
+</main>
+<script id="spacing-data" type="application/json">__DATA__</script>
+<script>__SCRIPT__</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+[package]
+name = "yinyang_oriented_engine"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+name = "yinyang_oriented_engine"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen", "dep:js-sys"]
+
+[dependencies]
+rustfft = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = { version = "=0.2.129", optional = true }
+js-sys = { version = "0.3", optional = true }
+
+[[bin]]
+name = "parity"
+path = "src/bin/parity.rs"
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"
+
+[[bin]]
+name = "bench_local"
+path = "src/bin/bench_local.rs"
+
+[[bin]]
+name = "parity_local"
+path = "src/bin/parity_local.rs"
+
+[[bin]]
+name = "bench_preview"
+path = "src/bin/bench_preview.rs"

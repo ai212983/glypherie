@@ -1,0 +1,13 @@
+# Optional offline CounterSpace experiment; install in a separate virtual environment.
+fonttools==4.62.0
+freetype-py==2.5.1
+ImageIO==2.38.1
+lazy-loader==0.6
+networkx==3.7
+numpy==2.5.4
+packaging==26.3
+pillow==13.0.0
+scikit-image==0.26.0
+scipy==1.18.1
+tensorfont==0.0.6
+tifffile==2026.10.15
