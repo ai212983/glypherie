@@ -300,8 +300,10 @@ several features refer to it.
 sample. With original derivative $q'$, derivative displacement $\delta q'$, speed $s=\|q'\|$ and midpoint arc weight
 $\Delta\ell=s/k$, the residuals are
 
-$$\sqrt{\alpha_2\Delta\ell}\frac{q'\cdot\delta q'}{s^2},\qquad
-\sqrt{\alpha_3\Delta\ell}\frac{(q'_y,-q'_x)\cdot\delta q'}{s^2}.$$
+$$
+\sqrt{\alpha_2\Delta\ell}\frac{q'\cdot\delta q'}{s^2},\qquad
+\sqrt{\alpha_3\Delta\ell}\frac{(q'_y,-q'_x)\cdot\delta q'}{s^2}.
+$$
 
 This follows the local relative-strain construction of (2),(3) and §6's linear control-point representation. It is not a
 verbatim formula from the report, an exact curvature constraint or a nonlinear closest-point calculation. It reduces to

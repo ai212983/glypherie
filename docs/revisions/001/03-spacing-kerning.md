@@ -1,6 +1,6 @@
 # Monochrome geometry and spacing
 
-<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit afloader rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL Adafruit Crosspoint pdfontconv Tophat rint tensorfont TypeFacet fullwindow yinyangfit nonconstant -->
+<!-- cspell:words HarfBuzz GSUB GPOS ttfautohint unhinted Skia PathOps autofit afloader rekerning SCANCTRL SCANTYPE fpgm maxp VARC thresholded unrepresentable quantizer CGAL Adafruit Crosspoint pdfontconv Tophat rint tensorfont TypeFacet fullwindow yinyangfit nonconstant rescoring -->
 
 Combine native and automatic Mono fitting on independent axes, preserve source shape and weight relationships, and
 assess continuity and reading rhythm under bitmap placement. Fitting, scan conversion and layout remain separate:
@@ -715,6 +715,25 @@ carries its own model, implementation and cache identities; v1 tables and pages 
 full-window columns. Optical assessment of the moved default-corpus endpoints and of the residual wider-control turns
 stays pending; the approved published selection and all maintained methods are unchanged.
 
+The v3 sample-gallery experimental main now runs the Class-L normalization repair over the oriented-engine model
+`yinyangfit-oriented-engine-v1` (score `yinyangfit-local-energy-v2`, search `yinyangfit-search-v2`): interaction target
+`0 … 20` step `0.02` (navigation precision only; initial/reset `8.0`, exact finite `>= 0` accepted with no clamp or
+snap), reach `4 … 24` integer (exact `1 … 32`), falloff `0.5 … 10` step `0.5` (exact `0.25 … 16`), normalizer frozen at
+`12`, with TIE-v2 choice (global minimum, then lowest step index) and a shipped default-geometry fast path plus exact
+on-demand WASM scoring. Placement search is `yinyangfit-search-v2` (exhaustive whole-pixel enumeration over the
+geometry-derived ordered-letter domain intersected with strictly forward pen order, TIE-v2 over supported steps only),
+versioned separately from the model and settings. The G2 page, scorer, tables and ranges are archived with no active UI
+option or fallback. Off-geometry rescoring stays minute-class (a cost limitation, not a physics claim); optical
+assessment remains pending; the approved published selection and all maintained methods are unchanged.
+
+Follow-up scale-weighting and local-scale grouping studies remain experimental. No new perceptual weight default is
+selected without viewing conditions and a declared contrast-sensitivity model. The inverse-scale grouping candidate
+fails its distant-stroke sensitivity prediction because the retained whole-glyph normalization dominates, so it is not
+adopted. Notebook normalization remains a separate deferred path. The live oriented model and forward search stay
+unchanged; these negative results do not close this iteration or establish optical acceptance. The
+[owning design](../../designs/text-layout/contextual-spacing-and-healing.md#yinyang-scale-aware-grouping-assessment)
+records the model decision.
+
 The
 [TypeFacet feasibility experiment](../../designs/text-layout/contextual-spacing-and-healing.md#typefacet-feasibility-experiment)
 now reproduces the original Python 2 application through actual UFO output, then compares source outlines and exact
@@ -815,6 +834,7 @@ Hu/Hersch correction before signed rounding and the existing feasibility bound. 
 the previous result; zero strength preserves Source exactly and bypasses auxiliary calibration. The density target and
 wall construction remain fixed. This is a project composition control, not a new optical model or calibration, and does
 not resolve the existing local-spacing assessment. Saved variants, URLs and export retain the same selection.
+Superseded by the 2026-11-06 hard cut below: `strength` no longer exists as a parameter.
 
 **Depth controls replace strength blends, 2026-11-06:** the user rejects blending between Source and the selected
 method, so both analytic adapters now apply their full correction to every supported pair. Hu/Hersch gains the two
@@ -823,8 +843,16 @@ body-height maximum visual depth (default `0.25`), each finite `0..=1`. Both ent
 calibration; class body height remains the global cap basis. FontForge keeps its source-relative objective with no new
 clearance or shared-target control. Retired `strength` values are rejected at every admission boundary (2026-11-06 hard
 cut): they no longer parse, so no saved blend can load as new defaults, including former zero-strength Source identity.
-Method names lose their experimental suffixes without asserting optical approval. Defaults reproduce the previous
+Retained stored profiles are cleaned on backend open (both kerning blocks, any value, revision-bumped, idempotent) and
+legacy imports drop the keys before validation; the domain protocol fences older owners. Method names lose their
+experimental suffixes without asserting optical approval. Defaults reproduce the previous
 full-strength tables; pending local-spacing concerns are unchanged.
+
+**Incompatible persisted schemas reset once, 2026-11-09:** a stored graph the current admission rejects as a
+breaking change cannot be cleaned row-wise (the metadata gate runs before cleanup), so backend open discards that
+database once — graph rows, committed schema metadata and stale auxiliaries together — and re-seeds defaults under
+the existing owner, with the legacy import marked complete so old snapshots cannot repopulate it. Only the confirmed
+breaking-change admission for this graph triggers the reset; compatible stores are untouched.
 
 **Geometry and placement separation, 2026-11-01:** the user identifies that method selection should not be coupled to
 Mono output. The
@@ -850,8 +878,8 @@ fitted-outline, fixed-alphabet density-conserving experiment as a distinct analy
 captures use the same pipeline without enlarging output glyphs or their pair-shaping domain. This avoids both
 text-derived density targets and accidental cross-script shaping requirements.
 
-FontForge-derived spacing is a separate source-relative method, with its own strength blend, native band estimator and
-integer placement. It preserves source pair separation rather than Hu/Hersch's shared class density. Missing reference
+FontForge-derived spacing is a separate source-relative method, with its native band estimator and
+integer placement (its former strength blend retired with the hard cut). It preserves source pair separation rather than Hu/Hersch's shared class density. Missing reference
 classes or undefined measurements retain Source; valid zero replacements remain distinct from abstention. CounterSpace
 remains a future runtime port because its nonlinear score search and numerical calibration are not equivalent to either
 analytic adapter. These ports add selectable calculations without changing glyph geometry. Earlier Literata wall-model
@@ -1364,3 +1392,37 @@ measurement of the adopted 16 px weight-400 pangram was about 3.6–4.4 s for Ro
 versus 26–69 ms without fitting. This is a recorded performance limitation, not a current-build benchmark. Measurements
 remain in `wasm-runtime-final.json` under the same evidence directory; current identities/default selection belong to
 the [revision index](README.md).
+
+### Curve extremity phase
+
+Smooth-arc extremity phase placement (`crates/generator/src/curve_extremity.rs`, model `extremity-phase-05`) keeps
+smooth arc extrema off pixel centers in bilevel output. Foundation: Hersch 1995 displacement windows (phase as distance
+from pixel center), Hu §4.5.2.2 (1/16 lower edge against spurs and flat runs) and Hobby §3.3 (tangent near pixel-square
+middle, axis symmetry) for the window rule; Hersch Fig. 16 exterior/interior weight control with Hobby §6 and Shamir
+width, tangent and attachment relations for paired borders. Project adaptation: signed outward-normal phase with
+interior-ward landing (exact centers take the interior tie break), implemented as bounded local fitting rather than a
+whole-contour map. Each smooth local extremum — a joint apex with axis-aligned incident controls or an interior
+stationary apex, certified at the same segment in source and fitted outlines — moves at most 1/8 px at the apex, editing
+only its incident segments with the shoulder endpoints fixed; interior controls move by the stationary-point weight (at
+most twice the apex bound). Subordinate extrema therefore move without dragging a flat stem top, a tail or another
+contour end. Borders paired by overlapping incident spans, in one contour or in a nest present in both outlines, share
+one deficit so the apex wall between them is exact; an already-clear paired inner border (smooth, or a flat run drawn in
+both outlines) follows a certified outer deficit to a valid ordered landing, and any other paired disagreement freezes
+that pair only. Sharp corners, cusps, plateau contacts, segment-sharing extrema, overlapping or source-unmatched nests,
+diagonal-owned curves and native-owned axes abstain. Post-validation retains every existing smooth extremum and rejects
+any changed or new smooth apex in the excluded phase band, including neighbors of a flat follower. Unchanged existing
+extrema outside the supported correction retain their preceding geometry. Apex walls of paired borders are exact by
+construction; other wall distances are not exact. Local segment displacement on each axis is bounded by its
+control-point movement (at most 1/4 px), with no broader counter or wall preservation claimed.
+
+Scope at Roboto Flex 48 px, wght 400, opsz 48, dropout smart with stubs and no font instructions: `a b c d h m n o q`
+all correct locally, including the subordinate bowl crowns of `b d q`, the bowl bottom of `q`, the terrace of `a` and
+the single-contour arch of `h` under its anchored flat stem top. The stock-FreeType 2.15.0 replay reproduces all nine
+delivered outlines and confirms the delivered pixels: the original isolated crown pixels of `b d h` and the top and
+bottom spur rows of `a o q` no longer appear, and no crown grows. Sizes 46–50, wght 700 and the Roboto control stay
+coherent under the replay, movement-bound and advance checks.
+
+Unresolved optical questions: corrected crowns, arches and eyes still need browser-preview acceptance (tests and pixel
+parity never establish it); families, weights and sizes beyond the stated controls remain unassessed; boundary ties
+under the scanner are recorded in the diagnostic evidence, not resolved by counts. Evidence:
+`out/diagnostics/curve-extremity-phase-local-fitting/`.

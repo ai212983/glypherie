@@ -1,6 +1,6 @@
 # Revision 001
 
-<!-- cspell:words TypeFacet fontforge fullwindow yinyangfit -->
+<!-- cspell:words TypeFacet fontforge fullwindow yinyangfit multiscale supremum -->
 
 ## Starting point
 
@@ -88,6 +88,14 @@ domain boundaries, ties anchor at the global valid minimum, and words show a cap
 the experiment layout. The follow-on `yinyangfit-interactive-b2-fullwindow-v1` experimental version scores the full
 query window with its own identities and archived v1 reference. No maintained method or default changes. Optical
 assessment remains pending.
+
+The v3 sample-gallery page now runs the oriented-engine model
+`yinyangfit-oriented-engine-v1` (oriented fields, multiscale combination, SCORE-v2) over all 13 canonical root samples
+in both profiles, with target G2, reach and falloff controls and a shipped default-geometry fast path plus exact
+on-demand WASM scoring. The historical B2 page and its tables are archived with no active UI option or fallback.
+Settings classify as Standard (`q <= 4.2` and `R <= 24`) or Extended (within guardrails, with the compact near-tie
+notice); the Extended agreement bound is an empirical maximum over 14 sampled cases, not a proven supremum. No
+maintained method or default changes. Optical assessment remains pending.
 
 ## Iterations
 

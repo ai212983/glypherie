@@ -1,6 +1,6 @@
 # Contextual spacing and texture healing
 
-<!-- cspell:words scanlines FontForge AutoWidth AutoKern rint Monaspace Hu pnum tnum titlecase CounterSpace Cozens tensorfont nonfinite yinyangfit yinyang electricbubble fullfield fullwindow TFJS dtypes dtype thresholding ppem predeclared retuned reweighting multiscale RGBA argmin Mises directionalized heldout Schwarz -->
+<!-- cspell:words scanlines FontForge AutoWidth AutoKern rint Monaspace Hu pnum tnum titlecase CounterSpace Cozens tensorfont nonfinite yinyangfit yinyang electricbubble fullfield fullwindow TFJS dtypes dtype thresholding ppem predeclared retuned reweighting multiscale RGBA argmin Mises directionalized heldout Schwarz rescoring unimodal trunc lleft rleft summands outcompete Gabor bandpass softmax Heeger Carandini Movshon Knutsson Westin weakref predeclare CSTAR flatline argmax microbenchmark colormap autogain -->
 
 **Status: isolated optical-spacing experiment; texture healing deferred.** The
 [experiment commands](../../../experiments/contextual_spacing/README.md) capture source and produced geometry and
@@ -620,42 +620,94 @@ retained unchanged); commands are in the
 [experiment README](../../../experiments/contextual_spacing/README.md#yinyangfit-interactive-spacing-feasibility).
 Optical assessment remains pending; this adds no maintained kerning method or renderer identity.
 
-A v3 sample-gallery page under `out/diagnostics/contextual-spacing/yinyangfit-interactive-v3/` keeps the same model and
-integer policies while presenting all 13 canonical root samples in both profiles with a concise end-user flow (three
-visible model-parameter controls with one selected sample, shared profile/magnification; pair inspection, candidate
-table and method note collapsed). Multi-line root texts lay out per line with space gaps at metric; Literata captures
-omit U+0060, which the font cannot shape as an isolated scalar and no sample text needs. User scope for this page is
-only YinYang-derived model controls; alternate spacing methods are separate references, not substitutes here. Slider
-bands follow the measured working-range recommendation (cohesion `0.00 … 2.00` step `0.05`, reach `0.50 … 6.00` px step
-`0.25`, falloff `0.50 … 10.00` step `0.50`, defaults `1.10/2.0/2.0`); each control also takes direct numeric entry with
-full requested precision, validated against evaluated guardrails (cohesion `[0, 2]`, reach `[0.25, 12]` px, falloff `(0,
-16]`), keeping the last valid render on invalid input with no silent clamping. Cohesion steps cost no new geometry (the
-browser derives choices from stored interactions); shipped reach/falloff columns are an exactly evaluated fast path and
-arbitrary entered values are computed exactly in the page through a port of the unchanged geometry core, never
-interpolated or snapped. The evaluated grid and the numeric guardrails are versioned separately from the frozen scorer
-formula (`yinyangfit_interactive.py` unchanged). Slider copy states what each parameter compares in plain language; the
-single experiment-level caveat (a control step can widen some gaps while tightening others) lives in the header and
-About note, not in the per-control explanation.
+A v3 sample-gallery page under `out/diagnostics/contextual-spacing/yinyangfit-interactive-v3/site-reviewed/` runs the
+oriented-engine model (`yinyangfit-oriented-engine-v1`: oriented fields, multiscale combination, Class-L local-energy
+normalization `yinyangfit-local-energy-v2`) while presenting all 13 canonical root samples in both profiles with a
+concise end-user flow (interaction target plus reach/falloff controls with one selected sample, shared
+profile/magnification, whole-text fields and an ink comparison). Multi-line root texts lay out per line with space gaps
+at metric; Literata captures omit U+0060, which the font cannot shape as an isolated scalar and no sample text needs.
+User scope for this page is only oriented-engine model controls; alternate spacing methods are separate references, not
+substitutes here. The G2 page, scorer, tables and ranges are archived with no active UI option or fallback selecting
+them. The interaction target slider runs `0 … 20` step `0.02` (navigation precision only; initial/reset `8.0`), reach `4
+… 24` px integer, falloff `0.5 … 10` step `0.5`; each control also takes exact numeric entry inside wider guardrails
+(target finite `>= 0` with no upper clamp, reach integer `[1, 32]` with fractional input rejected, falloff `[0.25,
+16]`), keeping the last valid render on invalid input with no silent clamping or snapping, and the normalizer stays
+frozen at `12`, never user-controlled. Target steps cost no new geometry (the browser re-derives choices from stored
+Class-L curves through TIE-v2); the shipped default-geometry column (reach 12, falloff 2.0) is an exactly evaluated fast
+path and all other in-guardrail settings score exactly on demand in the page WASM worker running the same engine, never
+interpolated. Off-geometry rescoring stays minute-class: a cost limitation of exact per-pair scoring, not an optical
+verdict. Optical assessment remains pending; this adds no maintained kerning method or renderer identity.
+
+#### Exhaustive placement search (`yinyangfit-search-v2`)
+
+The v3 page evaluates every whole-pixel placement in a finite ordered-letter domain instead of the fixed five
+source-centered candidates. The search is an exact bounded integer enumeration over the stored per-step score curves
+with the unchanged TIE-v2 rule (global minimum, then lowest step index) for supported candidates, and the search carries
+its own version (`yinyangfit-search-v2`), separate from the model identity and the settings version, so tables and
+caches reject stale search-policy reuse.
+
+**Source foundation.** The upstream
+[models-and-cost-functions](https://skosch.github.io/YinYangFit/#models-and-cost-functions) section frames spacing as
+distance optimization (an optimal letter distance minimizing the model penalty, neither too narrow nor too wide) but
+publishes no final exact search algorithm. Exact bounded integer enumeration over the whole attainable domain is the
+project adaptation: it keeps the author's neither-too-narrow-nor-too-wide optimum while removing the unimodal/gradient
+assumption an optimizer would need. No per-glyph tuning, no monotonicity or local-minimum pruning, no hand-tuned tails.
+The forward-order floor (`step >= 1`, search-v2) is layout admissibility: it intersects the geometric interval with
+strictly increasing pen order and is versioned with the search, never tuned per glyph.
+
+**Domain (per pair, per geometry setting).** Steps are integer right-glyph origin offsets in the ink plane, evaluated in
+ascending order: lower bound `lo = max(floor(L1 - R2), 1)` where `L1` is the left glyph's ink minimum and `R2` the right
+glyph's ink maximum at step zero, both from delivered ink extents (italic bearings and overhangs enter through the true
+origins, never advance boxes). The ink term excludes the reversed-order component of the full padded interval; the `>=
+1` term is LTR layout admissibility (a separate, non-optical rule): every placed origin must strictly advance, so no gap
+moves the pen backward or leaves equal origins. This version is `yinyangfit-search-v2`, separate from the model identity
+and the settings version, so tables and caches reject older policies. Upper bound `hi` is the largest step at which the
+padded field lattices still overlap in x (`trunc(lleft - pad) + lw - 1 - trunc(rleft - pad)`); beyond `hi`
+both-supported pixels are geometrically impossible, so field support exhaustion ends the domain as a model evidence
+limit, never a typographic optimum. Blank glyphs and disjoint padded rows yield no domain. Both field-origin terms use
+`trunc(origin - pad)` exactly as the scorer's padded origins do (a `trunc(origin) - pad` form differs for positive
+fractional bearings near zero); all captured bearings are integral, so scored tables are unchanged by the conformance
+fix. Occupied-cell overlap inside the domain is invalid with `occupied_cell_overlap` (validity holes, never domain
+ends); face/corner contact is allowed and counted. A Source advance below 1 never enters the domain either: genuine
+abstention retains Source with its reason (Source fidelity), never claiming the retained placement is overlap-free.
+Whitespace pairs keep their metric word advance and never enter the scorer; Gray word baselines keep fractional-pen
+Source draws.
+
+**Choice and abstention.** Eligible steps are valid and non-abstained (`raw == 0` with zero both-supported pixels
+abstains, as do blank glyphs). TIE-v2 runs over eligible steps only; unsupported steps never win with score zero. With
+no eligible step the pair genuinely abstains, retaining Source with a recorded reason (`no_shared_support`,
+`occupied_cell_overlap`, or `blank_glyph_no_ink`). A target outside the attainable G2 range over eligible steps selects
+the closest eligible step with a concise notice. An incomplete compute budget (cancelled or errored jobs) never paints
+and never claims an exhaustive optimum: only fully covered pair sets render.
+
+**Falsifiable gates.** Shared-step validity/support/overlap identity is exact between the former five-step sweep and the
+exhaustive domain; shared-step G2 agrees within the frozen `1e-9` relative bound (NumPy block summation is canvas-size
+sensitive at the last ulp; the engine's sequential loop stays bitwise, covered by its own gate). Python/Node/Rust
+three-way agreement keeps the frozen `1e-9` relative bound on all 26 default-geometry datasets; an independent
+wider-domain reference re-derives every shipped curve; target-only moves rescore nothing; maps render only for chosen
+placements.
 
 A live field view attached to the v3 page shows the entered preview text at the current setting in exactly two roles on
-one shared source-pixel grid: a single muted slate context layer carrying every shown letter's own fading field
-(per-letter bubble components from the same kernel, combined by per-pixel maximum so overlaps never sum), with actual
-ink drawn opaque on top at true bearings; and a contrasting orange pair-interaction layer showing the computed coupling
-contribution at the displayed separation. The orange value at each query point is the normalized attention weight times
-the summed bubbles at the pair's chosen step, over the full scorer window including on-ink positions; each shown pair's
-orange values sum to that pair's interaction score, and overlapping pair layers combine by display-only maximum, which
-defines no new score. Brightness uses one fixed global gain with clipping as display only; the orange layer paints over
-the ink so the on-ink part of the coupling stays visible. The layers are components, not the final score: gaps are still
-scored one pair at a time, and neither cohesion nor layer brightness measures optical quality. The two-role split is a
-project display choice; any resemblance to YinYangFit's grouping-blob illustrations is presentational — those schematics
-depict fitted versus poorly fitted words, not computed fields. Two editable RGBA controls (letter field, interaction)
-recolor the layers with zero score or map rebuild work, each paired with a visible 0–100% opacity slider editing the
-same alpha its RGBA row carries (typed alpha keeps full precision; the thumb shows the nearest step); the palette
-survives sample, profile, text, control and zoom changes and is not persisted. No ruler, scale caption or duplicate
-Source blob strip is shown; the Source-vs-Adjusted main ink comparison is retained one disclosure away. Single-pair
-blobs and the actual five candidate scores with the cohesion target line stay available in the collapsed pair inspector.
-Cohesion moves the letters and fields to the chosen separation while reach/falloff reshape both layers. Frame and tint
-scale stay fixed across slider moves. No overlay alters the Source/Adjusted output canvases.
+one shared source-pixel grid: a single muted slate context layer carrying every shown letter's oriented projection
+(per-letter max over directed channels of `c/sqrt(E)` with per-glyph fixed `E`, combined by per-pixel maximum so
+overlaps never sum), with actual ink drawn opaque on top at true bearings; and a contrasting orange pair-interaction
+layer showing the exact per-query G2 summands at the pair's chosen step. The orange value at each query point is the
+normalized facing-weighted agreement summand at the pair's chosen step, over the full scored canvas including on-ink
+positions; each shown pair's orange values sum to that pair's G2, and overlapping pair layers combine by display-only
+maximum, which defines no new score. Brightness uses one fixed global gain per role (slate 6, interaction 4, from
+measured corpus peaks) with clipping as display only; the orange layer paints over the ink so the on-ink part of the
+coupling stays visible. The layers are components, not the final score: gaps are still scored one pair at a time under
+the TIE-v2 rule (global minimum, then lowest step index), and neither the target nor layer brightness measures optical
+quality. The two-role split is a project display choice; any resemblance to YinYangFit's grouping-blob illustrations is
+presentational — those schematics depict fitted versus poorly fitted words, not computed fields. Two editable RGBA
+controls (letter field, interaction) recolor the layers with zero score or map rebuild work, each paired with a visible
+0–100% opacity slider editing the same alpha its RGBA row carries (typed alpha keeps full precision; the thumb shows the
+nearest step); the palette survives sample, profile, text, control and zoom changes and is not persisted. No ruler,
+scale caption or duplicate Source blob strip is shown; the Source-vs-Adjusted main ink comparison is retained one
+disclosure away. The target moves letters to the TIE-v2 pick nearest the interaction target over the stored Class-L
+curves while reach/falloff reshape both layers. Frame and tint scale stay fixed across slider moves. No overlay alters
+the Source/Adjusted output canvases. Field windows load on demand in a 32-entry LRU with on-demand reload per pair and
+map; cancellation takes effect at pair/map boundaries with generation guards, and only the latest generation paints.
 
 The preview text is user-editable (multiline), seeded from the selected sample and preserved across sample, profile and
 control changes until restored to the sample text. It drives the main ink preview and the letter fields alike. An
@@ -666,10 +718,10 @@ display spacing only, not scorer geometry, and lines never spread apart to avoid
 repertoire (ASCII 32–126 per case and profile; Literata omits U+0060) is accepted: tab, carriage return, non-ASCII and
 other missing codepoints are rejected with the offending codepoint named, the draft preserved, and the last valid paint
 clearly marked as not yet updated. Whitespace pairs keep their metric word advance and never enter the scorer; empty or
-space-only text settles with no ink and an explanatory note. Novel in-repertoire pairs score through the unchanged
-geometry core with the source advance and pair-kerning policy (a missing kerning entry means no adjustment, as
-captured); the per-setting cache is keyed by the covered pair set so new pairs compute exactly on demand and completed
-pairs are reused without recomputing the sample text.
+space-only text settles with no ink and an explanatory note. Novel in-repertoire pairs score through the same engine
+with the source advance and pair-kerning policy (a missing kerning entry means no adjustment, as captured); the
+per-setting cache is keyed by dataset, reach and falloff over the covered pair set so new pairs compute exactly on
+demand and completed pairs are reused without recomputing the sample text. Target-only moves never rescore.
 
 A separate full-window experimental version, identified as `yinyangfit-interactive-b2-fullwindow-v1`, keeps every
 control, range, policy and display rule above while scoring each candidate over the full query window instead of
@@ -860,6 +912,204 @@ explicit `strength=`, cached per-glyph `E`, native bearing-origin embedding, bas
 `out/diagnostics/contextual-spacing/yinyang-oriented-fields/score-experiment/`. Commands are in the
 [experiment README](../../../experiments/contextual_spacing/README.md#yinyang-stage-3-score-v2-hypothesis).
 
+**Native visual comparison.** The corrected corpus is shown for inspection in the isolated review tool under
+`out/diagnostics/contextual-spacing/yinyang-oriented-fields/visual-comparison/` (self-contained offline page: Source /
+B2 / oriented placements of the 8 tested pairs per font case, target study seed 4). It completes evaluation display
+only; the main page, its assets, fonts, controls and the B2 identity stay unchanged.
+
+#### YinYang scale weighting revision
+
+First implementation stage toward completing the YinYang direct approximation: source-grounded weighting of the stage-2
+V1 spatial scales. No main-page change, no Rust/WASM adoption, no notebook-normalization mixing (normalization stays a
+deferred evaluation, never an automatic inclusion). The H-CSF0 uniform default stands until a sourced numeric CSF
+justifies otherwise; this stage returns a parameterized verified implementation when no source justifies one default.
+
+**Source.** The manuscript
+[direct-approximation steps](https://github.com/skosch/YinYangFit/blob/609d17e8a6446ec4413a1b02a0768b8214d73333/docs/source/algorithms.markdown)
+step 2 prescribes summing V1 complex responses over scales "according to the desired contrast sensitivity function" but
+publishes no numeric coefficients. The
+[model page](https://skosch.github.io/YinYangFit/#a-direct-approximation-model-of-local-grouping) prescribes
+weight-by-scale (CSF / optical sizing) and states mid-scale signals may outcompete fine-scale signals by default
+(qualitative only, no coefficients). The pinned notebook (`YinYangFit.ipynb`) log-Gabor bank is the author-offered
+alternative front end (not adopted here), and `NormalizeV1.get_scale_coefficients` is log-normal cross-scale pooling for
+the deferred divisive-normalization path — researched, distinguished, never ported as direct-path weights.
+
+**Function.** `T(w) = sum_s w_s C_s` per orientation before the unchanged oriented ratio (engine `weights` vector
+already consumes this; ratio math is never redefined here). Gain compensation (measured per-scale DoG gain, convention
+recorded) is kept separate from perceptual weights: unit weights do not balance gains. Viewing geometry enters only
+through explicit `pixels_per_degree` (plus display/viewing inputs); CSS zoom is display-only and never enters geometry.
+Without `pixels_per_degree` there is no px-to-cycles/degree mapping: weights stay a scale-index parameterization with
+declared study assumptions, never a universal perceptual default, fitted calibration, or visually selected setting.
+
+**Units.** Input sigmas in px; weights dimensionless; cycles/degree appear only behind explicit `pixels_per_degree`.
+
+**Inputs.** Frozen H-SCALES sigmas, per-scale `C_s` from the frozen stage-2 module, explicit weight vectors, optional
+`pixels_per_degree` with study peak/bandwidth parameters.
+
+**Splits.** Eight captures (Roboto/Literata x 16/24 x Mono/Gray) with source trajectories (per-step `G2` curves at
+source `+-2`, both strength variants): development `{um, og}` x all 8 captures; heldout `{AV, To, nn, oo, HH, il}` x all
+8 captures. Gain/grating gates use synthetic fixtures only, never corpus pairs.
+
+**Stops.** Nonfinite or negative weights raise (never clamp); all-zero yields explicit unsupported `T = 0`; ratio math
+verified unchanged by independent recompute; no per-glyph tuning, no target fitting, no training, no optical claim.
+Notebook strength stays primary with the manuscript alternate retained beside it.
+
+**Assessment.** Gain compensation and a declared bandpass weighting change pair choices, but neither establishes a
+perceptual improvement. Keep these as study inputs and retain uniform live weights. Selecting perceptual weights
+requires an explicit viewing setup, a numeric contrast-sensitivity model and a declared mapping from that model to the
+filter bank. Filter-gain normalization is a separate convention, not evidence for a perceptual default.
+
+#### YinYang scale-aware grouping assessment
+
+The article's
+[direct approximation](https://skosch.github.io/YinYangFit/#a-direct-approximation-model-of-local-grouping) names the
+sum of the two distance estimates as local grouping scale but leaves its combination with the other signals unfinished.
+The isolated G3 hypothesis multiplies each normalized agreement contribution by the inverse mean of those distances. It
+preserves the existing whole-glyph energy normalizers; its target has inverse-pixel units. The accompanying
+agreement-weighted mean scale is a diagnostic, not an optically justified spacing target.
+
+Reject G3 for live adoption: adding a distant stroke changes the normalized score more than it changes G2, falsifying
+the declared reduction in sensitivity to that stroke. The numerator discounts distant agreement, but the retained
+whole-glyph normalizer dominates. The original image-doubling prediction also fails with fixed-pixel filters;
+field-level dimensional transport remains a separate property, not a replacement pass. The normalized near-ink
+diagnostic is corrected and the corpus passes that check, which does not resolve the failed model prediction. G3 and its
+scale readout remain experiment-only; the live score, search and defaults are unchanged. Evidence and independent review
+remain under `out/diagnostics/contextual-spacing/yinyang-model-completion/`.
+
+#### YinYang local normalization repair
+
+**Problem (frozen, reproduced).** The far-stem probe in
+`out/diagnostics/contextual-spacing/yinyang-model-completion/host/final-assessment.json` adds one distant stem to a
+trio: whole-glyph energy doubles, the inverse-scale numerator discount helps, but the G3 total moves MORE than G2
+(`6.9705→5.3722` vs `3.2538→2.3621`). G3 is rejected; normalization repairs 13/14 are deferred. The live defect is the
+SCORE-v2 whole-glyph normalizer: unrelated, noncontributing glyph energy numerically dilutes every measured gap. Goal:
+stop that dilution while distinguishing strict noncontributing additions from strokes whose field legitimately changes
+the interaction. Optical invariance for every glyph-shape edit is explicitly NOT required.
+
+**Sources (verified this session; adaptations honestly labeled, none a claimed upstream port).** Upstream `609d17e8`
+publishes no completed scalar, so no candidate here is a port:
+[isolating pairing effects](https://skosch.github.io/YinYangFit/#isolating-pairing-effects) requires subtracting or
+dividing away single-letter activity;
+[designing a cost function](https://skosch.github.io/YinYangFit/#models-and-cost-functions) warns summation over the
+image cannot work (`mm` vs `ll`: same distance, different gap area and stem counts) and lists mean/max/softmax/local-max
+as open aggregation stubs, none prescribed.
+[Divisive normalization](https://skosch.github.io/YinYangFit/#modelling-lateral-inhibition-via-divisive-normalization)
+approximates recurrent lateral inhibition as a steady-state divisive term (hyperbolic ratio; Heeger 1992, refined
+Carandini–Heeger–Movshon; [normalization model](https://en.wikipedia.org/wiki/Normalization_model)). Local-energy
+semantics follow the upstream `C = |S|` definition. The per-glyph local-energy cache adapts the signal/certainty split
+of [normalized convolution](https://doi.org/10.1109/CVPR.1993.341088) (Knutsson–Westin 1993: separate signal from
+certainty, localize operators with an applicability function rather than changing coefficients). The per-pair
+common-support denominator adapts [normalized cross-correlation](https://doi.org/10.1006/cviu.1995.1007) (Lewis 1995:
+statistics computed over the overlap region, not whole images). Input coverage stays exact `p/7`; no high-resolution
+notebook constants are copied. Nonlinear response (per-pixel division, cosine) is allowed as a justified project
+hypothesis, not a perceptual claim.
+
+**Two candidate classes (at most two; one minimal survivor).** Frozen inputs per glyph/channel/pixel: `c ≥ 0` (notebook
+primary), `supported ⟺ U2 > ε` (`ε = 1e-12` inherited), `τ = 0.5 px` inherited, `R = 12 px` inherited, `F(a,b) =
+sin²((θa−θb)/2)` inherited. Inner aggregation choice in both: normalized agreement per channel pair, outer
+facing-weighted directional sum retained (the project's one choice among the upstream mean/max/softmax/local-max stubs).
+
+```text
+Class O (overlap-only cosine): per channel pair, per step s over both-supported Ω(s):
+  QL_ab = Σ cL², QR_ab = Σ cR², N_ab = Σ cL·cR·K   (K = exp(−Δd²/2τ²) ≤ 1)
+  t_ab = N_ab/√(QL_ab·QR_ab), or 0 unless QL_ab,QR_ab > 0 and finite
+  G_O(s) = Σ_ab F_ab · t_ab        [dimensionless, 0 ≤ G_O ≤ ΣF = 128 by Cauchy–Schwarz]
+Class L (local energy, independently cached per glyph): per glyph/channel/pixel:
+  EL_loc[p] = Σ_{q ∈ disc(p,R)} c[q]²   (uniform-disc applicability, radius inherits R; cached once)
+  G_L(s) = Σ_ab F_ab · Σ_{p ∈ both} cL·cR·K/√(EL_loc·ER_loc), or 0 per pixel unless both > 0 and finite
+                                       [dimensionless; NO [0,128] certificate — empirical band only]
+```
+
+No new epsilon/window/pool/scale: O adds no parameter; L's window inherits R, its guard reuses the G2 per-term rule per
+pixel (no additive floor). Caching: O stores per-(pair, step) overlap energies beside the stored pair curves; L stores
+one local-energy map per glyph/channel (source-strength arrays immutable, weakref-verified). Maps carry units and the
+fixed display gain beside them when visualized; arbitrary brightness is never called a score.
+
+**Intended invariant.** A strictly noncontributing addition (support disjoint from every both-supported pixel AND beyond
+field-influence range `R + V1 half-support` of the interaction region) leaves the score unchanged; an interacting
+addition (overlapping both-support) moves it. Distance discrimination, abstention rules and the TIE-v2 eligible-only
+policy are retained; unsupported-zero steps never win.
+
+**Fixed splits (before code).** Development: `{um, og}` × 8 captures (Roboto/Literata × 16/24 × Mono/Gray). Heldout:
+`{AV, To, nn, oo, HH, il}` × 8 captures. Synthetic falsifiers (both classes, notebook primary): parallel bars, `mm`/`ll`
+multiplicity, counters, diagonals, contact (`um`-like touching step), isolated far-energy addition beyond influence
+range, interacting extra stroke, duplicated channel/extent/zero-padding/contrast/`p/7`-quantized Gray invariance,
+positive forward step over the full supported domain, target 0/unreachable/ties, sparse single-pixel overlap, blank
+glyph, weak field. Support/uncertainty gate measures ACTUAL normalized score mass (normalized weak-band share of G, not
+a raw fraction); partial data never claims a full optimum; contrast claims only on common support with mask dropout
+recorded; m0/G2 equivalence only where the harness reproduces shipped curves within `1e-9`.
+
+**Stop criteria (predeclared).** Advance at most ONE class; prefer O when both pass (it keeps the bound certificate and
+adds no cache). Fail a class on: far-stem relative change not closer to 1 than G2's `0.771` trio/pair ratio on the
+frozen probe (synthetic exact-invariance: O `≤1e-9`, L `≤1%` beyond influence range); interacting-stroke change `<10%`;
+bar-sweep Spearman `> −0.9`; contact abstention/nonfinite/trivial-`1.0`; blank/weak non-abstention or unsupported-zero
+selection; contrast/common-support drift beyond mask-recorded change; or any new tuned constant. If neither survives,
+report the concrete impossibility/tradeoff (e.g. sparse-overlap cosine saturation vs dilution), never vague
+'calibration'. Pilot stays synthetic + tiny; no 20-minute full pages until falsifiers pass. Evidence, hashes and the
+minimal Rust/WASM/main integration contract (new model identity, target units, non-`4.0` default policy, map
+correctness, full-search perf budget) return with the pilot; Rust/WASM/main edits belong to later phases.
+
+**Status: PREDECLARED — implementation follows in `experiments/contextual_spacing/yinyang_local_normalization.py` (tests
+beside it; artifacts under `out/diagnostics/contextual-spacing/yinyang-normalization-repair/research/`).**
+
+**Pilot outcome (research only, no live change).** 37/37 falsifier tests pass; evidence in
+`out/diagnostics/contextual-spacing/yinyang-normalization-repair/research/` (`run_output.json`, `REPORT.md`,
+`PROVENANCE.md`). Strict far-stem nuisance invariance: O per-channel 1.5e-15, L 6.1e-14, P@tau 8.8e-16 against a G2
+dilution of exactly 1/sqrt(2); independent-oracle cross-check agrees bitwise. All classes keep bar-sweep distance
+discrimination (Spearman -0.99) and honest contact eligibility. Recommended next arm: Class O per-channel only (bound
+certificate, no new cache); L is fallback, P@tau stays diagnostic (tau-as-pool-width is a new hypothesis and sigma is
+outcome-determinative: 776.65/781.29/1120.07/1646.53). Candidate-dependent denominators persist in principle —
+reproduced, never declared resolved. Corpus curves and integration belong to later phases.
+
+**Phase-2 corpus predeclare (frozen before any corpus run; research outputs frozen).** Splits: dev `{um, og}` x 8
+captures (Roboto/Literata x 16/24 x Mono/Gray); heldout `{AV, To, nn, oo, HH, il}` x 8 captures; extra probes `{Th, rt}`
+x `{roboto-16-mono, literata-16-mono}` plus a synthetic diagonal pair and contact-step analysis from the curves.
+Strengths: notebook primary, manuscript alternate diagnostic (fields carry both; one build serves both). No pool tuning:
+sigma stays tau for P-diagnostic; q/R envelope only after the default passes. Domain: full search-v2 exact bounds per
+pair per capture (local exact-formula implementation with structural pins: lo >= 1, hi tight via zero-shared-support
+halo, excluded steps reversed-order), true bearings via `glyph_padded_origin`, occupied-cell overlap invalid with
+reason, face/corner contact permitted and recorded. Target: `0` + the declared `CSTAR_GRID` + constructed ties; the O
+study seed is derived from O's own dev eligible-step band (10/50/90th percentiles), never `4.0` and never fit to source
+distances. Order: cheap risky tests first (um contact and validity holes, sparse `il`/`qj`, weak tails, support cutoff
+across the full positive domain), then the full matrix. Nuisance on real glyphs: field-level addition (c-energy blob
+disjoint from every both-set AND outside every pool window) must leave scores exact; image-level stem edits inside
+convolution support are quantified change, not invariance. Multiplicity (`mm` vs `ll`) is record-only (real grouping
+change, per T6). Area/canvas/weak recorded; weak share > 0.5 at a chosen step fails. Maps must reduce exactly (map sum
+equals G within 1e-9, all dev steps); energy caches keyed target-independent; perf/memory measured per capture-pair.
+Stops (O primary, L fallback, P diagnostic): any abstain/unsupported-zero win; contact-step trivial cosine (`max_term`
+within 1e-9 of 1.0) at choice; weak share > 0.5 at choice; flatline (G constant within 1e-12 over >= 5 consecutive valid
+steps spanning metric); disconnected TIE-v2 tie set at the study seed; far-field nuisance ratio farther from 1 than
+G2's; confidence companion NEVER gates selection (no min-pixel cutoff: any eligibility rule needs a source-founded error
+argument). Advance O unless a stop fires; L iff O fails and L passes with stated units/eligibility; both fail means a
+precise tradeoff, not calibration. No optical claims; no page rebuild before the decision.
+
+**Phase-2 outcome (research only, no live change).** O is DISQUALIFIED as-is (host-adjudicated on the independent
+review: 8/88 seed-band tail selections, ~40/88 argmax pathology — confirmed on this matrix: tail hook to 24–47 with weak
+0.76–1.00, 3/68 weak seed choices). The predeclared L fallback ADVANCES as a project hypothesis on actual multiscale
+fields and full forward domains: 0/68 weak seed choices (med 0.066, max 0.097), tail collapse tracking G2 (never O's
+hook), interior maxima and minima each in 52/68 with extremum positions identical to G2 in 55/68 (corrected geography:
+argmax at the first valid step 68/68, weak <= 0.0068; target-zero 4.9e-10–8.8e-07), map-reduce exact, score-contrast
+bitwise, canvas invariance, nuisance exact to 2.1e-11, honest geometry-dependent bound holding with wide margin (stated
+loose). R stays frozen at inherited 12 (measured outcome-determinative, never tuned); q/R sweeps decompose window vs
+field roles. Study seed 0.47 from L's own dev band (per-profile p50 0.40–0.55 required for live use; never 4.0).
+Integration contract and gates in `out/diagnostics/contextual-spacing/yinyang-normalization-repair/corpus/REPORT.md`;
+optical assessment pending, no approval implied.
+
+**Phase-3 port outcome (isolated runtime, no live adoption).** Class L lives behind `yinyangfit-local-energy-v2` in
+`experiments/contextual_spacing/oriented_engine` with frozen `normalization_radius = 12`, unchanged TIE-v2, and the
+frozen abstain reconciliation. Native parity 105/105 at 1e-9 on the frozen R12 path with exact counts; R6 agrees under
+derived conditioned gates (score 1e-5 bars / 3e-5 real curves; guard-zone counts recorded) with per-curve argmin intact.
+True winner/second-best separation at the study seed: min 3.75e-05, median 0.0455, no ties — fragile, not a robustness
+certificate. WASM web+nodejs smoke 22x2; full-workload bench ~5 s / 85 MB with cancel plumbing. Port report, separation
+data, bands, and remaining conditions (independent port review, optical assessment, per-profile band recalibration) in
+`out/diagnostics/contextual-spacing/yinyang-normalization-repair/runtime/REPORT.md`.
+
+Notebook phase coherence and divisive normalization remain a separate deferred model path. Literal transplantation
+changes the scale-axis dataflow and response units and requires explicit handling of blank inputs. Exact Gray coverage
+input does not require a linear perceptual response, and calibration is not synonymous with training. These pilot
+results do not establish that normalization cannot help; they do not justify adding the notebook stack to the live
+model. Optical assessment remains pending.
+
 The bounded `predictable-spacing` prototype separates optical correction from deliberate letter spacing on the frozen
 13-case × 2-profile corpus, with the interaction scorer out of the path. The endpoint is the retained
 `hu_fitted_full_density_conserved_touch` construction-order candidate (complete fixed-ASCII source-origin density
@@ -886,6 +1136,151 @@ at draw, and the integer correction deltas (automatic minus metric from the reta
 pen. Source at zero stays exact by bypass; delivered Gray cells never change. A native Gray-geometry endpoint remains
 follow-up work. Mechanical checks establish Source identity, endpoint parity and control behavior; optical assessment of
 the endpoint remains pending and nothing here approves it.
+
+#### YinYang update-performance implementation
+
+The [performance investigation](../../references/yinyang-update-performance.md) supports two bounded implementation
+changes: avoid redundant or superseded field jobs, and reduce repeated work in the existing Class-L scorer. Cache
+capacity changes, worker pooling, new build flags and approximate arithmetic are deferred from this implementation.
+
+Field requests share maps with identical computation identities, yield between bounded operations so newer requests can
+cancel pending work, and omit field extraction while fields are hidden. Cached scores still select current ink positions
+immediately; visible fields identify their pending state until the matching generation completes. Showing fields again
+reuses valid cached data or requests missing data without changing spacing.
+
+The scorer may combine repeated passes and directly index the intersection of the two glyph lattices. Pixels outside
+that intersection cannot have both support masks set. Contributing pixels, arithmetic association, accumulation order,
+eligibility and all diagnostic outputs remain identical to the existing implementation. The complete search domain,
+source placement, exact Gray coverage, field construction and local-energy normalization are preserved.
+
+Each change is verified independently against the frozen active runtime before a combined browser measurement and
+adoption. Verification distinguishes posted, executed and cancelled work, current ink and current fields, and cold,
+cached and interrupted requests. A microbenchmark is not a full-page speed-up claim. The model and setting identities do
+not change; new compiled implementation identities and measured outcomes belong with the resulting artifacts.
+
+The combined implementation is adopted in the experimental main page. Independent kernel and scheduling reviews passed;
+scores, placements and final pixels remain identical. Two alternating browser runs per build measured an uncached Reach
+12→13 update at 62.4→37.9 seconds overall (scoring/ink-ready 56.3→31.6 seconds); quiet field loading remained about 6.6
+seconds. Repeated maps share 78 computations across 94 placements, and superseded field batches stop between operations.
+These are sampled host timings, not a general latency guarantee. Compiled identities, unchanged 26-table proof, browser
+gates and rollback are in the
+[adoption record](../../../out/diagnostics/contextual-spacing/yinyang-update-performance/integration/adoption/ADOPTION.md).
+
+The next performance phase tests cache residency and repeated FFT work before evaluating two workers. Cache-policy
+selection starts with measured rebuild counts, live payload bytes and WASM memory on the default working set and larger
+reach; no entry-count increase is assumed. A bounded byte policy must account for local-energy maps added after glyph
+loading, temporary shared ownership and oversized entries. Its resource budget is an implementation choice, not model
+calibration. The parent selects a policy from the measurements before implementation.
+
+The selected cache experiment uses a 256 MiB owned-payload target, a 32-entry keep-floor preserving the existing LRU
+working set, and a 512-entry safety ceiling. The target is soft: when the most recent 32 entries exceed it, their
+payload remains resident as under the old policy. It is not an RSS or WASM-memory cap. Accounting includes local-energy
+growth after loading and clears on invalidation or eviction; transient shared ownership and FFT workspace are reported
+separately. The implementation must measure actual single-profile score/field sequences and target-change cache hits,
+not interpret the study's multi-phase stress totals as one page update. Memory cost and rebuilt-field savings require
+independent checks before adoption.
+
+FFT reuse follows the existing full linear convolution: identical padded dimensions, input samples, plans, forward
+transform order, complex multiplication, inverse scaling and crop. Reuse is bounded to compatible transforms and scratch
+buffers; different shapes or kernels never share an identity accidentally. The basis is
+[RustFFT scratch-buffer interface](https://docs.rs/rustfft/latest/rustfft/trait.Fft.html) and the existing convolution
+implementation. Bitwise comparison against the current runtime is the first gate; support, scores, maps, ties and pixels
+must remain identical. No new numerical tolerance, padding choice or build flag is authorized by this phase.
+
+After independent checks, the accepted cache and FFT changes form the baseline for a bounded one-versus-two-worker
+experiment using the existing offline deployment. Full-preview wall time, duplicated field builds, memory and active
+cancellation determine whether pooling is worthwhile. Neither subset scaling nor fewer FFT calls proves a full-page
+gain. Candidate packages and pages remain separate until verified adoption; model, search and settings stay unchanged.
+
+FFT reuse and the hybrid cache are adopted in the one-worker experimental page; the
+[wave-2 record](../../../out/diagnostics/contextual-spacing/yinyang-update-performance/wave2/adoption/ADOPTION.md) owns
+compiled identities and browser evidence. The subsequent full-preview two-worker prototype passed its predeclared timing
+gate with exact results. It is not yet the page's implementation.
+
+The bounded pool implementation may use one auxiliary worker for uncached jobs of at least 16 pairs on hosts reporting
+at least four logical processors. Admission uses a conservative glyph/FFT-workspace estimate and the primary worker's
+observed WASM high-water allocation against a 512 MiB combined-worker target. This is a resource policy, not a model
+parameter or a hard RSS guarantee. Missing resource information or an oversized estimate uses one worker. Progress
+reports actual worker allocation; exceeding the target retires the auxiliary worker and retries unfinished work on the
+single-worker path without shortening any search. The auxiliary is retired after completion, supersession or failure;
+field extraction remains on one worker.
+
+Only validated complete pair records may enter the computed cache, and a view may paint only after its full expected
+pair set is available. Partition completion is generation-guarded and settles once; cancellation reaches every
+partition. A worker error, malformed/incomplete result or 60-second inactivity watchdog triggers bounded exact recovery
+on the existing single-worker/main-thread path. Recovery may recompute work but never treat partial output as complete
+or retry indefinitely. Hardware/memory admission, active cancellation, timeout and worker-loss recovery require
+independent actual-page checks before pool adoption. Model, source coverage, scoring arithmetic, full search and tie
+handling stay unchanged.
+
+The pool is adopted after independent review, the retained-plus-new allocation correction and ten unit plus eighteen
+browser checks. Fresh worker-loss and over-target injections recovered exactly, and active-page verification preserved
+all scores, placements and final pixels. Eligible default R13 updates measured 32.0→18.5 seconds overall in two paired
+runs; the preceding FFT/cache update measured cold fields at 6.8→4.2 seconds in its separate paired run. These are
+sampled host timings. Pool admission remains a planning estimate backed by runtime telemetry and exact recovery, not a
+hard memory bound. The auxiliary worker is retired after completion. The
+[pool adoption record](../../../out/diagnostics/contextual-spacing/yinyang-update-performance/wave2/pool-adoption/ADOPTION.md)
+owns final asset pins, hardware checks, failure evidence and rollback; the prior one-worker page is archived there.
+
+#### YinYang pair-curve reuse
+
+The adopted experimental page preserves complete pair curves as workers finish them, shares identical running requests,
+and replaces the eight-setting FIFO with a byte-accounted LRU. It adapts
+[single-flight duplicate suppression](https://pkg.go.dev/golang.org/x/sync/singleflight) and
+[ordered Map operations](https://tc39.es/ecma262/multipage/keyed-collections.html#sec-map-objects).
+[Worker messages](https://developer.mozilla.org/en-US/docs/Web/API/Worker/postMessage) carry complete pair records; an
+incomplete placement-search curve is never reusable. The worker's two-pair chunk remains the initial checkpoint
+boundary. Disk persistence and all scoring, field, domain, geometry and display changes are outside this pass.
+
+Reusable identity covers the font/capture/source/profile, pair and metric convention, actual engine implementation,
+score/search identities, full geometry and frozen scoring parameters. Target, text, palette and zoom do not affect it.
+Checkpoint messages are validated against their original computation identity even when a newer view is active. Only
+complete validated pair records enter the cache; only the full pair set needed by the current view may paint or clear
+its pending state. Per-view cancellation detaches subscribers rather than invalidating completed data. A running key has
+one owner; overlapping views join it, and genuinely abandoned work stops at a bounded operation boundary. Ownership must
+be released on cancellation acknowledgement, worker loss, retry exhaustion and normal completion without hanging new
+subscribers or calculating the same key concurrently.
+
+Each stalled execution has one recovery authority. A live pool call is recovered by the pool lifecycle rather than an
+independent acknowledgement-expiry retry; cancellation receipts remain responsible for intentionally stopped calls.
+Reservation may not overwrite a different live owner, and retry dispatch includes only newly reserved missing keys.
+Terminal data from a superseded owner cannot overwrite or release a newer live owner, while validated late data with no
+newer owner remains cacheable. Timeout recovery must establish that the old execution stopped before releasing its keys.
+Production expiry and its test hook use the same handler so simultaneous expiry ordering is covered directly.
+
+The initial curve-cache target is 16 MiB of explicitly accounted curve payload, not a JavaScript heap limit. Access
+refreshes recency. Current-view records are protected so eviction cannot cause repeated compute/evict loops; an active
+working set exceeding the target is retained and reported, with obsolete records evicted first. Checkpoint replacement
+and repeated final receipts must not double-count bytes, completed work or subscribers. Cache accounting and pending
+work have separate bounded observables. This budget is a resource choice, not model calibration.
+
+Independent state-machine fixtures and actual worker-call counts will distinguish reuse from cancelled work that merely
+stops painting. Required cases include same-geometry target/text changes during scoring, completed-prefix cancellation
+and return, overlapping requests, true LRU eviction, identity changes, pool failure/recovery and active-set overflow.
+Fresh unknown geometry still needs its exact first calculation. Values, placements and final pixels must match the
+current page before adoption, and normal first-load performance must not regress materially. Implementation is split
+into checkpoint/cache work and running-request sharing, followed by independent review and combined browser measurement.
+
+The [wave-3 adoption record](../../../out/diagnostics/contextual-spacing/yinyang-update-performance/wave3/adoption-p4/ADOPTION.md)
+pins the active page and rollback. Independent review verified current-view completion after joins, bounded failure
+accounting and retained ownership guards; actual-engine mono/gray joins preserve placements and pixels. The scorer,
+search, captures, tables and WASM remain unchanged. A silent transport can take two 60-second expiry intervals to reach
+the honest-error bound; fresh uncached geometry still requires its first calculation. No optical acceptance follows.
+
+#### YinYang layered heatmap display
+
+The adopted display revision shows whole-glyph letter fields as a faint cool sequential ramp and local spacing
+contributions as a warm sequential ramp, with ink painted last. The two quantities stay separate; their values are
+never added or rescaled together. The combined view is the default, with independent layer visibility, the existing
+master visibility control and layer opacity. Compact per-layer weak-to-strong legends replace single-color pickers.
+
+The palette adaptation follows [sequential-colormap guidance](https://matplotlib.org/stable/users/explain/colors/colormaps.html).
+Fixed ramps, gains, existing weak-tail fade/crops and pixel-grid placement remain display-only. There is no per-frame,
+per-letter or per-font autogain, added smoothing, score/domain change or field recomputation for a cached repaint.
+Verification covers layer colors and ordering, exact source ink/placement and score identity, mono/gray, separate and
+combined visibility, stale-field completion, zoom and narrow layout. Presentation judgment is distinct from model or
+optical-spacing acceptance. The [adoption record](../../../out/diagnostics/contextual-spacing/yinyang-layered-heatmap/adoption/ADOPTION.md)
+pins the active page, independent review, corrected early-hide behavior, browser verification and rollback.
 
 #### Electric Bubble full-field reproduction
 
