@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 925 691" role="img" aria-labelledby="ws-title">
+  <title id="ws-title">Waveshare ESP32-S3-RLCD-4.2 board outline</title>
+  <!-- Original vector shell: ESP32-S3-RLCD-4.2 module face (92.5 x 69.1 mm
+       from the official dimension diagram) in landscape use. The 400 x 300
+       panel fills the face with a thin frame; a sliver of the orange flex
+       tail shows at the right edge. No front buttons or text. -->
+  <defs>
+    <linearGradient id="ws-frame" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#26292e"/>
+      <stop offset="0.15" stop-color="#1e2125"/>
+      <stop offset="1" stop-color="#131518"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#ws-frame)" fill-rule="evenodd" d="M8,0 H917 Q925,0 925,8 V683 Q925,691 917,691 H8 Q0,691 0,683 V8 Q0,0 8,0 Z M40.5,25 H884.5 Q886.5,25 886.5,27 V659 Q886.5,661 884.5,661 H40.5 Q38.5,661 38.5,659 V27 Q38.5,25 40.5,25 Z"/>
+  <rect x="34.5" y="21" width="856" height="644" rx="4" fill="none" stroke="#050607" stroke-width="8"/>
+  <rect x="29.5" y="16" width="866" height="654" rx="6" fill="none" stroke="#3a3e44" stroke-width="2" opacity="0.9"/>
+  <rect x="912" y="300" width="13" height="90" rx="2" fill="#c97a1e" stroke="#7a4a12" stroke-width="1.2"/>
+</svg>

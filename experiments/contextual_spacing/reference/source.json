@@ -1,0 +1,9 @@
+{
+  "upstream": "https://github.com/fontforge/fontforge/blob/c41bdb922285f35defd1e1385adfd13bde1ab32a/fontforge/autowidth2.c",
+  "revision": "c41bdb922285f35defd1e1385adfd13bde1ab32a",
+  "source_sha256": "14a0318cf996c1fac77067ec6e7706e344d968e282732675b2b7c8b696ad360a",
+  "extracted_function": "aw2_bbox_separation",
+  "function_sha256": "b850c5dbf544a64e68cbc4a2463cb04b4f72b5c77f9d7a12cbfa7cc63b1804e0",
+  "parity_scope": "weighted estimator only; native envelope capture pending",
+  "license": "upstream BSD 3-clause header retained verbatim in weighted_estimator.c"
+}

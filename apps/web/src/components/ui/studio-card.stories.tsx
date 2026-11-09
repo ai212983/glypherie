@@ -36,7 +36,9 @@ function LiveSpecimenCard(args: React.ComponentProps<typeof Card>) {
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex flex-col gap-1 rounded-lg border border-primary/40 bg-background px-2 pt-2 pb-3 shadow-studio-inset focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-          <Label htmlFor={`${id}-buffer`} className={labelClass}>Test buffer text</Label>
+          <Label htmlFor={`${id}-buffer`} className={labelClass}>
+            Test buffer text
+          </Label>
           <Textarea
             id={`${id}-buffer`}
             value={text}
@@ -45,7 +47,9 @@ function LiveSpecimenCard(args: React.ComponentProps<typeof Card>) {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <Label htmlFor={`${id}-preset`} className={labelClass}>Quick presets</Label>
+          <Label htmlFor={`${id}-preset`} className={labelClass}>
+            Quick presets
+          </Label>
           <Select
             value={preset}
             onValueChange={(value) => {
@@ -54,7 +58,10 @@ function LiveSpecimenCard(args: React.ComponentProps<typeof Card>) {
               setText(presets[next]);
             }}
           >
-            <SelectTrigger id={`${id}-preset`} className="h-[38px] w-full rounded-lg bg-background px-[10px] py-[6px] text-[11px] leading-6 shadow-none dark:bg-background">
+            <SelectTrigger
+              id={`${id}-preset`}
+              className="h-[38px] w-full rounded-lg bg-background px-[10px] py-[6px] text-[11px] leading-6 shadow-none dark:bg-background"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="studio-card bg-card font-studio text-card-foreground shadow-studio-card">
@@ -65,7 +72,9 @@ function LiveSpecimenCard(args: React.ComponentProps<typeof Card>) {
           </Select>
         </div>
         <div role="group" aria-label="Base specimen size" className="flex flex-col gap-[6px]">
-          <span className="text-[10px] leading-4 font-semibold text-muted-foreground uppercase">Base specimen size:</span>
+          <span className="text-[10px] leading-4 font-semibold text-muted-foreground uppercase">
+            Base specimen size:
+          </span>
           <div className="flex gap-1">
             {[8, 10, 12, 16, 24, 32, 48].map((value) => (
               <Button
@@ -75,7 +84,9 @@ function LiveSpecimenCard(args: React.ComponentProps<typeof Card>) {
                 aria-pressed={size === value}
                 onClick={() => setSize(value)}
                 className={`h-[26px] min-w-0 flex-1 rounded px-0 text-[10px] leading-4 font-bold ${
-                  size === value ? "shadow-xs" : "bg-background text-muted-foreground shadow-studio-inset dark:bg-background"
+                  size === value
+                    ? "shadow-xs"
+                    : "bg-background text-muted-foreground shadow-studio-inset dark:bg-background"
                 }`}
               >
                 {value}
@@ -85,7 +96,9 @@ function LiveSpecimenCard(args: React.ComponentProps<typeof Card>) {
         </div>
         <div className="flex flex-col gap-2 py-1">
           <div className="flex items-center justify-between gap-2 text-[10px] leading-4">
-            <span id={`${id}-gamma-label`} className="font-semibold text-muted-foreground uppercase">Electrophoretic gamma:</span>
+            <span id={`${id}-gamma-label`} className="font-semibold text-muted-foreground uppercase">
+              Electrophoretic gamma:
+            </span>
             <output className="font-bold text-studio-info">{gamma.toFixed(2)} γ</output>
           </div>
           <Slider
@@ -95,15 +108,39 @@ function LiveSpecimenCard(args: React.ComponentProps<typeof Card>) {
             max={3}
             step={0.05}
             value={[gamma]}
-            onValueChange={([value]) => { if (value !== undefined) setGamma(value); }}
+            onValueChange={([value]) => {
+              if (value !== undefined) setGamma(value);
+            }}
             className="h-4 cursor-pointer [--ring:var(--accent)] [&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:bg-background [&_[data-slot=slider-range]]:bg-transparent [&_[data-slot=slider-thumb]]:size-3 [&_[data-slot=slider-thumb]]:border-accent [&_[data-slot=slider-thumb]]:bg-accent"
           />
         </div>
       </CardContent>
       <CardFooter className="flex-wrap justify-between gap-[6px]">
         <span className="text-[10px] leading-4 font-semibold text-muted-foreground uppercase">Polarity</span>
-        <div role="group" aria-label="Polarity" className="flex w-[213.48px] max-w-full rounded-full border border-border bg-background p-[2px] shadow-studio-inset">
-          {([['paper', <>Dark / Light<br />Paper</>], ['dark', <>Light /<br />Dark</>]] as const).map(([value, label]) => (
+        <div
+          role="group"
+          aria-label="Polarity"
+          className="flex w-[213.48px] max-w-full rounded-full border border-border bg-background p-[2px] shadow-studio-inset"
+        >
+          {(
+            [
+              [
+                "paper",
+                <>
+                  Dark / Light
+                  <br />
+                  Paper
+                </>,
+              ],
+              [
+                "dark",
+                <>
+                  Light /<br />
+                  Dark
+                </>,
+              ],
+            ] as const
+          ).map(([value, label]) => (
             <Button
               key={value}
               size="xs"
@@ -138,7 +175,13 @@ const meta = {
       },
     },
   },
-  decorators: [(Story) => <div className="max-w-full bg-studio-backdrop p-4"><Story /></div>],
+  decorators: [
+    (Story) => (
+      <div className="max-w-full bg-studio-backdrop p-4">
+        <Story />
+      </div>
+    ),
+  ],
   render: (args) => <LiveSpecimenCard {...args} />,
 } satisfies Meta<typeof Card>;
 

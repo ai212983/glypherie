@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 830 900" role="img" aria-labelledby="t4-title">
+  <title id="t4-title">Inkplate 4 TEMPERA enclosure outline</title>
+  <!-- Original vector shell: Inkplate 4 TEMPERA in its white 3D-printed case.
+       Nominal 83 x 90 mm face (manufacturer "90 x 83 x 24 mm" lists
+       dimensions without axis labels; 90 mm maps to height and 83 mm to
+       width per official front photos and the taller-than-wide front
+       observation). Square aperture sits high with a wider lower chin; no
+       front buttons, text or screws. The aperture is the 600 x 600 active
+       area (682 x 682 in 0.1 mm units at the nominal 223.3 PPI). -->
+  <defs>
+    <linearGradient id="t4-case" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f5f3ed"/>
+      <stop offset="0.7" stop-color="#efece3"/>
+      <stop offset="1" stop-color="#e2ded2"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#t4-case)" fill-rule="evenodd" d="M65,0 H765 Q830,0 830,65 V835 Q830,900 765,900 H65 Q0,900 0,835 V65 Q0,0 65,0 Z M82,74 H748 Q756,74 756,82 V748 Q756,756 748,756 H82 Q74,756 74,748 V82 Q74,74 82,74 Z"/>
+  <path fill="#e6e2d4" fill-rule="evenodd" d="M102,66 H728 Q764,66 764,102 V728 Q764,764 728,764 H102 Q66,764 66,728 V102 Q66,66 102,66 Z M82,74 H748 Q756,74 756,82 V748 Q756,756 748,756 H82 Q74,756 74,748 V82 Q74,74 82,74 Z"/>
+  <rect x="69" y="69" width="692" height="692" rx="11" fill="none" stroke="#b3aea0" stroke-width="3" opacity="0.9"/>
+  <rect x="1.5" y="1.5" width="827" height="897" rx="63.5" fill="none" stroke="#cfcabd" stroke-width="2"/>
+</svg>

@@ -88,7 +88,11 @@ export function devicePhase(cssCoordinate: number, devicePixelRatio: number): nu
 // The caller reserves a one-device-pixel end gutter (right/bottom) for
 // this shift, plus the separate CSS-layout alignment allowance. Pure: callers measure the *untransformed* layout origin
 // once and set the transform from it without re-rendering (no feedback loop).
-export function snapTranslation(rectLeft: number, rectTop: number, devicePixelRatio: number): { dx: number; dy: number } {
+export function snapTranslation(
+  rectLeft: number,
+  rectTop: number,
+  devicePixelRatio: number,
+): { dx: number; dy: number } {
   const ratio = Number(devicePixelRatio);
   if (!Number.isFinite(ratio) || ratio <= 0) return { dx: 0, dy: 0 };
   const snap = (css: number): number => {
@@ -97,6 +101,48 @@ export function snapTranslation(rectLeft: number, rectTop: number, devicePixelRa
     return (1 - phase) / ratio;
   };
   return { dx: snap(rectLeft), dy: snap(rectTop) };
+}
+
+// Raw devicePixelRatio readings outside the positive finite range never
+// reach layout math; withheld or malformed values fall back to 1.
+export function sanitizeDevicePixelRatio(value: unknown): number {
+  const ratio = Number(value);
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+}
+
+// CSS px per device pixel for Pixel 1:1 mode: one device image pixel covers
+// exactly one physical monitor pixel. devicePixelRatio alone is not a monitor
+// PPI claim; it only maps the two pixel grids.
+export function oneToOneCssScale(devicePixelRatio: number): number {
+  const ratio = Number(devicePixelRatio);
+  if (!Number.isFinite(ratio) || ratio <= 0) return 1;
+  return 1 / ratio;
+}
+
+// CSS reference density: one CSS inch is 96 CSS px by definition, never a
+// measured monitor value. The browser exposes no physical monitor width, so
+// no universal formula can recover true physical size; reference-size mode is
+// honest about that and only Pixel 1:1 is exact.
+export const CSS_REFERENCE_PX_PER_IN = 96;
+
+// CSS px per device pixel for reference-size mode: the screen's nominal width
+// (widthPx / ppi inches) rendered at the CSS reference density. Published
+// device PPI stays separate from monitor density; the monitor side is
+// intentionally the unmeasured reference, not a guessed physical value.
+export function referenceSizeCssScale(ppi: number): number {
+  const density = Number(ppi);
+  if (!Number.isFinite(density) || density <= 0) return 1;
+  return CSS_REFERENCE_PX_PER_IN / density;
+}
+
+// Integer backing pixels per device pixel for a target CSS scale: nearest
+// integer device-pixel coverage, at least 1x1.
+export function deviceBackingScale(cssScale: number, devicePixelRatio: number): number {
+  const scale = Number(cssScale);
+  const ratio = Number(devicePixelRatio);
+  if (!Number.isFinite(scale) || scale <= 0) return 1;
+  if (!Number.isFinite(ratio) || ratio <= 0) return Math.max(1, Math.round(scale));
+  return Math.max(1, Math.round(scale * ratio));
 }
 
 // Short human-readable effective zoom, e.g. 1.78x. Whole values stay whole.

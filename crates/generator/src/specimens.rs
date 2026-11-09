@@ -232,6 +232,7 @@ fn renderer_identity(role: RendererRole) -> String {
     }
     if role == RendererRole::Candidate {
         digest.update(include_str!("dropout.rs").as_bytes());
+        digest.update(include_str!("baseline_alignment.rs").as_bytes());
     }
     format!("{digest:x}", digest = digest.finalize())
 }

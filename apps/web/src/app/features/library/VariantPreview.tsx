@@ -28,7 +28,17 @@ interface VariantPreviewProps {
 }
 
 export function VariantPreview({
-  fontId, variant, zoom, palette, inverse, loaded, loadError, onOpen, selected = false, sampleText, onDeleted,
+  fontId,
+  variant,
+  zoom,
+  palette,
+  inverse,
+  loaded,
+  loadError,
+  onOpen,
+  selected = false,
+  sampleText,
+  onDeleted,
 }: VariantPreviewProps): React.JSX.Element {
   const [error, setError] = React.useState("");
   const [missing, setMissing] = React.useState(0);
@@ -71,7 +81,11 @@ export function VariantPreview({
       frame={frame}
       selected={selected}
       name={variant.name}
-      caption={<span data-library-variant-caption={variant.id}>{`${settings.sizePx} px / ${Math.log2(preset.curve.length)}-bit`}</span>}
+      caption={
+        <span
+          data-library-variant-caption={variant.id}
+        >{`${settings.sizePx} px / ${Math.log2(preset.curve.length)}-bit`}</span>
+      }
       tintAttributes={{ "data-library-variant-tint": variant.id }}
       action={
         <NavLink
@@ -89,9 +103,17 @@ export function VariantPreview({
         onClick: onDelete,
         disabled: deleting,
       }}
-      deleteError={deleteError && (
-        <p className="m-0 pt-2 text-right font-studio text-[10px] leading-4 text-destructive" role="alert" data-delete-variant-error={variant.id}>{deleteError}</p>
-      )}
+      deleteError={
+        deleteError && (
+          <p
+            className="m-0 pt-2 text-right font-studio text-[10px] leading-4 text-destructive"
+            role="alert"
+            data-delete-variant-error={variant.id}
+          >
+            {deleteError}
+          </p>
+        )
+      }
     >
       {!empty && (
         <div className="pt-1">
@@ -114,7 +136,11 @@ export function VariantPreview({
             ready={loaded && !loadError}
             debounceMs={0}
             clearOnError
-            viewportProps={{ "data-library-variant-preview": variant.id, "aria-hidden": true, className: "block min-w-0 overflow-hidden" }}
+            viewportProps={{
+              "data-library-variant-preview": variant.id,
+              "aria-hidden": true,
+              className: "block min-w-0 overflow-hidden",
+            }}
             canvasProps={{ "data-library-variant-canvas": variant.id, className: "block [image-rendering:pixelated]" }}
             debugIdentity={(width) => ({
               variant: variant.id,
@@ -150,15 +176,29 @@ export function VariantPreview({
         </div>
       )}
       {(loadError || error) && (
-        <p data-library-variant-error={variant.id} className="px-0 pt-2 font-studio text-[10px] leading-4" style={{ color: frame.mutedCss }}>{loadError || error}</p>
+        <p
+          data-library-variant-error={variant.id}
+          className="px-0 pt-2 font-studio text-[10px] leading-4"
+          style={{ color: frame.mutedCss }}
+        >
+          {loadError || error}
+        </p>
       )}
       {!loadError && !error && !empty && truncated && (
-        <p data-library-variant-limit={variant.id} className="px-0 pt-2 font-studio text-[10px] leading-4" style={{ color: frame.mutedCss }}>
+        <p
+          data-library-variant-limit={variant.id}
+          className="px-0 pt-2 font-studio text-[10px] leading-4"
+          style={{ color: frame.mutedCss }}
+        >
           Preview truncated. Shorten the text or reduce zoom.
         </p>
       )}
       {!loadError && !error && !empty && missing > 0 && (
-        <p data-library-variant-glyphs={variant.id} className="px-0 pt-2 font-studio text-[10px] leading-4" style={{ color: frame.mutedCss }}>
+        <p
+          data-library-variant-glyphs={variant.id}
+          className="px-0 pt-2 font-studio text-[10px] leading-4"
+          style={{ color: frame.mutedCss }}
+        >
           {`${missing} character${missing === 1 ? "" : "s"} not in this font.`}
         </p>
       )}

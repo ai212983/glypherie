@@ -6,6 +6,7 @@
 // compile time.
 
 import type { FontMetadata } from "../fonts/storage.js";
+import type { KerningMethodRequest } from "../kerning/model.js";
 import type { RenderPixels } from "./client.js";
 
 /** Scan conversion, independent of fitting and bitmap layout. */
@@ -60,6 +61,7 @@ export interface RenderSpec {
   gray_gamma: number;
   missing_glyphs: "error" | "skip";
   kerning: boolean;
+  kerning_method?: KerningMethodRequest;
   metric_rounding: "subpixel" | "pixel";
   wrap: "clip" | "word" | "char";
   align: "left" | "center" | "right";
@@ -74,10 +76,22 @@ export interface RenderSpec {
 }
 
 export interface PlaydateExportRequest {
-  config: Pick<RenderSpec, "size_px" | "axes" | "hinting" | "output_bits" | "mono_threshold" |
-    "gray_gamma" | "missing_glyphs" | "kerning" | "metric_rounding" | "mono_raster"> & { characters: string };
+  config: Pick<
+    RenderSpec,
+    | "size_px"
+    | "axes"
+    | "hinting"
+    | "output_bits"
+    | "mono_threshold"
+    | "gray_gamma"
+    | "missing_glyphs"
+    | "kerning"
+    | "metric_rounding"
+    | "mono_raster"
+  > & { characters: string };
   pipeline: RenderPipeline;
   letter_spacing_px: number;
+  kerning_method?: KerningMethodRequest;
 }
 
 /** Narrow replaceable renderer surface. The worker runtime satisfies it
@@ -92,7 +106,11 @@ export interface RendererService {
   kerning(fontId: string, sizePx: number, axes: Record<string, number>): Promise<unknown>;
   exportPlaydate(fontId: string, request: PlaydateExportRequest): Promise<ArrayBuffer>;
   nextToken(): number;
-  render(fontId: string, token: number, spec: RenderSpec): Promise<{
+  render(
+    fontId: string,
+    token: number,
+    spec: RenderSpec,
+  ): Promise<{
     token: number;
     dropped: boolean;
     pixels: RenderPixels;

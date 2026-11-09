@@ -3,6 +3,7 @@
 // a newer variant prop only replaces a clean draft, never dirty local edits.
 // A hard close before the last write lands is inherently unsaved.
 import * as React from "react";
+import { cloneKerning } from "../kerning/model.ts";
 import type { FontVariant, VariantDraft } from "./model.js";
 import { updateVariant } from "./repository.js";
 
@@ -22,7 +23,11 @@ const draftJson = (draft: VariantDraft): string => JSON.stringify(draft);
 function draftOf(variant: FontVariant): VariantDraft {
   return {
     name: variant.name,
-    settings: { ...variant.settings, axes: { ...variant.settings.axes } },
+    settings: {
+      ...variant.settings,
+      axes: { ...variant.settings.axes },
+      kerning: cloneKerning(variant.settings.kerning),
+    },
     sampleText: variant.sampleText,
     inheritSampleText: variant.inheritSampleText ?? false,
   };
@@ -50,7 +55,11 @@ export function useVariantDraft(variant: FontVariant): VariantDraftState {
       target.id,
       {
         name: payload.name,
-        settings: { ...payload.settings, axes: { ...payload.settings.axes } },
+        settings: {
+          ...payload.settings,
+          axes: { ...payload.settings.axes },
+          kerning: cloneKerning(payload.settings.kerning),
+        },
         sampleText: payload.sampleText,
         inheritSampleText: payload.inheritSampleText,
       },
@@ -115,23 +124,26 @@ export function useVariantDraft(variant: FontVariant): VariantDraftState {
     }, SAVE_DELAY_MS);
   }, [sendIfDirty]);
 
-  const update = React.useCallback((patch: Partial<VariantDraft>): void => {
-    const prev = draftRef.current;
-    if (!prev || !mountedRef.current) return;
-    const next: VariantDraft = {
-      name: patch.name ?? prev.name,
-      settings: patch.settings ?? prev.settings,
-      sampleText: patch.sampleText ?? prev.sampleText,
-      inheritSampleText: patch.inheritSampleText ?? prev.inheritSampleText,
-    };
-    if (draftJson(next) === draftJson(prev)) return;
-    draftRef.current = next;
-    setDraft(next);
-    setStatus("saving");
-    setError(null);
-    if (inflightRef.current) return;
-    schedule();
-  }, [schedule]);
+  const update = React.useCallback(
+    (patch: Partial<VariantDraft>): void => {
+      const prev = draftRef.current;
+      if (!prev || !mountedRef.current) return;
+      const next: VariantDraft = {
+        name: patch.name ?? prev.name,
+        settings: patch.settings ?? prev.settings,
+        sampleText: patch.sampleText ?? prev.sampleText,
+        inheritSampleText: patch.inheritSampleText ?? prev.inheritSampleText,
+      };
+      if (draftJson(next) === draftJson(prev)) return;
+      draftRef.current = next;
+      setDraft(next);
+      setStatus("saving");
+      setError(null);
+      if (inflightRef.current) return;
+      schedule();
+    },
+    [schedule],
+  );
 
   const retry = React.useCallback((): void => {
     if (timerRef.current !== null) {

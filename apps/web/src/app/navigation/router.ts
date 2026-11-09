@@ -5,7 +5,10 @@ export type Route =
   | { page: "index"; notice?: string }
   | { page: "font"; font: string }
   | { page: "variant"; font: string; variant: string }
-  | { page: "palettes" };
+  | { page: "palettes" }
+  | { page: "screen" }
+  | { page: "scenes" }
+  | { page: "scene"; scene: string };
 
 export interface RouteParts {
   path: string;
@@ -25,6 +28,9 @@ export type ParsedRoute =
   | { name: "font"; font: string }
   | { name: "variant"; font: string; variant: string }
   | { name: "palettes" }
+  | { name: "screen" }
+  | { name: "scenes" }
+  | { name: "scene"; scene: string }
   | null;
 
 export function parseRoute(hash: string): ParsedRoute {
@@ -32,6 +38,16 @@ export function parseRoute(hash: string): ParsedRoute {
   if (path === "" || path === "/") return { name: "home" };
   if (/^\/fonts\/?$/.test(path)) return { name: "index" };
   if (/^\/palettes\/?$/.test(path)) return { name: "palettes" };
+  if (/^\/screen\/?$/.test(path)) return { name: "screen" };
+  if (/^\/scenes\/?$/.test(path)) return { name: "scenes" };
+  const scene = path.match(/^\/scene\/([^/]+)\/?$/);
+  if (scene) {
+    try {
+      return { name: "scene", scene: decodeURIComponent(scene[1] ?? "") };
+    } catch {
+      return null;
+    }
+  }
   const variant = path.match(/^\/font\/([^/]+)\/variant\/([^/]+)\/?$/);
   if (variant) {
     try {
@@ -61,7 +77,7 @@ export function hashFamilyId(hash: string): string | null {
   return hash.match(/^#family-([A-Za-z0-9-]+)$/)?.[1] ?? null;
 }
 
-function outerParams(search: string | URLSearchParams): URLSearchParams {
+export function outerParams(search: string | URLSearchParams): URLSearchParams {
   if (search instanceof URLSearchParams) return new URLSearchParams(search);
   const text = search.startsWith("?") ? search.slice(1) : search;
   return new URLSearchParams(text);
@@ -71,11 +87,7 @@ function unknownFontNotice(): string {
   return "Font not found in this library.";
 }
 
-export function resolveRoute(
-  hash: string,
-  outerSearch: string | URLSearchParams,
-  knownIds: readonly string[],
-): Route {
+export function resolveRoute(hash: string, outerSearch: string | URLSearchParams, knownIds: readonly string[]): Route {
   const known = new Set(knownIds);
   const parsed = parseRoute(hash ?? "");
   if (parsed?.name === "variant") {
@@ -97,6 +109,14 @@ export function resolveRoute(
   // The palettes lab is font-independent: it resolves without fonts and wins
   // over stale legacy outer font queries or snapshot params on the way in.
   if (parsed?.name === "palettes") return { page: "palettes" };
+  if (parsed?.name === "screen") return { page: "screen" };
+  // Scenes are font-independent: they resolve without fonts, like the
+  // palettes lab and the screen viewer.
+  if (parsed?.name === "scenes") return { page: "scenes" };
+  if (parsed?.name === "scene") {
+    if (parsed.scene) return { page: "scene", scene: parsed.scene };
+    return { page: "index", notice: "Page not found. Showing all fonts." };
+  }
   if (parsed?.name === "index") return { page: "index" };
   if (parsed === null) {
     if (isRoutePath(hash ?? "")) {
@@ -123,7 +143,21 @@ export function resolveRoute(
 // builders drop them when leaving a font route so stale settings do not
 // leak into the library URL; every other param (e.g. role, utm) is kept.
 export const OWNED_PARAMS: readonly string[] = [
-  "v", "font", "profile", "palette", "zoom", "exact", "stem", "diagonals", "raster", "dropout", "stubs", "scanfont", "model", "kerning", "families",
+  "v",
+  "font",
+  "profile",
+  "palette",
+  "zoom",
+  "exact",
+  "stem",
+  "diagonals",
+  "raster",
+  "dropout",
+  "stubs",
+  "scanfont",
+  "model",
+  "kerning",
+  "families",
 ];
 
 /** Canonical detail path for one font; settings ride the snapshot query once edited. */
@@ -140,11 +174,7 @@ export function variantPath(font: string, variant: string): string {
  * Canonical variant path keeping foreign params (e.g. utm) while dropping
  * snapshot state and the renderer role, which the saved variant owns.
  */
-export function variantPathKeeping(
-  font: string,
-  variant: string,
-  baseSearch: string | URLSearchParams,
-): string {
+export function variantPathKeeping(font: string, variant: string, baseSearch: string | URLSearchParams): string {
   const base = outerParams(baseSearch ?? "");
   const dropped = new Set([...OWNED_PARAMS, "role"]);
   const result = new URLSearchParams();
@@ -153,6 +183,46 @@ export function variantPathKeeping(
   }
   const text = result.toString();
   return text ? `${variantPath(font, variant)}?${text}` : variantPath(font, variant);
+}
+
+/** Canonical screen path, keeping foreign params (e.g. role, utm) while dropping snapshot state. */
+export function screenPath(baseSearch: string | URLSearchParams): string {
+  return sectionPath("screen/", baseSearch);
+}
+
+/**
+ * Legacy scene links canonicalize directly to the unified Screen route: both
+ * /scenes/ and /scene/<id>/ become /screen/ without scene selection. Scene
+ * selection no longer exists: every Screen route opens the same implicit
+ * default composition. Foreign params survive while snapshot state is
+ * dropped; the hosting prefix rides along through screenPath.
+ */
+export function legacyScreenPath(_scene: string | null, baseSearch: string | URLSearchParams): string {
+  // Both the path id and a carried ?scene= selection are dropped: every
+  // legacy link opens the implicit default composition.
+  const base = outerParams(baseSearch);
+  const next = new URLSearchParams();
+  for (const [key, value] of base.entries()) {
+    if (key !== "scene") next.append(key, value);
+  }
+  return screenPath(next);
+}
+
+/** Canonical scenes path, keeping foreign params while dropping snapshot state. */
+export function scenesPath(baseSearch: string | URLSearchParams): string {
+  return sectionPath("scenes/", baseSearch);
+}
+
+/** Canonical path for one saved scene; its settings live in the browser-local database, never in the URL. */
+export function scenePath(scene: string, baseSearch: string | URLSearchParams): string {
+  const base = outerParams(baseSearch ?? "");
+  const owned = new Set(OWNED_PARAMS);
+  const result = new URLSearchParams();
+  for (const [key, value] of base.entries()) {
+    if (!owned.has(key)) result.append(key, value);
+  }
+  const text = result.toString();
+  return `${appBase}scene/${encodeURIComponent(scene)}/${text ? `?${text}` : ""}`;
 }
 
 /** Canonical palettes path, keeping foreign params (e.g. role, utm) while dropping snapshot state. */

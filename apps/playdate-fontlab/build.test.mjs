@@ -33,10 +33,7 @@ describe("loadPhrases", () => {
   it("rejects empty, blank, control-char and oversized phrases", async () => {
     await assert.rejects(loadPhrases([{ kind: "text", value: "   " }]), /whitespace-only/);
     await assert.rejects(loadPhrases([{ kind: "text", value: "a\x07b" }]), /control character/);
-    await assert.rejects(
-      loadPhrases([{ kind: "text", value: "x".repeat(4097) }]),
-      /exceeds 4096/,
-    );
+    await assert.rejects(loadPhrases([{ kind: "text", value: "x".repeat(4097) }]), /exceeds 4096/);
     await assert.rejects(
       loadPhrases(Array.from({ length: 17 }, (_, i) => ({ kind: "text", value: `p${i}` }))),
       /at most 16/,
@@ -66,7 +63,10 @@ describe("buildRepertoire", () => {
     }
     assert.ok(!repertoire.includes("\n"));
     const points = [...repertoire].map((ch) => ch.codePointAt(0));
-    assert.deepEqual(points, [...points].sort((a, b) => a - b));
+    assert.deepEqual(
+      points,
+      [...points].sort((a, b) => a - b),
+    );
     assert.equal(new Set(points).size, points.length);
     assert.ok(points.includes(0x4a) && points.includes(0xe9));
   });
@@ -94,7 +94,7 @@ describe("buildRepertoire", () => {
 
 describe("phrasesLua", () => {
   it("quotes unicode safely and ends empty without entries", () => {
-    const lua = phrasesLua(["a\"b\\c", "é\n"]);
+    const lua = phrasesLua(['a"b\\c', "é\n"]);
     assert.ok(!lua.includes("\\u"));
     assert.ok(lua.includes('"a\\"b\\\\c"'));
     assert.ok(phrasesLua([]).includes("return {\n}"));
@@ -102,13 +102,7 @@ describe("phrasesLua", () => {
 });
 
 function fnt(rows, headers = {}) {
-  const {
-    width = "8",
-    height = "12",
-    tracking = "0",
-    datalen = "3",
-    data = "ABC",
-  } = headers;
+  const { width = "8", height = "12", tracking = "0", datalen = "3", data = "ABC" } = headers;
   const lines = [];
   if (width !== null) lines.push(`width=${width}`);
   if (height !== null) lines.push(`height=${height}`);
@@ -132,14 +126,8 @@ describe("parseProvidedFnt", () => {
     const expected = { width: 8, height: 12, characters: "A" };
     const lf = fnt(["U+0041\t5"]);
     assert.deepEqual(parseProvidedFnt(lf, "test.fnt"), expected);
-    assert.deepEqual(
-      parseProvidedFnt(lf.split("\n").join("\r\n"), "test.fnt"),
-      expected,
-    );
-    assert.deepEqual(
-      parseProvidedFnt(lf.split("\n").join("\r"), "test.fnt"),
-      expected,
-    );
+    assert.deepEqual(parseProvidedFnt(lf.split("\n").join("\r\n"), "test.fnt"), expected);
+    assert.deepEqual(parseProvidedFnt(lf.split("\n").join("\r"), "test.fnt"), expected);
   });
 
   it("prefixes every failure with the display path", () => {
@@ -151,13 +139,9 @@ describe("parseProvidedFnt", () => {
 
   it("accepts dimensions 1 and 255 but rejects 0, 256, float, NaN and missing", () => {
     for (const field of ["width", "height"]) {
-      const missing =
-        field === "width" ? "missing width 1..255" : "missing height 1..255";
+      const missing = field === "width" ? "missing width 1..255" : "missing height 1..255";
       for (const value of ["1", "255"]) {
-        const parsed = parseProvidedFnt(
-          fnt(["U+0041\t5"], { [field]: value }),
-          "test.fnt",
-        );
+        const parsed = parseProvidedFnt(fnt(["U+0041\t5"], { [field]: value }), "test.fnt");
         assert.equal(parsed[field], Number(value));
       }
       for (const value of ["0", "256", "1.5", "abc", null]) {
@@ -184,10 +168,7 @@ describe("parseProvidedFnt", () => {
       "test.fnt: not a Playdate source font (missing datalen/data)",
     );
     assert.equal(
-      throwsMessage(
-        fnt(["U+0041\t5"], { width: "0", height: "0", tracking: "x" }),
-        "test.fnt",
-      ),
+      throwsMessage(fnt(["U+0041\t5"], { width: "0", height: "0", tracking: "x" }), "test.fnt"),
       "test.fnt: not a Playdate source font (missing width 1..255)",
     );
     assert.equal(
@@ -218,10 +199,11 @@ describe("parseProvidedFnt", () => {
 
   it("accepts negative, zero and leading-zero tracking but rejects other shapes", () => {
     for (const tracking of ["-3", "0", "007", "42"]) {
-      assert.deepEqual(
-        parseProvidedFnt(fnt(["U+0041\t5"], { tracking }), "test.fnt"),
-        { width: 8, height: 12, characters: "A" },
-      );
+      assert.deepEqual(parseProvidedFnt(fnt(["U+0041\t5"], { tracking }), "test.fnt"), {
+        width: 8,
+        height: 12,
+        characters: "A",
+      });
     }
     for (const tracking of [null, "+1", "1.0", " 1", "1 ", "12px"]) {
       assert.equal(
@@ -233,17 +215,11 @@ describe("parseProvidedFnt", () => {
 
   it("keeps glyph rows and skips pair and malformed rows", () => {
     assert.deepEqual(
-      parseProvidedFnt(
-        fnt(["U+0041U+0056\t-2", "U+0041U+0056\t2", "U+004a\t7", "U+0041\t5"]),
-        "test.fnt",
-      ),
+      parseProvidedFnt(fnt(["U+0041U+0056\t-2", "U+0041U+0056\t2", "U+004a\t7", "U+0041\t5"]), "test.fnt"),
       { width: 8, height: 12, characters: "AJ" },
     );
     assert.equal(
-      throwsMessage(
-        fnt(["U+41\t5", "U+004G\t5", "U+0041 5", "U+0041\t", "U+0041\t-5", "garbage"]),
-        "test.fnt",
-      ),
+      throwsMessage(fnt(["U+41\t5", "U+004G\t5", "U+0041 5", "U+0041\t", "U+0041\t-5", "garbage"]), "test.fnt"),
       "test.fnt: not a Playdate source font (no glyph entries)",
     );
     assert.equal(
@@ -254,10 +230,7 @@ describe("parseProvidedFnt", () => {
 
   it("dedupes glyphs and sorts codepoints numerically", () => {
     assert.deepEqual(
-      parseProvidedFnt(
-        fnt(["U+00E9\t2", "U+10000\t4", "U+0042\t3", "U+0041\t5", "U+0041\t9"]),
-        "test.fnt",
-      ),
+      parseProvidedFnt(fnt(["U+00E9\t2", "U+10000\t4", "U+0042\t3", "U+0041\t5", "U+0041\t9"]), "test.fnt"),
       {
         width: 8,
         height: 12,
@@ -267,14 +240,11 @@ describe("parseProvidedFnt", () => {
   });
 
   it("allows D7FF and E000 but rejects the surrogate range", () => {
-    assert.deepEqual(
-      parseProvidedFnt(fnt(["U+D7FF\t1", "U+E000\t2"]), "test.fnt"),
-      {
-        width: 8,
-        height: 12,
-        characters: `${String.fromCodePoint(0xd7ff)}${String.fromCodePoint(0xe000)}`,
-      },
-    );
+    assert.deepEqual(parseProvidedFnt(fnt(["U+D7FF\t1", "U+E000\t2"]), "test.fnt"), {
+      width: 8,
+      height: 12,
+      characters: `${String.fromCodePoint(0xd7ff)}${String.fromCodePoint(0xe000)}`,
+    });
     assert.equal(
       throwsMessage(fnt(["U+D800\t1"]), "test.fnt"),
       "test.fnt: not a Playdate source font (U+D800 is a surrogate, not a scalar value)",
@@ -298,39 +268,31 @@ describe("parseProvidedFnt", () => {
   });
 
   it("keeps current header coercions with first duplicate winning", () => {
-    assert.equal(
-      parseProvidedFnt(fnt(["U+0041\t5"], { width: "0x10" }), "test.fnt").width,
-      16,
-    );
-    assert.equal(
-      parseProvidedFnt(fnt(["U+0041\t5"], { width: "1e1" }), "test.fnt").width,
-      10,
-    );
-    assert.equal(
-      parseProvidedFnt(fnt(["U+0041\t5"], { width: " 8" }), "test.fnt").width,
-      8,
-    );
-    assert.deepEqual(
-      parseProvidedFnt(`${fnt(["U+0041\t5"])}\nwidth=0`, "test.fnt"),
-      { width: 8, height: 12, characters: "A" },
-    );
+    assert.equal(parseProvidedFnt(fnt(["U+0041\t5"], { width: "0x10" }), "test.fnt").width, 16);
+    assert.equal(parseProvidedFnt(fnt(["U+0041\t5"], { width: "1e1" }), "test.fnt").width, 10);
+    assert.equal(parseProvidedFnt(fnt(["U+0041\t5"], { width: " 8" }), "test.fnt").width, 8);
+    assert.deepEqual(parseProvidedFnt(`${fnt(["U+0041\t5"])}\nwidth=0`, "test.fnt"), {
+      width: 8,
+      height: 12,
+      characters: "A",
+    });
   });
 
   it("accepts present-but-empty datalen/data and ignores data bytes and huge advances", () => {
-    assert.deepEqual(
-      parseProvidedFnt(fnt(["U+0041\t5"], { datalen: "", data: "" }), "test.fnt"),
-      { width: 8, height: 12, characters: "A" },
-    );
-    assert.deepEqual(
-      parseProvidedFnt(
-        fnt(["U+0041\t5"], { datalen: "999", data: "!!!" }),
-        "test.fnt",
-      ),
-      { width: 8, height: 12, characters: "A" },
-    );
-    assert.deepEqual(
-      parseProvidedFnt(fnt(["U+0041\t99999999999999999999"]), "test.fnt"),
-      { width: 8, height: 12, characters: "A" },
-    );
+    assert.deepEqual(parseProvidedFnt(fnt(["U+0041\t5"], { datalen: "", data: "" }), "test.fnt"), {
+      width: 8,
+      height: 12,
+      characters: "A",
+    });
+    assert.deepEqual(parseProvidedFnt(fnt(["U+0041\t5"], { datalen: "999", data: "!!!" }), "test.fnt"), {
+      width: 8,
+      height: 12,
+      characters: "A",
+    });
+    assert.deepEqual(parseProvidedFnt(fnt(["U+0041\t99999999999999999999"]), "test.fnt"), {
+      width: 8,
+      height: 12,
+      characters: "A",
+    });
   });
 });

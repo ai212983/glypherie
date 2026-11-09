@@ -1,12 +1,16 @@
 //! Deterministic outline glyph generation, independent of display and output adapters.
 //! Metrics use signed 26.6 pixels. Bitmaps contain unpacked coverage levels, row-major.
 pub mod baseline;
+#[cfg(feature = "candidate")]
+pub(crate) mod baseline_alignment;
 pub mod batch;
 pub mod bitmap_topology;
 #[cfg(feature = "candidate")]
 pub mod candidate;
 #[cfg(feature = "native-io")]
 pub mod comparison;
+#[cfg(feature = "candidate")]
+pub mod curve_extremity;
 #[cfg(feature = "candidate")]
 pub mod diagonal_fitting;
 pub mod dropout;
@@ -17,6 +21,8 @@ pub mod fitting_source;
 pub(crate) mod font_hints;
 #[cfg(feature = "candidate")]
 pub(crate) mod font_scan;
+pub mod kerning;
+pub use kerning::{FontforgeSettings, HuHerschSettings, KerningMethod, TypefacetSettings};
 pub mod layout_spacing;
 pub mod metadata;
 #[cfg(feature = "candidate")]
@@ -334,6 +340,21 @@ pub fn generate(data: &[u8], config: &Config) -> Result<GeneratedFont, Error> {
         missing_codepoints,
         kerning,
     })
+}
+/// Source line metrics without generating glyphs, for adapters that need line
+/// geometry (blank-text caret layout) after their own validation. Derives the
+/// same values `generate()` stores on `GeneratedFont::metrics`.
+pub(crate) fn line_metrics_for(font: &FontRef, config: &Config) -> FontMetrics {
+    let location = font
+        .axes()
+        .location(config.axes.iter().map(|(t, v)| (t.as_str(), *v)));
+    let size = Size::new(config.size_px);
+    let metrics = font.metrics(size, &location);
+    FontMetrics {
+        ascent_26_6: fixed(metrics.ascent, config.metric_rounding),
+        descent_26_6: fixed(metrics.descent, config.metric_rounding),
+        line_gap_26_6: fixed(metrics.leading, config.metric_rounding),
+    }
 }
 pub(crate) fn validate_config(c: &Config) -> Result<(), Error> {
     validate_settings(c)?;

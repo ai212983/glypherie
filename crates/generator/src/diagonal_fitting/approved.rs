@@ -49,6 +49,38 @@ pub fn fit(
     reference: &Reference,
     native_axes: [bool; 2],
 ) -> Result<FitResult, Error> {
+    fit_sequence(raw, source, upstream, size_px, reference, native_axes, true)
+}
+
+/// Original source-shape sequence, retained for diagonal-shape-06 replay.
+pub(crate) fn fit_v06(
+    raw: Option<&SourceOutline>,
+    source: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size_px: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+) -> Result<FitResult, Error> {
+    fit_sequence(
+        raw,
+        source,
+        upstream,
+        size_px,
+        reference,
+        native_axes,
+        false,
+    )
+}
+
+fn fit_sequence(
+    raw: Option<&SourceOutline>,
+    source: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size_px: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+    shared_placement: bool,
+) -> Result<FitResult, Error> {
     if let Some(raw) = raw {
         if let Ok(mut fit) = super::coupled::fit(raw, upstream, size_px, reference, native_axes) {
             if fit.applied {
@@ -85,7 +117,15 @@ pub fn fit(
             }
         }
     }
-    fit_pre_coupled(raw, source, upstream, size_px, reference, native_axes)
+    fit_pre_coupled_model(
+        raw,
+        source,
+        upstream,
+        size_px,
+        reference,
+        native_axes,
+        shared_placement,
+    )
 }
 
 /// Frozen historical sequence for `diagonal-shape-05` packet replay:
@@ -136,6 +176,26 @@ pub(crate) fn fit_pre_coupled(
     reference: &Reference,
     native_axes: [bool; 2],
 ) -> Result<FitResult, Error> {
+    fit_pre_coupled_model(
+        raw,
+        source,
+        upstream,
+        size_px,
+        reference,
+        native_axes,
+        false,
+    )
+}
+
+fn fit_pre_coupled_model(
+    raw: Option<&SourceOutline>,
+    source: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size_px: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+    shared_placement: bool,
+) -> Result<FitResult, Error> {
     // The reviewed sequence replaces earlier deliveries, using original
     // inputs for attached/crossing solves. Evaluate that priority lazily:
     // work whose entire result would be overwritten has no authority.
@@ -167,6 +227,14 @@ pub(crate) fn fit_pre_coupled(
     };
     let (mut selected, mut stage) = if let Some(fit) = crossing {
         (fit, "crossing")
+    } else if let Some(fit) = shared_placement
+        .then(|| {
+            super::attached::fit_shared(source, upstream, size_px, reference, native_axes).ok()
+        })
+        .flatten()
+        .filter(|fit| fit.applied)
+    {
+        (fit, "placement")
     } else if let Some(fit) = attached() {
         (fit, "attached")
     } else {

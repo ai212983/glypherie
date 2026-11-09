@@ -24,8 +24,10 @@ async function devBase(_t: TestContext): Promise<string> {
       [
         path.join(webRoot, "node_modules", "storybook", "dist", "bin", "dispatcher.js"),
         "dev",
-        "--host", "127.0.0.1",
-        "--port", String(DEV_PORT),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(DEV_PORT),
         "--no-open",
         "--disable-telemetry",
       ],
@@ -77,14 +79,11 @@ async function storyFrame(page: Page): Promise<Frame> {
 // story crash) instead of timing out on a status line that never appears.
 async function requirePreview(frame: Frame, page: Page): Promise<void> {
   await frame.waitForFunction(
-    () => document.querySelector("[data-story-status]") !== null
-      || document.querySelector("#error-message") !== null,
+    () => document.querySelector("[data-story-status]") !== null || document.querySelector("#error-message") !== null,
     null,
     { timeout: 120000 },
   );
-  const fatal = await frame.evaluate(
-    () => document.querySelector("#error-message")?.textContent?.trim() ?? "",
-  );
+  const fatal = await frame.evaluate(() => document.querySelector("#error-message")?.textContent?.trim() ?? "");
   assert.equal(fatal, "", `Storybook preview failed: ${fatal || "(empty)"} | errors: ${managerErrors(page)}`);
 }
 
@@ -99,7 +98,11 @@ function storyErrors(page: Page): string[] {
   const peer = page as Page & { loggedNoise?: string[] };
   const kept: string[] = [];
   for (const message of managerErrors(page)) {
-    if (/Timed out waiting for leader state for UniversalStore follower with id: 'storybook\/(status|test-provider|checklist)'/.test(message)) {
+    if (
+      /Timed out waiting for leader state for UniversalStore follower with id: 'storybook\/(status|test-provider|checklist)'/.test(
+        message,
+      )
+    ) {
       if (!(peer.loggedNoise ?? []).includes(message)) {
         peer.loggedNoise = [...(peer.loggedNoise ?? []), message];
         console.log(`[storybook-noise] ${message}`);
@@ -114,9 +117,7 @@ function storyErrors(page: Page): string[] {
 async function storyStatus(frame: Frame): Promise<string> {
   // The machine probe is truly hidden (never announced), so read textContent
   // with a non-null check instead of innerText.
-  const text = await frame.evaluate(
-    () => document.querySelector("[data-story-status]")?.textContent ?? null,
-  );
+  const text = await frame.evaluate(() => document.querySelector("[data-story-status]")?.textContent ?? null);
   assert.ok(text !== null, "the machine status probe exists");
   return text;
 }
@@ -151,8 +152,10 @@ async function waitMorePaints(frame: Frame, before: number): Promise<void> {
   await frame.waitForFunction(
     (expected) => {
       const status = document.querySelector("[data-story-status]")?.textContent ?? "";
-      return Number(document.querySelector("[data-story-paints]")?.textContent ?? "0") >= expected
-        || status.startsWith("error:");
+      return (
+        Number(document.querySelector("[data-story-paints]")?.textContent ?? "0") >= expected ||
+        status.startsWith("error:")
+      );
     },
     before + 1,
     { timeout: 60000 },
@@ -178,8 +181,12 @@ async function canvasStats(frame: Frame): Promise<CanvasStats> {
   return frame.evaluate(() => {
     const canvas = document.querySelector("canvas") as HTMLCanvasElement | null;
     if (!canvas) throw new Error("Story canvas is missing.");
-    const data = (canvas.getContext("2d") as CanvasRenderingContext2D)
-      .getImageData(0, 0, canvas.width, canvas.height).data;
+    const data = (canvas.getContext("2d") as CanvasRenderingContext2D).getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    ).data;
     let digest = 0x811c9dc5;
     const seen = new Set<number>();
     let ink = 0;
@@ -188,8 +195,11 @@ async function canvasStats(frame: Frame): Promise<CanvasStats> {
     for (let y = 0; y < canvas.height; y += 1) {
       for (let x = 0; x < canvas.width; x += 1) {
         const i = (y * canvas.width + x) * 4;
-        const quad = ((data[i] as number) << 24) | ((data[i + 1] as number) << 16)
-          | ((data[i + 2] as number) << 8) | (data[i + 3] as number);
+        const quad =
+          ((data[i] as number) << 24) |
+          ((data[i + 1] as number) << 16) |
+          ((data[i + 2] as number) << 8) |
+          (data[i + 3] as number);
         digest ^= quad;
         digest = Math.imul(digest, 0x01000193);
         seen.add(quad);
@@ -209,14 +219,21 @@ async function canvasStats(frame: Frame): Promise<CanvasStats> {
 }
 
 async function canvasPixel(frame: Frame, x: number, y: number): Promise<number[]> {
-  return frame.evaluate(([px, py]) => {
-    const canvas = document.querySelector("canvas") as HTMLCanvasElement | null;
-    if (!canvas) throw new Error("Story canvas is missing.");
-    const data = (canvas.getContext("2d") as CanvasRenderingContext2D)
-      .getImageData(0, 0, canvas.width, canvas.height).data;
-    const i = (py * canvas.width + px) * 4;
-    return [data[i] as number, data[i + 1] as number, data[i + 2] as number, data[i + 3] as number];
-  }, [x, y] as [number, number]);
+  return frame.evaluate(
+    ([px, py]) => {
+      const canvas = document.querySelector("canvas") as HTMLCanvasElement | null;
+      if (!canvas) throw new Error("Story canvas is missing.");
+      const data = (canvas.getContext("2d") as CanvasRenderingContext2D).getImageData(
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      ).data;
+      const i = (py * canvas.width + px) * 4;
+      return [data[i] as number, data[i + 1] as number, data[i + 2] as number, data[i + 3] as number];
+    },
+    [x, y] as [number, number],
+  );
 }
 
 // Commits one combined #rrggbbaa value through an entry's real popup hex
@@ -285,99 +302,121 @@ test("real glyphs paint non-uniform coverage", { skip: !browserAvailable }, asyn
   assert.ok(stats.ink > 500, `glyphs cover volume, got ${stats.ink} ink pixels`);
   assert.ok(stats.rowDistinct >= 4, `one text row varies, got ${stats.rowDistinct} (bands are row-constant)`);
   assert.match(await storyStatus(frame), /missing=0/, "default text is fully covered");
-  assert.equal(
-    await frame.locator("[data-story-human]").count(),
-    0,
-    "a clean paint renders no human status line",
-  );
+  assert.equal(await frame.locator("[data-story-human]").count(), 0, "a clean paint renders no human status line");
   assert.deepEqual(storyErrors(page), []);
   await page.close();
 });
 
-test("shared form and studio dropdowns select by keyboard and retain disabled and invalid states", { skip: !browserAvailable }, async (t) => {
-  const base = await devBase(t);
-  const browser = await launch(t);
-  for (const state of ["default", "disabled", "invalid"]) {
-    const page = await openManager(browser, base, `ui-form-controls--${state}`);
-    const frame = await storyFrame(page);
-    const profile = frame.getByRole("combobox", { name: "Output profile", exact: true });
-    await profile.waitFor();
-    assert.equal(await profile.isDisabled(), state === "disabled");
-    assert.equal(await profile.getAttribute("aria-invalid"), String(state === "invalid"));
-    if (state !== "disabled") {
-      await profile.focus();
-      await profile.press("Space");
-      await frame.waitForFunction(() => document.activeElement?.getAttribute("role") === "option");
-      await page.keyboard.press("End");
-      await frame.waitForFunction(() => document.activeElement?.textContent === "Grayscale");
-      await page.keyboard.press("Enter");
-      await frame.waitForFunction(
-        () => document.activeElement?.getAttribute("role") === "combobox"
-          && (document.activeElement?.textContent ?? "").includes("Grayscale"),
-      );
-      assert.equal(await profile.textContent(), "Grayscale");
-      assert.equal(await profile.evaluate((element) => element === document.activeElement), true);
+test(
+  "shared form and studio dropdowns select by keyboard and retain disabled and invalid states",
+  { skip: !browserAvailable },
+  async (t) => {
+    const base = await devBase(t);
+    const browser = await launch(t);
+    for (const state of ["default", "disabled", "invalid"]) {
+      const page = await openManager(browser, base, `ui-form-controls--${state}`);
+      const frame = await storyFrame(page);
+      const profile = frame.getByRole("combobox", { name: "Output profile", exact: true });
+      await profile.waitFor();
+      assert.equal(await profile.isDisabled(), state === "disabled");
+      assert.equal(await profile.getAttribute("aria-invalid"), String(state === "invalid"));
+      if (state !== "disabled") {
+        await profile.focus();
+        await profile.press("Space");
+        await frame.waitForFunction(() => document.activeElement?.getAttribute("role") === "option");
+        await page.keyboard.press("End");
+        await frame.waitForFunction(() => document.activeElement?.textContent === "Grayscale");
+        await page.keyboard.press("Enter");
+        await frame.waitForFunction(
+          () =>
+            document.activeElement?.getAttribute("role") === "combobox" &&
+            (document.activeElement?.textContent ?? "").includes("Grayscale"),
+        );
+        assert.equal(await profile.textContent(), "Grayscale");
+        assert.equal(await profile.evaluate((element) => element === document.activeElement), true);
+      }
+      assert.equal(await frame.locator("select:visible").count(), 0);
+      assert.deepEqual(storyErrors(page), []);
+      await page.close();
     }
+    const page = await openManager(browser, base, "ui-studio-card--default");
+    const frame = await storyFrame(page);
+    const preset = frame.getByRole("combobox", { name: "Quick presets", exact: true });
+    await preset.click();
+    await frame.getByRole("option", { name: "Digits + Symbols", exact: true }).click();
+    assert.equal(
+      await frame.getByRole("textbox", { name: "Test buffer text", exact: true }).inputValue(),
+      "0123456789 !@#$%^&*()",
+    );
     assert.equal(await frame.locator("select:visible").count(), 0);
     assert.deepEqual(storyErrors(page), []);
     await page.close();
-  }
-  const page = await openManager(browser, base, "ui-studio-card--default");
-  const frame = await storyFrame(page);
-  const preset = frame.getByRole("combobox", { name: "Quick presets", exact: true });
-  await preset.click();
-  await frame.getByRole("option", { name: "Digits + Symbols", exact: true }).click();
-  assert.equal(await frame.getByRole("textbox", { name: "Test buffer text", exact: true }).inputValue(), "0123456789 !@#$%^&*()");
-  assert.equal(await frame.locator("select:visible").count(), 0);
-  assert.deepEqual(storyErrors(page), []);
-  await page.close();
-});
+  },
+);
 
-test("default card slots own their styling and nested variants stay isolated", { skip: !browserAvailable }, async (t) => {
-  const base = await devBase(t);
-  const browser = await launch(t);
-  const page = await openManager(browser, base, "ui-card--nested-variants");
-  const frame = await storyFrame(page);
-  await frame.locator('[data-card-fixture="nested-default"]').waitFor();
-  const snapshot = (id: string) => frame.locator(`[data-card-fixture="${id}"]`).evaluate((card) => {
-    const style = (slot: string, fields: string[]): string[] => {
-      const element = card.querySelector(`:scope > [data-slot="${slot}"]`)!;
-      const computed = getComputedStyle(element);
-      return fields.map((field) => computed.getPropertyValue(field));
-    };
-    const header = card.querySelector(':scope > [data-slot="card-header"]')!;
-    const title = header.querySelector('[data-slot="card-title"]')!;
-    const heading = getComputedStyle(title);
-    return {
-      heading: [heading.fontFamily, heading.fontSize, heading.fontWeight, heading.lineHeight, heading.letterSpacing, heading.color, heading.textTransform],
-      titleTag: title.tagName,
-      header: style("card-header", ["padding-left", "padding-bottom", "border-bottom-width", "row-gap"]),
-      content: style("card-content", ["padding-left", "padding-right"]),
-      footer: style("card-footer", ["padding-top", "padding-left", "border-top-width"]),
-      action: getComputedStyle(header.querySelector('[data-slot="card-action"]')!).gridRowEnd,
-    };
-  });
-  for (const theme of ["light", "dark"]) {
-    await frame.locator("html").evaluate((html, dark) => html.classList.toggle("dark", dark), theme === "dark");
-    const outer = await snapshot("outer-default");
-    assert.equal(outer.titleTag, "H2", "shared title styles apply directly to semantic headings");
-    assert.deepEqual(outer.heading.slice(1, 5), ["10px", "700", "16px", "0.5px"]);
-    assert.equal(outer.heading[6], "uppercase");
-    assert.deepEqual(outer.header, ["0px", "6px", "1px", "0px"]);
-    assert.deepEqual(outer.content, ["0px", "0px"]);
-    assert.deepEqual(outer.footer, ["8px", "0px", "1px"]);
-    assert.deepEqual(await snapshot("nested-default"), outer, `${theme}: defaults survive a plain parent`);
-    const nestedPlain = await snapshot("nested-plain");
-    const standalonePlain = await snapshot("standalone-plain");
-    // Fonts and palette inherit from the surrounding theme; slot variants do not.
-    const ownStyles = (value: typeof nestedPlain) => ({
-      ...value, heading: [...value.heading.slice(1, 5), value.heading[6]],
-    });
-    assert.deepEqual(ownStyles(nestedPlain), ownStyles(standalonePlain), `${theme}: outer slot styles do not leak into plain cards`);
-  }
-  assert.deepEqual(storyErrors(page), []);
-  await page.close();
-});
+test(
+  "default card slots own their styling and nested variants stay isolated",
+  { skip: !browserAvailable },
+  async (t) => {
+    const base = await devBase(t);
+    const browser = await launch(t);
+    const page = await openManager(browser, base, "ui-card--nested-variants");
+    const frame = await storyFrame(page);
+    await frame.locator('[data-card-fixture="nested-default"]').waitFor();
+    const snapshot = (id: string) =>
+      frame.locator(`[data-card-fixture="${id}"]`).evaluate((card) => {
+        const style = (slot: string, fields: string[]): string[] => {
+          const element = card.querySelector(`:scope > [data-slot="${slot}"]`)!;
+          const computed = getComputedStyle(element);
+          return fields.map((field) => computed.getPropertyValue(field));
+        };
+        const header = card.querySelector(':scope > [data-slot="card-header"]')!;
+        const title = header.querySelector('[data-slot="card-title"]')!;
+        const heading = getComputedStyle(title);
+        return {
+          heading: [
+            heading.fontFamily,
+            heading.fontSize,
+            heading.fontWeight,
+            heading.lineHeight,
+            heading.letterSpacing,
+            heading.color,
+            heading.textTransform,
+          ],
+          titleTag: title.tagName,
+          header: style("card-header", ["padding-left", "padding-bottom", "border-bottom-width", "row-gap"]),
+          content: style("card-content", ["padding-left", "padding-right"]),
+          footer: style("card-footer", ["padding-top", "padding-left", "border-top-width"]),
+          action: getComputedStyle(header.querySelector('[data-slot="card-action"]')!).gridRowEnd,
+        };
+      });
+    for (const theme of ["light", "dark"]) {
+      await frame.locator("html").evaluate((html, dark) => html.classList.toggle("dark", dark), theme === "dark");
+      const outer = await snapshot("outer-default");
+      assert.equal(outer.titleTag, "H2", "shared title styles apply directly to semantic headings");
+      assert.deepEqual(outer.heading.slice(1, 5), ["10px", "700", "16px", "0.5px"]);
+      assert.equal(outer.heading[6], "uppercase");
+      assert.deepEqual(outer.header, ["0px", "6px", "1px", "0px"]);
+      assert.deepEqual(outer.content, ["0px", "0px"]);
+      assert.deepEqual(outer.footer, ["8px", "0px", "1px"]);
+      assert.deepEqual(await snapshot("nested-default"), outer, `${theme}: defaults survive a plain parent`);
+      const nestedPlain = await snapshot("nested-plain");
+      const standalonePlain = await snapshot("standalone-plain");
+      // Fonts and palette inherit from the surrounding theme; slot variants do not.
+      const ownStyles = (value: typeof nestedPlain) => ({
+        ...value,
+        heading: [...value.heading.slice(1, 5), value.heading[6]],
+      });
+      assert.deepEqual(
+        ownStyles(nestedPlain),
+        ownStyles(standalonePlain),
+        `${theme}: outer slot styles do not leak into plain cards`,
+      );
+    }
+    assert.deepEqual(storyErrors(page), []);
+    await page.close();
+  },
+);
 
 test("shared tooltips work through the Storybook provider", { skip: !browserAvailable }, async (t) => {
   const base = await devBase(t);
@@ -502,7 +541,7 @@ test("palette mode follows profile switches on real glyphs", { skip: !browserAva
   // every status change across both switches.
   await frame.evaluate(() => {
     const seen: string[] = [];
-    ((window as unknown) as { __statusLog?: string[] }).__statusLog = seen;
+    (window as unknown as { __statusLog?: string[] }).__statusLog = seen;
     const target = document.querySelector("[data-story-status]");
     if (target) {
       new MutationObserver(() => {
@@ -519,9 +558,7 @@ test("palette mode follows profile switches on real glyphs", { skip: !browserAva
   paints = await storyPaints(frame);
   await profileRow.locator("select").selectOption("gray_3bit");
   await waitFreshPaint(frame, paints);
-  const statusLog = await frame.evaluate(
-    () => ((window as unknown) as { __statusLog?: string[] }).__statusLog ?? [],
-  );
+  const statusLog = await frame.evaluate(() => (window as unknown as { __statusLog?: string[] }).__statusLog ?? []);
   assert.ok(
     statusLog.every((text) => !text.startsWith("error:")),
     `profile switches never flash an error, got: ${JSON.stringify(statusLog)}`,
@@ -556,7 +593,7 @@ test("mono paper edits preserve gray levels across return and recovery", { skip:
 
   await frame.evaluate(() => {
     const seen: string[] = [];
-    ((window as unknown) as { __statusLog?: string[] }).__statusLog = seen;
+    (window as unknown as { __statusLog?: string[] }).__statusLog = seen;
     const target = document.querySelector("[data-story-status]");
     if (target) {
       new MutationObserver(() => {
@@ -594,9 +631,7 @@ test("mono paper edits preserve gray levels across return and recovery", { skip:
   paints = await storyPaints(frame);
   await profileRow.locator("select").selectOption("gray_3bit");
   await waitFreshPaint(frame, paints);
-  const statusLog = await frame.evaluate(
-    () => ((window as unknown) as { __statusLog?: string[] }).__statusLog ?? [],
-  );
+  const statusLog = await frame.evaluate(() => (window as unknown as { __statusLog?: string[] }).__statusLog ?? []);
   assert.ok(
     statusLog.every((text) => !text.startsWith("error:")),
     `profile switches never flash an error, got: ${JSON.stringify(statusLog)}`,
@@ -630,12 +665,20 @@ test("mono paper edits preserve gray levels across return and recovery", { skip:
   await page.close();
 });
 
-const REAL_PROPS = [
-  "text", "sizePx", "zoom", "mode", "profile", "palette", "ready",
-];
+const REAL_PROPS = ["text", "sizePx", "zoom", "mode", "profile", "palette", "ready"];
 const HELPER_NAMES = [
-  "fontName", "paletteEditor", "diagnostic", "scenario", "viewportWidth", "checkerboard",
-  "rawPalette", "rawBackground", "spareLevels", "colorMode", "hideWhenEmpty", "hideEmpty",
+  "fontName",
+  "paletteEditor",
+  "diagnostic",
+  "scenario",
+  "viewportWidth",
+  "checkerboard",
+  "rawPalette",
+  "rawBackground",
+  "spareLevels",
+  "colorMode",
+  "hideWhenEmpty",
+  "hideEmpty",
   "background",
 ];
 
@@ -643,9 +686,11 @@ const HELPER_NAMES = [
 // miss a control:false row, so the audit reads the rendered row labels.
 async function managerRowNames(page: Page): Promise<string[]> {
   await page.locator("#control-text").waitFor({ timeout: 60000 });
-  return page.evaluate(() => Array.from(document.querySelectorAll("#storybook-panel-root tr"))
-    .map((row) => row.querySelector("td, th")?.textContent?.trim().split("\n")[0]?.trim() ?? "")
-    .filter((name) => name.length > 0));
+  return page.evaluate(() =>
+    Array.from(document.querySelectorAll("#storybook-panel-root tr"))
+      .map((row) => row.querySelector("td, th")?.textContent?.trim().split("\n")[0]?.trim() ?? "")
+      .filter((name) => name.length > 0),
+  );
 }
 
 function expectOnlyRealProps(names: string[], where: string): void {
@@ -670,21 +715,14 @@ test("manager controls list only real props, setup lives inline", { skip: !brows
     await waitPainted(frame);
     expectOnlyRealProps(await managerRowNames(page), `${story} manager`);
     for (const name of editableControls) {
-      assert.ok(
-        await page.locator(`#control-${name}`).count() > 0,
-        `${story}: Controls keeps the real prop ${name}`,
-      );
+      assert.ok((await page.locator(`#control-${name}`).count()) > 0, `${story}: Controls keeps the real prop ${name}`);
     }
     for (const name of HELPER_NAMES) {
-      assert.equal(
-        await page.locator(`#control-${name}`).count(),
-        0,
-        `${story}: Controls has no helper row ${name}`,
-      );
+      assert.equal(await page.locator(`#control-${name}`).count(), 0, `${story}: Controls has no helper row ${name}`);
     }
     assert.equal(await frame.locator("[data-setup-panel]").count(), 1, `${story}: one Playground setup panel`);
     await frame.getByRole("combobox", { name: "Font", exact: true }).click();
-    assert.ok(await frame.getByRole("option").count() > 1, `${story}: the font select lists bundled fonts`);
+    assert.ok((await frame.getByRole("option").count()) > 1, `${story}: the font select lists bundled fonts`);
     await frame.locator("[data-setup-font]").press("Escape");
     assert.deepEqual(storyErrors(page), []);
     await page.close();
@@ -696,7 +734,7 @@ test("manager controls list only real props, setup lives inline", { skip: !brows
   assert.equal(await frame.locator("[data-diagnostic-tools]").count(), 1, "diagnostics story shows Diagnostic tools");
   await frame.getByRole("combobox", { name: "Failure state", exact: true }).click();
   assert.ok(
-    await frame.getByRole("option", { name: "Invalid palette", exact: true }).count() > 0,
+    (await frame.getByRole("option", { name: "Invalid palette", exact: true }).count()) > 0,
     "the inline state select offers the invalid-palette state",
   );
   await frame.locator("[data-diagnostic-state]").press("Escape");
@@ -722,15 +760,16 @@ test("docs table and snippets show only real FontCanvas usage", { skip: !browser
   const page = await openPreview(browser, base, "docs/renderer-fontcanvas--docs");
   const frame = await storyFrame(page);
   await requirePreview(frame, page);
-  await frame.waitForFunction(
-    () => document.querySelectorAll("canvas").length >= 3,
-    null,
-    { timeout: 120000 },
+  await frame.waitForFunction(() => document.querySelectorAll("canvas").length >= 3, null, { timeout: 120000 });
+  const docNames = await frame.evaluate(() =>
+    Array.from(document.querySelectorAll("table"))
+      .flatMap((table) =>
+        Array.from(table.querySelectorAll("tr")).map(
+          (row) => row.querySelector("td, th")?.textContent?.trim().split("\n")[0]?.trim() ?? "",
+        ),
+      )
+      .filter((name) => name.length > 0),
   );
-  const docNames = await frame.evaluate(() => Array.from(document.querySelectorAll("table"))
-    .flatMap((table) => Array.from(table.querySelectorAll("tr"))
-      .map((row) => row.querySelector("td, th")?.textContent?.trim().split("\n")[0]?.trim() ?? ""))
-    .filter((name) => name.length > 0));
   expectOnlyRealProps(docNames, "docs");
   // Story sources render behind one Show code toggle per example (role
   // switch, not button); the toggles arrive after the canvases, so wait for
@@ -746,13 +785,14 @@ test("docs table and snippets show only real FontCanvas usage", { skip: !browser
   // asynchronously, so wait for all three blocks by concatenated text
   // rather than matching inside one element.
   await frame.waitForFunction(
-    () => Array.from(document.querySelectorAll("pre, code"))
-      .filter((el) => (el.textContent ?? "").includes("<FontCanvas")).length >= 3,
+    () =>
+      Array.from(document.querySelectorAll("pre, code")).filter((el) => (el.textContent ?? "").includes("<FontCanvas"))
+        .length >= 3,
     null,
     { timeout: 60000 },
   );
-  const blocks = await frame.evaluate(
-    () => Array.from(document.querySelectorAll("pre, code")).map((el) => el.textContent ?? ""),
+  const blocks = await frame.evaluate(() =>
+    Array.from(document.querySelectorAll("pre, code")).map((el) => el.textContent ?? ""),
   );
   const snippets = blocks.filter((text) => text.includes("<FontCanvas"));
   assert.ok(snippets.length >= 3, `docs show one snippet per example, got ${snippets.length}`);
@@ -766,8 +806,16 @@ test("docs table and snippets show only real FontCanvas usage", { skip: !browser
       assert.ok(snippet.includes(required), `snippet shows the fixed prop ${required}`);
     }
     for (const helper of [
-      "fontName", "colorMode", "paletteEditor", "diagnostic", "rawPalette", "spareLevels",
-      "viewportWidth", "checkerboard", "scenario", "background",
+      "fontName",
+      "colorMode",
+      "paletteEditor",
+      "diagnostic",
+      "rawPalette",
+      "spareLevels",
+      "viewportWidth",
+      "checkerboard",
+      "scenario",
+      "background",
     ]) {
       assert.ok(!snippet.includes(helper), `snippet never invents ${helper}`);
     }
@@ -829,7 +877,7 @@ test("rgba popup opens by keyboard, normalizes hex, escape returns focus", { ski
   assert.equal(await frame.locator("[data-levels-disclosure] thead th").count(), 2, "Level / RGBA headers named once");
 
   const trigger = frame.locator('[data-picker-trigger="level-3"]');
-  assert.match(await trigger.getAttribute("aria-label") ?? "", /Level 3 RGBA/, "the trigger names its entry");
+  assert.match((await trigger.getAttribute("aria-label")) ?? "", /Level 3 RGBA/, "the trigger names its entry");
   await trigger.focus();
   await trigger.press("Enter");
   const dialog = frame.getByRole("dialog", { name: "Level 3 RGBA picker" });
@@ -842,11 +890,9 @@ test("rgba popup opens by keyboard, normalizes hex, escape returns focus", { ski
   assert.equal(await frame.locator('[data-picker-bytes="level-3"]').innerText(), "#c81e1eff");
 
   await page.keyboard.press("Escape");
-  await frame.waitForFunction(
-    () => document.querySelectorAll('[data-rgba-pop="level-3"]').length === 0,
-    null,
-    { timeout: 30000 },
-  );
+  await frame.waitForFunction(() => document.querySelectorAll('[data-rgba-pop="level-3"]').length === 0, null, {
+    timeout: 30000,
+  });
   // Radix restores focus asynchronously after dismissal, so wait for the
   // landing instead of asserting it in the same frame.
   await frame.waitForFunction(
@@ -878,10 +924,7 @@ test("rgba popup alpha slider edits opacity from the keyboard", { skip: !browser
   await waitMorePaints(frame, paints);
   const readout = await frame.locator('[data-picker-bytes="background"]').innerText();
   assert.match(readout, /^#[0-9a-f]{6}[0-9a-f]{2}$/, "one combined readout");
-  assert.ok(
-    Number.parseInt(readout.slice(-2), 16) < 255,
-    `the slider lowered opacity, got ${readout}`,
-  );
+  assert.ok(Number.parseInt(readout.slice(-2), 16) < 255, `the slider lowered opacity, got ${readout}`);
   assert.notEqual((await canvasStats(frame)).digest, before.digest, "lower opacity repaints");
   assert.deepEqual(storyErrors(page), []);
   await page.close();
@@ -934,7 +977,8 @@ test("diagnostics raw JSON edits actual props and recovers user colors", { skip:
   // A valid raw commit writes the actual palette prop, entry 0 first: the
   // draft resyncs to the committed bytes and the uncovered corner paints
   // the paper entry.
-  const customEight = "[[10,20,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255]]";
+  const customEight =
+    "[[10,20,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255],[200,30,30,255]]";
   let paints = await applyRaw(frame, customEight);
   await waitMorePaints(frame, paints);
   assert.equal(await frame.locator("[data-raw-palette]").getAttribute("data-raw-committed"), customEight);
@@ -971,7 +1015,7 @@ test("diagnostics raw JSON edits actual props and recovers user colors", { skip:
     assert.match(await storyStatus(frame), /Invalid palette/, `raw ${bad} reports`);
   }
   assert.ok(
-    await frame.locator('[data-picker-note="invalid"]').count() > 0,
+    (await frame.locator('[data-picker-note="invalid"]').count()) > 0,
     "the pickers hide while a malformed palette applies",
   );
 
@@ -998,7 +1042,10 @@ test("diagnostics raw JSON edits actual props and recovers user colors", { skip:
 // Gray-dependent cases opt in explicitly now that fresh defaults are mono.
 async function selectGrayProfile(page: Page, frame: Frame): Promise<void> {
   const before = await storyPaints(frame);
-  await page.locator("#storybook-panel-root tr", { hasText: /profile/i }).locator("select").selectOption("gray_3bit");
+  await page
+    .locator("#storybook-panel-root tr", { hasText: /profile/i })
+    .locator("select")
+    .selectOption("gray_3bit");
   await waitMorePaints(frame, before);
 }
 
@@ -1010,9 +1057,13 @@ async function selectGrayProfile(page: Page, frame: Frame): Promise<void> {
 async function selectDiagnostic(frame: Frame, state: string): Promise<void> {
   await frame.getByRole("combobox", { name: "Failure state", exact: true }).click();
   const labels: Record<string, string> = {
-    ready: "Ready", error: "Render error", unavailable: "Service unavailable",
-    "missing-glyphs": "Missing glyphs", "invalid-palette": "Invalid palette",
-    "not-ready": "Not ready", "empty-text": "Empty text",
+    ready: "Ready",
+    error: "Render error",
+    unavailable: "Service unavailable",
+    "missing-glyphs": "Missing glyphs",
+    "invalid-palette": "Invalid palette",
+    "not-ready": "Not ready",
+    "empty-text": "Empty text",
   };
   await frame.getByRole("option", { name: labels[state], exact: true }).click();
 }
@@ -1104,7 +1155,8 @@ test("invalid colors clear across fixture states and recover", { skip: !browserA
   // A full explicitly committed palette survives fixture states verbatim:
   // the same array and the same glyph digest. Eight entries need gray.
   await selectGrayProfile(page, frame);
-  const fullEight = "[[0,0,0,0],[10,20,30,36],[40,50,60,72],[70,80,90,108],[100,110,120,144],[130,140,150,180],[160,170,180,216],[190,200,210,255]]";
+  const fullEight =
+    "[[0,0,0,0],[10,20,30,36],[40,50,60,72],[70,80,90,108],[100,110,120,144],[130,140,150,180],[160,170,180,216],[190,200,210,255]]";
   let paints = await applyRaw(frame, fullEight);
   await waitFreshPaint(frame, paints);
   const fullDigest = (await canvasStats(frame)).digest;
@@ -1164,11 +1216,7 @@ test("missing glyphs are reported, readiness gates painting", { skip: !browserAv
     1,
     "empty text keeps its mounted canvas",
   );
-  assert.equal(
-    await frame.locator("[data-story-human]").count(),
-    0,
-    "empty input paints cleanly with no status line",
-  );
+  assert.equal(await frame.locator("[data-story-human]").count(), 0, "empty input paints cleanly with no status line");
   await selectDiagnostic(frame, "error");
   assert.match(await waitStoryError(frame), /^error:/, "simulated render failure reports");
   await selectDiagnostic(frame, "unavailable");
@@ -1266,11 +1314,7 @@ test("docs chrome stays legible in light and dark themes", { skip: !browserAvail
   const page = await openPreview(browser, base, "docs/renderer-fontcanvas--docs");
   const frame = await storyFrame(page);
   await requirePreview(frame, page);
-  await frame.waitForFunction(
-    () => document.querySelectorAll("canvas").length >= 3,
-    null,
-    { timeout: 120000 },
-  );
+  await frame.waitForFunction(() => document.querySelectorAll("canvas").length >= 3, null, { timeout: 120000 });
   // Expand the collapsed reference sections so their copy is checkable too.
   await openDisclosure(frame, "data-api-reference");
   const showCode = frame.getByRole("switch", { name: "Show code" });
@@ -1280,8 +1324,8 @@ test("docs chrome stays legible in light and dark themes", { skip: !browserAvail
   // click whichever switch is still closed instead of indexing a stale set.
   for (let i = 0; i < toggles + 3; i += 1) {
     const switches = frame.getByRole("switch", { name: "Show code" });
-    const closedIndex = await switches.evaluateAll(
-      (els) => els.findIndex((el) => el.getAttribute("aria-checked") !== "true"),
+    const closedIndex = await switches.evaluateAll((els) =>
+      els.findIndex((el) => el.getAttribute("aria-checked") !== "true"),
     );
     if (closedIndex < 0) break;
     await switches.nth(closedIndex).click();
@@ -1289,7 +1333,15 @@ test("docs chrome stays legible in light and dark themes", { skip: !browserAvail
   // Table cells scope to the Component API reference: the story embeds now
   // hold their own (collapsed) level tables, which must never count as docs
   // copy — same reason the skeleton needed the visibility guard above.
-  const selectors = ["[data-fc-docs] h1", "[data-fc-docs] > p", '[aria-label="FontCanvas examples"] a', "[data-api-reference] summary", "[data-api-reference] table td", "[data-api-reference] table th", "[data-fc-docs] pre"];
+  const selectors = [
+    "[data-fc-docs] h1",
+    "[data-fc-docs] > p",
+    '[aria-label="FontCanvas examples"] a',
+    "[data-api-reference] summary",
+    "[data-api-reference] table td",
+    "[data-api-reference] table th",
+    "[data-fc-docs] pre",
+  ];
   for (const selector of selectors) {
     await expectContrast(frame, selector, `light docs ${selector}`);
   }
@@ -1356,10 +1408,19 @@ test("preview precedes controls in the story layout", { skip: !browserAvailable 
   const frame = await storyFrame(page);
   await requirePreview(frame, page);
   await waitPainted(frame);
-  const order: string[] = await frame.evaluate(() => Array.from(
-    document.querySelectorAll("canvas, [data-setup-panel], [data-levels-disclosure], [data-color-playground]"),
-  ).map((el) => (el instanceof HTMLCanvasElement ? "canvas" : el.getAttribute("data-setup-panel") !== null
-    ? "setup" : el.getAttribute("data-levels-disclosure") !== null ? "levels" : "quick")));
+  const order: string[] = await frame.evaluate(() =>
+    Array.from(
+      document.querySelectorAll("canvas, [data-setup-panel], [data-levels-disclosure], [data-color-playground]"),
+    ).map((el) =>
+      el instanceof HTMLCanvasElement
+        ? "canvas"
+        : el.getAttribute("data-setup-panel") !== null
+          ? "setup"
+          : el.getAttribute("data-levels-disclosure") !== null
+            ? "levels"
+            : "quick",
+    ),
+  );
   const canvasAt = order.indexOf("canvas");
   assert.ok(canvasAt >= 0, "the story renders a canvas");
   for (const panel of ["setup", "quick", "levels"]) {

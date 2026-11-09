@@ -49,18 +49,21 @@ function fail(why: string): never {
 
 export function resolveWorkingPreviewPolicy(input: PreviewPolicyInput = {}): ResolvedPreviewPolicy {
   const fitting = input.fitting ?? WORKING_PREVIEW_DEFAULTS.fitting;
-  if (!FITTINGS.includes(fitting)) fail(`Invalid Glypherie pipeline or scan settings: unknown fitting ${JSON.stringify(fitting)}.`);
+  if (!FITTINGS.includes(fitting))
+    fail(`Invalid Glypherie pipeline or scan settings: unknown fitting ${JSON.stringify(fitting)}.`);
   const rasterization = input.rasterization ?? WORKING_PREVIEW_DEFAULTS.rasterization;
   if (!RASTERIZATIONS.includes(rasterization)) {
     fail(`Invalid Glypherie pipeline or scan settings: unknown rasterization ${JSON.stringify(rasterization)}.`);
   }
   const diagonalFitting = input.diagonalFitting ?? WORKING_PREVIEW_DEFAULTS.diagonalFitting;
-  if (typeof diagonalFitting !== "boolean") fail("Invalid Glypherie pipeline settings: diagonal_fitting must be a boolean.");
+  if (typeof diagonalFitting !== "boolean")
+    fail("Invalid Glypherie pipeline settings: diagonal_fitting must be a boolean.");
   if (diagonalFitting && fitting !== "font_hints_auto" && fitting !== "upstream_mono") {
     fail("Diagonal fitting requires font_hints_auto or upstream_mono; use --no-diagonal-fitting");
   }
   const dropout = input.dropout ?? WORKING_PREVIEW_DEFAULTS.dropout;
-  if (!DROPOUTS.includes(dropout)) fail(`Invalid Glypherie pipeline or scan settings: unknown dropout ${JSON.stringify(dropout)}.`);
+  if (!DROPOUTS.includes(dropout))
+    fail(`Invalid Glypherie pipeline or scan settings: unknown dropout ${JSON.stringify(dropout)}.`);
   const includeStubs = input.includeStubs ?? WORKING_PREVIEW_DEFAULTS.includeStubs;
   if (typeof includeStubs !== "boolean") fail("Invalid Glypherie scan settings: include_stubs must be a boolean.");
   const fontInstructions = input.fontInstructions ?? WORKING_PREVIEW_DEFAULTS.fontInstructions;

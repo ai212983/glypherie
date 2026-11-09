@@ -35,7 +35,9 @@ function stubFetch(gate: Promise<void>, ok: boolean, bytes: ArrayBuffer): void {
 
 test("aborted fetch never loads the worker", async () => {
   let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   stubFetch(gate, true, new ArrayBuffer(8));
   const { loads, service } = stubService();
   const cleanup = new AbortController();
@@ -50,7 +52,9 @@ test("bytes arriving after abort are not sent", async () => {
   // Resolves the fetch only after the caller already aborted: the helper
   // observes the signal again past the awaited bytes.
   let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   (globalThis as Record<string, unknown>).fetch = async (): Promise<Response> => {
     await gate;
     return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) } as Response;
@@ -68,7 +72,12 @@ test("bytes arriving after abort are not sent", async () => {
 test("completed fetch loads once, failures throw", async () => {
   stubFetch(Promise.resolve(), true, new ArrayBuffer(8));
   const full = stubService();
-  await fetchFontIntoService(full.service, "storybook/Roboto.ttf", "https://x/Roboto.ttf", new AbortController().signal);
+  await fetchFontIntoService(
+    full.service,
+    "storybook/Roboto.ttf",
+    "https://x/Roboto.ttf",
+    new AbortController().signal,
+  );
   assert.equal(full.loads.length, 1, "one load is sent");
   assert.equal(full.loads[0]?.fontId, "storybook/Roboto.ttf");
 

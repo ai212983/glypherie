@@ -241,7 +241,7 @@ fn decide_parity_target(
 }
 
 /// Hobby (16) rows about the fixed parity axis, source mismatch retained.
-fn symmetry_rows(
+pub(super) fn symmetry_rows(
     system: &super::System,
     matches: &[(Side, Side, f64)],
     axis_src: f64,

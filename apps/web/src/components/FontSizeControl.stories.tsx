@@ -9,7 +9,11 @@ const meta = {
   render: (args) => {
     const [size, setSize] = React.useState(args.sizePx);
     React.useEffect(() => setSize(args.sizePx), [args.sizePx]);
-    return <div className="w-72"><FontSizeControl {...args} sizePx={size} onSize={setSize} /></div>;
+    return (
+      <div className="w-72">
+        <FontSizeControl {...args} sizePx={size} onSize={setSize} />
+      </div>
+    );
   },
 } satisfies Meta<typeof FontSizeControl>;
 

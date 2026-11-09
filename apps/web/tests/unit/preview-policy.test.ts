@@ -44,15 +44,26 @@ test("new previews and variants inherit fitting and diagonal defaults", () => {
         Object.assign(defaults, { fitting, diagonalFitting });
         const policy = resolveWorkingPreviewPolicy();
         const variant = defaultVariantSettings({
-          id: "fixture", name: "Fixture", fileName: "fixture.ttf", bytes: new ArrayBuffer(0),
-          metadata: { names: {}, axes: [] }, source: "uploaded", addedAt: 0,
+          id: "fixture",
+          name: "Fixture",
+          fileName: "fixture.ttf",
+          bytes: new ArrayBuffer(0),
+          metadata: { names: {}, axes: [] },
+          source: "uploaded",
+          addedAt: 0,
         });
         const snapshot = defaultSnapshot([], { font: "fixture", profile: "mono_1bit" });
         for (const settings of [variant, snapshot]) {
           const request = toRenderSpec({
-            text: "Ag", sizePx: 16, axes: {}, width: 100, height: 40,
-            profile: settings.profile, stemFitting: settings.stemFitting,
-            diagonalFitting: settings.diagonalFitting, rasterization: settings.rasterization,
+            text: "Ag",
+            sizePx: 16,
+            axes: {},
+            width: 100,
+            height: 40,
+            profile: settings.profile,
+            stemFitting: settings.stemFitting,
+            diagonalFitting: settings.diagonalFitting,
+            rasterization: settings.rasterization,
           });
           assert.equal(settings.diagonalFitting, policy.diagonal_fitting);
           assert.equal(request.hinting, policy.hinting);
@@ -89,8 +100,13 @@ test("explicit font hints stay on under an automatic-only default", () => {
   try {
     defaults.fitting = "upstream_mono";
     const options = {
-      text: "Ag", sizePx: 16, axes: {}, profile: "mono_1bit" as const,
-      width: 100, height: 40, rasterization: "free_type_mono" as const,
+      text: "Ag",
+      sizePx: 16,
+      axes: {},
+      profile: "mono_1bit" as const,
+      width: 100,
+      height: 40,
+      rasterization: "free_type_mono" as const,
     };
     assert.equal(toRenderSpec(options).pipeline?.fitting, "upstream_mono");
     const explicit = toRenderSpec({ ...options, stemFitting: "font_hints_first" });
@@ -103,10 +119,7 @@ test("explicit font hints stay on under an automatic-only default", () => {
 
 test("the diagonal overlay needs automatic fitting", () => {
   for (const fitting of ["font_hints_first", "source_relative"]) {
-    assert.throws(
-      () => resolveWorkingPreviewPolicy({ fitting, diagonalFitting: true }),
-      /Diagonal fitting requires/,
-    );
+    assert.throws(() => resolveWorkingPreviewPolicy({ fitting, diagonalFitting: true }), /Diagonal fitting requires/);
   }
   assert.equal(
     resolveWorkingPreviewPolicy({ fitting: "source_relative", diagonalFitting: false }).fitting,
@@ -151,7 +164,12 @@ test("fingerprints are deterministic over key order and sensitive to content", (
 test("the live separated Mono request follows the shared policy", () => {
   const policy = resolveWorkingPreviewPolicy();
   const spec = toRenderSpec({
-    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120,
+    text: "Ag",
+    sizePx: 18,
+    axes: {},
+    profile: "mono_1bit",
+    width: 360,
+    height: 120,
     rasterization: "free_type_mono",
   });
   // URL omission stays diagonal-off, independently of new-preview defaults.
@@ -159,8 +177,14 @@ test("the live separated Mono request follows the shared policy", () => {
   assert.equal(spec.hinting, policy.hinting);
   assert.deepEqual(spec.mono_raster, policy.mono_raster);
   const on = toRenderSpec({
-    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120,
-    rasterization: "free_type_mono", diagonalFitting: true,
+    text: "Ag",
+    sizePx: 18,
+    axes: {},
+    profile: "mono_1bit",
+    width: 360,
+    height: 120,
+    rasterization: "free_type_mono",
+    diagonalFitting: true,
   });
   assert.deepEqual(on.pipeline, {
     fitting: policy.fitting,
@@ -168,14 +192,26 @@ test("the live separated Mono request follows the shared policy", () => {
     diagonal_fitting: true,
   });
   const off = toRenderSpec({
-    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120,
-    rasterization: "free_type_mono", diagonalFitting: false,
+    text: "Ag",
+    sizePx: 18,
+    axes: {},
+    profile: "mono_1bit",
+    width: 360,
+    height: 120,
+    rasterization: "free_type_mono",
+    diagonalFitting: false,
   });
   assert.deepEqual(off.pipeline, { fitting: policy.fitting, rasterization: policy.rasterization });
   assert.deepEqual(off.mono_raster, policy.mono_raster);
   const forced = toRenderSpec({
-    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120,
-    rasterization: "free_type_mono", stemFitting: "upstream_mono",
+    text: "Ag",
+    sizePx: 18,
+    axes: {},
+    profile: "mono_1bit",
+    width: 360,
+    height: 120,
+    rasterization: "free_type_mono",
+    stemFitting: "upstream_mono",
   });
   const forcedPolicy = resolveWorkingPreviewPolicy({ fitting: "upstream_mono", diagonalFitting: false });
   assert.equal(forced.hinting, forcedPolicy.hinting);
@@ -192,7 +228,9 @@ test("historical and Gray paths bypass the shared Mono policy", () => {
   assert.deepEqual(gray.pipeline, { fitting: "upstream_mono", rasterization: "coverage" });
   assert.equal("mono_raster" in gray, false);
   const manual = toRenderSpec({
-    ...base, role: "candidate", profile: "mono_1bit",
+    ...base,
+    role: "candidate",
+    profile: "mono_1bit",
     monoRaster: { dropout: "off", includeStubs: false, fontInstructions: false },
   });
   assert.deepEqual(manual.mono_raster, { dropout: "off", include_stubs: false, font_instructions: false });

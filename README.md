@@ -41,12 +41,15 @@ npm test
 
 ### Documentation
 
+- [Product domain model](docs/domain-model.md)
 - [Generator](crates/generator/README.md)
 - [Web preview](apps/web/README.md)
 - [WASM renderer](crates/wasm/README.md)
 - [Experiments](experiments/AGENTS.md)
 - [Font assets](fonts/README.md)
 - [Evaluation](docs/evaluation.md)
+- [Current spacing guide](docs/guides/text-layout/spacing-models.md)
+- [Contextual spacing and healing proposal](docs/designs/text-layout/contextual-spacing-and-healing.md)
 - [Development revisions](docs/revisions/README.md)
 - [Agent instructions](AGENTS.md)
 - [Research papers](docs/references/papers/)

@@ -60,7 +60,9 @@ export function RendererProvider({ children, createService }: RendererProviderPr
     setAvailable(null);
     setAvailabilityError("");
     active.ping().then(
-      () => { if (live) setAvailable(true); },
+      () => {
+        if (live) setAvailable(true);
+      },
       (error: unknown) => {
         if (!live) return;
         setAvailable(false);

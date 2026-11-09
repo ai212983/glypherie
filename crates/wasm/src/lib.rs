@@ -34,7 +34,8 @@
 //!     // For canvas: `new ImageData(new Uint8ClampedArray(u8.buffer), w, h)`
 //!     // (zero-copy view; the copy is already JS-owned so the result can be
 //!     // freed independently at any time).
-//!     const layout = result.layout(); // plain object: { lines, missing_codepoints }
+//!     // plain object: { lines, editing: { carets, width, height }, missing_codepoints }
+//!     const layout = result.layout();
 //!     void layout;
 //!   } finally {
 //!     result.free();
@@ -234,7 +235,14 @@ fn validate_export_keys(request: &JsValue) -> Result<(), JsValue> {
         }
         Ok(())
     }
-    check(request, &["config", "pipeline", "letter_spacing_px"])?;
+    check(
+        request,
+        &["config", "pipeline", "letter_spacing_px", "kerning_method"],
+    )?;
+    validate_kerning_keys(&js_sys::Reflect::get(
+        request,
+        &JsValue::from_str("kerning_method"),
+    )?)?;
     let config = js_sys::Reflect::get(request, &JsValue::from_str("config"))?;
     check(
         &config,
@@ -257,6 +265,39 @@ fn validate_export_keys(request: &JsValue) -> Result<(), JsValue> {
     let mono = js_sys::Reflect::get(&config, &JsValue::from_str("mono_raster"))?;
     if !mono.is_undefined() {
         check(&mono, &["dropout", "include_stubs", "font_instructions"])?;
+    }
+    Ok(())
+}
+
+fn validate_kerning_keys(value: &JsValue) -> Result<(), JsValue> {
+    if value.is_undefined() {
+        return Ok(());
+    }
+    if !value.is_object() || value.is_null() || js_sys::Array::is_array(value) {
+        return Err(js_error("kerning_method must be an object"));
+    }
+    let method = js_sys::Reflect::get(value, &JsValue::from_str("method"))?.as_string();
+    let allowed: &[&str] = match method.as_deref() {
+        Some("source") => &["method"],
+        Some("typefacet") => &[
+            "method",
+            "normal_distance_em",
+            "intrusion_tolerance_em",
+            "minimum_distance_em",
+            "max_x_extrema_overlap_em",
+        ],
+        Some("hu_hersch") => &["method", "aperture_depth_factor", "global_depth_factor"],
+        // Parameterless: any key beyond `method` fails.
+        Some("fontforge") => &["method"],
+        _ => return Err(js_error("unknown kerning method")),
+    };
+    for key in js_sys::Reflect::own_keys(value)? {
+        if !key
+            .as_string()
+            .is_some_and(|name| allowed.contains(&name.as_str()))
+        {
+            return Err(js_error("unknown kerning method field"));
+        }
     }
     Ok(())
 }
@@ -284,6 +325,7 @@ fn validate_spec_keys(spec: &JsValue) -> Result<(), JsValue> {
                 | "gray_gamma"
                 | "missing_glyphs"
                 | "kerning"
+                | "kerning_method"
                 | "metric_rounding"
                 | "wrap"
                 | "align"
@@ -301,6 +343,10 @@ fn validate_spec_keys(spec: &JsValue) -> Result<(), JsValue> {
             )));
         }
     }
+    validate_kerning_keys(&js_sys::Reflect::get(
+        spec,
+        &JsValue::from_str("kerning_method"),
+    )?)?;
     let pipeline = js_sys::Reflect::get(spec, &JsValue::from_str("pipeline"))?;
     if !pipeline.is_undefined() && !pipeline.is_null() {
         if !pipeline.is_object() || js_sys::Array::is_array(&pipeline) {
@@ -371,6 +417,8 @@ struct RenderSpec {
     missing_glyphs: MissingGlyphs,
     #[serde(default = "default_kerning")]
     kerning: bool,
+    #[serde(default)]
+    kerning_method: font_generator::KerningMethod,
     #[serde(default)]
     metric_rounding: MetricRounding,
     #[serde(default)]
@@ -451,6 +499,9 @@ fn render_prepared(
     font: &surface::PreparedFont,
     spec: &RenderSpec,
 ) -> Result<RenderedText, String> {
+    spec.kerning_method
+        .validate(spec.pipeline.is_some())
+        .map_err(|e| e.to_string())?;
     if spec.pipeline.is_some() && (spec.renderer.is_some() || spec.stem_fitting.is_some()) {
         return Err(
             "pipeline cannot be combined with a historical renderer or stem_fitting".into(),
@@ -489,7 +540,12 @@ fn render_prepared(
     };
     if let Some(pipeline) = spec.pipeline {
         return font
-            .render_text_with_pipeline_and_spacing(&request, pipeline, spec.letter_spacing_px)
+            .render_text_with_pipeline_and_kerning(
+                &request,
+                pipeline,
+                spec.letter_spacing_px,
+                spec.kerning_method,
+            )
             .map_err(|e| e.to_string());
     }
     // Baseline is the approved production path; other roles reuse its
@@ -518,10 +574,68 @@ struct LineView {
     height_px: u32,
 }
 
+/// One in-place editing stop in native source pixels: `offset` is a JS
+/// UTF-16 text boundary, `line` a visual line index, `x` the caret position
+/// (fractional for source-layout roles), `y` the line top and `height` the
+/// line height. Converted from the native same-pass 26.6 pens (`x_26_6 /
+/// 64` is exact in float64); duplicate offsets at soft line breaks allowed.
+#[derive(Clone, Debug, Serialize)]
+struct CaretView {
+    offset: usize,
+    line: usize,
+    x: f64,
+    y: u32,
+    height: u32,
+}
+
+/// Exact editing bounds in native source pixels: laid-out text width and
+/// total text height alongside every caret stop.
+#[derive(Clone, Debug, Serialize)]
+struct EditingView {
+    carets: Vec<CaretView>,
+    width: f64,
+    height: u32,
+}
+
 #[derive(Clone, Debug, Serialize)]
 struct LayoutView {
     lines: Vec<LineView>,
+    editing: EditingView,
     missing_codepoints: Vec<u32>,
+}
+
+/// Plain-object view behind [`RenderResult::layout`]; kept as a pure
+/// function so native tests can pin the serialized shape without a JS runtime.
+fn layout_view(rendered: &RenderedText) -> LayoutView {
+    LayoutView {
+        lines: rendered
+            .lines
+            .iter()
+            .map(|line| LineView {
+                byte_start: line.byte_start,
+                byte_end: line.byte_end,
+                width_26_6: line.width_26_6,
+                height_px: line.height_px,
+            })
+            .collect(),
+        editing: EditingView {
+            carets: rendered
+                .editing
+                .carets
+                .iter()
+                .map(|stop| CaretView {
+                    offset: stop.offset_utf16,
+                    line: stop.line,
+                    x: f64::from(stop.x_26_6) / 64.0,
+                    y: stop.y_px,
+                    height: stop.height_px,
+                })
+                .collect(),
+            width: f64::from(rendered.editing.width_26_6) / 64.0,
+            height: rendered.editing.height_px,
+        },
+        missing_codepoints: rendered.missing_codepoints.clone(),
+    }
 }
 
 #[wasm_bindgen]
@@ -551,24 +665,13 @@ impl RenderResult {
         self.inner.lines.len()
     }
 
-    /// Per-line layout plus skipped codepoints as a plain JS object:
-    /// `{ lines: [{byte_start, byte_end, width_26_6, height_px}], missing_codepoints }`.
+    /// Per-line layout plus exact editing geometry as a plain JS object:
+    /// `{ lines: [{byte_start, byte_end, width_26_6, height_px}],
+    /// editing: {carets: [{offset, line, x, y, height}], width, height},
+    /// missing_codepoints }`. Caret positions and bounds use native source
+    /// pixels; `x` may be fractional for source-layout roles.
     pub fn layout(&self) -> Result<JsValue, JsValue> {
-        let view = LayoutView {
-            lines: self
-                .inner
-                .lines
-                .iter()
-                .map(|line| LineView {
-                    byte_start: line.byte_start,
-                    byte_end: line.byte_end,
-                    width_26_6: line.width_26_6,
-                    height_px: line.height_px,
-                })
-                .collect(),
-            missing_codepoints: self.inner.missing_codepoints.clone(),
-        };
-        to_plain_object(&view)
+        to_plain_object(&layout_view(&self.inner))
     }
 }
 
@@ -638,6 +741,142 @@ mod tests {
         assert_eq!(spec.background, [255, 255, 255, 255]);
         assert!(spec.palette.is_none());
         assert_eq!(spec.letter_spacing_px, 0.0);
+    }
+
+    #[test]
+    fn kerning_method_validation_applies_to_blank_and_historical_requests() {
+        let mut spec = minimal_spec("", 64, 32);
+        spec.kerning_method = font_generator::KerningMethod::Typefacet(Default::default());
+        assert!(render_parsed(FIXTURE, &spec)
+            .unwrap_err()
+            .contains("explicit bitmap-layout"));
+        spec.pipeline = Some(Default::default());
+        spec.output_bits = 3;
+        assert!(
+            render_parsed(FIXTURE, &spec).is_err(),
+            "invalid Gray scan stages still fail"
+        );
+        assert!(spec_from(json!({"text":"", "width":64,"height":32,
+            "kerning_method":{"method":"other"}}))
+        .is_err());
+    }
+
+    #[test]
+    fn analytic_method_requests_are_strict_even_for_blank_text() {
+        for method in [
+            json!({"method":"hu_hersch"}),
+            json!({"method":"hu_hersch","aperture_depth_factor":0.35,"global_depth_factor":0.4}),
+            json!({"method":"fontforge"}),
+        ] {
+            let mut spec = spec_from(json!({"text":"", "width":64,"height":32,
+                "kerning_method":method}))
+            .unwrap();
+            assert!(render_parsed(FIXTURE, &spec)
+                .unwrap_err()
+                .contains("explicit bitmap-layout"));
+            spec.pipeline = Some(Default::default());
+            assert!(spec.kerning_method.validate(true).is_ok());
+        }
+        // The retired `strength` blend is rejected, never loaded as defaults.
+        for method in [
+            json!({"method":"hu_hersch","strength":0.0}),
+            json!({"method":"hu_hersch","strength":0.35}),
+            json!({"method":"hu_hersch","strength":1.0}),
+            json!({"method":"hu_hersch","strength":null}),
+            json!({"method":"hu_hersch","strength":"0.5"}),
+            json!({"method":"fontforge","strength":0.0}),
+            json!({"method":"fontforge","strength":0.5}),
+            json!({"method":"fontforge","strength":1.0}),
+            json!({"method":"fontforge","strength":null}),
+            json!({"method":"hu_hersch","strength":null,"foreign":1}),
+            json!({"method":"hu_hersch","aperture_depth_factor":0.21,"foreign":1}),
+            json!({"method":"fontforge","strength":1,"foreign":1}),
+            json!({"method":"fontforge","target":0}),
+        ] {
+            assert!(spec_from(json!({"text":"", "width":64,"height":32,
+                "kerning_method":method}))
+            .is_err());
+        }
+        for invalid in [
+            json!({"method":"hu_hersch","aperture_depth_factor":-0.1,"global_depth_factor":0.25}),
+            json!({"method":"hu_hersch","aperture_depth_factor":0.21,"global_depth_factor":1.1}),
+        ] {
+            let spec = spec_from(json!({"text":"", "width":64,"height":32,
+                "kerning_method":invalid}))
+            .unwrap();
+            assert!(spec.kerning_method.validate(true).is_err());
+        }
+        // Nonfinite depths fail deserialization even for blank text.
+        assert!(spec_from(json!({"text":"", "width":64,"height":32,
+            "kerning_method":{"method":"hu_hersch","aperture_depth_factor":f64::NAN,"global_depth_factor":0.25}}))
+        .is_err());
+    }
+
+    #[cfg(feature = "preview")]
+    #[test]
+    fn selected_method_reaches_prepared_renderer() {
+        let mut spec = minimal_spec("nn oo type", 256, 48);
+        spec.pipeline = Some(Default::default());
+        spec.kerning_method = font_generator::KerningMethod::Typefacet(Default::default());
+        let rendered = render_parsed(ROBOTO, &spec).unwrap();
+        let request = TextRenderRequest {
+            config: Config {
+                size_px: spec.size_px,
+                ..Config::default()
+            },
+            text: spec.text.clone(),
+            width: spec.width,
+            height: spec.height,
+            wrap: WrapMode::Word,
+            align: HAlign::Left,
+            foreground: spec.foreground,
+            background: spec.background,
+            palette: None,
+        };
+        let native = surface::render_text_with_pipeline_and_kerning(
+            ROBOTO,
+            &request,
+            spec.pipeline.unwrap(),
+            0.0,
+            spec.kerning_method,
+        )
+        .unwrap();
+        assert_eq!(rendered, native);
+        spec.kerning_method = font_generator::KerningMethod::Source;
+        assert_ne!(render_parsed(ROBOTO, &spec).unwrap().lines, rendered.lines);
+    }
+
+    #[cfg(feature = "preview")]
+    #[test]
+    fn gray_typefacet_forwards_fitted_geometry_and_validates_blank_settings() {
+        let font = surface::PreparedFont::new(ROBOTO.to_vec());
+        for bits in [2, 3, 4] {
+            let mut spec = minimal_spec("AV Éé type", 256, 48);
+            spec.output_bits = bits;
+            let pipeline = font_generator::renderer::RenderPipeline {
+                fitting: StemFittingStrategy::UpstreamMono,
+                rasterization: font_generator::renderer::Rasterization::Coverage,
+                diagonal_fitting: false,
+            };
+            spec.pipeline = Some(pipeline);
+            spec.kerning_method = font_generator::KerningMethod::Typefacet(Default::default());
+            let selected = render_prepared(&font, &spec).unwrap();
+            spec.kerning_method = font_generator::KerningMethod::Source;
+            let source = render_prepared(&font, &spec).unwrap();
+            assert_ne!(
+                source.lines, selected.lines,
+                "selected method reaches Gray depth {bits}"
+            );
+            spec.text.clear();
+            spec.kerning_method = font_generator::KerningMethod::Typefacet(Default::default());
+            assert!(render_prepared(&font, &spec).unwrap().lines.is_empty());
+            spec.kerning_method =
+                font_generator::KerningMethod::Typefacet(font_generator::TypefacetSettings {
+                    normal_distance_em: f64::NAN,
+                    ..Default::default()
+                });
+            assert!(render_prepared(&font, &spec).is_err());
+        }
     }
 
     #[test]
@@ -864,7 +1103,8 @@ mod tests {
     #[test]
     fn baseline_render_matches_approved_surface_path() {
         // Routing identity for the unchanged production path: the default
-        // spec must equal `surface::render_text` byte-for-byte.
+        // spec must equal `surface::render_text` byte-for-byte, including
+        // the same-pass editing geometry.
         let spec = minimal_spec("A A", 96, 48);
         let routed = render_parsed(FIXTURE, &spec).unwrap();
         let request = TextRenderRequest {
@@ -884,6 +1124,7 @@ mod tests {
         let direct = surface::render_text(FIXTURE, &request).unwrap();
         assert_eq!(routed.pixels, direct.pixels);
         assert_eq!(routed.lines, direct.lines);
+        assert_eq!(routed.editing, direct.editing);
     }
 
     #[test]
@@ -1015,19 +1256,7 @@ mod tests {
     fn layout_view_round_trips_through_json() {
         let spec = minimal_spec("A", 96, 48);
         let rendered = render_parsed(FIXTURE, &spec).unwrap();
-        let view = LayoutView {
-            lines: rendered
-                .lines
-                .iter()
-                .map(|line| LineView {
-                    byte_start: line.byte_start,
-                    byte_end: line.byte_end,
-                    width_26_6: line.width_26_6,
-                    height_px: line.height_px,
-                })
-                .collect(),
-            missing_codepoints: rendered.missing_codepoints.clone(),
-        };
+        let view = layout_view(&rendered);
         let value = serde_json::to_value(&view).unwrap();
         assert!(value["lines"].is_array());
         assert_eq!(
@@ -1035,6 +1264,57 @@ mod tests {
             rendered.lines.len()
         );
         assert!(value["missing_codepoints"].is_array());
+        assert!(value["editing"]["carets"].is_array());
+        assert_eq!(
+            value["editing"]["carets"].as_array().unwrap().len(),
+            rendered.editing.carets.len()
+        );
+    }
+
+    #[test]
+    fn layout_view_reports_source_pixel_editing_including_blank_text() {
+        // Non-blank: UTF-16 offsets cover every boundary; caret `x` and the
+        // editing width reproduce the native 26.6 pens in source pixels.
+        let rendered = render_parsed(ROBOTO, &minimal_spec("Aé", 96, 48)).unwrap();
+        let view = layout_view(&rendered);
+        let value = serde_json::to_value(&view).unwrap();
+        let carets = value["editing"]["carets"].as_array().unwrap();
+        assert_eq!(carets.len(), 3, "A + é + end boundary");
+        assert_eq!(carets[0]["offset"], 0);
+        assert_eq!(carets[0]["x"], 0.0);
+        assert_eq!(carets[2]["offset"], 2);
+        let line_width = rendered.lines[0].width_26_6;
+        assert_eq!(carets[2]["x"], line_width as f64 / 64.0);
+        assert_eq!(value["editing"]["width"], line_width as f64 / 64.0);
+        assert_eq!(
+            value["editing"]["height"],
+            rendered.editing.height_px as u64
+        );
+        for caret in carets {
+            for key in ["offset", "line", "x", "y", "height"] {
+                assert!(caret.get(key).is_some(), "caret keeps {key}");
+            }
+        }
+        // Blank text keeps zero lines but still reports its boundary stops.
+        let blank = render_parsed(FIXTURE, &minimal_spec("", 64, 32)).unwrap();
+        assert!(blank.lines.is_empty());
+        let blank_view = layout_view(&blank);
+        let blank_value = serde_json::to_value(&blank_view).unwrap();
+        assert_eq!(
+            blank_value["editing"]["carets"].as_array().unwrap().len(),
+            1
+        );
+        assert_eq!(blank_value["editing"]["carets"][0]["offset"], 0);
+        let wrapped = render_parsed(ROBOTO, &minimal_spec("A\nB", 96, 48)).unwrap();
+        let wrapped_value = serde_json::to_value(&layout_view(&wrapped)).unwrap();
+        let offsets: Vec<u64> = wrapped_value["editing"]["carets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|caret| caret["offset"].as_u64().unwrap())
+            .collect();
+        assert_eq!(offsets.iter().max(), Some(&3));
+        assert!(wrapped_value["editing"]["carets"][0].get("line").is_some());
     }
 
     const ROBOTO: &[u8] = include_bytes!("../../../fonts/Roboto.ttf");

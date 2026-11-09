@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SCORE-v2 native ink comparison (study)</title>
+<style>
+:root { color-scheme: light dark; }
+html, body { overflow-x: hidden; overflow-x: clip; }
+body {
+  margin: 0; padding: 0; background: transparent;
+  color: var(--foreground, CanvasText);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.4;
+}
+header, main, footer { padding: 0; margin: 0; }
+h1 { font-size: 1.1rem; margin: 0 0 .15rem; }
+h2 { font-size: .95rem; margin: .9rem 0 .2rem; }
+p { margin: .2rem 0; }
+.yy-lede, .yy-note, .yy-about, .yy-prov { font-size: .82rem; }
+.yy-note { color: var(--muted-foreground, currentColor); }
+.yy-controls {
+  display: flex; flex-wrap: wrap; gap: .6rem 1.2rem; align-items: end;
+  margin: .5rem 0;
+}
+.yy-field { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.yy-field > span, legend { font-weight: 600; font-size: .8rem; }
+fieldset.yy-field { border: 1px solid var(--border, #999); padding: .35rem .6rem .5rem; margin: 0; }
+.yy-row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+input[type="range"].yy-target { width: 12rem; max-width: 40vw; }
+input.yy-num { font: inherit; width: 5.5rem; padding: .15rem .3rem; box-sizing: border-box; }
+input[aria-invalid="true"] { border: 1px solid #b00020; }
+.yy-err { font-size: .78rem; color: #b00020; min-height: 1em; }
+.yy-err:empty { display: none; }
+select, button { font: inherit; padding: .2rem .5rem; }
+button { cursor: pointer; }
+details.yy-diag { margin: .3rem 0; font-size: .82rem; }
+details.yy-diag summary { cursor: pointer; font-weight: 600; }
+#yy-status { font-size: .78rem; color: var(--muted-foreground, currentColor); }
+.yy-pair { margin-top: .4rem; }
+.yy-pairhead { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+.yy-pairhead h2 { margin: 0; }
+.yy-badge {
+  font-size: .72rem; font-weight: 600; padding: .05rem .4rem;
+  border: 1px solid var(--border, #999); border-radius: 999px;
+}
+.yy-meta { font-size: .78rem; color: var(--muted-foreground, currentColor); margin: 0; }
+.yy-rowscroll { overflow-x: auto; }
+.yy-cols { display: flex; gap: 14px; width: max-content; padding-bottom: .2rem; }
+.yy-col { margin: 0; flex: none; }
+.yy-col canvas {
+  display: block; border: none; background: #fff;
+  image-rendering: pixelated; max-width: none;
+}
+.yy-coltitle { font-size: .8rem; font-weight: 600; margin-top: .15rem; }
+.yy-colnote { font-size: .78rem; max-width: 16rem; overflow-wrap: anywhere; }
+.yy-about, .yy-prov { max-width: 60rem; overflow-wrap: anywhere; }
+footer { margin-top: 1rem; }
+</style>
+</head>
+<body>
+<header>
+<h1>SCORE-v2 native ink comparison (study)</h1>
+<p class="yy-lede">Tested-pair comparison on the frozen corpus: 4 font cases &times; 2 profiles
+(Roboto/Literata &times; 16/24 &times; Mono/Gray), 8 pairs
+(um og AV To nn oo HH il). No arbitrary text; no claim all fonts covered.</p>
+</header>
+<main>
+<section aria-label="Comparison controls">
+<div class="yy-controls">
+<label class="yy-field"><span>Font case</span>
+<select id="yy-sample">
+<option value="roboto-16">Roboto 16</option>
+<option value="roboto-24">Roboto 24</option>
+<option value="literata-16">Literata 16</option>
+<option value="literata-24">Literata 24</option>
+</select></label>
+<fieldset class="yy-field"><legend>Profile</legend>
+<span class="yy-row">
+<label><input type="radio" name="yy-profile" value="mono" checked> Mono</label>
+<label><input type="radio" name="yy-profile" value="gray"> Gray</label>
+</span></fieldset>
+<label class="yy-field"><span>Cohesion target (new model units 0..128)</span>
+<span class="yy-row">
+<input type="range" class="yy-target" id="yy-target" min="0" max="128" step="0.1" value="4">
+<input class="yy-num" id="yy-target-num" value="4" inputmode="decimal">
+</span></label>
+<span class="yy-field"><span>&nbsp;</span>
+<span class="yy-row"><button type="button" id="yy-reset">Reset</button></span></span>
+<fieldset class="yy-field"><legend>Zoom (all columns)</legend>
+<span class="yy-row">
+<label><input type="radio" name="yy-zoom" value="1" checked> 1x</label>
+<label><input type="radio" name="yy-zoom" value="2"> 2x</label>
+<label><input type="radio" name="yy-zoom" value="4"> 4x</label>
+</span></fieldset>
+</div>
+<p class="yy-err" id="yy-target-error"></p>
+<p class="yy-note">Initial target 4 is a study value, not a recommendation. Raising the
+target tightens the shown narrow curves here; not a general monotonicity claim.</p>
+<details class="yy-diag"><summary>Diagnostic controls</summary>
+<div class="yy-controls">
+<fieldset class="yy-field"><legend>Search domain</legend>
+<span class="yy-row">
+<label><input type="radio" name="yy-domain" value="2" checked> &plusmn;2 (default)</label>
+<label><input type="radio" name="yy-domain" value="6"> &plusmn;6 (broad)</label>
+</span></fieldset>
+<fieldset class="yy-field"><legend>Strength variant</legend>
+<span class="yy-row">
+<label><input type="radio" name="yy-variant" value="notebook" checked> notebook (candidate)</label>
+<label><input type="radio" name="yy-variant" value="manuscript"> manuscript (alternate)</label>
+</span></fieldset>
+</div></details>
+<p id="yy-status"></p>
+</section>
+<section aria-label="Pair comparisons"><div id="yy-rows"></div></section>
+<section aria-label="About"><h2>About</h2>
+<p class="yy-about">Fixed precomputed study, not a live page: oriented + ratio +
+multiscale fields with a final-reduction project hypothesis. 64 pair-cases, 610
+valid steps; B2 fixed at 1.1/2/2; source steps are exact native capture
+arithmetic. No optical approval; the global target is not prescribed. The
+whole-glyph normalization dilution question stays open. Uncertainty is not
+certified on any verdict.</p></section>
+</main>
+<footer><p class="yy-prov" id="yy-prov"></p></footer>
+<script>
+window.__YYDATA = /*__DATA_JSON__*/null;
+</script>
+<script>
+/*__APP_JS__*/
+</script>
+<script>
+document.getElementById('yy-prov').textContent = window.__YYPROV || '';
+</script>
+</body>
+</html>

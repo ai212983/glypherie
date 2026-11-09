@@ -1,0 +1,10 @@
+# Python 3.11 / macOS arm64 recovery compatibility environment, not the 2021 Colab environment.
+torch==2.5.1
+numpy==1.26.4
+scipy==1.14.1
+scikit-image==0.24.0
+freetype-py==2.5.1
+uharfbuzz==0.42.0
+fonttools==4.55.0
+matplotlib==3.9.3
+tqdm==4.67.1

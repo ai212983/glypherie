@@ -68,8 +68,16 @@ class FakeRenderer {
 
 function baseSpec(text: string): Omit<RenderSpec, "height"> {
   const { height: _height, ...rest } = toRenderSpec({
-    text, sizePx: 16, axes: {}, profile: "mono_1bit", width: 60, height: 16,
-    role: "candidate", letterSpacingPx: 0, kerning: true, stemFitting: "font_hints_first",
+    text,
+    sizePx: 16,
+    axes: {},
+    profile: "mono_1bit",
+    width: 60,
+    height: 16,
+    role: "candidate",
+    letterSpacingPx: 0,
+    kerning: true,
+    stemFitting: "font_hints_first",
   });
   return rest;
 }
@@ -93,8 +101,12 @@ function makeJob(
     immediate: true,
     nextToken: () => fake.nextToken(),
     render: (fontId, token, renderSpec) => fake.render(fontId, token, renderSpec),
-    onPaint: (outcome) => { paints.push(outcome); },
-    onError: (error) => { errors.push(error); },
+    onPaint: (outcome) => {
+      paints.push(outcome);
+    },
+    onError: (error) => {
+      errors.push(error);
+    },
     ...overrides,
   };
 }
@@ -117,7 +129,15 @@ test("request identity covers session, font, mode, geometry and spec", () => {
   assert.notEqual(keyFor(2, "font-a"), reference, "renderer session is part of the key");
   assert.notEqual(keyFor(1, "font-b"), reference, "font id is part of the key");
   assert.notEqual(
-    buildRequestKey({ session: 1, fontId: "font-a", mode: "exact", zoom: 1, width: 60, extra: null, spec: { ...baseSpec("Ag"), height: 16 } }),
+    buildRequestKey({
+      session: 1,
+      fontId: "font-a",
+      mode: "exact",
+      zoom: 1,
+      width: 60,
+      extra: null,
+      spec: { ...baseSpec("Ag"), height: 16 },
+    }),
     reference,
     "display mode is part of the key",
   );
@@ -363,9 +383,11 @@ test("pending includes debounce, superseding requests and both passes until pain
   scheduler.request(makeJob(fake, "a", paints, errors, { immediate: false, debounceMs: 5000 }));
   assert.deepEqual(events, ["pending"], "pending starts before debounce ends");
   scheduler.request(makeJob(fake, "b", paints, errors));
-  scheduler.request(makeJob(fake, "c", paints, errors, {
-    onPaint: () => events.push("paint"),
-  }));
+  scheduler.request(
+    makeJob(fake, "c", paints, errors, {
+      onPaint: () => events.push("paint"),
+    }),
+  );
   fake.complete(fake.calls[0]!.token, pixels(60, 16, [10]));
   await flush();
   assert.deepEqual(events, ["pending"], "stale completion does not clear pending");
@@ -407,7 +429,11 @@ test("pending clears on cancellation, returning to painted inputs, errors and dr
   fake.complete(fake.calls[3]!.token, pixels(60, 16, [10]), { dropped: true });
   await flush();
   assert.equal(states.at(-1), false);
-  request("f", { nextToken: () => { throw new Error("token failure"); } });
+  request("f", {
+    nextToken: () => {
+      throw new Error("token failure");
+    },
+  });
   await flush();
   assert.equal(errors.length, 2);
   assert.equal(states.at(-1), false);
@@ -433,4 +459,64 @@ test("a failed request stays settled across parent rerenders and can restart exp
   await flush();
   assert.equal(paints.length, 1);
   assert.deepEqual(states, [true, false, true, false]);
+});
+
+// Completion-paced latest-value scheduling (https://rxjs.dev/api/operators/audit):
+// resize events can outrun WASM. Keep one render active and one latest request,
+// and paint real intermediate frames while the pointer is still moving.
+function resizeJob(fake: FakeRenderer, size: number, paints: PaintOutcome[], errors: unknown[]): RenderJob {
+  const spec = { ...baseSpec("shtht"), width: 640 + size, size_px: size };
+  return makeJob(fake, `resize-${size}`, paints, errors, {
+    progressiveKey: "same-session-font-text-style-and-display",
+    specForHeight: (height) => ({ ...spec, height }),
+  });
+}
+
+test("continuous resize paints completed frames and coalesces queued sizes", async () => {
+  const fake = new FakeRenderer();
+  const paints: PaintOutcome[] = [];
+  const errors: unknown[] = [];
+  const states: boolean[] = [];
+  const scheduler = new RenderScheduler((pending) => states.push(pending));
+  for (let size = 103; size <= 122; size++) scheduler.request(resizeJob(fake, size, paints, errors));
+  assert.equal(fake.calls.length, 1, "resize requests must not flood the worker queue");
+  fake.complete(fake.calls[0]!.token, pixels(743, 16, [10]));
+  await flush();
+  assert.equal(paints.length, 1, "the completed intermediate size paints before pointer release");
+  assert.equal(fake.calls.length, 2);
+  assert.equal(fake.calls[1]!.spec.size_px, 122, "only the latest queued size renders next");
+  scheduler.request(resizeJob(fake, 123, paints, errors));
+  fake.complete(fake.calls[1]!.token, pixels(762, 16, [11]));
+  await flush();
+  assert.equal(paints.length, 2, "ongoing input must not starve the next paint");
+  assert.deepEqual(states, [true], "pending stays set until the latest size paints");
+  fake.complete(fake.calls[2]!.token, pixels(763, 16, [12]));
+  await flush();
+  assert.equal(paints.length, 3);
+  assert.deepEqual(states, [true, false]);
+  scheduler.request(resizeJob(fake, 123, paints, errors));
+  assert.equal(fake.calls.length, 3, "the final size remains deduplicated");
+  assert.deepEqual(errors, []);
+});
+
+test("text changes and cancellation discard progressive frames and their queued resize", async () => {
+  for (const cancel of [false, true]) {
+    const fake = new FakeRenderer();
+    const paints: PaintOutcome[] = [];
+    const errors: unknown[] = [];
+    const scheduler = new RenderScheduler();
+    scheduler.request(resizeJob(fake, 103, paints, errors));
+    scheduler.request(resizeJob(fake, 104, paints, errors));
+    if (cancel) scheduler.cancel();
+    else scheduler.request(makeJob(fake, "different-text", paints, errors));
+    fake.complete(fake.calls[0]!.token, pixels(743, 16, [10]));
+    await flush();
+    assert.equal(paints.length, 0);
+    assert.equal(fake.calls.length, cancel ? 1 : 2, "the abandoned queued resize must not run");
+    if (!cancel) {
+      fake.complete(fake.calls[1]!.token, pixels(60, 16, [12]));
+      await flush();
+      assert.equal(paints.length, 1);
+    }
+  }
 });

@@ -16,10 +16,7 @@ import "./font-canvas-story.css";
 // The real FontCanvas props this playground supports. Pick (not a copy)
 // keeps the names and value types tied to FontCanvasProps: renaming a prop
 // there fails compilation here instead of drifting into a stale control.
-type RealStoryFields = Pick<
-  FontCanvasProps,
-  "text" | "sizePx" | "zoom" | "mode" | "profile" | "palette" | "ready"
->;
+type RealStoryFields = Pick<FontCanvasProps, "text" | "sizePx" | "zoom" | "mode" | "profile" | "palette" | "ready">;
 
 // Plain type alias (not an interface) so it stays assignable to Storybook's
 // Args record for useArgs. Exported for the diagnostics story, the only
@@ -78,10 +75,7 @@ const INVALID_PALETTE: RGBA[] = [
 // state. Only invalid-palette sets colors itself — an actually invalid
 // palette on the real prop. Ready has no static bundle either: it restores
 // the last healthy paint dynamically.
-const DIAGNOSTIC_PRESETS: Record<
-  Exclude<DiagnosticState, "ready" | "invalid-palette">,
-  Partial<CanvasStoryArgs>
-> = {
+const DIAGNOSTIC_PRESETS: Record<Exclude<DiagnosticState, "ready" | "invalid-palette">, Partial<CanvasStoryArgs>> = {
   error: { ...DIAGNOSTIC_BASE, scenario: "error" },
   unavailable: { ...DIAGNOSTIC_BASE, scenario: "unavailable" },
   "missing-glyphs": { ...DIAGNOSTIC_BASE, text: "Ag 😀" },
@@ -94,7 +88,9 @@ const STORY_FONT_NAMES = BUNDLED_FONTS.map((entry) => entry.name);
 // Color plumbing (story-only): the popup edits one combined #rrggbbaa
 // value per entry, while the renderer takes readonly RGBA tuples.
 function byteToHex(n: number): string {
-  return Math.min(255, Math.max(0, Math.round(n))).toString(16).padStart(2, "0");
+  return Math.min(255, Math.max(0, Math.round(n)))
+    .toString(16)
+    .padStart(2, "0");
 }
 
 // Exact #rrggbbaa text for one palette entry: the single combined value the
@@ -111,8 +107,16 @@ function normalizeHex8(value: string): string | undefined {
   if (digits.startsWith("#")) digits = digits.slice(1);
   if (!/^[0-9a-f]+$/i.test(digits)) return undefined;
   digits = digits.toLowerCase();
-  if (digits.length === 3) digits = digits.split("").map((c) => c + c).join("");
-  if (digits.length === 4) digits = digits.split("").map((c) => c + c).join("");
+  if (digits.length === 3)
+    digits = digits
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  if (digits.length === 4)
+    digits = digits
+      .split("")
+      .map((c) => c + c)
+      .join("");
   if (digits.length === 6) digits = `${digits}ff`;
   if (digits.length !== 8) return undefined;
   return `#${digits}`;
@@ -178,11 +182,7 @@ function seedFull(paper: RGBA, ink: RGBA, target: 2 | 8): RGBA[] {
 // palette when one was kept, and the collapse keeps the full-coverage ink.
 // Anything else (an explicit raw length from the diagnostics tools) is left
 // alone so it can error.
-function fitPalette(
-  palette: readonly RGBA[],
-  target: 2 | 8,
-  parkedGray: RGBA[] | undefined,
-): RGBA[] {
+function fitPalette(palette: readonly RGBA[], target: 2 | 8, parkedGray: RGBA[] | undefined): RGBA[] {
   if (palette.length === target) return palette.map((entry) => [...entry] as RGBA);
   const paper = palette[0] !== undefined ? ([...palette[0]] as RGBA) : ([...DEFAULT_PAPER] as RGBA);
   if (target === 2) return [paper, fullInk(palette)];
@@ -200,7 +200,15 @@ function fitPalette(
 // hex field. Opacity lives only inside the popup — there is no separate
 // alpha slider or readout anywhere. Rendered from the same bytes the canvas
 // paints, so every visible value is what is rendered.
-function RgbaPicker({ row, label, entry, title, open, onOpenChange, onCommit }: {
+function RgbaPicker({
+  row,
+  label,
+  entry,
+  title,
+  open,
+  onOpenChange,
+  onCommit,
+}: {
   row: string;
   label: string;
   entry: RGBA;
@@ -219,11 +227,7 @@ function RgbaPicker({ row, label, entry, title, open, onOpenChange, onCommit }: 
       {title !== undefined && <span className="fc-rgba-title">{title}</span>}
       <Popover.Root open={open} onOpenChange={onOpenChange}>
         <Popover.Trigger asChild>
-          <button
-            type="button"
-            data-picker-trigger={row}
-            aria-label={`${label} RGBA, current value ${value}`}
-          >
+          <button type="button" data-picker-trigger={row} aria-label={`${label} RGBA, current value ${value}`}>
             <span aria-hidden="true" className="fc-swatch" style={{ backgroundColor: value }} />
             <span data-picker-bytes={row}>{value}</span>
           </button>
@@ -267,7 +271,11 @@ function setPaletteEntryBytes(palette: readonly RGBA[], index: number, entry: RG
 // shows Level 1; Gray shows 1..7). Malformed raw values hide their pickers
 // (display-only guard); the verbatim args still reach the canvas so the
 // error reports there.
-function PreviewPanels({ args, updateArgs, viewPalette }: {
+function PreviewPanels({
+  args,
+  updateArgs,
+  viewPalette,
+}: {
   args: CanvasStoryArgs;
   updateArgs: (patch: Partial<CanvasStoryArgs>) => void;
   viewPalette: readonly RGBA[] | undefined;
@@ -275,10 +283,8 @@ function PreviewPanels({ args, updateArgs, viewPalette }: {
   const fontSelectId = React.useId();
   const target = args.profile === "mono_1bit" ? 2 : 8;
   const rawPalette: unknown = args.palette;
-  const shapeOk =
-    rawPalette === undefined || (Array.isArray(rawPalette) && rawPalette.every(isRGBA));
-  const invalid =
-    !shapeOk || (Array.isArray(rawPalette) && !isStoryLength(rawPalette.length));
+  const shapeOk = rawPalette === undefined || (Array.isArray(rawPalette) && rawPalette.every(isRGBA));
+  const invalid = !shapeOk || (Array.isArray(rawPalette) && !isStoryLength(rawPalette.length));
   const ink = fullInk(viewPalette);
   const paper = (() => {
     if (!Array.isArray(rawPalette) || rawPalette.length === 0) return [...DEFAULT_PAPER] as RGBA;
@@ -289,9 +295,8 @@ function PreviewPanels({ args, updateArgs, viewPalette }: {
   // Rows edit the fitted palette (valid lengths) so every picker commit
   // stays paintable. An omitted palette seeds from the defaults, matching
   // what the rows display.
-  const rowsBase = viewPalette !== undefined && viewPalette.every(isRGBA)
-    ? viewPalette
-    : seedFull(DEFAULT_PAPER, DEFAULT_INK, target);
+  const rowsBase =
+    viewPalette !== undefined && viewPalette.every(isRGBA) ? viewPalette : seedFull(DEFAULT_PAPER, DEFAULT_INK, target);
   // Only one popup stays open at a time, so editors never stack.
   const [openRow, setOpenRow] = React.useState<string | null>(null);
   const pickerProps = (row: string): { open: boolean; onOpenChange: (open: boolean) => void } => ({
@@ -321,13 +326,16 @@ function PreviewPanels({ args, updateArgs, viewPalette }: {
         <div className="fc-fields fc-setup">
           <label htmlFor={fontSelectId}>
             Font
-            <Select
-              value={args.fontName}
-              onValueChange={(fontName) => updateArgs({ fontName })}
-            >
-              <SelectTrigger id={fontSelectId} data-setup-font><SelectValue /></SelectTrigger>
+            <Select value={args.fontName} onValueChange={(fontName) => updateArgs({ fontName })}>
+              <SelectTrigger id={fontSelectId} data-setup-font>
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                {STORY_FONT_NAMES.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                {STORY_FONT_NAMES.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </label>
@@ -356,8 +364,8 @@ function PreviewPanels({ args, updateArgs, viewPalette }: {
       </details>
       {invalid ? (
         <p data-picker-note="invalid" className="fc-note">
-          Custom palette value active: the pickers stay hidden while it applies verbatim.
-          Edit it in Raw palette JSON below, or re-apply the Ready state.
+          Custom palette value active: the pickers stay hidden while it applies verbatim. Edit it in Raw palette JSON
+          below, or re-apply the Ready state.
         </p>
       ) : (
         <div data-color-playground>
@@ -387,7 +395,10 @@ function PreviewPanels({ args, updateArgs, viewPalette }: {
             <summary>{`Coverage levels (${active.length})`}</summary>
             <table className="fc-levels" aria-label="Coverage levels">
               <thead>
-                <tr><th scope="col">Level</th><th scope="col">RGBA</th></tr>
+                <tr>
+                  <th scope="col">Level</th>
+                  <th scope="col">RGBA</th>
+                </tr>
               </thead>
               <tbody>
                 {active.map((level) => {
@@ -431,7 +442,10 @@ const DIAGNOSTIC_STATES: { value: DiagnosticState; label: string }[] = [
   { value: "empty-text", label: "Empty text" },
 ];
 
-function DiagnosticStateBar({ current, onApplyPreset }: {
+function DiagnosticStateBar({
+  current,
+  onApplyPreset,
+}: {
   current: DiagnosticState;
   onApplyPreset: (state: DiagnosticState) => void;
 }): React.JSX.Element {
@@ -440,13 +454,16 @@ function DiagnosticStateBar({ current, onApplyPreset }: {
     <div data-diagnostic-tools className="fc-fields">
       <label htmlFor={stateSelectId}>
         Failure state
-        <Select
-          value={current}
-          onValueChange={(value) => onApplyPreset(value as DiagnosticState)}
-        >
-          <SelectTrigger id={stateSelectId} data-diagnostic-state><SelectValue /></SelectTrigger>
+        <Select value={current} onValueChange={(value) => onApplyPreset(value as DiagnosticState)}>
+          <SelectTrigger id={stateSelectId} data-diagnostic-state>
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
-            {DIAGNOSTIC_STATES.map((state) => <SelectItem key={state.value} value={state.value}>{state.label}</SelectItem>)}
+            {DIAGNOSTIC_STATES.map((state) => (
+              <SelectItem key={state.value} value={state.value}>
+                {state.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </label>
@@ -462,7 +479,10 @@ function DiagnosticStateBar({ current, onApplyPreset }: {
 // Raw palette JSON editor: writes the ACTUAL palette arg verbatim (invalid
 // values reach the renderer and error there). Collapsed by default inside
 // its own disclosure; never rendered on normal stories.
-function DiagnosticRawTools({ args, updateArgs }: {
+function DiagnosticRawTools({
+  args,
+  updateArgs,
+}: {
   args: CanvasStoryArgs;
   updateArgs: (patch: Partial<CanvasStoryArgs>) => void;
 }): React.JSX.Element {
@@ -516,7 +536,11 @@ function DiagnosticRawTools({ args, updateArgs }: {
           </button>
         </div>
       </div>
-      {rawError !== "" && <p data-raw-error role="alert" className="fc-error-text">{rawError}</p>}
+      {rawError !== "" && (
+        <p data-raw-error role="alert" className="fc-error-text">
+          {rawError}
+        </p>
+      )}
     </details>
   );
 }
@@ -553,9 +577,7 @@ function humanStatus(
     // confirmation. Only a paint with something to report (uncovered
     // characters, truncation) earns a human line.
     const notes = [
-      paintInfo !== null && paintInfo.missing > 0
-        ? `${paintInfo.missing} characters missing from the font`
-        : "",
+      paintInfo !== null && paintInfo.missing > 0 ? `${paintInfo.missing} characters missing from the font` : "",
       paintInfo !== null && paintInfo.truncated ? "text truncated" : "",
     ].filter((note) => note !== "");
     return notes.length > 0 ? { text: notes.join(" — "), tone: "ok" } : null;
@@ -595,7 +617,12 @@ interface StoryController {
 // Shared by the main examples and the diagnostics story: provider choice,
 // font loading, playground wiring, and canvas live here. The diagnostics
 // story additionally opts into the simulation tools panel.
-export function StagedFontCanvas({ args, updateArgs, diagnosticTools, compactPanels }: {
+export function StagedFontCanvas({
+  args,
+  updateArgs,
+  diagnosticTools,
+  compactPanels,
+}: {
   args: CanvasStoryArgs;
   updateArgs: (patch: Partial<CanvasStoryArgs>) => void;
   diagnosticTools?: boolean;
@@ -612,40 +639,42 @@ export function StagedFontCanvas({ args, updateArgs, diagnosticTools, compactPan
   // state except invalid-palette pairs its fields with the last healthy
   // colors — or the story defaults before the first paint — clearing any
   // prior invalid color state.
-  const applyDiagnostic = React.useCallback((state: DiagnosticState): void => {
-    if (state === "invalid-palette") {
+  const applyDiagnostic = React.useCallback(
+    (state: DiagnosticState): void => {
+      if (state === "invalid-palette") {
+        updateArgs({
+          diagnostic: state,
+          ...DIAGNOSTIC_BASE,
+          palette: INVALID_PALETTE.map((entry) => [...entry] as RGBA),
+        });
+        return;
+      }
+      const saved = lastHealthy.current;
+      const preset = state === "ready" ? DIAGNOSTIC_BASE : DIAGNOSTIC_PRESETS[state];
+      let restored: RGBA[] | undefined =
+        saved?.palette === undefined ? undefined : saved.palette.map((entry) => [...entry] as RGBA);
+      // The stash may predate a profile switch made while invalid colors
+      // blocked repainting: converge it to the current profile then. A stash
+      // from the current profile restores verbatim, preserving explicitly
+      // committed arrays.
+      const profileTarget = args.profile === "mono_1bit" ? 2 : 8;
+      if (
+        saved !== null &&
+        saved.profile !== args.profile &&
+        restored !== undefined &&
+        isStoryLength(restored.length) &&
+        restored.length !== profileTarget
+      ) {
+        restored = fitPalette(restored, profileTarget, parked.current.gray);
+      }
       updateArgs({
         diagnostic: state,
-        ...DIAGNOSTIC_BASE,
-        palette: INVALID_PALETTE.map((entry) => [...entry] as RGBA),
+        ...preset,
+        palette: restored,
       });
-      return;
-    }
-    const saved = lastHealthy.current;
-    const preset = state === "ready" ? DIAGNOSTIC_BASE : DIAGNOSTIC_PRESETS[state];
-    let restored: RGBA[] | undefined = saved?.palette === undefined
-      ? undefined
-      : saved.palette.map((entry) => [...entry] as RGBA);
-    // The stash may predate a profile switch made while invalid colors
-    // blocked repainting: converge it to the current profile then. A stash
-    // from the current profile restores verbatim, preserving explicitly
-    // committed arrays.
-    const profileTarget = args.profile === "mono_1bit" ? 2 : 8;
-    if (
-      saved !== null &&
-      saved.profile !== args.profile &&
-      restored !== undefined &&
-      isStoryLength(restored.length) &&
-      restored.length !== profileTarget
-    ) {
-      restored = fitPalette(restored, profileTarget, parked.current.gray);
-    }
-    updateArgs({
-      diagnostic: state,
-      ...preset,
-      palette: restored,
-    });
-  }, [args.profile, updateArgs]);
+    },
+    [args.profile, updateArgs],
+  );
   const controller: StoryController = { noteHealthy, applyDiagnostic, parked, lastTarget };
   // The ok scenario renders through the real preview worker; error and
   // unavailable keep the deterministic fixture that simulates them.
@@ -655,7 +684,13 @@ export function StagedFontCanvas({ args, updateArgs, diagnosticTools, compactPan
   );
   return (
     <RendererProvider key={args.scenario} createService={createService}>
-      <StagedCanvas args={args} updateArgs={updateArgs} diagnosticTools={diagnosticTools} compactPanels={compactPanels} controller={controller} />
+      <StagedCanvas
+        args={args}
+        updateArgs={updateArgs}
+        diagnosticTools={diagnosticTools}
+        compactPanels={compactPanels}
+        controller={controller}
+      />
     </RendererProvider>
   );
 }
@@ -665,7 +700,13 @@ export function FontCanvasDiagnosticsStory(args: CanvasStoryArgs): React.JSX.Ele
   return <StagedFontCanvas args={args} updateArgs={updateArgs} diagnosticTools />;
 }
 
-function StagedCanvas({ args, updateArgs, diagnosticTools, compactPanels, controller }: {
+function StagedCanvas({
+  args,
+  updateArgs,
+  diagnosticTools,
+  compactPanels,
+  controller,
+}: {
   args: CanvasStoryArgs;
   updateArgs: (patch: Partial<CanvasStoryArgs>) => void;
   diagnosticTools?: boolean;
@@ -680,10 +721,7 @@ function StagedCanvas({ args, updateArgs, diagnosticTools, compactPanels, contro
   const [paints, setPaints] = React.useState(0);
   const [paintInfo, setPaintInfo] = React.useState<{ missing: number; truncated: boolean } | null>(null);
   const { parked, lastTarget } = controller;
-  const {
-    text, sizePx, zoom, mode, profile, palette,
-    viewportWidth, checkerboard,
-  } = args;
+  const { text, sizePx, zoom, mode, profile, palette, viewportWidth, checkerboard } = args;
   // The actual palette arg, validated at runtime: explicit raw commits pass
   // verbatim (scalars, null, malformed tuples included) so the renderer can
   // reject them. Only well-shaped RGBA arrays take part in fitting below.
@@ -730,26 +768,22 @@ function StagedCanvas({ args, updateArgs, diagnosticTools, compactPanels, contro
   React.useEffect(() => {
     if (
       pendingFit !== null &&
-      (validPalette === undefined ||
-        !isStoryLength(validPalette.length) ||
-        validPalette.length === target)
+      (validPalette === undefined || !isStoryLength(validPalette.length) || validPalette.length === target)
     ) {
       setPendingFit(null);
     }
   });
   const converting =
-    pendingFit !== null || (validPalette !== undefined &&
+    pendingFit !== null ||
+    (validPalette !== undefined &&
       isStoryLength(validPalette.length) &&
       validPalette.length !== target &&
       lastTarget.current !== target);
   // Fitted view for the picker rows so they keep editing whole levels
   // across the switch commit; the canvas below always paints the actual
   // args, so Controls converge on exactly what is painted.
-  const mismatched =
-    validPalette !== undefined && isStoryLength(validPalette.length) && validPalette.length !== target;
-  const viewPalette = mismatched
-    ? fitPalette(validPalette, target, parked.current.gray)
-    : validPalette;
+  const mismatched = validPalette !== undefined && isStoryLength(validPalette.length) && validPalette.length !== target;
+  const viewPalette = mismatched ? fitPalette(validPalette, target, parked.current.gray) : validPalette;
   // Panel commits are explicit user values: they clear a pending conversion
   // gate (manager profile switches, the only other palette changer, keep it
   // until the args converge).
@@ -763,20 +797,31 @@ function StagedCanvas({ args, updateArgs, diagnosticTools, compactPanels, contro
   // claims a ready preview while the font is still loading or the renderer
   // is down — and a clean paint claims nothing at all.
   const human = humanStatus(
-    status, available, service, availabilityError ?? "", storyFont.loadError,
-    args.ready, storyFont.ready, paintInfo,
+    status,
+    available,
+    service,
+    availabilityError ?? "",
+    storyFont.loadError,
+    args.ready,
+    storyFont.ready,
+    paintInfo,
   );
   return (
     <section data-fc-surface aria-label="FontCanvas preview">
       {human !== null && (
-        <p data-story-human role="status" className="fc-human" data-tone={human.tone}>{human.text}</p>
+        <p data-story-human role="status" className="fc-human" data-tone={human.tone}>
+          {human.text}
+        </p>
       )}
       <div
         data-fc-preview
         style={{
           width: viewportWidth,
           ...(checkerboard
-            ? { backgroundImage: "conic-gradient(#c9c9c9 0 25%, #f2f2f2 0 50%, #c9c9c9 0 75%, #f2f2f2 0)", backgroundSize: "16px 16px" }
+            ? {
+                backgroundImage: "conic-gradient(#c9c9c9 0 25%, #f2f2f2 0 50%, #c9c9c9 0 75%, #f2f2f2 0)",
+                backgroundSize: "16px 16px",
+              }
             : {}),
         }}
       >
@@ -812,8 +857,8 @@ function StagedCanvas({ args, updateArgs, diagnosticTools, compactPanels, contro
             setPaints((count) => count + 1);
             setPaintInfo({ missing: diagnostics.missing, truncated: diagnostics.truncated });
             setStatus(
-              `painted fullHeight=${diagnostics.fullHeight} `
-              + `missing=${diagnostics.missing} truncated=${diagnostics.truncated}`,
+              `painted fullHeight=${diagnostics.fullHeight} ` +
+                `missing=${diagnostics.missing} truncated=${diagnostics.truncated}`,
             );
           }}
           onError={(message) => {
@@ -821,8 +866,12 @@ function StagedCanvas({ args, updateArgs, diagnosticTools, compactPanels, contro
           }}
         />
       </div>
-      <output data-story-status hidden>{status}</output>
-      <p data-story-paints hidden>{paints}</p>
+      <output data-story-status hidden>
+        {status}
+      </output>
+      <p data-story-paints hidden>
+        {paints}
+      </p>
       {diagnosticTools && (
         <DiagnosticStateBar current={args.diagnostic ?? "ready"} onApplyPreset={controller.applyDiagnostic} />
       )}
@@ -834,9 +883,7 @@ function StagedCanvas({ args, updateArgs, diagnosticTools, compactPanels, contro
       ) : (
         <PreviewPanels args={args} updateArgs={commitArgs} viewPalette={viewPalette} />
       )}
-      {diagnosticTools && (
-        <DiagnosticRawTools args={args} updateArgs={commitArgs} />
-      )}
+      {diagnosticTools && <DiagnosticRawTools args={args} updateArgs={commitArgs} />}
     </section>
   );
 }
@@ -866,7 +913,8 @@ const realPropArgTypes: Record<keyof RealStoryFields, ArgRow> = {
   // JSON editor (object values render as a dash, not as bytes).
   palette: {
     control: false,
-    description: "Complete coverage palette as [r, g, b, a] byte tuples: exactly 2 (Mono) / 8 (Gray) entries with entry 0 as the paper; omitted paints default ink on paper. Edit with the Font color / Background / Level pickers.",
+    description:
+      "Complete coverage palette as [r, g, b, a] byte tuples: exactly 2 (Mono) / 8 (Gray) entries with entry 0 as the paper; omitted paints default ink on paper. Edit with the Font color / Background / Level pickers.",
   },
   ready: {
     control: "boolean",

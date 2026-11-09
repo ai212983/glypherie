@@ -11,7 +11,9 @@ interface QuickFilterProps {
 export function QuickFilter({ value, onChange }: QuickFilterProps): React.JSX.Element {
   return (
     <div className="flex min-w-0 flex-1 justify-end sm:flex-none">
-      <Label htmlFor="library-filter" className="sr-only">Filter fonts</Label>
+      <Label htmlFor="library-filter" className="sr-only">
+        Filter fonts
+      </Label>
       <div className="relative w-full min-w-0 sm:w-[219px]">
         <span
           aria-hidden="true"

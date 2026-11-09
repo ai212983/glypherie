@@ -4,6 +4,7 @@
 // debounce), built from the live library instead of generator exports: no
 // family is hardcoded.
 // cspell:words metas
+import { cloneKerning, parseKerning, type KerningPreference } from "../kerning/model.ts";
 import type { RendererRole } from "../renderer/renderer-types.js";
 import {
   defaultSnapshot,
@@ -19,8 +20,10 @@ import {
   indexPath,
   homePath,
   isRoutePath,
+  legacyScreenPath,
   palettesPath,
   parseRoute,
+  screenPath,
   type Route,
 } from "./router.js";
 
@@ -49,21 +52,24 @@ export function writeRoleParam(role: RendererRole): void {
   window.history.replaceState(window.history.state, "", `${window.location.pathname}?${params}`);
 }
 
-function readStoredGlobals(): { kerning?: boolean } {
-  const result: { kerning?: boolean } = {};
+function readStoredGlobals(): { kerning?: KerningPreference } {
+  const result: { kerning?: KerningPreference } = {};
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(SPACING_KEY) ?? "");
-    if (parsed && typeof parsed === "object" && typeof (parsed as Record<string, unknown>).kerning === "boolean") {
-      result.kerning = (parsed as { kerning: boolean }).kerning;
+    if (parsed && typeof parsed === "object") {
+      const kerning = parseKerning((parsed as Record<string, unknown>).kerning);
+      if (kerning !== null) result.kerning = kerning;
     }
-  } catch { /* storage unavailable */ }
+  } catch {
+    /* storage unavailable */
+  }
   return result;
 }
 
 function withStoredGlobals(snapshot: PreviewSnapshot): PreviewSnapshot {
   const stored = readStoredGlobals();
   snapshot.pixelAccurate = true;
-  if (stored.kerning !== undefined) snapshot.kerning = stored.kerning;
+  if (stored.kerning !== undefined) snapshot.kerning = cloneKerning(stored.kerning);
   return snapshot;
 }
 
@@ -144,7 +150,9 @@ export function writeSnapshotNow(snapshot: PreviewSnapshot, familyOrder: string[
   try {
     localStorage.setItem(EXACT_KEY, "true");
     localStorage.setItem(SPACING_KEY, JSON.stringify({ kerning: snapshot.kerning }));
-  } catch { /* storage unavailable */ }
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 // Canonical URL for a resolved route, migrating legacy queries and fragments.
@@ -158,6 +166,11 @@ export function canonicalPathFor(
     return `${detailPath(route.font)}?${encodeHashSearch(snapshot, baseSearch, familyOrder).toString()}`;
   }
   if (route.page === "palettes") return palettesPath(baseSearch);
+  if (route.page === "screen") return screenPath(baseSearch);
+  // Legacy scene links canonicalize directly to the unified Screen route;
+  // history state stays with the caller (see replaceCanonicalPath).
+  if (route.page === "scenes") return legacyScreenPath(null, baseSearch);
+  if (route.page === "scene") return legacyScreenPath(route.scene, baseSearch);
   if (route.page === "home") return homePath(baseSearch);
   return indexPath(baseSearch);
 }

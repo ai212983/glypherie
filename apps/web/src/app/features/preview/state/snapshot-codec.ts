@@ -7,7 +7,7 @@
 // https://url.spec.whatwg.org/#interface-urlsearchparams):
 //   v=1 & font=<family-id> & profile=<id> & exact=<0|1>
 //   & stem=<font_hints_first|upstream_mono> & diagonals=<1, absent when off>
-//   & kerning=<0|1> & families=<JSON>
+//   & kerning=<0|1|JSON method settings> & families=<JSON>
 // Older zoom, scan-control and model parameters are ignored on
 // decoding and dropped when the snapshot is next written.
 // `families` maps each family id to
@@ -16,7 +16,14 @@
 // multiline text even when a preset is selected, so a copied URL does not
 // depend on the other browser's storage or preset definitions. Unknown
 // query parameters are preserved; the hosting path prefix is untouched.
-import type { MonoRaster, OutputProfile, Rasterization, RendererRole, StemFitting } from "../../../renderer/renderer-types.js";
+import { cloneKerning, decodeKerning, encodeKerning, type KerningPreference } from "../../../kerning/model.ts";
+import type {
+  MonoRaster,
+  OutputProfile,
+  Rasterization,
+  RendererRole,
+  StemFitting,
+} from "../../../renderer/renderer-types.js";
 import type { VariantSettings } from "../../../variants/model.js";
 import { PREVIEW_MONO_RASTER } from "../../../renderer/render-spec.ts";
 import { resolveWorkingPreviewPolicy } from "../../../renderer/preview-policy.ts";
@@ -67,7 +74,7 @@ export interface PreviewSnapshot {
   diagonalFitting: boolean;
   monoRaster: MonoRaster;
   rasterization?: Rasterization;
-  kerning: boolean;
+  kerning: KerningPreference;
   families: Record<string, FamilySnapshot>;
 }
 
@@ -90,10 +97,7 @@ function parseBoolParam(value: string | null): boolean | null {
   return null;
 }
 
-export function presetForText(
-  presets: { id: string; content: string }[],
-  text: string,
-): string {
+export function presetForText(presets: { id: string; content: string }[], text: string): string {
   return presets.find((preset) => preset.content === text)?.id ?? "custom";
 }
 
@@ -115,10 +119,7 @@ export function defaultFamilySnapshot(meta: FamilyMeta): FamilySnapshot {
   };
 }
 
-export function defaultSnapshot(
-  metas: FamilyMeta[],
-  defaults: GlobalDefaults,
-): PreviewSnapshot {
+export function defaultSnapshot(metas: FamilyMeta[], defaults: GlobalDefaults): PreviewSnapshot {
   const policy = resolveWorkingPreviewPolicy();
   const families: Record<string, FamilySnapshot> = {};
   for (const meta of metas) families[meta.id] = defaultFamilySnapshot(meta);
@@ -150,22 +151,17 @@ function validateFamilySnapshot(raw: unknown, meta: FamilyMeta): FamilySnapshot 
     }
   }
   const presetIds = new Set([...meta.presets.map((preset) => preset.id), "custom"]);
-  const text = typeof raw.text === "string"
-    ? raw.text.slice(0, MAX_TEXT_LENGTH)
-    : fallback.text;
+  const text = typeof raw.text === "string" ? raw.text.slice(0, MAX_TEXT_LENGTH) : fallback.text;
   return {
     size: typeof raw.size === "number" ? clamp(raw.size, 1, 512, fallback.size) : fallback.size,
     axes,
     spacing: typeof raw.spacing === "number" ? clamp(raw.spacing, -2, 4, 0) : 0,
-    preset: typeof raw.preset === "string" && presetIds.has(raw.preset)
-      ? raw.preset
-      : presetForText(meta.presets, text),
+    preset:
+      typeof raw.preset === "string" && presetIds.has(raw.preset) ? raw.preset : presetForText(meta.presets, text),
     text,
     advancedOpen: raw.advancedOpen === true,
     kerningOpen: raw.kerningOpen === true,
-    kerningFilter: typeof raw.kerningFilter === "string"
-      ? raw.kerningFilter.slice(0, 64)
-      : "",
+    kerningFilter: typeof raw.kerningFilter === "string" ? raw.kerningFilter.slice(0, 64) : "",
   };
 }
 
@@ -187,34 +183,36 @@ export function parseUrlSnapshot(
   const ids = new Set(metas.map((meta) => meta.id));
   const hashId = hashFamilyId(hash ?? "");
   const fontParam = params.get("font");
-  const font = fontParam && ids.has(fontParam)
-    ? fontParam
-    : hashId && ids.has(hashId) ? hashId : defaults.font;
+  const font = fontParam && ids.has(fontParam) ? fontParam : hashId && ids.has(hashId) ? hashId : defaults.font;
   const profileParam = params.get("profile");
   const profile = (PROFILES as readonly string[]).includes(profileParam ?? "")
     ? (profileParam as OutputProfile)
     : defaults.profile;
   const stemParam = params.get("stem");
-  const kerning = parseBoolParam(params.get("kerning"));
+  const kerning = decodeKerning(params.get("kerning"));
   // Historical links carry no flag; the opt-in stays off unless set.
   const diagonals = parseBoolParam(params.get("diagonals")) ?? false;
   let familiesRaw: unknown = null;
   const familiesParam = params.get("families");
   if (familiesParam) {
-    try { familiesRaw = JSON.parse(familiesParam); } catch { familiesRaw = null; }
+    try {
+      familiesRaw = JSON.parse(familiesParam);
+    } catch {
+      familiesRaw = null;
+    }
   }
   const families: Record<string, FamilySnapshot> = {};
   for (const meta of metas) {
-    families[meta.id] = validateFamilySnapshot(
-      isRecord(familiesRaw) ? familiesRaw[meta.id] : null,
-      meta,
-    );
+    families[meta.id] = validateFamilySnapshot(isRecord(familiesRaw) ? familiesRaw[meta.id] : null, meta);
   }
   return {
     version: 1,
     font,
     profile,
-    paletteId: /^\d+$/.test(params.get("palette") ?? "") && Number.isSafeInteger(Number(params.get("palette"))) ? Number(params.get("palette")) : 0,
+    paletteId:
+      /^\d+$/.test(params.get("palette") ?? "") && Number.isSafeInteger(Number(params.get("palette")))
+        ? Number(params.get("palette"))
+        : 0,
     pixelAccurate: true,
     stemFitting: (STEM_FITTINGS as readonly string[]).includes(stemParam ?? "")
       ? (stemParam as StemFitting)
@@ -290,7 +288,7 @@ export function encodeUrlSnapshot(
   // False stays absent so historical links keep their shape.
   if (snapshot.diagonalFitting === true) result.set("diagonals", "1");
   result.set("raster", snapshot.profile === "mono_1bit" ? "free_type_mono" : "coverage");
-  result.set("kerning", snapshot.kerning ? "1" : "0");
+  result.set("kerning", encodeKerning(snapshot.kerning));
   result.set("families", JSON.stringify(familiesJson));
   return result;
 }
@@ -317,7 +315,7 @@ export function previewVariantSettings(
     letterSpacingPx: family.spacing,
     profile: snapshot.profile,
     paletteId: snapshot.paletteId ?? 0,
-    kerning: snapshot.kerning,
+    kerning: cloneKerning(snapshot.kerning),
     stemFitting: snapshot.stemFitting,
     diagonalFitting: snapshot.diagonalFitting ?? false,
     monoRaster: snapshot.monoRaster,

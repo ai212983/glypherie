@@ -19,7 +19,15 @@ interface SpecimenRowProps {
 }
 
 export function SpecimenRow({
-  frame, action, name, caption, selected = false, tintAttributes, deleteButton, deleteError, children,
+  frame,
+  action,
+  name,
+  caption,
+  selected = false,
+  tintAttributes,
+  deleteButton,
+  deleteError,
+  children,
 }: SpecimenRowProps): React.JSX.Element {
   return (
     <div className="group flow-root relative">
@@ -36,9 +44,18 @@ export function SpecimenRow({
             selected ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
           )}
         />
-        <div className={cn("flex min-h-5 w-full min-w-0 items-center gap-2 font-studio text-[9px] leading-4", deleteButton && "pr-7")}>
-          <span className="min-w-0 flex-1 text-left [overflow-wrap:anywhere]" style={{ color: frame.inkCss }}>{name}</span>
-          <span className="shrink-0" style={{ color: frame.mutedCss }}>{caption}</span>
+        <div
+          className={cn(
+            "flex min-h-5 w-full min-w-0 items-center gap-2 font-studio text-[9px] leading-4",
+            deleteButton && "pr-7",
+          )}
+        >
+          <span className="min-w-0 flex-1 text-left [overflow-wrap:anywhere]" style={{ color: frame.inkCss }}>
+            {name}
+          </span>
+          <span className="shrink-0" style={{ color: frame.mutedCss }}>
+            {caption}
+          </span>
         </div>
         {children}
       </Slot.Root>

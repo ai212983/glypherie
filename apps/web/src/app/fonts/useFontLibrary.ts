@@ -1,6 +1,7 @@
 import { UserFacingError, userError } from "../user-error";
 import * as React from "react";
-import { useLiveQuery } from "dexie-react-hooks";
+import { getDomainVersion, subscribeDomain } from "../domain/events.js";
+import { ensureDomainMigrated } from "../domain/migrate.js";
 import {
   getFont,
   listFonts,
@@ -44,35 +45,43 @@ export function useFontLibrary(): FontLibrary {
   // it for inspection and font loading, never creating or terminating one.
   const { service: client, session, available } = useRenderer();
   const rendererAvailable = available;
-  // Reactive font list: variant writes touch only the variants store, so
-  // editing a variant never re-reads font binaries. Worker load state below
-  // stays separate from this database data.
+  // Reactive font list over the domain store: variant writes touch only the
+  // split style entities, so editing a variant never re-reads font binaries.
+  // Worker load state below stays separate from this database data.
   const [fontsQueryError, setFontsQueryError] = React.useState("");
   const [fontsAttempt, setFontsAttempt] = React.useState(0);
   // Boot readiness: the font list stays uninitialized until the seed attempt
   // settles, so route resolution never runs against a partial catalog and
   // genuine font URLs cannot fall back to the library mid-seed.
   const [seedSettled, setSeedSettled] = React.useState(false);
+  const domainVersion = React.useSyncExternalStore(subscribeDomain, getDomainVersion);
+  const [fonts, setFonts] = React.useState<StoredFont[] | null>(null);
   const retryFonts = React.useCallback(() => {
     setFontsQueryError("");
     setFontsAttempt((value) => value + 1);
   }, []);
-  const liveFonts = useLiveQuery(
-    async (): Promise<StoredFont[] | null> => {
-      if (!seedSettled) return null;
-      try {
-        const list = await listFonts();
+  React.useEffect(() => {
+    if (!seedSettled) {
+      setFonts(null);
+      return;
+    }
+    let live = true;
+    void listFonts().then(
+      (list) => {
+        if (!live) return;
         setFontsQueryError("");
-        return list;
-      } catch (error) {
+        setFonts(list);
+      },
+      (error: unknown) => {
+        if (!live) return;
         setFontsQueryError(userError(error, "Couldn’t load fonts."));
-        return null;
-      }
-    },
-    [fontsAttempt, seedSettled],
-    undefined,
-  );
-  const fonts = liveFonts === undefined ? null : liveFonts;
+        setFonts(null);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [fontsAttempt, seedSettled, domainVersion]);
   const [loadedIds, setLoadedIds] = React.useState<ReadonlySet<string>>(new Set());
   const [seedNote, setSeedNote] = React.useState("");
   const [loadStates, setLoadStates] = React.useState<Record<string, FontLoadStatus>>({});
@@ -100,10 +109,13 @@ export function useFontLibrary(): FontLibrary {
   const sessionCommitted = sessionRef.current === session;
   const exposedLoadedIds = sessionCommitted ? loadedIds : EMPTY_IDS;
 
-  const loadStatus = React.useCallback((id: string): FontLoadStatus => {
-    if (sessionRef.current !== session) return { state: "idle", error: "" };
-    return loadStates[id] ?? { state: "idle", error: "" };
-  }, [loadStates, session]);
+  const loadStatus = React.useCallback(
+    (id: string): FontLoadStatus => {
+      if (sessionRef.current !== session) return { state: "idle", error: "" };
+      return loadStates[id] ?? { state: "idle", error: "" };
+    },
+    [loadStates, session],
+  );
 
   // A new renderer session starts with an empty worker-side font cache, so
   // readiness cached for the previous worker is dropped and its in-flight
@@ -130,6 +142,13 @@ export function useFontLibrary(): FontLibrary {
     let cancelled = false;
     (async () => {
       try {
+        // Legacy Dexie rows migrate into the domain store first, so seeding
+        // keys off the migrated marker and never duplicates imported fonts.
+        await ensureDomainMigrated();
+      } catch (error) {
+        if (!cancelled) setSeedNote(userError(error, "Couldn’t migrate saved fonts."));
+      }
+      try {
         await seedBundledFonts(
           BUNDLED_FONTS.map(({ url, name, fileName }) => ({ url: relativeFontUrl(url), name, fileName })),
           async (bytes: ArrayBuffer) => renderer.inspect(bytes),
@@ -141,102 +160,128 @@ export function useFontLibrary(): FontLibrary {
       // post-readiness read only after this boundary, atomically past seeding.
       if (!cancelled) setSeedSettled(true);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [client, session, rendererAvailable]);
 
-  const ensureLoaded = React.useCallback((ids: string | readonly string[]) => {
-    if (!client || rendererAvailable !== true) return;
-    const renderer = client;
-    const wanted = session;
-    const loaded = loadedRef.current;
-    const targets = [...new Set(Array.isArray(ids) ? ids : [ids])]
-      .filter((id) => !loaded.has(id) && !loadingRef.current.has(id) && !failedRef.current.has(id));
-    if (targets.length === 0) return;
-    for (const id of targets) {
-      loadingRef.current.add(id);
-      setLoadStates((prev) => ({ ...prev, [id]: { state: "loading", error: "" } }));
-    }
-    void (async () => {
-      await Promise.all(targets.map(async (id) => {
-        const generation = generationRef.current[id] ?? 0;
-        const epoch = lifetimeRef.current;
-        const live = (): boolean =>
-          lifetimeRef.current === epoch && sessionRef.current === wanted && (generationRef.current[id] ?? 0) === generation;
-        try {
-          const stored = await getFont(id);
-          if (!live()) return;
-          if (!stored) throw new Error("Font data is missing from the library.");
-          if (stored.metadata.font_hints === undefined) {
-            const metadata = await renderer.inspect(stored.bytes.slice(0));
-            if (!live()) return;
-            await updateFontMetadata(id, metadata);
-            if (!live()) return;
-          }
-          await renderer.load(id, stored.bytes.slice(0));
-          if (!live()) return;
-          loadedRef.current.add(id);
-          setLoadedIds(new Set(loadedRef.current));
-          setLoadStates((prev) => ({ ...prev, [id]: { state: "ready", error: "" } }));
-        } catch (error) {
-          if (!live()) return;
-          failedRef.current.add(id);
-          setLoadStates((prev) => ({
-            ...prev,
-            [id]: { state: "error", error: userError(error, "Couldn’t load font.") },
-          }));
-        } finally {
-          if (live()) loadingRef.current.delete(id);
-        }
-      }));
-    })();
-  }, [client, session, rendererAvailable]);
+  const ensureLoaded = React.useCallback(
+    (ids: string | readonly string[]) => {
+      if (!client || rendererAvailable !== true) return;
+      const renderer = client;
+      const wanted = session;
+      const loaded = loadedRef.current;
+      const targets = [...new Set(Array.isArray(ids) ? ids : [ids])].filter(
+        (id) => !loaded.has(id) && !loadingRef.current.has(id) && !failedRef.current.has(id),
+      );
+      if (targets.length === 0) return;
+      for (const id of targets) {
+        loadingRef.current.add(id);
+        setLoadStates((prev) => ({ ...prev, [id]: { state: "loading", error: "" } }));
+      }
+      void (async () => {
+        await Promise.all(
+          targets.map(async (id) => {
+            const generation = generationRef.current[id] ?? 0;
+            const epoch = lifetimeRef.current;
+            const live = (): boolean =>
+              lifetimeRef.current === epoch &&
+              sessionRef.current === wanted &&
+              (generationRef.current[id] ?? 0) === generation;
+            try {
+              const stored = await getFont(id);
+              if (!live()) return;
+              if (!stored) throw new Error("Font data is missing from the library.");
+              if (stored.metadata.font_hints === undefined) {
+                const metadata = await renderer.inspect(stored.bytes.slice(0));
+                if (!live()) return;
+                await updateFontMetadata(id, metadata);
+                if (!live()) return;
+              }
+              await renderer.load(id, stored.bytes.slice(0));
+              if (!live()) return;
+              loadedRef.current.add(id);
+              setLoadedIds(new Set(loadedRef.current));
+              setLoadStates((prev) => ({ ...prev, [id]: { state: "ready", error: "" } }));
+            } catch (error) {
+              if (!live()) return;
+              failedRef.current.add(id);
+              setLoadStates((prev) => ({
+                ...prev,
+                [id]: { state: "error", error: userError(error, "Couldn’t load font.") },
+              }));
+            } finally {
+              if (live()) loadingRef.current.delete(id);
+            }
+          }),
+        );
+      })();
+    },
+    [client, session, rendererAvailable],
+  );
 
-  const importUpload = React.useCallback(async (file: File): Promise<UploadedFont> => {
-    const bytes = await file.arrayBuffer();
-    let metadata;
-    try {
-      if (!client) throw new Error("The preview renderer is unavailable.");
-      metadata = await client.inspect(bytes.slice(0));
-    } catch (error) {
-      throw new UserFacingError(userError(error, `Couldn’t import ${file.name}.`), { cause: error });
-    }
-    const names = (metadata as { names?: Record<string, string | null> }).names ?? {};
-    const fallback = file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
-    const name = (typeof names.full === "string" && names.full.trim())
-      || (typeof names.family === "string" && names.family.trim())
-      || fallback || file.name;
-    let saved: StoredFont;
-    try {
-      saved = await saveFont({ bytes, fileName: file.name, name, metadata, source: "uploaded" });
-    } catch (error) {
-      throw new UserFacingError(userError(error, `Couldn’t import ${file.name}.`), { cause: error });
-    }
-    // The reactive font query picks up the new row; no manual refresh.
-    return { saved };
-  }, [client]);
+  const importUpload = React.useCallback(
+    async (file: File): Promise<UploadedFont> => {
+      const bytes = await file.arrayBuffer();
+      let metadata;
+      try {
+        if (!client) throw new Error("The preview renderer is unavailable.");
+        metadata = await client.inspect(bytes.slice(0));
+      } catch (error) {
+        throw new UserFacingError(userError(error, `Couldn’t import ${file.name}.`), { cause: error });
+      }
+      const names = (metadata as { names?: Record<string, string | null> }).names ?? {};
+      const fallback = file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
+      const name =
+        (typeof names.full === "string" && names.full.trim()) ||
+        (typeof names.family === "string" && names.family.trim()) ||
+        fallback ||
+        file.name;
+      let saved: StoredFont;
+      try {
+        saved = await saveFont({ bytes, fileName: file.name, name, metadata, source: "uploaded" });
+      } catch (error) {
+        throw new UserFacingError(userError(error, `Couldn’t import ${file.name}.`), { cause: error });
+      }
+      // The reactive font query picks up the new row; no manual refresh.
+      return { saved };
+    },
+    [client],
+  );
 
-  const removeStored = React.useCallback(async (id: string): Promise<void> => {
-    generationRef.current[id] = (generationRef.current[id] ?? 0) + 1;
-    // Backend removal cascades the font's variants atomically; the reactive
-    // queries drop both without a manual refresh.
-    await removeFont(id);
-    await client?.unload(id).catch(() => undefined);
-    loadingRef.current.delete(id);
-    failedRef.current.delete(id);
-    loadedRef.current.delete(id);
-    setLoadedIds(new Set(loadedRef.current));
-    setLoadStates((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  }, [client]);
+  const removeStored = React.useCallback(
+    async (id: string): Promise<void> => {
+      generationRef.current[id] = (generationRef.current[id] ?? 0) + 1;
+      // Backend removal cascades the font's variants atomically; the reactive
+      // queries drop both without a manual refresh.
+      await removeFont(id);
+      await client?.unload(id).catch(() => undefined);
+      loadingRef.current.delete(id);
+      failedRef.current.delete(id);
+      loadedRef.current.delete(id);
+      setLoadedIds(new Set(loadedRef.current));
+      setLoadStates((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    },
+    [client],
+  );
 
   // A failed ping still exposes stored fonts with the renderer unavailable;
   // only seeding and loading need the live renderer.
   const bootError = (rendererAvailable === false ? "Preview unavailable." : "") || fontsQueryError;
   return {
-    fonts, rendererAvailable, loadedIds: exposedLoadedIds, bootError, seedNote,
-    ensureLoaded, loadStatus, importUpload, removeStored, retryFonts,
+    fonts,
+    rendererAvailable,
+    loadedIds: exposedLoadedIds,
+    bootError,
+    seedNote,
+    ensureLoaded,
+    loadStatus,
+    importUpload,
+    removeStored,
+    retryFonts,
   };
 }

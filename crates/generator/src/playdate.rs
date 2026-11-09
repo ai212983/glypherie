@@ -19,6 +19,8 @@ pub struct ExportRequest {
     pub pipeline: RenderPipeline,
     #[serde(default)]
     pub letter_spacing_px: f32,
+    #[serde(default)]
+    pub kerning_method: crate::KerningMethod,
 }
 
 /// Generate a standalone UTF-8 .fnt, including its base64 PNG image table.
@@ -30,11 +32,12 @@ pub fn export(data: &[u8], request: &ExportRequest) -> Result<Vec<u8>, Error> {
     validate_characters(&request.config.characters)?;
     #[cfg(feature = "candidate")]
     {
-        let font = crate::candidate::generate_monochrome_font_with_pipeline(
+        let font = crate::candidate::generate_monochrome_font_with_pipeline_and_kerning(
             data,
             &request.config,
             request.pipeline,
             request.letter_spacing_px,
+            request.kerning_method,
         )?;
         encode(&font)
     }

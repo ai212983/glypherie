@@ -49,23 +49,28 @@ function VariantEditor({ font, variant, library, sidebar, rootSampleText }: Vari
   const { draft, status, error, update, retry, reload } = useVariantDraft(variant);
   const [previewStatus, setPreviewStatus] = React.useState("");
   const ready = library.rendererAvailable === true && library.loadedIds.has(font.id);
-  const fontLoadError = library.loadStatus(font.id).state === "error"
-    ? library.loadStatus(font.id).error
-    : "";
+  const fontLoadError = library.loadStatus(font.id).state === "error" ? library.loadStatus(font.id).error : "";
   const conflict = error instanceof VariantStorageError && error.code === "conflict";
 
-  const saveError = React.useMemo(() => error ? userError(error, "Couldn’t save changes.") : "", [error]);
+  const saveError = React.useMemo(() => (error ? userError(error, "Couldn’t save changes.") : ""), [error]);
   const saveLabel = status === "saving" ? "Saving…" : status === "saved" ? "Saved" : "";
 
   const sidebarHead = (
     <Card className="gap-5 p-4 sm:p-6">
-      <h1 className="sr-only">{draft.name.trim() || "Untitled variant"} — {displayName(font)}</h1>
+      <h1 className="sr-only">
+        {draft.name.trim() || "Untitled variant"} — {displayName(font)}
+      </h1>
       <CardHeader>
         <CardTitle asChild>
-          <Label htmlFor={`variant-name-${variant.id}`}><Type aria-hidden="true" className="size-3 shrink-0" />Name</Label>
+          <Label htmlFor={`variant-name-${variant.id}`}>
+            <Type aria-hidden="true" className="size-3 shrink-0" />
+            Name
+          </Label>
         </CardTitle>
         <CardAction className="self-center text-[10px] leading-4 text-muted-foreground">
-          <span role="status" data-save-status>{saveLabel}</span>
+          <span role="status" data-save-status>
+            {saveLabel}
+          </span>
         </CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
@@ -87,8 +92,8 @@ function VariantEditor({ font, variant, library, sidebar, rootSampleText }: Vari
             <h2>{conflict ? "Another tab changed this variant." : "Couldn’t save changes."}</h2>
             {conflict ? (
               <p>Reloading discards your unsaved changes.</p>
-            ) : saveError !== "Couldn’t save changes." && (
-              <p>{saveError}</p>
+            ) : (
+              saveError !== "Couldn’t save changes." && <p>{saveError}</p>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
               {conflict ? (
@@ -109,7 +114,10 @@ function VariantEditor({ font, variant, library, sidebar, rootSampleText }: Vari
 
   return (
     <>
-      <PageMetadata title={`${draft.name.trim() || "Untitled variant"} — ${displayName(font)} — Glypherie`} description={VARIANT_DESCRIPTION} />
+      <PageMetadata
+        title={`${draft.name.trim() || "Untitled variant"} — ${displayName(font)} — Glypherie`}
+        description={VARIANT_DESCRIPTION}
+      />
       <FontEditor
         appearance="studio"
         sidebarHead={sidebarHead}
@@ -117,7 +125,10 @@ function VariantEditor({ font, variant, library, sidebar, rootSampleText }: Vari
         font={font}
         settings={draft.settings}
         sampleText={draft.inheritSampleText ? rootSampleText : draft.sampleText}
-        specimenInheritance={{ active: !!draft.inheritSampleText, onInherit: () => update({ inheritSampleText: true }) }}
+        specimenInheritance={{
+          active: !!draft.inheritSampleText,
+          onInherit: () => update({ inheritSampleText: true }),
+        }}
         onSettings={(settings) => update({ settings })}
         onSampleText={(sampleText) => update({ sampleText, inheritSampleText: false })}
         onReset={() => update({ inheritSampleText: true })}
@@ -132,7 +143,18 @@ function VariantEditor({ font, variant, library, sidebar, rootSampleText }: Vari
 }
 
 function VariantRoute({
-  nav, font, variantId, baseSize, rootSampleText, library, onIndex, onOpenVariantId, onVariantDeleted, onAddVariant, listText, onListText,
+  nav,
+  font,
+  variantId,
+  baseSize,
+  rootSampleText,
+  library,
+  onIndex,
+  onOpenVariantId,
+  onVariantDeleted,
+  onAddVariant,
+  listText,
+  onListText,
 }: VariantPageProps & { listText: string; onListText: (text: string) => void }): React.JSX.Element {
   const live = useLiveVariant(variantId);
 
@@ -144,13 +166,7 @@ function VariantRoute({
   const indexHref = indexPath(base);
   const header = (): React.JSX.Element => (
     <div className="sticky top-0 z-40 shrink-0">
-      <SiteHeader
-        title="Glypherie"
-        titleAs="div"
-        variant="brand"
-        nav={nav}
-
-      />
+      <SiteHeader title="Glypherie" titleAs="div" variant="brand" nav={nav} />
     </div>
   );
   const recovery = (title: string, content: React.JSX.Element): React.JSX.Element => (
@@ -161,9 +177,7 @@ function VariantRoute({
         <h1 className="sr-only">{title}</h1>
         <div className="mx-auto my-12 w-[min(100%-3rem,1440px)] max-w-[45rem] leading-[1.6]">
           <Card>
-            <CardContent>
-              {content}
-            </CardContent>
+            <CardContent>{content}</CardContent>
           </Card>
         </div>
       </main>
@@ -176,7 +190,9 @@ function VariantRoute({
       <section className="content-state my-12 leading-[1.6]" role="alert" data-variant-missing>
         <h2>Font not found</h2>
         <p>
-          <NavLink href={indexHref} data-all-fonts onNavigate={onIndex}>All fonts</NavLink>{" "}
+          <NavLink href={indexHref} data-all-fonts onNavigate={onIndex}>
+            All fonts
+          </NavLink>{" "}
         </p>
       </section>,
     );
@@ -185,7 +201,9 @@ function VariantRoute({
   if (live.status === "loading") {
     return recovery(
       "Loading variant",
-      <p role="status" data-variant-editor={variantId}>Loading variant…</p>,
+      <p role="status" data-variant-editor={variantId}>
+        Loading variant…
+      </p>,
     );
   }
 
@@ -194,12 +212,16 @@ function VariantRoute({
       "Couldn’t load variant",
       <section className="content-state my-12 leading-[1.6]" role="alert" data-variant-error={variantId}>
         <h2>Couldn’t load variant.</h2>
-        <p>{live.message}{" "}
+        <p>
+          {live.message}{" "}
           <button type="button" className="underline" data-variant-retry={variantId} onClick={live.retry}>
             Retry
           </button>{" "}
           or return to{" "}
-          <NavLink href={indexHref} data-all-fonts onNavigate={onIndex}>All fonts</NavLink>.
+          <NavLink href={indexHref} data-all-fonts onNavigate={onIndex}>
+            All fonts
+          </NavLink>
+          .
         </p>
       </section>,
     );
@@ -211,7 +233,9 @@ function VariantRoute({
       <section className="content-state my-12 leading-[1.6]" role="alert" data-variant-deleted={variantId}>
         <h2>Variant not found</h2>
         <p>
-          <NavLink href={indexHref} data-all-fonts onNavigate={onIndex}>All fonts</NavLink>{" "}
+          <NavLink href={indexHref} data-all-fonts onNavigate={onIndex}>
+            All fonts
+          </NavLink>{" "}
         </p>
       </section>,
     );
@@ -232,7 +256,10 @@ function VariantRoute({
             Open variant
           </NavLink>{" "}
           or return to{" "}
-          <NavLink href={indexHref} data-all-fonts onNavigate={onIndex}>All fonts</NavLink>.
+          <NavLink href={indexHref} data-all-fonts onNavigate={onIndex}>
+            All fonts
+          </NavLink>
+          .
         </p>
       </section>,
     );
@@ -249,9 +276,19 @@ function VariantRoute({
             variant={saved}
             rootSampleText={rootSampleText}
             library={library}
-            sidebar={<VariantList font={font} variantId={saved.id} library={library}
-              text={listText} baseSize={baseSize} onText={onListText} onAdd={onAddVariant}
-              onOpen={onOpenVariantId} onLastDeleted={onVariantDeleted} />}
+            sidebar={
+              <VariantList
+                font={font}
+                variantId={saved.id}
+                library={library}
+                text={listText}
+                baseSize={baseSize}
+                onText={onListText}
+                onAdd={onAddVariant}
+                onOpen={onOpenVariantId}
+                onLastDeleted={onVariantDeleted}
+              />
+            }
           />
         </div>
       </main>

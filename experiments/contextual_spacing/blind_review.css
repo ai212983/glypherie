@@ -1,0 +1,35 @@
+:root { color-scheme: light dark; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground, #18202b); }
+html, body { margin: 0; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+main { max-width: 1200px; margin: 0 auto; }
+.intro { margin-top: 0; line-height: 1.5; }
+.controls { display: flex; gap: 12px; flex-wrap: wrap; }
+.toggle { flex-direction: row; align-items: center; align-self: end; padding: 8px 0; }
+.annotation-hint { font-size: 13px; color: var(--muted-foreground, #566273); }
+label { display: flex; flex-direction: column; gap: 5px; font-size: 14px; min-width: 0; }
+select, button { font: inherit; padding: 7px; color: var(--foreground, #18202b); background: var(--card, #f8fafc); border: 1px solid var(--border, #b8c0ca); border-radius: var(--radius, 6px); }
+select { max-width: 100%; }
+button { cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--ring, #2869c4); outline-offset: 2px; }
+#preset { width: 255px; }
+.comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.comparison section { display: grid; grid-template-rows: 48px 28px 360px 28px 240px auto; min-width: 0; }
+h2 { margin: 0; font-size: 17px; display: flex; align-items: center; overflow-wrap: anywhere; }
+.caption { margin: 0; font-size: 13px; align-self: center; color: var(--muted-foreground, #566273); }
+.native, .enlarged { overflow: auto; background: white; color: black; border: 1px solid var(--border, #b8c0ca); padding: 8px; }
+canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+.annotated { position: relative; width: max-content; }
+.pair-underlines { position: absolute; inset: 0; pointer-events: none; }
+.pair-underlines line { stroke: #8aa7bd; stroke-opacity: .65; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.stats, #review-status, details { font-size: 13px; line-height: 1.5; }
+.stats { margin: 8px 0 0; }
+details { margin: 12px 0; }
+summary { cursor: pointer; }
+details .controls { margin-top: 12px; }
+@media (max-width: 540px) {
+  .comparison { grid-template-columns: minmax(0, 1fr); }
+  .controls > label { flex: 1 1 120px; }
+  #preset { width: 100%; }
+}

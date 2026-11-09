@@ -34,7 +34,9 @@ export function useStoryFont(
         }
       },
     );
-    return () => { cleanup.abort(); };
+    return () => {
+      cleanup.abort();
+    };
   }, [enabled, service, session, available, active, fontId]);
   return { fontId, ready: !enabled || loadedKey === `${session}:${fontId}`, loadError };
 }

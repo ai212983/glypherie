@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "devices": [
+    {
+      "id": "xteink-x4",
+      "label": "Xteink X4",
+      "widthPx": 480,
+      "heightPx": 800,
+      "ppi": 220,
+      "ppiBasis": "advertised",
+      "shell": {
+        "src": "shells/xteink-x4.svg",
+        "viewBox": [0, 0, 697, 1140],
+        "screenRect": [72.6, 61.9, 544.8, 908]
+      }
+    },
+    {
+      "id": "xteink-x3",
+      "label": "Xteink X3",
+      "widthPx": 528,
+      "heightPx": 792,
+      "ppi": 259,
+      "ppiBasis": "advertised",
+      "shell": {
+        "src": "shells/xteink-x3.svg",
+        "viewBox": [0, 0, 653, 992],
+        "screenRect": [74.8, 65.2, 503.4, 755.1]
+      }
+    },
+    {
+      "id": "inkplate-4-tempera",
+      "label": "Inkplate 4 TEMPERA",
+      "widthPx": 600,
+      "heightPx": 600,
+      "ppi": 223.3,
+      "ppiBasis": "derived",
+      "shell": {
+        "src": "shells/inkplate-4-tempera.svg",
+        "viewBox": [0, 0, 830, 900],
+        "screenRect": [74, 74, 682, 682]
+      }
+    },
+    {
+      "id": "waveshare-esp32-s3-rlcd-4-2",
+      "label": "Waveshare ESP32-S3-RLCD-4.2",
+      "widthPx": 400,
+      "heightPx": 300,
+      "ppi": 119.8,
+      "ppiBasis": "derived",
+      "shell": {
+        "src": "shells/waveshare-esp32-s3-rlcd-4-2.svg",
+        "viewBox": [0, 0, 925, 691],
+        "screenRect": [38.5, 25, 848, 636]
+      }
+    },
+    {
+      "id": "playdate",
+      "label": "Playdate",
+      "widthPx": 400,
+      "heightPx": 240,
+      "ppi": 173,
+      "ppiBasis": "advertised",
+      "shell": {
+        "src": "shells/playdate.svg",
+        "viewBox": [0, 0, 772, 750],
+        "screenRect": [51.4, 50, 587, 352.2]
+      }
+    },
+    {
+      "id": "boox-picco",
+      "label": "BOOX Picco",
+      "widthPx": 480,
+      "heightPx": 800,
+      "ppi": 235,
+      "ppiBasis": "advertised",
+      "shell": {
+        "src": "shells/boox-picco.svg",
+        "viewBox": [0, 0, 662, 1075],
+        "screenRect": [70.5, 54.3, 519, 865]
+      }
+    }
+  ]
+}

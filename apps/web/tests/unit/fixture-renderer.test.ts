@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  createFixtureRenderer,
-  type FixtureScenario,
-} from "../../src/app/renderer/fixture-renderer.ts";
+import { createFixtureRenderer, type FixtureScenario } from "../../src/app/renderer/fixture-renderer.ts";
 import type { RenderPixels } from "../../src/app/renderer/client.ts";
 import type { RenderSpec } from "../../src/app/renderer/renderer-types.ts";
 
@@ -49,11 +46,7 @@ function spec({
   };
 }
 
-function at(
-  pixels: RenderPixels,
-  x: number,
-  y: number,
-): [number, number, number, number] {
+function at(pixels: RenderPixels, x: number, y: number): [number, number, number, number] {
   const view = new Uint8Array(pixels.pixels);
   const offset = (y * pixels.width + x) * 4;
   const r = view[offset];
@@ -73,26 +66,16 @@ test("equal-length texts produce identical synthetic bands", async () => {
   const renderer = createFixtureRenderer({ latencyMs: 0 });
   const first = await renderer.render("font", 1, spec({ text: "A" }));
   const second = await renderer.render("font", 2, spec({ text: "Z" }));
-  assert.deepEqual(
-    new Uint8Array(second.pixels.pixels),
-    new Uint8Array(first.pixels.pixels),
-  );
+  assert.deepEqual(new Uint8Array(second.pixels.pixels), new Uint8Array(first.pixels.pixels));
   renderer.terminate();
 });
 
 test("blank text paints only the background and reports no lines", async () => {
   const renderer = createFixtureRenderer({ latencyMs: 0 });
-  const result = await renderer.render(
-    "font",
-    1,
-    spec({ text: "", width: 6, height: 2 }),
-  );
+  const result = await renderer.render("font", 1, spec({ text: "", width: 6, height: 2 }));
   assert.equal(result.pixels.width, 6);
   assert.equal(result.pixels.height, 2);
-  assert.deepEqual(
-    new Uint8Array(result.pixels.pixels),
-    new Uint8Array(48).fill(255),
-  );
+  assert.deepEqual(new Uint8Array(result.pixels.pixels), new Uint8Array(48).fill(255));
   assert.deepEqual(result.pixels.layout, {
     lines: [],
     missing_codepoints: [],
@@ -102,15 +85,8 @@ test("blank text paints only the background and reports no lines", async () => {
 
 test("level zero rows leave the background untouched", async () => {
   const renderer = createFixtureRenderer({ latencyMs: 0 });
-  const result = await renderer.render(
-    "font",
-    1,
-    spec({ width: 5, height: 1 }),
-  );
-  assert.deepEqual(
-    new Uint8Array(result.pixels.pixels),
-    new Uint8Array(20).fill(255),
-  );
+  const result = await renderer.render("font", 1, spec({ width: 5, height: 1 }));
+  assert.deepEqual(new Uint8Array(result.pixels.pixels), new Uint8Array(20).fill(255));
   assert.deepEqual(result.pixels.layout?.lines, [{ height_px: 24 }]);
   renderer.terminate();
 });
@@ -133,7 +109,12 @@ test("explicit palette entries paint verbatim", async () => {
   const result = await renderer.render(
     "font",
     1,
-    spec({ palette: [[0, 0, 0, 255], [255, 0, 0, 255]] }),
+    spec({
+      palette: [
+        [0, 0, 0, 255],
+        [255, 0, 0, 255],
+      ],
+    }),
   );
   assert.deepEqual(at(result.pixels, 4, 1), [255, 0, 0, 255]);
   assert.deepEqual(at(result.pixels, 0, 0), WHITE);
@@ -142,11 +123,7 @@ test("explicit palette entries paint verbatim", async () => {
 
 test("transparent background stays transparent off band", async () => {
   const renderer = createFixtureRenderer({ latencyMs: 0 });
-  const result = await renderer.render(
-    "font",
-    1,
-    spec({ background: [0, 0, 0, 0] }),
-  );
+  const result = await renderer.render("font", 1, spec({ background: [0, 0, 0, 0] }));
   assert.deepEqual(at(result.pixels, 0, 0), [0, 0, 0, 0]);
   assert.deepEqual(at(result.pixels, 4, 1), INK);
   renderer.terminate();
@@ -154,26 +131,15 @@ test("transparent background stays transparent off band", async () => {
 
 test("translucent foreground composites over paper", async () => {
   const renderer = createFixtureRenderer({ latencyMs: 0 });
-  const result = await renderer.render(
-    "font",
-    1,
-    spec({ foreground: [255, 0, 0, 128] }),
-  );
+  const result = await renderer.render("font", 1, spec({ foreground: [255, 0, 0, 128] }));
   assert.deepEqual(at(result.pixels, 4, 1), [255, 127, 127, 255]);
   renderer.terminate();
 });
 
 test("multiline text reports one layout entry per line", async () => {
   const renderer = createFixtureRenderer({ latencyMs: 0 });
-  const result = await renderer.render(
-    "font",
-    1,
-    spec({ text: "A\nB", height: 30 }),
-  );
-  assert.deepEqual(result.pixels.layout?.lines, [
-    { height_px: 24 },
-    { height_px: 24 },
-  ]);
+  const result = await renderer.render("font", 1, spec({ text: "A\nB", height: 30 }));
+  assert.deepEqual(result.pixels.layout?.lines, [{ height_px: 24 }, { height_px: 24 }]);
   assert.deepEqual(result.pixels.layout?.missing_codepoints, []);
   assert.deepEqual(at(result.pixels, 4, 25), INK);
   renderer.terminate();
@@ -202,10 +168,7 @@ test("render resolves except on the error scenario", async () => {
   for (const scenario of ["ok", "missing-glyphs", "error", "unavailable"] as const) {
     const renderer = createFixtureRenderer({ latencyMs: 0, scenario });
     if (failing.includes(scenario)) {
-      await assert.rejects(
-        renderer.render("font", 1, spec()),
-        /Fixture render failure/,
-      );
+      await assert.rejects(renderer.render("font", 1, spec()), /Fixture render failure/);
     } else {
       const result = await renderer.render("font", 1, spec());
       assert.equal(result.dropped, false);
@@ -277,11 +240,7 @@ test("render reports the request identity and colors", async () => {
       },
     },
   });
-  await renderer.render(
-    "fid",
-    9,
-    spec({ text: "Hi", palette: [[1, 2, 3, 255]] }),
-  );
+  await renderer.render("fid", 9, spec({ text: "Hi", palette: [[1, 2, 3, 255]] }));
   assert.deepEqual(observed, {
     fontId: "fid",
     token: 9,
@@ -332,10 +291,7 @@ test("blank asymmetric background fills every byte verbatim", async () => {
     1,
     spec({ text: "", width: 2, height: 1, background: [10, 20, 30, 40] }),
   );
-  assert.deepEqual(
-    new Uint8Array(result.pixels.pixels),
-    new Uint8Array([10, 20, 30, 40, 10, 20, 30, 40]),
-  );
+  assert.deepEqual(new Uint8Array(result.pixels.pixels), new Uint8Array([10, 20, 30, 40, 10, 20, 30, 40]));
   renderer.terminate();
 });
 
@@ -358,13 +314,22 @@ test("two-bit gray renders hand-computed coverage steps", async () => {
   renderer.terminate();
 });
 
+test("fixture omits editing geometry instead of approximating it", async () => {
+  // The synthetic renderer has no native layout pass, so it reports no
+  // caret geometry; consumers must handle the absence honestly and never
+  // synthesize stops from browser glyph metrics.
+  const renderer = createFixtureRenderer({ latencyMs: 0 });
+  for (const text of ["A", "A\nB", ""]) {
+    const result = await renderer.render("font", 1, spec({ text, height: 30 }));
+    assert.equal(result.pixels.layout?.editing, undefined);
+    assert.ok(Array.isArray(result.pixels.layout?.lines));
+  }
+  renderer.terminate();
+});
+
 test("mixed newline styles split lines identically", async () => {
   const renderer = createFixtureRenderer({ latencyMs: 0 });
-  const result = await renderer.render(
-    "font",
-    1,
-    spec({ text: "A\r\nB\rC\nD", height: 2 }),
-  );
+  const result = await renderer.render("font", 1, spec({ text: "A\r\nB\rC\nD", height: 2 }));
   assert.deepEqual(result.pixels.layout?.lines, [
     { height_px: 24 },
     { height_px: 24 },
@@ -377,56 +342,29 @@ test("mixed newline styles split lines identically", async () => {
 
 test("dimensions ceil fractional inputs and clamp to the valid range", async () => {
   const renderer = createFixtureRenderer({ latencyMs: 0 });
-  const fractional = await renderer.render(
-    "font",
-    1,
-    spec({ text: "", width: 11.2, height: 1.5 }),
-  );
+  const fractional = await renderer.render("font", 1, spec({ text: "", width: 11.2, height: 1.5 }));
   assert.equal(fractional.pixels.width, 12);
   assert.equal(fractional.pixels.height, 2);
-  assert.deepEqual(
-    new Uint8Array(fractional.pixels.pixels),
-    new Uint8Array(96).fill(255),
-  );
-  const tiny = await renderer.render(
-    "font",
-    2,
-    spec({ text: "", width: 0.4, height: 0.4 }),
-  );
+  assert.deepEqual(new Uint8Array(fractional.pixels.pixels), new Uint8Array(96).fill(255));
+  const tiny = await renderer.render("font", 2, spec({ text: "", width: 0.4, height: 0.4 }));
   assert.equal(tiny.pixels.width, 1);
   assert.equal(tiny.pixels.height, 1);
   assert.deepEqual(new Uint8Array(tiny.pixels.pixels), new Uint8Array(4).fill(255));
-  const wide = await renderer.render(
-    "font",
-    3,
-    spec({ text: "", width: 4097, height: 1 }),
-  );
+  const wide = await renderer.render("font", 3, spec({ text: "", width: 4097, height: 1 }));
   assert.equal(wide.pixels.width, 4096);
   assert.equal(wide.pixels.height, 1);
   assert.deepEqual(at(wide.pixels, 0, 0), WHITE);
   assert.deepEqual(at(wide.pixels, 4095, 0), WHITE);
-  const tall = await renderer.render(
-    "font",
-    4,
-    spec({ text: "", width: 1, height: 4097 }),
-  );
+  const tall = await renderer.render("font", 4, spec({ text: "", width: 1, height: 4097 }));
   assert.equal(tall.pixels.width, 1);
   assert.equal(tall.pixels.height, 4096);
   assert.deepEqual(at(tall.pixels, 0, 0), WHITE);
   assert.deepEqual(at(tall.pixels, 0, 4095), WHITE);
-  const zero = await renderer.render(
-    "font",
-    5,
-    spec({ text: "", width: 0, height: 0 }),
-  );
+  const zero = await renderer.render("font", 5, spec({ text: "", width: 0, height: 0 }));
   assert.equal(zero.pixels.width, 1);
   assert.equal(zero.pixels.height, 1);
   assert.deepEqual(new Uint8Array(zero.pixels.pixels), new Uint8Array(4).fill(255));
-  const negative = await renderer.render(
-    "font",
-    6,
-    spec({ text: "", width: -3, height: -2 }),
-  );
+  const negative = await renderer.render("font", 6, spec({ text: "", width: -3, height: -2 }));
   assert.equal(negative.pixels.width, 1);
   assert.equal(negative.pixels.height, 1);
   assert.deepEqual(new Uint8Array(negative.pixels.pixels), new Uint8Array(4).fill(255));
@@ -441,41 +379,22 @@ test("custom line height bounds and clips bands", async () => {
   roomy.terminate();
   const stub = createFixtureRenderer({ latencyMs: 0, lineHeight: 1 });
   const blankish = await stub.render("font", 2, spec({ height: 3 }));
-  assert.deepEqual(
-    new Uint8Array(blankish.pixels.pixels),
-    new Uint8Array(144).fill(255),
-  );
+  assert.deepEqual(new Uint8Array(blankish.pixels.pixels), new Uint8Array(144).fill(255));
   stub.terminate();
 });
 
 test("size and text length vary ink width", async () => {
   const renderer = createFixtureRenderer({ latencyMs: 0 });
-  const small = await renderer.render(
-    "font",
-    1,
-    spec({ width: 30, size_px: 1 }),
-  );
+  const small = await renderer.render("font", 1, spec({ width: 30, size_px: 1 }));
   assert.deepEqual(at(small.pixels, 11, 1), INK);
   assert.deepEqual(at(small.pixels, 12, 1), WHITE);
-  const large = await renderer.render(
-    "font",
-    2,
-    spec({ width: 30, size_px: 10 }),
-  );
+  const large = await renderer.render("font", 2, spec({ width: 30, size_px: 10 }));
   assert.deepEqual(at(large.pixels, 12, 1), INK);
   assert.deepEqual(at(large.pixels, 18, 1), WHITE);
-  const long = await renderer.render(
-    "font",
-    3,
-    spec({ width: 30, size_px: 1, text: "ABCDEF" }),
-  );
+  const long = await renderer.render("font", 3, spec({ width: 30, size_px: 1, text: "ABCDEF" }));
   assert.deepEqual(at(long.pixels, 14, 1), INK);
   assert.deepEqual(at(long.pixels, 15, 1), WHITE);
-  const clamped = await renderer.render(
-    "font",
-    4,
-    spec({ width: 30, size_px: 0, text: "AA" }),
-  );
+  const clamped = await renderer.render("font", 4, spec({ width: 30, size_px: 0, text: "AA" }));
   assert.deepEqual(at(clamped.pixels, 12, 1), INK);
   assert.deepEqual(at(clamped.pixels, 13, 1), WHITE);
   renderer.terminate();

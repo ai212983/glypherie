@@ -8,17 +8,28 @@ use font_generator::{metadata, Config};
 use font_generator::{renderer::RendererRole, stem_fitting::StemFittingStrategy};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::io::{self, Read};
 
 fn main() {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).unwrap();
     let cases: Vec<Value> = serde_json::from_str(&input).unwrap();
-    let outputs: Vec<Value> = cases.iter().map(reference).collect();
+    let mut fonts = HashMap::new();
+    let outputs: Vec<Value> = cases
+        .iter()
+        .map(|case| {
+            let path = case["font_file"].as_str().unwrap();
+            let prepared = fonts.entry(path.to_owned()).or_insert_with(|| {
+                font_generator::surface::PreparedFont::new(std::fs::read(path).unwrap())
+            });
+            reference(case, prepared)
+        })
+        .collect();
     println!("{}", serde_json::to_string(&outputs).unwrap());
 }
 
-fn reference(case: &Value) -> Value {
+fn reference(case: &Value, prepared: &font_generator::surface::PreparedFont) -> Value {
     let data = std::fs::read(case["font_file"].as_str().unwrap()).unwrap();
     let spec = &case["spec"];
     let mut config = spec.as_object().unwrap().clone();
@@ -35,6 +46,7 @@ fn reference(case: &Value) -> Value {
         "stem_fitting",
         "pipeline",
         "letter_spacing_px",
+        "kerning_method",
     ] {
         config.remove(key);
     }
@@ -71,11 +83,20 @@ fn reference(case: &Value) -> Value {
             .map(|p| serde_json::from_value(p.clone()).unwrap()),
     };
     let rendered = if let Some(pipeline) = spec.get("pipeline") {
-        render_text_with_pipeline(
-            &data,
-            &request,
-            serde_json::from_value(pipeline.clone()).unwrap(),
-        )
+        if let Some(method) = spec.get("kerning_method") {
+            prepared.render_text_with_pipeline_and_kerning(
+                &request,
+                serde_json::from_value(pipeline.clone()).unwrap(),
+                spec["letter_spacing_px"].as_f64().unwrap_or(0.0) as f32,
+                serde_json::from_value(method.clone()).unwrap(),
+            )
+        } else {
+            render_text_with_pipeline(
+                &data,
+                &request,
+                serde_json::from_value(pipeline.clone()).unwrap(),
+            )
+        }
     } else if let Some(role) = spec.get("renderer") {
         let role: RendererRole = serde_json::from_value(role.clone()).unwrap();
         let strategy: Option<StemFittingStrategy> = spec
@@ -92,18 +113,44 @@ fn reference(case: &Value) -> Value {
         render_text(&data, &request)
     };
     match rendered {
-        Ok(result) => json!({
-            "id": case["id"], "width": result.width, "height": result.height,
-            "pixel_sha256": format!("{:x}", Sha256::digest(&result.pixels)),
-            "layout": {
-                "lines": result.lines.iter().map(|line| json!({
-                    "byte_start": line.byte_start, "byte_end": line.byte_end,
-                    "width_26_6": line.width_26_6, "height_px": line.height_px,
-                })).collect::<Vec<_>>(),
-                "missing_codepoints": result.missing_codepoints,
-            },
-            "metadata": metadata::extract(&data).unwrap(),
-        }),
+        Ok(result) => {
+            let export = case.get("export_request").map(|value| {
+                let request = serde_json::from_value(value.clone()).unwrap();
+                font_generator::playdate::export(&data, &request)
+                    .map(|bytes| format!("{:x}", Sha256::digest(bytes)))
+            });
+            let (export_sha256, export_error) = match export {
+                Some(Ok(hash)) => (Some(hash), None),
+                Some(Err(error)) => (None, Some(error.to_string())),
+                None => (None, None),
+            };
+            json!({
+                "id": case["id"], "width": result.width, "height": result.height,
+                "pixel_sha256": format!("{:x}", Sha256::digest(&result.pixels)),
+                "layout": {
+                    "lines": result.lines.iter().map(|line| json!({
+                        "byte_start": line.byte_start, "byte_end": line.byte_end,
+                        "width_26_6": line.width_26_6, "height_px": line.height_px,
+                    })).collect::<Vec<_>>(),
+                    // Mirrors `layout_view` in src/lib.rs (`x_26_6 / 64` is
+                    // exact in float64); the harness deep-comparison pins
+                    // native/WASM editing parity, including blank text.
+                    "editing": {
+                        "carets": result.editing.carets.iter().map(|stop| json!({
+                            "offset": stop.offset_utf16, "line": stop.line,
+                            "x": stop.x_26_6 as f64 / 64.0,
+                            "y": stop.y_px, "height": stop.height_px,
+                        })).collect::<Vec<_>>(),
+                        "width": result.editing.width_26_6 as f64 / 64.0,
+                        "height": result.editing.height_px,
+                    },
+                    "missing_codepoints": result.missing_codepoints,
+                },
+                "metadata": metadata::extract(&data).unwrap(),
+                "export_sha256": export_sha256,
+                "export_error": export_error,
+            })
+        }
         Err(error) => json!({"id": case["id"], "error": error.to_string()}),
     }
 }

@@ -6,6 +6,26 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use unicode_general_category::{get_general_category, GeneralCategory};
 use unicode_script::{Script, UnicodeScript};
 
+/// Internal capability distinction for auxiliary calibration domains. Ordinary
+/// generation still exposes the exact same public Error and error messages.
+pub(crate) enum ShapingFailure {
+    Unsupported(Error),
+    Fatal(Error),
+}
+
+impl From<Error> for ShapingFailure {
+    fn from(error: Error) -> Self {
+        Self::Fatal(error)
+    }
+}
+impl From<ShapingFailure> for Error {
+    fn from(error: ShapingFailure) -> Self {
+        match error {
+            ShapingFailure::Unsupported(error) | ShapingFailure::Fatal(error) => error,
+        }
+    }
+}
+
 pub(crate) fn validate_request(ch: char) -> Result<(), Error> {
     if get_general_category(ch) == GeneralCategory::Unassigned {
         Ok(())
@@ -96,6 +116,15 @@ pub(crate) fn resolve_scalars(
     kerning: bool,
     chars: &[char],
 ) -> Result<Vec<ResolvedScalar>, Error> {
+    Ok(resolve_scalars_checked(data, axes, kerning, chars)?)
+}
+
+pub(crate) fn resolve_scalars_checked(
+    data: &[u8],
+    axes: &BTreeMap<String, f32>,
+    kerning: bool,
+    chars: &[char],
+) -> Result<Vec<ResolvedScalar>, ShapingFailure> {
     let font = Font::new(data.to_vec(), 0).ok_or_else(|| fail("invalid shaper font"))?;
     let font = font
         .instance_builder()
@@ -117,14 +146,14 @@ pub(crate) fn resolve_scalars(
         )
         .map_err(|e| fail(format!("shaping failed: {e}")))?;
         if !buffer.allocation_successful() {
-            return Err(fail("shaping allocation or operation limit exceeded"));
+            return Err(fail("shaping allocation or operation limit exceeded").into());
         }
         let infos = buffer.glyph_infos();
         let positions = buffer.glyph_positions();
         let (info, position) = match (infos, positions) {
             ([info], [position]) => (info, position),
             _ => {
-                return Err(fail(format!("text {text:?} requires substitutions or positioning beyond scalar glyphs and pair kerning")));
+                return Err(ShapingFailure::Unsupported(fail(format!("text {text:?} requires substitutions or positioning beyond scalar glyphs and pair kerning"))));
             }
         };
         if info.glyph_id == 0
@@ -133,7 +162,7 @@ pub(crate) fn resolve_scalars(
             || position.y_advance != 0
             || metrics.advances.borrow().get(&info.glyph_id) != Some(&position.x_advance)
         {
-            return Err(fail(format!("text {text:?} requires substitutions or positioning beyond scalar glyphs and pair kerning")));
+            return Err(ShapingFailure::Unsupported(fail(format!("text {text:?} requires substitutions or positioning beyond scalar glyphs and pair kerning"))));
         }
         resolved.push(ResolvedScalar {
             codepoint: *ch as u32,
@@ -211,6 +240,22 @@ pub(crate) fn extract(
     Ok(pairs)
 }
 
+/// Auxiliary calibration abstains on an unrepresentable scalar/pair domain,
+/// while malformed input, shaping failures and work exhaustion remain errors.
+#[cfg(any(feature = "candidate", test))]
+pub(crate) fn extract_calibration(
+    data: &[u8],
+    config: &Config,
+    identities: &[ResolvedScalar],
+    requested: Option<&BTreeSet<(u32, u32)>>,
+) -> Result<Option<Vec<KerningPair>>, Error> {
+    match extract_impl(data, config, identities, true, requested) {
+        Ok((pairs, _)) => Ok(Some(pairs)),
+        Err(ShapingFailure::Unsupported(_)) => Ok(None),
+        Err(ShapingFailure::Fatal(error)) => Err(error),
+    }
+}
+
 /// Strict isolated-pair extraction for an explicit ordered-pair set.
 ///
 /// Shares [`extract_impl`] with [`extract`] and the ASCII inspection
@@ -247,7 +292,7 @@ fn extract_impl(
     identities: &[ResolvedScalar],
     strict: bool,
     requested: Option<&BTreeSet<(u32, u32)>>,
-) -> Result<(Vec<KerningPair>, u32), Error> {
+) -> Result<(Vec<KerningPair>, u32), ShapingFailure> {
     let font = Font::new(data.to_vec(), 0).ok_or_else(|| fail("invalid shaper font"))?;
     let font = font
         .instance_builder()
@@ -256,7 +301,7 @@ fn extract_impl(
     let shaper = ShaperFont::new(&font);
     let scale = config.size_px / shaper.units_per_em() as f32;
     let features = shape_features(config.kerning);
-    let shape = |text: &str, expected: &[u32]| -> Result<Vec<i32>, Error> {
+    let shape = |text: &str, expected: &[u32]| -> Result<Vec<i32>, ShapingFailure> {
         let mut buffer = Buffer::new();
         buffer.push_str(text);
         buffer.guess_segment_properties();
@@ -267,7 +312,7 @@ fn extract_impl(
         )
         .map_err(|e| fail(format!("shaping failed: {e}")))?;
         if !buffer.allocation_successful() {
-            return Err(fail("shaping allocation or operation limit exceeded"));
+            return Err(fail("shaping allocation or operation limit exceeded").into());
         }
         let out = buffer;
         if out
@@ -280,7 +325,7 @@ fn extract_impl(
                 .iter()
                 .any(|p| p.x_offset != 0 || p.y_offset != 0 || p.y_advance != 0)
         {
-            return Err(fail(format!("text {text:?} requires substitutions or positioning beyond scalar glyphs and pair kerning")));
+            return Err(ShapingFailure::Unsupported(fail(format!("text {text:?} requires substitutions or positioning beyond scalar glyphs and pair kerning"))));
         }
         Ok(out.glyph_positions().iter().map(|p| p.x_advance).collect())
     };
@@ -335,9 +380,9 @@ fn extract_impl(
                     skipped += 1;
                     continue;
                 }
-                return Err(fail(format!(
+                return Err(ShapingFailure::Unsupported(fail(format!(
                     "pair {text:?} changes the right advance; requires text-run positioning"
-                )));
+                ))));
             }
             let single_left = singles[i].expect("requested pair glyph has a single");
             let adjustment = fixed(
@@ -358,7 +403,7 @@ fn extract_impl(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract, extract_selected, resolve_scalars, ResolvedScalar};
+    use super::{extract, extract_calibration, extract_selected, resolve_scalars, ResolvedScalar};
     use crate::{Config, MetricRounding};
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -412,6 +457,26 @@ mod tests {
         let repertoire = identities(&data, &['A', '_', '`']);
         let requested = BTreeSet::from([('`' as u32, '`' as u32)]);
         assert!(extract_selected(&data, &cfg, &repertoire, &requested).is_err());
+    }
+
+    #[test]
+    fn calibration_distinguishes_domain_capability_from_fatal_errors() {
+        let data = literata();
+        let cfg = config();
+        let repertoire = identities(&data, &['A', '_', '`']);
+        // The complete domain contains an unrepresentable grave pair; its
+        // independently valid requested subset is still available. Invalid
+        // font bytes remain an error, not an unavailable calibration result.
+        assert!(extract_calibration(&data, &cfg, &repertoire, None)
+            .unwrap()
+            .is_none());
+        let requested = BTreeSet::from([('_' as u32, '`' as u32)]);
+        assert!(
+            extract_calibration(&data, &cfg, &repertoire, Some(&requested))
+                .unwrap()
+                .is_some()
+        );
+        assert!(extract_calibration(b"invalid font", &cfg, &repertoire, Some(&requested)).is_err());
     }
 
     #[test]

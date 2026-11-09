@@ -12,6 +12,9 @@ export interface PaintOutcome {
 }
 
 export interface RenderJob {
+  // Opt-in compatibility identity for live resizing. Only geometry may vary
+  // within a group; text, font, style, renderer session and display must match.
+  progressiveKey?: string;
   // Full request identity: renderer session, font, display mode, geometry and
   // the first-pass spec. Readiness is deliberately not part of the key; the
   // owner resets identity when disabling so re-enabling re-renders.
@@ -26,7 +29,11 @@ export interface RenderJob {
   debounceMs: number;
   immediate: boolean;
   nextToken: () => number;
-  render: (fontId: string, token: number, spec: RenderSpec) => Promise<{
+  render: (
+    fontId: string,
+    token: number,
+    spec: RenderSpec,
+  ) => Promise<{
     token: number;
     dropped: boolean;
     pixels: RenderPixels;
@@ -61,7 +68,8 @@ export function buildRequestKey(input: {
 // resolution and stale-result protection. One instance per canvas keeps
 // distinct consumers of the same font independent; the epoch drops any
 // completion that is no longer the latest request (superseded, disabled,
-// unmounted, or re-keyed), including between the two passes.
+// unmounted, or re-keyed), including between the two passes. Explicitly
+// compatible resize jobs paint progressively, with one latest successor.
 export class RenderScheduler {
   private epoch = 0;
   private current: string | null = null;
@@ -70,6 +78,7 @@ export class RenderScheduler {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private pending = false;
   private failed = false;
+  private progressive: { key: string; latest: RenderJob } | null = null;
 
   private readonly onPendingChange: ((pending: boolean) => void) | undefined;
 
@@ -84,6 +93,19 @@ export class RenderScheduler {
   }
 
   request(job: RenderJob): void {
+    if (job.progressiveKey !== undefined && this.progressive?.key === job.progressiveKey) {
+      // Completion-paced latest-value sampling (https://rxjs.dev/api/operators/audit).
+      // Keep one render running and replace its successor, rather than queueing
+      // every pointer event and invalidating every completed intermediate paint.
+      this.progressive.latest = job;
+      this.current = job.key;
+      return;
+    }
+    if (this.progressive) {
+      this.progressive = null;
+      this.epoch += 1;
+      this.activeKey = null;
+    }
     if (job.key === this.current && this.timer !== undefined) {
       // Identical work is already debounced: preserve its timing instead of
       // firing early (a rerender racing the debounce must not bypass it).
@@ -115,6 +137,7 @@ export class RenderScheduler {
     this.failed = false;
     if (job.immediate || job.debounceMs <= 0) {
       this.activeKey = job.key;
+      if (job.progressiveKey !== undefined) this.progressive = { key: job.progressiveKey, latest: job };
       void this.run(job, this.epoch);
       return;
     }
@@ -122,6 +145,7 @@ export class RenderScheduler {
     this.timer = setTimeout(() => {
       this.timer = undefined;
       this.activeKey = job.key;
+      if (job.progressiveKey !== undefined) this.progressive = { key: job.progressiveKey, latest: job };
       void this.run(job, epoch);
     }, job.debounceMs);
   }
@@ -135,6 +159,7 @@ export class RenderScheduler {
       this.timer = undefined;
     }
     this.epoch += 1;
+    this.progressive = null;
     this.current = null;
     this.activeKey = null;
     this.lastKey = "";
@@ -143,7 +168,9 @@ export class RenderScheduler {
   }
 
   private async run(job: RenderJob, epoch: number): Promise<void> {
-    const alive = (): boolean => epoch === this.epoch && this.current === job.key;
+    const progressive = this.progressive;
+    const alive = (): boolean =>
+      epoch === this.epoch && (this.current === job.key || (progressive !== null && progressive === this.progressive));
     try {
       const token = job.nextToken();
       const first = await job.render(job.fontId, token, job.specForHeight(job.estimate));
@@ -165,6 +192,7 @@ export class RenderScheduler {
       this.lastKey = job.key;
     } catch (error) {
       if (!alive()) return;
+      if (progressive && progressive.latest.key !== job.key) return;
       this.activeKey = null;
       // The failed key painted nothing (consumers with clear-on-error blank
       // the canvas), so forget any previously painted identity: recovery with
@@ -176,8 +204,15 @@ export class RenderScheduler {
       // Superseded work never clears a newer request's pending state. Stay
       // pending through both layout passes and the final paint callback.
       if (alive()) {
-        this.activeKey = null;
-        this.setPending(false);
+        if (progressive && progressive.latest.key !== job.key) {
+          const next = progressive.latest;
+          this.activeKey = next.key;
+          void this.run(next, epoch);
+        } else {
+          this.progressive = null;
+          this.activeKey = null;
+          this.setPending(false);
+        }
       }
     }
   }

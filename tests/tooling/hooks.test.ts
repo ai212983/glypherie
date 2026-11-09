@@ -23,7 +23,14 @@ test("installed hooks reject bad formatting, spelling and messages without stagi
   run("git", ["init", "--quiet"]);
   run("git", ["config", "user.name", "Hook Test"]);
   run("git", ["config", "user.email", "hooks@example.invalid"]);
-  for (const file of ["lefthook.yml", "package.json", "dprint.json", "cspell.json", "commitlint.config.ts", "commit-scopes.json"]) {
+  for (const file of [
+    "lefthook.yml",
+    "package.json",
+    ".oxfmtrc.json",
+    "cspell.json",
+    "commitlint.config.ts",
+    "commit-scopes.json",
+  ]) {
     copyFileSync(path.join(root, file), path.join(repo, file));
   }
   symlinkSync(path.join(root, "node_modules"), path.join(repo, "node_modules"), "junction");
@@ -42,7 +49,7 @@ test("installed hooks reject bad formatting, spelling and messages without stagi
   run("git", ["add", "file with spaces.json"]);
   unchangedAfterFailure("test(hooks): validate hooks", "formatting");
   assert.equal(readFileSync(json, "utf8"), '{"value":1}\n');
-  run(process.execPath, [path.join(root, "node_modules/dprint/bin.cjs"), "fmt", "file with spaces.json"]);
+  run("npm", ["run", "fmt", "--", "file with spaces.json"]);
   run("git", ["add", "file with spaces.json"]);
   unchangedAfterFailure("a malformed commit", "type-empty");
   unchangedAfterFailure("test(unknown): validate hooks", "scope-enum");
@@ -56,7 +63,10 @@ test("installed hooks reject bad formatting, spelling and messages without stagi
   assert.equal(commit("docs: describe the generator").status, 0);
 
   mkdirSync(path.join(repo, "crates/generator/src"), { recursive: true });
-  writeFileSync(path.join(repo, "crates/generator/Cargo.toml"), '[package]\nname = "hook-test"\nversion = "0.1.0"\nedition = "2021"\n');
+  writeFileSync(
+    path.join(repo, "crates/generator/Cargo.toml"),
+    '[package]\nname = "hook-test"\nversion = "0.1.0"\nedition = "2021"\n',
+  );
   writeFileSync(path.join(repo, "crates/generator/src/lib.rs"), "pub fn value()->u8{1}\n");
   run("git", ["add", "crates/generator"]);
   unchangedAfterFailure("test(generator): check formatting", "rust-formatting");

@@ -3,6 +3,7 @@
 // candidate renderer and the separated pipeline, fractional Gray tracking
 // otherwise, and the automatic Mono engine policy for candidate 1-bit unless
 // upstream Mono is forced.
+import { KERNING_METHODS, resolveKerning, type KerningPreference } from "../kerning/model.ts";
 import type {
   MonoDropout,
   MonoRaster,
@@ -36,7 +37,7 @@ export interface RenderRequestOptions {
   role?: RendererRole;
   rasterization?: Rasterization;
   letterSpacingPx?: number | string;
-  kerning?: boolean;
+  kerning?: KerningPreference;
   stemFitting?: StemFitting;
   diagonalFitting?: boolean;
   monoRaster?: MonoRaster;
@@ -97,7 +98,9 @@ export function resolveRenderColors(
   if (!Array.isArray(palette)) throw new Error("Invalid palette: expected an array of RGBA colors.");
   const levels = 1 << profileBits(profile);
   if (palette.length !== levels) {
-    throw new Error(`Invalid palette: expected exactly ${levels} entries for profile ${profile}, got ${palette.length}.`);
+    throw new Error(
+      `Invalid palette: expected exactly ${levels} entries for profile ${profile}, got ${palette.length}.`,
+    );
   }
   const entries: [number, number, number, number][] = [];
   for (const entry of palette) {
@@ -145,26 +148,54 @@ export function resolveMonoRaster(
 }
 
 export function toRenderSpec({
-  text, sizePx, axes, profile, width, height, role, rasterization,
-  letterSpacingPx, kerning, stemFitting, diagonalFitting, monoRaster, monoThreshold, grayGamma,
+  text,
+  sizePx,
+  axes,
+  profile,
+  width,
+  height,
+  role,
+  rasterization,
+  letterSpacingPx,
+  kerning,
+  stemFitting,
+  diagonalFitting,
+  monoRaster,
+  monoThreshold,
+  grayGamma,
   palette,
 }: RenderRequestOptions): RenderSpec {
   const colors = resolveRenderColors(palette, profile);
   const separated = rasterization !== undefined;
   const effectiveRole = separated ? "candidate" : role;
-  const previewPolicy = separated && profile === "mono_1bit"
-    ? resolveWorkingPreviewPolicy({
-      fitting: stemFitting === "upstream_mono" ? "upstream_mono"
-        : stemFitting === "font_hints_first" ? "font_hints_auto" : undefined,
-      // URL omission preserves the historical diagonal-off preference.
-      diagonalFitting: diagonalFitting ?? false,
-    })
-    : null;
-  const scan = effectiveRole === "candidate" && profile === "mono_1bit"
-    ? previewPolicy !== null
-      ? { ...previewPolicy.mono_raster }
-      : resolveMonoRaster(monoRaster)
-    : undefined;
+  const resolvedKerning = resolveKerning(kerning);
+  if (resolvedKerning.kerning_method && !separated) {
+    const method = KERNING_METHODS[resolvedKerning.kerning_method.method];
+    if (method.requiresExplicitPipeline) {
+      throw new Error(
+        `${method.label} requires the current preview pipeline. Select Source kerning for a historical renderer.`,
+      );
+    }
+  }
+  const previewPolicy =
+    separated && profile === "mono_1bit"
+      ? resolveWorkingPreviewPolicy({
+          fitting:
+            stemFitting === "upstream_mono"
+              ? "upstream_mono"
+              : stemFitting === "font_hints_first"
+                ? "font_hints_auto"
+                : undefined,
+          // URL omission preserves the historical diagonal-off preference.
+          diagonalFitting: diagonalFitting ?? false,
+        })
+      : null;
+  const scan =
+    effectiveRole === "candidate" && profile === "mono_1bit"
+      ? previewPolicy !== null
+        ? { ...previewPolicy.mono_raster }
+        : resolveMonoRaster(monoRaster)
+      : undefined;
   return {
     text,
     width: Math.min(4096, Math.max(1, Math.ceil(width))),
@@ -172,14 +203,16 @@ export function toRenderSpec({
     size_px: sizePx,
     axes: { ...axes },
     letter_spacing_px: normalizedSpacing(letterSpacingPx, profile, effectiveRole),
-    hinting: previewPolicy?.hinting
-      ?? (effectiveRole === "candidate" && profile === "mono_1bit" && stemFitting !== "upstream_mono"
-        ? "auto_fallback" : "auto"),
+    hinting:
+      previewPolicy?.hinting ??
+      (effectiveRole === "candidate" && profile === "mono_1bit" && stemFitting !== "upstream_mono"
+        ? "auto_fallback"
+        : "auto"),
     output_bits: previewPolicy?.output_bits ?? profileBits(profile),
     mono_threshold: monoThreshold ?? previewPolicy?.mono_threshold ?? 128,
     gray_gamma: grayGamma ?? previewPolicy?.gray_gamma ?? 1.0,
     missing_glyphs: previewPolicy?.missing_glyphs ?? "error",
-    kerning: kerning ?? true,
+    ...resolvedKerning,
     metric_rounding: previewPolicy?.metric_rounding ?? "subpixel",
     wrap: "word",
     align: "left",
@@ -187,12 +220,18 @@ export function toRenderSpec({
     background: colors.background,
     ...(colors.palette !== undefined ? { palette: colors.palette } : {}),
     ...(!separated ? { renderer: role ?? "baseline" } : {}),
-    ...(separated ? { pipeline: {
-      fitting: previewPolicy !== null ? previewPolicy.fitting : "upstream_mono",
-      rasterization: previewPolicy !== null ? previewPolicy.rasterization : "coverage",
-      ...(previewPolicy?.diagonal_fitting ? { diagonal_fitting: true as const } : {}),
-    } } : {}),
-    ...(!separated && role === "candidate" && profile === "mono_1bit" && stemFitting ? { stem_fitting: stemFitting } : {}),
+    ...(separated
+      ? {
+          pipeline: {
+            fitting: previewPolicy !== null ? previewPolicy.fitting : "upstream_mono",
+            rasterization: previewPolicy !== null ? previewPolicy.rasterization : "coverage",
+            ...(previewPolicy?.diagonal_fitting ? { diagonal_fitting: true as const } : {}),
+          },
+        }
+      : {}),
+    ...(!separated && role === "candidate" && profile === "mono_1bit" && stemFitting
+      ? { stem_fitting: stemFitting }
+      : {}),
     ...(scan !== undefined ? { mono_raster: scan } : {}),
   };
 }

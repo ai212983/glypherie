@@ -1,11 +1,16 @@
 import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import test, { beforeEach } from "node:test";
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import test, { after, beforeEach } from "node:test";
 import Dexie from "dexie";
+import { fontDatabase } from "../../src/app/database.ts";
+import { createDomainBackend } from "../../src/app/domain/backend.ts";
+import { configureDomain, closeDomainForTests, resetDomainForTests } from "../../src/app/domain/node-backend.ts";
 import {
   FontStorageError,
-  fontDatabase,
   getFont,
   isFontDatabaseBlocked,
   listFonts,
@@ -20,15 +25,29 @@ import {
 Dexie.dependencies.indexedDB = globalThis.indexedDB;
 Dexie.dependencies.IDBKeyRange = globalThis.IDBKeyRange;
 
-const sha256 = (bytes: ArrayBuffer): string =>
-  createHash("sha256").update(Buffer.from(bytes)).digest("hex");
+const sha256 = (bytes: ArrayBuffer): string => createHash("sha256").update(Buffer.from(bytes)).digest("hex");
 const fontBytes = (seed = 0): ArrayBuffer =>
   Uint8Array.from({ length: 64 }, (_, i) => (i * 7 + seed) % 251).buffer as ArrayBuffer;
 
 function metadata(): FontMetadata {
   return {
     names: Object.fromEntries(
-      ["family", "style", "full", "postscript", "version", "copyright", "manufacturer", "designer", "description", "vendor_url", "designer_url", "license", "license_url"].map((key) => [key, key === "family" ? "Fixture" : null])),
+      [
+        "family",
+        "style",
+        "full",
+        "postscript",
+        "version",
+        "copyright",
+        "manufacturer",
+        "designer",
+        "description",
+        "vendor_url",
+        "designer_url",
+        "license",
+        "license_url",
+      ].map((key) => [key, key === "family" ? "Fixture" : null]),
+    ),
     axes: [{ tag: "wght", name: "Weight", min: 100, default: 400, max: 900, hidden: false }],
     kerning: { horizontal: true, vertical: false, sources: ["GPOS kern"] },
     style: { slope: "upright", weight_class: 400, width_class: 5, italic_angle: 0 },
@@ -62,20 +81,37 @@ function stubFetch(handler: (url: string) => Promise<StubResponse>): { calls: st
     } as unknown as Response;
   };
   globalThis.fetch = stub as typeof fetch;
-  return { calls, restore: () => { globalThis.fetch = previous; } };
+  return {
+    calls,
+    restore: () => {
+      globalThis.fetch = previous;
+    },
+  };
 }
 
 const okResponse = (bytes: ArrayBuffer): StubResponse => ({ ok: true, status: 200, arrayBuffer: async () => bytes });
 
 beforeEach(async () => {
+  await resetDomainForTests();
   await fontDatabase.close();
   await Dexie.delete("font-library");
+  await fontDatabase.open();
   assert.equal(isFontDatabaseBlocked(), false);
+});
+
+after(async () => {
+  await closeDomainForTests();
 });
 
 test("saves an uploaded font under its SHA-256 content id", async () => {
   const bytes = fontBytes();
-  const stored = await saveFont({ bytes, fileName: "fixture.ttf", name: "Fixture", metadata: metadata(), source: "uploaded" });
+  const stored = await saveFont({
+    bytes,
+    fileName: "fixture.ttf",
+    name: "Fixture",
+    metadata: metadata(),
+    source: "uploaded",
+  });
   assert.equal(stored.id, sha256(bytes));
   assert.match(stored.id, /^[0-9a-f]{64}$/);
   assert.equal(stored.source, "uploaded");
@@ -101,10 +137,20 @@ test("deduplicates identical bytes atomically and never downgrades uploaded sour
   assert.equal((await listFonts()).length, 1);
 });
 
-test("fonts survive close and reopen", async () => {
+test("fonts survive close and reopen from the same data directory", async (t) => {
+  const dir = await fs.mkdtemp(path.join(tmpdir(), "glypherie-domain-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const dataDir = path.join(dir, "pgdata");
+  await configureDomain(await createDomainBackend({ dataDir }));
   const bytes = fontBytes(3);
-  const stored = await saveFont({ bytes, fileName: "persist.ttf", name: "Persist", metadata: metadata(), source: "uploaded" });
-  await fontDatabase.close();
+  const stored = await saveFont({
+    bytes,
+    fileName: "persist.ttf",
+    name: "Persist",
+    metadata: metadata(),
+    source: "uploaded",
+  });
+  await configureDomain(await createDomainBackend({ dataDir }));
   const reopened = await getFont(stored.id);
   assert.deepEqual(reopened, stored);
   assert.ok(reopened);
@@ -112,7 +158,13 @@ test("fonts survive close and reopen", async () => {
 });
 
 test("hint availability refresh keeps the stored font intact and cannot restore a deleted font", async () => {
-  const stored = await saveFont({ bytes: fontBytes(3), fileName: "persist.ttf", name: "My font", metadata: metadata(), source: "uploaded" });
+  const stored = await saveFont({
+    bytes: fontBytes(3),
+    fileName: "persist.ttf",
+    name: "My font",
+    metadata: metadata(),
+    source: "uploaded",
+  });
   const fresh = { ...metadata(), font_hints: true };
   await updateFontMetadata(stored.id, fresh);
   assert.deepEqual(await getFont(stored.id), { ...stored, metadata: fresh });
@@ -122,16 +174,37 @@ test("hint availability refresh keeps the stored font intact and cannot restore 
 });
 
 test("removal deletes only that font", async () => {
-  const first = await saveFont({ bytes: fontBytes(1), fileName: "one.ttf", name: "One", metadata: metadata(), source: "uploaded" });
-  const second = await saveFont({ bytes: fontBytes(2), fileName: "two.ttf", name: "Two", metadata: metadata(), source: "uploaded" });
+  const first = await saveFont({
+    bytes: fontBytes(1),
+    fileName: "one.ttf",
+    name: "One",
+    metadata: metadata(),
+    source: "uploaded",
+  });
+  const second = await saveFont({
+    bytes: fontBytes(2),
+    fileName: "two.ttf",
+    name: "Two",
+    metadata: metadata(),
+    source: "uploaded",
+  });
   await removeFont(first.id);
   assert.equal(await getFont(first.id), undefined);
-  assert.deepEqual((await listFonts()).map((font) => font.id), [second.id]);
+  assert.deepEqual(
+    (await listFonts()).map((font) => font.id),
+    [second.id],
+  );
   await removeFont("f".repeat(64));
 });
 
 test("rejects empty bytes and malformed metadata", async () => {
-  const input = { bytes: new ArrayBuffer(0), fileName: "empty.ttf", name: "Empty", metadata: metadata(), source: "uploaded" as const };
+  const input = {
+    bytes: new ArrayBuffer(0),
+    fileName: "empty.ttf",
+    name: "Empty",
+    metadata: metadata(),
+    source: "uploaded" as const,
+  };
   await assert.rejects(saveFont(input), (error) => error instanceof FontStorageError && error.code === "empty-bytes");
   const badAxes = metadata();
   badAxes.axes = [{ tag: "wght", name: "Weight", min: 100, default: 50, max: 900, hidden: false }];
@@ -141,7 +214,13 @@ test("rejects empty bytes and malformed metadata", async () => {
   );
   await assert.rejects(
     // Negative case: null metadata the input types reject.
-    saveFont({ bytes: fontBytes(), fileName: "bad.ttf", name: "Bad", metadata: null as unknown as FontMetadata, source: "uploaded" }),
+    saveFont({
+      bytes: fontBytes(),
+      fileName: "bad.ttf",
+      name: "Bad",
+      metadata: null as unknown as FontMetadata,
+      source: "uploaded",
+    }),
     (error) => error instanceof FontStorageError && error.code === "invalid-metadata",
   );
   assert.deepEqual(await listFonts(), []);
@@ -190,7 +269,10 @@ test("a failed seed writes no marker so the next attempt retries", async (t) => 
     return okResponse(fontBytes(13));
   });
   t.after(stub.restore);
-  await assert.rejects(seedBundledFonts(descriptors, async () => metadata()), (error) => error instanceof FontStorageError && error.code === "seed-failed");
+  await assert.rejects(
+    seedBundledFonts(descriptors, async () => metadata()),
+    (error) => error instanceof FontStorageError && error.code === "seed-failed",
+  );
   assert.deepEqual(await listFonts(), []);
   await seedBundledFonts(descriptors, async () => metadata());
   assert.equal((await listFonts()).length, 1);
@@ -200,7 +282,10 @@ test("a failed seed writes no marker so the next attempt retries", async (t) => 
 test("seed rejects empty downloads without storing anything", async (t) => {
   const stub = stubFetch(async () => okResponse(new ArrayBuffer(0)));
   t.after(stub.restore);
-  await assert.rejects(seedBundledFonts(descriptors, async () => metadata()), (error) => error instanceof FontStorageError && error.code === "seed-failed");
+  await assert.rejects(
+    seedBundledFonts(descriptors, async () => metadata()),
+    (error) => error instanceof FontStorageError && error.code === "seed-failed",
+  );
   assert.equal(stub.calls.length, 1);
   assert.deepEqual(await listFonts(), []);
 });
@@ -258,7 +343,8 @@ test("seed fails when the response lands cross-origin", async (t) => {
   let attempts = 0;
   const stub = stubFetch(async () => {
     attempts += 1;
-    const url = attempts === 1 ? "https://cdn.example.com/font.ttf" : "http://127.0.0.1:4173/font_generator/fonts/fixture.ttf";
+    const url =
+      attempts === 1 ? "https://cdn.example.com/font.ttf" : "http://127.0.0.1:4173/font_generator/fonts/fixture.ttf";
     return { ...okResponse(fontBytes(23)), url };
   });
   t.after(stub.restore);

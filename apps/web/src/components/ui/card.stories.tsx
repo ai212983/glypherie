@@ -22,7 +22,9 @@ const meta = {
       <CardHeader>
         <CardTitle>Roboto</CardTitle>
         <CardDescription>Saved font settings</CardDescription>
-        <CardAction><Badge variant="secondary">Variable</Badge></CardAction>
+        <CardAction>
+          <Badge variant="secondary">Variable</Badge>
+        </CardAction>
       </CardHeader>
       <CardContent>
         <p>The quick brown fox jumps over the lazy dog.</p>
@@ -42,14 +44,20 @@ export const Default: Story = {};
 export const Plain: Story = { args: { variant: "plain" } };
 
 function CardContents({ name, children }: { name: string; children?: React.ReactNode }) {
-  return <>
-    <CardHeader>
-      <CardTitle asChild><h2>{name}</h2></CardTitle>
-      <CardAction><Button size="xs">Action</Button></CardAction>
-    </CardHeader>
-    <CardContent>{children ?? "Card content"}</CardContent>
-    <CardFooter>Footer</CardFooter>
-  </>;
+  return (
+    <>
+      <CardHeader>
+        <CardTitle asChild>
+          <h2>{name}</h2>
+        </CardTitle>
+        <CardAction>
+          <Button size="xs">Action</Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent>{children ?? "Card content"}</CardContent>
+      <CardFooter>Footer</CardFooter>
+    </>
+  );
 }
 
 export const NestedVariants: Story = {

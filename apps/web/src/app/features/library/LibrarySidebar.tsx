@@ -19,8 +19,12 @@ interface LibrarySidebarProps {
 }
 
 export function LibrarySidebar({
-  sampleText, sampleBaseSize, importStatus,
-  onSampleText, onSampleBaseSize, onImport,
+  sampleText,
+  sampleBaseSize,
+  importStatus,
+  onSampleText,
+  onSampleBaseSize,
+  onImport,
 }: LibrarySidebarProps): React.JSX.Element {
   return (
     <aside
@@ -31,7 +35,11 @@ export function LibrarySidebar({
         <CardHeader>
           <CardTitle asChild>
             <h2 id="library-controls-heading">
-              <span aria-hidden="true" className="library-title-icon h-[10px] w-[11.25px]" style={{ maskImage: `url(${specimenIcon})` }} />
+              <span
+                aria-hidden="true"
+                className="library-title-icon h-[10px] w-[11.25px]"
+                style={{ maskImage: `url(${specimenIcon})` }}
+              />
               Preview
             </h2>
           </CardTitle>
@@ -52,7 +60,11 @@ export function LibrarySidebar({
         <CardHeader>
           <CardTitle asChild>
             <h2>
-              <span aria-hidden="true" className="library-title-icon h-[13.3333px] w-[10.6667px]" style={{ maskImage: `url(${importFontIcon})` }} />
+              <span
+                aria-hidden="true"
+                className="library-title-icon h-[13.3333px] w-[10.6667px]"
+                style={{ maskImage: `url(${importFontIcon})` }}
+              />
               Import fonts
             </h2>
           </CardTitle>
@@ -65,9 +77,20 @@ export function LibrarySidebar({
             data-import-font
             aria-label="Import font files"
             className="h-auto w-full rounded-lg border-border bg-background p-2 text-[10px] leading-4 font-normal shadow-studio-inset file:mr-2 file:rounded file:bg-accent file:px-2 file:text-[10px] file:font-bold file:text-accent-foreground md:text-[10px] dark:bg-background"
-            onChange={(event) => { onImport(event.target.files); event.target.value = ""; }}
+            onChange={(event) => {
+              onImport(event.target.files);
+              event.target.value = "";
+            }}
           />
-          {importStatus && <span className="text-[10px] leading-4 font-normal text-muted-foreground [overflow-wrap:anywhere]" role="status" data-import-status>{importStatus}</span>}
+          {importStatus && (
+            <span
+              className="text-[10px] leading-4 font-normal text-muted-foreground [overflow-wrap:anywhere]"
+              role="status"
+              data-import-status
+            >
+              {importStatus}
+            </span>
+          )}
         </CardContent>
       </Card>
     </aside>

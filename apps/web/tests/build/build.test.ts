@@ -21,19 +21,51 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
   assert.doesNotMatch(html, /specimens\.json|out\/specimens/);
 
   const scripts = await filesByExtension(output, ".js");
-  assert.ok(scripts.some((name) => /^index-[\w-]+\.js$/.test(name)), "hashed app chunk");
-  assert.ok(scripts.some((name) => /^font-worker-[\w-]+\.js$/.test(name)), "hashed worker chunk");
+  assert.ok(
+    scripts.some((name) => /^index-[\w-]+\.js$/.test(name)),
+    "hashed app chunk",
+  );
+  assert.ok(
+    scripts.some((name) => /^font-worker-[\w-]+\.js$/.test(name)),
+    "hashed worker chunk",
+  );
   const cssNames = await filesByExtension(output, ".css");
   assert.equal(cssNames.length, 1, "one hashed stylesheet");
   const wasm = await filesByExtension(output, ".wasm");
-  assert.equal(wasm.length, 1, "one hashed renderer binary");
-  const rendererPackage = process.env.FONT_WASM_PREVIEW_DIR
-    ?? path.join(repoRoot, "crates", "wasm", "pkg-web-preview-simd128");
+  const rendererWasm = wasm.filter((name) => name.startsWith("font_wasm_bg-"));
+  assert.equal(rendererWasm.length, 1, "one hashed renderer binary");
+  const rendererPackage =
+    process.env.FONT_WASM_PREVIEW_DIR ?? path.join(repoRoot, "crates", "wasm", "pkg-web-preview-simd128");
   assert.equal(
-    sha256(await fs.readFile(path.join(output, "assets", wasm[0]!))),
+    sha256(await fs.readFile(path.join(output, "assets", rendererWasm[0]!))),
     sha256(await fs.readFile(path.join(rendererPackage, "font_wasm_bg.wasm"))),
     "configured renderer bytes reach the build unchanged (standard SIMD by default)",
   );
+  // The domain worker's PGlite engine ships as hashed assets precached on
+  // install: an offline cold boot of the domain owner must read every
+  // engine file from cache, and on-demand runtime caching never populates
+  // before the worker boots. Each file stays under the precache size cap.
+  const engineWasm = wasm.filter((name) => name.startsWith("pglite-") || name.startsWith("initdb-"));
+  assert.equal(engineWasm.length, 2, "PGlite engine binaries emitted");
+  const dataBundle = (await filesByExtension(output, ".data")).find((name) => name.startsWith("pglite-"));
+  assert.ok(dataBundle, "PGlite data bundle emitted");
+  const serviceWorker = await fs.readFile(path.join(output, "sw.js"), "utf8");
+  assert.match(
+    serviceWorker,
+    /\{url:"assets\/domain-worker\.js",revision:"[a-f0-9]+"\}/,
+    "the stable domain worker needs a content revision across deployments",
+  );
+  for (const name of [...engineWasm, dataBundle!]) {
+    assert.match(
+      serviceWorker,
+      new RegExp(name.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")),
+      `${name} is precached for offline cold boot`,
+    );
+    assert.ok(
+      (await fs.stat(path.join(output, "assets", name))).size < 16 * 1024 * 1024,
+      `${name} stays under the precache size cap`,
+    );
+  }
 
   const fontPackages: Array<[string, string]> = [
     ["Roboto.ttf", "OFL-Roboto.txt"],
@@ -52,7 +84,15 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
     );
   }
   const emittedFonts = await filesByExtension(output, ".ttf");
-  const expectedStems = ["JetBrainsMono", "Literata", "Roboto", "Roboto-Italic", "RobotoFlex", "SourceSans3", "SpaceGrotesk"];
+  const expectedStems = [
+    "JetBrainsMono",
+    "Literata",
+    "Roboto",
+    "Roboto-Italic",
+    "RobotoFlex",
+    "SourceSans3",
+    "SpaceGrotesk",
+  ];
   assert.equal(emittedFonts.length, expectedStems.length, "no more and no fewer bundled fonts");
   for (const name of emittedFonts) {
     assert.ok(
@@ -67,11 +107,13 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
   }
   const licenseSources = [...new Set(fontPackages.map(([, license]) => license))];
   for (const license of licenseSources) {
-    const builtLicense = (await filesByExtension(output, ".txt")).find((name) => name.startsWith(license.replace(".txt", "-")));
+    const builtLicense = (await filesByExtension(output, ".txt")).find((name) =>
+      name.startsWith(license.replace(".txt", "-")),
+    );
     assert.ok(builtLicense, `hashed ${license} emitted`);
     assert.equal(
-      (await fs.readFile(path.join(output, "assets", builtLicense), "utf8")),
-      (await fs.readFile(path.join(fontDir, license), "utf8")),
+      await fs.readFile(path.join(output, "assets", builtLicense), "utf8"),
+      await fs.readFile(path.join(fontDir, license), "utf8"),
       `${license} text unchanged`,
     );
   }
@@ -79,6 +121,12 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
   const rendererLicense = await fs.readFile(path.join(output, "renderer-license.txt"), "utf8");
   assert.ok(rendererLicense.includes("FreeType 2.15.0"));
   assert.ok(rendererLicense.includes("The FreeType Project LICENSE"));
+  assert.ok(rendererLicense.includes("TypeFacet"));
+  assert.ok(rendererLicense.includes("Charles Matthew Chen"));
+  assert.ok(rendererLicense.includes("Apache License"));
+  assert.ok(rendererLicense.includes("FontForge"));
+  assert.ok(rendererLicense.includes("George Williams"));
+  assert.ok(rendererLicense.includes("The name of the author may not be used to endorse"));
 
   const cssName = cssNames[0];
   assert.ok(cssName, "hashed stylesheet name");
@@ -100,17 +148,22 @@ test("production build emits hashed app, renderer, fonts, and licenses with no s
   await fs.access(path.join(output, "sw.js"));
 });
 
-
 test("Pages transport preserves URLs beneath root and project hosting prefixes", async (t) => {
   for (const base of ["/", "/preview/"]) {
     const output = await buildApp(t, base, `https://example.test${base}/`);
     const index = await fs.readFile(path.join(output, "index.html"), "utf8");
     const fallback = await fs.readFile(path.join(output, "404.html"), "utf8");
-    for (const [route, title] of [["", "Glypherie — Bitmap fonts for low-resolution displays"], ["fonts/", "Font library — Glypherie"], ["palettes/", "Palettes — Glypherie"]]) {
+    for (const [route, title, canonicalRoute] of [
+      ["", "Glypherie — Bitmap fonts for low-resolution displays", ""],
+      ["fonts/", "Font library — Glypherie", "fonts/"],
+      ["palettes/", "Palettes — Glypherie", "palettes/"],
+      ["screen/", "Screen — Glypherie", "screen/"],
+      ["scenes/", "Screen — Glypherie", "screen/"],
+    ]) {
       const page = await fs.readFile(path.join(output, route!, "index.html"), "utf8");
       assert.equal((page.match(/<title\b/g) ?? []).length, 1);
       assert.ok(page.includes(`>${title}</title>`));
-      assert.ok(page.includes(`rel="canonical" href="https://example.test${base}${route}"`));
+      assert.ok(page.includes(`rel="canonical" href="https://example.test${base}${canonicalRoute}"`));
       assert.ok(page.includes(`property="og:image" content="https://example.test${base}icons/icon-512.png"`));
       assert.ok(page.includes(`href="${base}manifest.webmanifest"`));
     }
@@ -122,24 +175,43 @@ test("Pages transport preserves URLs beneath root and project hosting prefixes",
     assert.ok(redirect);
     const original = new URL(`https://example.test${base}font/a/variant/b/?v=1&text=%26%2B%3F%23&literal=~and~#anchor`);
     let redirected = "";
-    runInNewContext(redirect, { location: {
-      pathname: original.pathname, search: original.search, hash: original.hash,
-      replace: (url: string) => { redirected = url; },
-    }, encodeURIComponent });
+    runInNewContext(redirect, {
+      location: {
+        pathname: original.pathname,
+        search: original.search,
+        hash: original.hash,
+        replace: (url: string) => {
+          redirected = url;
+        },
+      },
+      encodeURIComponent,
+    });
     const entry = new URL(redirected, original.origin);
     assert.equal(entry.pathname, base);
     let restored = "";
     runInNewContext(restore, {
-      location: entry, URL, URLSearchParams,
-      history: { replaceState: (_state: unknown, _title: string, url: string) => { restored = url; } },
+      location: entry,
+      URL,
+      URLSearchParams,
+      history: {
+        replaceState: (_state: unknown, _title: string, url: string) => {
+          restored = url;
+        },
+      },
     });
     assert.equal(restored, original.pathname + original.search + original.hash);
     // A forged transport query must not navigate outside this app's origin or prefix.
     for (const target of ["https://elsewhere.test/", "//elsewhere.test/"]) {
       restored = "";
       runInNewContext(restore, {
-        location: new URL(`${original.origin}${base}?__pages_route=${encodeURIComponent(target)}`), URL, URLSearchParams,
-        history: { replaceState: () => { restored = "unexpected"; } },
+        location: new URL(`${original.origin}${base}?__pages_route=${encodeURIComponent(target)}`),
+        URL,
+        URLSearchParams,
+        history: {
+          replaceState: () => {
+            restored = "unexpected";
+          },
+        },
       });
       assert.equal(restored, "");
     }
@@ -147,7 +219,12 @@ test("Pages transport preserves URLs beneath root and project hosting prefixes",
 });
 
 test("public metadata rejects unsafe URLs and mismatched deployment paths", async (t) => {
-  for (const url of ["https://example.test/elsewhere/", "https://user:secret@example.test/preview/", "https://example.test/preview/?tracking=1", "javascript:alert(1)"]) {
+  for (const url of [
+    "https://example.test/elsewhere/",
+    "https://user:secret@example.test/preview/",
+    "https://example.test/preview/?tracking=1",
+    "javascript:alert(1)",
+  ]) {
     await assert.rejects(buildApp(t, "/preview/", url), /FONT_PREVIEW_SITE_URL/);
   }
 });

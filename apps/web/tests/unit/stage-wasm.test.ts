@@ -74,7 +74,10 @@ test("unchanged input keeps staged bytes and mtimes", async () => {
       assert.deepEqual(after.get(name)!.bytes, before.get(name)!.bytes, name);
       assert.equal(after.get(name)!.mtimeMs, before.get(name)!.mtimeMs, name);
     }
-    assert.deepEqual((await fs.readdir(out)).filter((f) => f.endsWith(".tmp")), []);
+    assert.deepEqual(
+      (await fs.readdir(out)).filter((f) => f.endsWith(".tmp")),
+      [],
+    );
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
@@ -88,7 +91,10 @@ test("changed js input replaces staged bytes exactly", async () => {
     await writePreview(preview, "export const v = 2;\n");
     assert.equal(runStage(stage, preview).ok, true);
     assert.equal(await fs.readFile(path.join(out, "font_wasm.js"), "utf8"), "export const v = 2;\n");
-    assert.deepEqual((await fs.readdir(out)).filter((f) => f.endsWith(".tmp")), []);
+    assert.deepEqual(
+      (await fs.readdir(out)).filter((f) => f.endsWith(".tmp")),
+      [],
+    );
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
@@ -115,7 +121,10 @@ test("degraded stubs stage on allow-missing and real input restores", async () =
   const { root, preview, out, stage } = await makeTree();
   try {
     assert.equal(runStage(stage, preview, true).ok, true);
-    assert.deepEqual((await fs.readdir(out)).filter((f) => f.endsWith(".tmp")), []);
+    assert.deepEqual(
+      (await fs.readdir(out)).filter((f) => f.endsWith(".tmp")),
+      [],
+    );
     const staged = JSON.parse(await fs.readFile(path.join(out, "staged.json"), "utf8"));
     assert.equal(staged.available, false);
     assert.equal((await fs.readFile(path.join(out, "font_wasm_bg.wasm"))).length, 8);
@@ -123,7 +132,10 @@ test("degraded stubs stage on allow-missing and real input restores", async () =
     assert.equal(runStage(stage, preview).ok, true);
     assert.equal(await fs.readFile(path.join(out, "font_wasm.js"), "utf8"), "export const v = 3;\n");
     assert.equal(JSON.parse(await fs.readFile(path.join(out, "staged.json"), "utf8")).available, true);
-    assert.deepEqual((await fs.readdir(out)).filter((f) => f.endsWith(".tmp")), []);
+    assert.deepEqual(
+      (await fs.readdir(out)).filter((f) => f.endsWith(".tmp")),
+      [],
+    );
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

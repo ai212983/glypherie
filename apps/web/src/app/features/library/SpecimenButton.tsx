@@ -10,18 +10,6 @@ export const specimenControlClassName = cn(
   "disabled:pointer-events-none disabled:opacity-50",
 );
 
-export function SpecimenButton({
-  className,
-  ...props
-}: React.ComponentProps<"button">): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      className={cn(
-        specimenControlClassName,
-        className,
-      )}
-      {...props}
-    />
-  );
+export function SpecimenButton({ className, ...props }: React.ComponentProps<"button">): React.JSX.Element {
+  return <button type="button" className={cn(specimenControlClassName, className)} {...props} />;
 }

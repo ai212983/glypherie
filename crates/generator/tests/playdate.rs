@@ -494,6 +494,7 @@ fn exported_font_reconstructs_preview_pixels_and_pen_advances() {
                             config: config.clone(),
                             pipeline,
                             letter_spacing_px: spacing,
+                            kerning_method: font_generator::KerningMethod::Source,
                         },
                     )
                     .unwrap();
@@ -606,6 +607,7 @@ fn roboto_and_source_sans_j_export_with_common_inset() {
                 config: config.clone(),
                 pipeline,
                 letter_spacing_px: 0.0,
+                kerning_method: font_generator::KerningMethod::Source,
             },
         )
         .unwrap();
@@ -655,6 +657,7 @@ fn production_build_rejects_export_without_falling_back_to_another_renderer() {
         },
         pipeline: Default::default(),
         letter_spacing_px: 0.0,
+        kerning_method: font_generator::KerningMethod::Source,
     };
     assert!(playdate::export(&[], &request)
         .unwrap_err()

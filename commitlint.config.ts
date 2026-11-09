@@ -3,9 +3,7 @@ import type { UserConfig } from "@commitlint/types";
 
 // Read scopes with fs: commitlint loads this file through its own TS loader,
 // so JSON import attributes are avoided.
-const scopes: string[] = JSON.parse(
-  readFileSync(new URL("./commit-scopes.json", import.meta.url), "utf8"),
-);
+const scopes: string[] = JSON.parse(readFileSync(new URL("./commit-scopes.json", import.meta.url), "utf8"));
 
 const config: UserConfig = {
   extends: ["@commitlint/config-conventional"],

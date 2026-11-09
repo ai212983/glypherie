@@ -119,10 +119,32 @@ fn scanner_choice_preserves_fitting_metrics_and_line_layout() {
                     Some(fitting),
                 )
                 .unwrap();
-                assert_eq!(
-                    a, legacy,
-                    "default stages retain the existing candidate output"
-                );
+                let explicit = candidate::render_with_pipeline(
+                    &data,
+                    &capture,
+                    RenderPipeline {
+                        fitting,
+                        rasterization: Rasterization::FreeTypeMono,
+                        diagonal_fitting: false,
+                    },
+                )
+                .unwrap();
+                if explicit
+                    .records
+                    .iter()
+                    .any(|r| r.top_alignment.is_some() || r.baseline_alignment.is_some())
+                {
+                    assert_eq!(
+                        a.lines, legacy.lines,
+                        "source alignment preserves historical line layout"
+                    );
+                    assert_eq!(a.missing_codepoints, legacy.missing_codepoints);
+                } else {
+                    assert_eq!(
+                        a, legacy,
+                        "without source alignment, default stages retain historical output"
+                    );
+                }
             }
         }
     }

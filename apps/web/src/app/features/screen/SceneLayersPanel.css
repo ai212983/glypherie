@@ -1,0 +1,36 @@
+.scene-layers {
+  --layer-surface: var(--studio-surface);
+  --layer-selected: var(--studio-inset);
+  --layer-label: var(--studio-muted);
+  --layer-active-label: var(--studio-foreground);
+  --layer-metadata: var(--studio-muted);
+  background: var(--layer-surface);
+}
+
+.dark .scene-layers {
+  --layer-surface: #101214;
+  --layer-selected: #1e2024;
+  --layer-label: #949088;
+  --layer-active-label: #fff;
+  --layer-metadata: #49473f;
+}
+
+.scene-layer-row[aria-current="true"] {
+  border-color: color-mix(in srgb, var(--studio-accent) 40%, transparent);
+  background: var(--layer-selected);
+}
+
+.scene-layer-label { color: var(--layer-label); }
+.scene-layer-row[aria-current="true"] .scene-layer-label { color: var(--layer-active-label); }
+.scene-layer-metadata { color: var(--layer-metadata); }
+.scene-layer-row[data-hidden] .scene-layer-label { opacity: .5; }
+.scene-layer-visibility { color: var(--layer-label); cursor: pointer; }
+.scene-layer-visibility:disabled { cursor: default; }
+
+.scene-layer-row[data-dragging] {
+  background: var(--layer-selected);
+  box-shadow: var(--studio-card-shadow);
+}
+
+.dark .scene-pane-splitter { background: #1e2024; }
+.dark .scene-pane-splitter-grip { background: #49473f; }

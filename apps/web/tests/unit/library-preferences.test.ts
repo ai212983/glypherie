@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LIBRARY_PREFERENCES_KEY, readStoredLibraryPreferences, writeStoredLibraryPreferences } from "../../src/app/features/library/preferences.ts";
+import {
+  LIBRARY_PREFERENCES_KEY,
+  readStoredLibraryPreferences,
+  writeStoredLibraryPreferences,
+} from "../../src/app/features/library/preferences.ts";
 import { MAX_TEXT_LENGTH, TEXT_DEFAULT } from "../../src/app/renderer/render-spec.ts";
 
 function storage(values: Record<string, string> = {}, denied = false): () => void {
@@ -32,18 +36,26 @@ test("library preferences preserve text and empty samples independently of the g
     assert.deepEqual(readStoredLibraryPreferences(), { text: "  Àg Sample  ", baseSize: 16 });
     writeStoredLibraryPreferences({ text: "", baseSize: 16 });
     assert.deepEqual(readStoredLibraryPreferences(), { text: "", baseSize: 16 });
-  } finally { restore(); }
+  } finally {
+    restore();
+  }
 });
 
 test("invalid saved settings use safe defaults and long text respects the input limit", () => {
   for (const raw of ["broken JSON", "null", "[]", '{"text":12,"zoom":9}', '{"zoom":"3"}', '{"zoom":1.5}']) {
     const restore = storage({ [LIBRARY_PREFERENCES_KEY]: raw });
-    try { assert.deepEqual(readStoredLibraryPreferences(), { text: TEXT_DEFAULT, baseSize: 16 }); }
-    finally { restore(); }
+    try {
+      assert.deepEqual(readStoredLibraryPreferences(), { text: TEXT_DEFAULT, baseSize: 16 });
+    } finally {
+      restore();
+    }
   }
   const restore = storage({ [LIBRARY_PREFERENCES_KEY]: JSON.stringify({ text: "a".repeat(MAX_TEXT_LENGTH + 1) }) });
-  try { assert.equal(readStoredLibraryPreferences().text.length, MAX_TEXT_LENGTH); }
-  finally { restore(); }
+  try {
+    assert.equal(readStoredLibraryPreferences().text.length, MAX_TEXT_LENGTH);
+  } finally {
+    restore();
+  }
 });
 
 test("unavailable browser storage does not break the library controls", () => {
@@ -51,7 +63,9 @@ test("unavailable browser storage does not break the library controls", () => {
   try {
     assert.deepEqual(readStoredLibraryPreferences(), { text: TEXT_DEFAULT, baseSize: 16 });
     assert.doesNotThrow(() => writeStoredLibraryPreferences({ text: "Sample", baseSize: 24 }));
-  } finally { restore(); }
+  } finally {
+    restore();
+  }
 });
 
 test("old library appearance values do not become font or specimen settings", () => {
@@ -61,14 +75,19 @@ test("old library appearance values do not become font or specimen settings", ()
     assert.deepEqual(readStoredLibraryPreferences(), { text: "Kept", baseSize: 24 });
     writeStoredLibraryPreferences({ text: "New", baseSize: 32 });
     assert.deepEqual(JSON.parse(values[LIBRARY_PREFERENCES_KEY]), { text: "New", baseSize: 32 });
-  } finally { restore(); }
+  } finally {
+    restore();
+  }
 });
 
 test("base sizes validate and round-trip without discarding text", () => {
   for (const baseSize of [0, -1, 513, "24", null, undefined]) {
     const restore = storage({ [LIBRARY_PREFERENCES_KEY]: JSON.stringify({ text: "Kept", baseSize }) });
-    try { assert.deepEqual(readStoredLibraryPreferences(), { text: "Kept", baseSize: 16 }); }
-    finally { restore(); }
+    try {
+      assert.deepEqual(readStoredLibraryPreferences(), { text: "Kept", baseSize: 16 });
+    } finally {
+      restore();
+    }
   }
   const restore = storage();
   try {
@@ -76,7 +95,9 @@ test("base sizes validate and round-trip without discarding text", () => {
       writeStoredLibraryPreferences({ text: "Ag", baseSize });
       assert.deepEqual(readStoredLibraryPreferences(), { text: "Ag", baseSize });
     }
-  } finally { restore(); }
+  } finally {
+    restore();
+  }
 });
 
 test("canvas palette references stay stable per preset and inverse", async () => {

@@ -1,0 +1,28 @@
+{
+  "repository": "https://github.com/simoncozens/CounterSpace",
+  "revision": "01b33477225eb5fc7bedf93a090b5cd7dd0c812b",
+  "license": "Apache-2.0",
+  "files": {
+    "CounterSpace.py": "66a7e65ba8d8432d28bb894301ebb36d00f6d2d52fa1c4743f995eee3b7008c9",
+    "LICENSE": "363f9b2157b63a3cd0c443ed48e5ef438d8596497e47d1542ba720bf9cab7ea5"
+  },
+  "tensorfont_version": "0.0.6",
+  "requirements_sha256": "12bc8108c882736651e6c89aa7fc35657b038c8f025173f54628836877864fe2",
+  "compatibility": [
+    "tensorfont skimage.util.pad -> numpy.pad",
+    "tensorfont np.float -> float",
+    "private tensorfont module import names"
+  ],
+  "adaptations": [
+    "instantiate source at capture axes",
+    "source control pair metrics supplied by capture",
+    "delivered reference calibration uses finalized advance plus full maintained metric-on adjustment",
+    "integer repeated delivered bitmap cells",
+    "whole delivered-pixel origin candidate search: original first crossing control and full-domain closest feasible score with smaller-step tie",
+    "bounded pair mask cache",
+    "analysis-only tight nonzero bitmap ink bounds with compensated offsets, independent of storage padding; applies to every delivered scoring variant"
+  ],
+  "semantic_patches": [
+    "tensorfont reduce_concavity binary-domain repair: binary 0/1 smoothing output converted to 0/255 for original contour thresholds, then restored to 0/1 with GlyphRendering metadata; byte and blank paths unchanged; classifier untouched"
+  ]
+}

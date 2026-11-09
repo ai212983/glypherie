@@ -8,7 +8,7 @@ const PONG = "glypherie:hmr-pong";
 export function useHmrStatus(): HmrStatus {
   const hot = import.meta.hot;
   const [status, setStatus] = React.useState<HmrStatus>(() =>
-    hot ? (hot.data.hmrStatus as HmrStatus | undefined) ?? "connecting" : "connecting",
+    hot ? ((hot.data.hmrStatus as HmrStatus | undefined) ?? "connecting") : "connecting",
   );
   React.useEffect(() => {
     if (!hot) return;

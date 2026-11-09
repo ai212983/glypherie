@@ -366,28 +366,9 @@
         "n_joints": 26,
         "bound": 0.47022060570471835,
         "peak": 0.17660892243534143,
-        "native_axes": [
-          false,
-          false
-        ],
-        "retained_upstream_axes": [
-          false,
-          true
-        ],
-        "attachment_controls": [
-          1,
-          2,
-          3,
-          4,
-          16,
-          17,
-          18,
-          19,
-          33,
-          34,
-          47,
-          48
-        ]
+        "native_axes": [false, false],
+        "retained_upstream_axes": [false, true],
+        "attachment_controls": [1, 2, 3, 4, 16, 17, 18, 19, 33, 34, 47, 48]
       }
     },
     {
@@ -908,26 +889,11 @@
         "qp": {
           "iterations": 9,
           "active": [
-            [
-              41,
-              -1
-            ],
-            [
-              42,
-              -1
-            ],
-            [
-              22,
-              1
-            ],
-            [
-              62,
-              1
-            ],
-            [
-              60,
-              1
-            ]
+            [41, -1],
+            [42, -1],
+            [22, 1],
+            [62, 1],
+            [60, 1]
           ],
           "equality_error": 1.5265566588595902e-16,
           "stationarity_error": 6.0350550707678464e-15
@@ -935,28 +901,9 @@
         "n_joints": 42,
         "bound": 0.3325872980380694,
         "peak": 0.3325872980380695,
-        "native_axes": [
-          false,
-          false
-        ],
-        "retained_upstream_axes": [
-          false,
-          true
-        ],
-        "attachment_controls": [
-          14,
-          15,
-          16,
-          17,
-          37,
-          38,
-          39,
-          40,
-          61,
-          62,
-          83,
-          84
-        ]
+        "native_axes": [false, false],
+        "retained_upstream_axes": [false, true],
+        "attachment_controls": [14, 15, 16, 17, 37, 38, 39, 40, 61, 62, 83, 84]
       }
     },
     {
@@ -1594,10 +1541,7 @@
             "rel": -0.33333333333333337,
             "source_ids": "r1:c0a(1,0.0000,1.0000)/b(3,0.0000,1.0000)",
             "source_width": 1.5,
-            "tangent": [
-              0.0,
-              1.0
-            ]
+            "tangent": [0.0, 1.0]
           },
           {
             "fitted_width": 1.0,
@@ -1605,10 +1549,7 @@
             "rel": -0.31182795698924726,
             "source_ids": "r4:c0a(1,0.0000,0.9381)/b(13,0.2417,1.0000)",
             "source_width": 1.453125,
-            "tangent": [
-              0.0,
-              1.0
-            ]
+            "tangent": [0.0, 1.0]
           },
           {
             "fitted_width": 1.0,
@@ -1616,10 +1557,7 @@
             "rel": -0.31182795698924726,
             "source_ids": "r4:c0a(3,0.2885,1.0000)/b(13,0.0000,0.1233)",
             "source_width": 1.453125,
-            "tangent": [
-              0.0,
-              1.0
-            ]
+            "tangent": [0.0, 1.0]
           },
           {
             "fitted_width": 1.0,
@@ -1627,10 +1565,7 @@
             "rel": -0.31182795698924737,
             "source_ids": "r5:c0a(6,0.0000,1.0000)/b(8,0.0000,1.0000)",
             "source_width": 1.4531250000000002,
-            "tangent": [
-              0.0,
-              -1.0
-            ]
+            "tangent": [0.0, -1.0]
           },
           {
             "fitted_width": 1.0,
@@ -1638,10 +1573,7 @@
             "rel": -0.31182795698924726,
             "source_ids": "r6:c0a(1,0.0000,1.0000)/b(3,0.0000,1.0000)",
             "source_width": 1.453125,
-            "tangent": [
-              0.0,
-              1.0
-            ]
+            "tangent": [0.0, 1.0]
           },
           {
             "fitted_width": 1.0,
@@ -1649,10 +1581,7 @@
             "rel": -0.31182795698924726,
             "source_ids": "r8:c0a(1,0.0000,1.0000)/b(3,0.0000,1.0000)",
             "source_width": 1.453125,
-            "tangent": [
-              0.0,
-              1.0
-            ]
+            "tangent": [0.0, 1.0]
           },
           {
             "fitted_width": 1.0,
@@ -1660,10 +1589,7 @@
             "rel": -0.31182795698924737,
             "source_ids": "r9:c0a(6,0.0000,1.0000)/b(8,0.0000,1.0000)",
             "source_width": 1.4531250000000002,
-            "tangent": [
-              0.0,
-              -1.0
-            ]
+            "tangent": [0.0, -1.0]
           },
           {
             "fitted_width": 1.0,
@@ -1671,10 +1597,7 @@
             "rel": -0.31182795698924726,
             "source_ids": "r10:c1a(9,0.0000,0.6179)/b(13,0.0793,1.0000)",
             "source_width": 1.453125,
-            "tangent": [
-              0.0,
-              1.0
-            ]
+            "tangent": [0.0, 1.0]
           },
           {
             "fitted_width": 1.0,
@@ -1682,10 +1605,7 @@
             "rel": -0.31182795698924726,
             "source_ids": "r10:c1a(9,0.7529,1.0000)/b(11,0.0000,0.8228)",
             "source_width": 1.453125,
-            "tangent": [
-              0.0,
-              1.0
-            ]
+            "tangent": [0.0, 1.0]
           }
         ],
         "n_anchors": 9,
@@ -2011,22 +1931,10 @@
         "qp": {
           "iterations": 6,
           "active": [
-            [
-              23,
-              -1
-            ],
-            [
-              32,
-              1
-            ],
-            [
-              33,
-              1
-            ],
-            [
-              4,
-              -1
-            ]
+            [23, -1],
+            [32, 1],
+            [33, 1],
+            [4, -1]
           ],
           "equality_error": 1.3877787807814457e-16,
           "stationarity_error": 7.050332143603369e-15
@@ -2034,32 +1942,9 @@
         "n_joints": 22,
         "bound": 0.547336539906652,
         "peak": 0.547336539906652,
-        "native_axes": [
-          false,
-          false
-        ],
-        "retained_upstream_axes": [
-          false,
-          true
-        ],
-        "attachment_controls": [
-          0,
-          1,
-          2,
-          12,
-          13,
-          14,
-          15,
-          16,
-          17,
-          27,
-          28,
-          29,
-          30,
-          41,
-          42,
-          53
-        ]
+        "native_axes": [false, false],
+        "retained_upstream_axes": [false, true],
+        "attachment_controls": [0, 1, 2, 12, 13, 14, 15, 16, 17, 27, 28, 29, 30, 41, 42, 53]
       }
     }
   ]

@@ -1,20 +1,17 @@
-import { userError } from "../user-error";
-// Reactive IndexedDB queries for saved font variants.
-//
-// All reads go through the repository so the schema keeps its single owner
-// (app/database.ts). dexie-react-hooks re-runs each query when its observed
-// tables change, including writes committed from another tab, per
-// https://dexie.org/docs/dexie-react-hooks/useLiveQuery() — the editor and
-// the library stay current without manual refresh calls.
-//
-// Query failures are caught into explicit error states with a retry that
-// re-runs the query: the installed dexie-react-hooks build surfaces
-// observable errors by throwing during render, so without this the app would
-// white-screen instead of recovering.
+// Reactive saved-variant queries over the domain graph. Reads go through
+// the repository facade (split entities assembled to the legacy DTO); the
+// version counter re-runs each query after committed writes, including
+// cross-tab broadcasts, without manual refresh calls.
+
 import * as React from "react";
-import { useLiveQuery } from "dexie-react-hooks";
+import { subscribeDomain, getDomainVersion } from "../domain/events.js";
+import { userError } from "../user-error";
 import type { FontVariant } from "./model.js";
 import { getVariant, listVariants } from "./repository.js";
+
+function useDomainVersion(): number {
+  return React.useSyncExternalStore(subscribeDomain, getDomainVersion);
+}
 
 function useQueryAttempt(): { attempt: number; retry: () => void } {
   const [attempt, setAttempt] = React.useState(0);
@@ -35,20 +32,27 @@ export interface LiveVariantList {
 
 function useVariantList(fontId?: string): LiveVariantList {
   const { attempt, retry } = useQueryAttempt();
-  const row = useLiveQuery(
-    async (): Promise<{ ok: true; variants: FontVariant[] } | { ok: false; message: string }> => {
-      try {
-        return { ok: true, variants: await listVariants(fontId) };
-      } catch (error) {
-        return { ok: false, message: queryMessage(error) };
-      }
-    },
-    [fontId, attempt],
-    undefined,
-  );
-  if (row === undefined) return { status: "loading", variants: [], message: "", retry };
-  if (!row.ok) return { status: "error", variants: [], message: row.message, retry };
-  return { status: "ready", variants: row.variants, message: "", retry };
+  const version = useDomainVersion();
+  const [state, setState] = React.useState<{
+    status: "loading" | "error" | "ready";
+    variants: FontVariant[];
+    message: string;
+  }>({ status: "loading", variants: [], message: "" });
+  React.useEffect(() => {
+    let live = true;
+    void listVariants(fontId).then(
+      (variants) => {
+        if (live) setState({ status: "ready", variants, message: "" });
+      },
+      (error: unknown) => {
+        if (live) setState({ status: "error", variants: [], message: queryMessage(error) });
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [fontId, attempt, version]);
+  return { ...state, retry };
 }
 
 /** Every saved variant, with an explicit error state plus retry. */
@@ -69,19 +73,22 @@ export type LiveVariant =
 /** One saved variant by id, distinguishing loading, error, and deleted/missing. */
 export function useLiveVariant(id: string): LiveVariant {
   const { attempt, retry } = useQueryAttempt();
-  const row = useLiveQuery(
-    async ():
-      | Promise<{ ok: true; variant: FontVariant | undefined } | { ok: false; message: string }> => {
-      try {
-        return { ok: true, variant: await getVariant(id) };
-      } catch (error) {
-        return { ok: false, message: queryMessage(error) };
-      }
-    },
-    [id, attempt],
-    undefined,
-  );
-  if (row === undefined) return { status: "loading" };
-  if (!row.ok) return { status: "error", message: row.message, retry };
-  return row.variant ? { status: "ready", variant: row.variant } : { status: "missing" };
+  const version = useDomainVersion();
+  const [state, setState] = React.useState<LiveVariant>({ status: "loading" });
+  React.useEffect(() => {
+    let live = true;
+    void getVariant(id).then(
+      (variant) => {
+        if (!live) return;
+        setState(variant ? { status: "ready", variant } : { status: "missing" });
+      },
+      (error: unknown) => {
+        if (live) setState({ status: "error", message: queryMessage(error), retry });
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [id, attempt, version, retry]);
+  return state;
 }

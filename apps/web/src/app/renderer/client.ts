@@ -15,9 +15,32 @@ export interface RenderLayoutLine {
   height_px: number;
 }
 
+// One in-place editing stop from the native layout pass that painted these
+// pixels (`offset` is a JS UTF-16 text boundary, `line` a visual line
+// index). Coordinates and bounds use native source pixels; `x` may be
+// fractional for source-layout roles. Duplicate offsets at soft line
+// breaks are allowed.
+export interface RenderCaret {
+  offset: number;
+  line: number;
+  x: number;
+  y: number;
+  height: number;
+}
+
+export interface RenderEditing {
+  carets: RenderCaret[];
+  width: number;
+  height: number;
+}
+
 export interface RenderLayout {
   lines: RenderLayoutLine[];
   missing_codepoints: number[];
+  // Exact geometry from the real renderer, including blank text. Fixture
+  // and synthetic renderers omit it; consumers must handle its absence
+  // honestly and never approximate it with browser glyph metrics.
+  editing?: RenderEditing | null;
 }
 
 interface Envelope {
@@ -61,7 +84,11 @@ export class FontWorkerClient {
     };
   }
 
-  private send(kind: string, fields: Record<string, unknown>, transfer?: Transferable[]): Promise<Omit<Envelope, "seq" | "ok">> {
+  private send(
+    kind: string,
+    fields: Record<string, unknown>,
+    transfer?: Transferable[],
+  ): Promise<Omit<Envelope, "seq" | "ok">> {
     this.seq += 1;
     const seq = this.seq;
     return new Promise((resolve, reject) => {
@@ -103,12 +130,17 @@ export class FontWorkerClient {
     return this.token;
   }
 
-  async render(fontId: string, token: number, spec: RenderSpec): Promise<{ token: number; dropped: boolean; pixels: RenderPixels }> {
+  async render(
+    fontId: string,
+    token: number,
+    spec: RenderSpec,
+  ): Promise<{ token: number; dropped: boolean; pixels: RenderPixels }> {
     const response = await this.send("render", { fontId, token, spec });
     const value = response.value as { width: number; height: number; pixels: ArrayBuffer; layout: unknown };
-    const layout = value.layout && typeof value.layout === "object" && Array.isArray((value.layout as RenderLayout).lines)
-      ? (value.layout as RenderLayout)
-      : null;
+    const layout =
+      value.layout && typeof value.layout === "object" && Array.isArray((value.layout as RenderLayout).lines)
+        ? (value.layout as RenderLayout)
+        : null;
     return {
       token: typeof response.token === "number" ? response.token : -1,
       dropped: response.dropped === true,

@@ -27,8 +27,11 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm ci --ignore-scripts
+      - run: npm --prefix apps/web ci --ignore-scripts
       - name: Root TypeScript typecheck
         run: npm run typecheck
+      - name: Web TypeScript lint
+        run: npm --prefix apps/web run lint
       - name: Formatting and documentation spelling
         run: |
           npm run fmt:check

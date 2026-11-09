@@ -29,13 +29,12 @@ rust-fmt-check:
 # Install the pinned formatter and spell checker.
 docs-setup:
     npm ci --ignore-scripts
-    npx --no-install dprint resolved-config > /dev/null
 
-# Format Markdown prose, tables, and JSON files.
+# Format Markdown, JSON, and TypeScript/JavaScript files.
 fmt:
     npm run fmt
 
-# Check Markdown and JSON formatting without changing files.
+# Check formatting without changing files.
 fmt-check:
     npm run fmt:check
 
@@ -82,6 +81,10 @@ specimens $config_path="crates/generator/specimens.json" $output_dir="out/specim
 # Check web browser types without emitting files.
 web-typecheck:
     npm --prefix apps/web run typecheck
+
+# Check web TypeScript with Oxlint without changing files.
+web-lint:
+    npm --prefix apps/web run lint
 
 # Run the web tests.
 web-test:

@@ -830,3 +830,256 @@ fn blank_requests_reject_unsupported_fonts_like_nonempty_requests() {
         }
     }
 }
+
+/// 26.6 pen after each character of `text`, from public `generate()` output:
+/// the same advance plus pair-kerning accumulation the adapter lays out.
+fn pen_after_each(gen: &GeneratedFont, text: &str) -> Vec<i64> {
+    let (glyphs, kerning) = advances(gen);
+    let mut pen = 0i64;
+    let mut prev = None;
+    let mut out = Vec::new();
+    for ch in text.chars() {
+        let code = ch as u32;
+        let advance = i64::from(*glyphs.get(&code).expect("glyph present"));
+        let kern = i64::from(
+            prev.map(|p| kerning.get(&(p, code)).copied().unwrap_or(0))
+                .unwrap_or(0),
+        );
+        pen += kern + advance;
+        out.push(pen);
+        prev = Some(code);
+    }
+    out
+}
+
+#[test]
+fn editing_stops_match_same_pass_pens_covering_kern_and_space() {
+    // Roboto kerns AV, so the stop between A and V must sit at the unkerned
+    // pen (advance boundary), not at the painted glyph origin.
+    let bytes = font_bytes();
+    let mut config = config_16_mono();
+    config.characters = "AV ".into();
+    let gen = generate(&bytes, &config).unwrap();
+    let (_, line_height) = line_geometry(&gen);
+    let text = "AV A";
+    let rendered = render_text(&bytes, &request(config, text, 300, 64)).unwrap();
+    assert_eq!(rendered.lines.len(), 1);
+    let pens = pen_after_each(&gen, text);
+    let stops = &rendered.editing.carets;
+    assert_eq!(stops.len(), text.encode_utf16().count() + 1);
+    for (index, pen) in std::iter::once(0).chain(pens.iter().copied()).enumerate() {
+        let stop = stops[index];
+        assert_eq!(
+            (
+                stop.offset_utf16,
+                stop.line,
+                stop.x_26_6,
+                stop.y_px,
+                stop.height_px
+            ),
+            (index, 0, pen as i32, 0, line_height),
+            "caret {index} must sit at the laid-out pen"
+        );
+    }
+    assert_eq!(rendered.editing.width_26_6, *pens.last().unwrap() as i32);
+    assert_eq!(rendered.editing.height_px, line_height);
+    // The AV kern moves the painted V origin but not the caret between them:
+    // offset 1 sits at the pen after A, left of V's kerned origin.
+    let origins = pen_origins(&gen, "AV");
+    assert!(
+        origins[1].1 < pens[0],
+        "fixture must kern AV for this check"
+    );
+    assert_eq!(stops[1].x_26_6, pens[0] as i32);
+}
+
+#[test]
+fn editing_maps_unicode_boundaries_and_blank_inputs() {
+    // U+00E9 is two UTF-8 bytes but one UTF-16 unit: offsets count JS string
+    // units, never bytes, and never split a scalar.
+    let bytes = font_bytes();
+    let text = "Aé Ω";
+    let mut config = config_16_mono();
+    config.characters = text.chars().collect();
+    let gen = generate(&bytes, &config).unwrap();
+    let (_, line_height) = line_geometry(&gen);
+    let rendered = render_text(&bytes, &request(config, text, 300, 64)).unwrap();
+    let stops = &rendered.editing.carets;
+    assert_eq!(stops.len(), 5);
+    assert_eq!(
+        stops
+            .iter()
+            .map(|stop| stop.offset_utf16)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2, 3, 4]
+    );
+    assert!(stops.windows(2).all(|pair| pair[0].x_26_6 < pair[1].x_26_6));
+    assert!(stops
+        .iter()
+        .all(|stop| stop.line == 0 && stop.height_px == line_height));
+
+    // Blank input keeps `lines` empty but still reports every boundary over
+    // virtual lines in paragraph order.
+    let mut probe = config_16_mono();
+    probe.characters = "A".into();
+    let probe_gen = generate(&bytes, &probe).unwrap();
+    let (_, blank_height) = line_geometry(&probe_gen);
+    for (text, line_count) in [("", 1), ("\n", 2), ("\n\n", 3)] {
+        let blank = render_text(&bytes, &request(config_16_mono(), text, 12, 8)).unwrap();
+        assert!(blank.lines.is_empty());
+        assert!(blank.pixels.chunks_exact(4).all(|t| t == BG));
+        let mut covered = vec![false; text.encode_utf16().count() + 1];
+        for stop in &blank.editing.carets {
+            covered[stop.offset_utf16] = true;
+            assert_eq!(stop.height_px, blank_height);
+            assert_eq!(stop.x_26_6, 0);
+        }
+        assert!(
+            covered.iter().all(|seen| *seen),
+            "blank {text:?} covers every boundary"
+        );
+        assert_eq!(
+            blank.editing.carets.iter().map(|stop| stop.line).max(),
+            Some(line_count - 1)
+        );
+        assert_eq!(blank.editing.width_26_6, 0);
+        assert_eq!(blank.editing.height_px, line_count as u32 * blank_height);
+    }
+}
+
+#[test]
+fn editing_holds_pen_over_skipped_glyphs() {
+    let bytes = font_bytes();
+    let mut config = config_16_mono();
+    config.missing_glyphs = font_generator::MissingGlyphs::Skip;
+    // U+0378 passes script validation but has no outline: skipped.
+    let rendered = render_text(&bytes, &request(config.clone(), "A\u{378}B", 300, 64)).unwrap();
+    assert_eq!(rendered.missing_codepoints, vec![0x378]);
+    let stops = &rendered.editing.carets;
+    assert_eq!(
+        stops
+            .iter()
+            .map(|stop| stop.offset_utf16)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2, 3]
+    );
+    // The skipped scalar contributes no advance: its boundary shares the pen.
+    assert_eq!(stops[1].x_26_6, stops[2].x_26_6);
+    assert!(stops[2].x_26_6 < stops[3].x_26_6);
+
+    // All glyphs skipped: blank canvas with lines empty, editing still
+    // covers every boundary.
+    let blank = render_text(&bytes, &request(config, "\u{378}\u{379}", 64, 40)).unwrap();
+    assert!(blank.lines.is_empty());
+    assert_eq!(blank.missing_codepoints, vec![0x378, 0x379]);
+    assert_eq!(
+        blank
+            .editing
+            .carets
+            .iter()
+            .map(|stop| stop.offset_utf16)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+}
+
+#[test]
+fn editing_covers_wrapped_empty_and_crlf_boundaries() {
+    let bytes = font_bytes();
+    // Character wrap on a narrow canvas: break whitespace is consumed, so its
+    // boundaries surface on the preceding line end.
+    let mut wrapped_req = request(config_16_mono(), "ab cd", 24, 96);
+    wrapped_req.wrap = WrapMode::Char;
+    let wrapped = render_text(&bytes, &wrapped_req).unwrap();
+    assert!(wrapped.lines.len() >= 2, "canvas must force a wrap");
+    let total = "ab cd".encode_utf16().count();
+    let mut covered = vec![false; total + 1];
+    for stop in &wrapped.editing.carets {
+        covered[stop.offset_utf16] = true;
+        assert!(stop.line < wrapped.lines.len());
+        assert_eq!(stop.y_px, stop.line as u32 * wrapped.lines[0].height_px);
+    }
+    assert!(covered.iter().all(|seen| *seen));
+
+    // Hard breaks: the empty middle line owns the offset between newlines,
+    // and the CRLF middle boundary maps to the first line end.
+    for (text, empty_line, empty_offset) in [("a\n\nb", 1, 2), ("ab\n", 1, 3)] {
+        let rendered = render_text(&bytes, &request(config_16_mono(), text, 300, 64)).unwrap();
+        assert!(rendered.lines.len() >= 2);
+        let owned = rendered
+            .editing
+            .carets
+            .iter()
+            .any(|stop| stop.offset_utf16 == empty_offset && stop.line == empty_line);
+        assert!(
+            owned,
+            "{text:?} must place offset {empty_offset} on line {empty_line}"
+        );
+        assert!(
+            rendered
+                .editing
+                .carets
+                .iter()
+                .all(|stop| { stop.offset_utf16 != empty_offset || stop.line == empty_line }),
+            "the boundary after a hard break must belong only to its following line"
+        );
+    }
+    let crlf = render_text(&bytes, &request(config_16_mono(), "a\r\nb", 300, 64)).unwrap();
+    let mut covered = vec![false; "a\r\nb".encode_utf16().count() + 1];
+    for stop in &crlf.editing.carets {
+        covered[stop.offset_utf16] = true;
+    }
+    assert_eq!(covered, vec![true; 5], "CRLF middle boundary keeps a stop");
+    assert!(crlf
+        .editing
+        .carets
+        .iter()
+        .all(|stop| stop.offset_utf16 != 3 || stop.line == 1));
+}
+
+#[test]
+fn editing_tracks_letter_spacing_and_alignment_exactly() {
+    use font_generator::renderer::RendererRole;
+    use font_generator::surface::render_text_with_renderer_and_spacing;
+    let bytes = font_bytes();
+    // Space pairs bypass the tracking guard, so +2 px widens every step by
+    // exactly 128 in 26.6 with no minimum-gap correction.
+    let text = "A A";
+    let neutral = render_text(&bytes, &request(config_16_mono(), text, 300, 64)).unwrap();
+    let wide = render_text_with_renderer_and_spacing(
+        &bytes,
+        &request(config_16_mono(), text, 300, 64),
+        RendererRole::Baseline,
+        2.0,
+    )
+    .unwrap();
+    assert_eq!(neutral.editing.carets.len(), wide.editing.carets.len());
+    for (plain, tracked) in neutral
+        .editing
+        .carets
+        .iter()
+        .zip(wide.editing.carets.iter())
+    {
+        assert_eq!(plain.offset_utf16, tracked.offset_utf16);
+        assert_eq!(
+            tracked.x_26_6 - plain.x_26_6,
+            plain.offset_utf16 as i32 * 128
+        );
+    }
+    assert_eq!(
+        wide.editing.width_26_6 - neutral.editing.width_26_6,
+        3 * 128
+    );
+
+    // Right alignment shifts carets with the paint: stops share the line's
+    // native-source shift, keeping fractional pens exact.
+    let mut req = request(config_16_mono(), "AV", 300, 64);
+    req.align = HAlign::Right;
+    let rendered = render_text(&bytes, &req).unwrap();
+    let pen = rendered.lines[0].width_26_6;
+    let line_px = pen.max(0).saturating_add(32).div_euclid(64);
+    let shift = (300 - line_px) as i32 * 64;
+    let stops = &rendered.editing.carets;
+    assert_eq!(stops[0].x_26_6, shift);
+    assert_eq!(stops.last().unwrap().x_26_6, shift + pen);
+}

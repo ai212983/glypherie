@@ -1,13 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  bootLibrary,
-  browserAvailable,
-  buildApp,
-  cardIds,
-  launch,
-  servePrefix,
-} from "../helpers/spa-helpers.ts";
+import { bootLibrary, browserAvailable, buildApp, cardIds, launch, servePrefix } from "../helpers/spa-helpers.ts";
 
 // A dead renderer must not take the stored library down with it: boot settles
 // past the failed ping and the seeded fonts stay browsable. Service workers
@@ -36,18 +29,20 @@ test("stored library stays accessible when the renderer is unavailable", { skip:
   const page = await context.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${url}fonts/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}fonts/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0, null, {
     timeout: 30000,
   });
   assert.deepEqual(await cardIds(page), ids, "stored fonts list without a live renderer");
   await page.waitForFunction(() => document.querySelector("[data-route-notice]") !== null, null, { timeout: 60000 });
   assert.ok(wasmIntercepts >= 1);
-  await page.waitForFunction(() => document.querySelectorAll('[data-source-preview][data-rendered="true"]').length === 5);
+  await page.waitForFunction(
+    () => document.querySelectorAll('[data-source-preview][data-rendered="true"]').length === 5,
+  );
   assert.equal(await page.locator("[data-library-variant-canvas]").count(), 0);
   assert.deepEqual(errors, []);
 
-  await page.goto(`${url}#/font/${ids[0]}/`, { waitUntil: "networkidle" });
+  await page.goto(`${url}#/font/${ids[0]}/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     () => document.querySelector("section[role='alert'] h2")?.textContent === "Preview unavailable.",
     null,

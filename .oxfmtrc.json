@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 120,
+  "endOfLine": "lf",
+  // Code samples in docs stay exactly as written.
+  "embeddedLanguageFormatting": "off",
+  "ignorePatterns": [
+    "docs/references/VisualTrueType/**",
+    "docs/references/specs/**",
+    "**/vendor/**",
+    "**/package-lock.json",
+    "**/*.lock.json",
+    "crates/wasm/pkg-*/**",
+    // Published capture packages are checksum-pinned; the build guard reads
+    // them byte-for-byte, so the formatter must not touch them.
+    "apps/web/src/app/features/landing/assets/rasterizers/**",
+    // Machine-owned reference data: paper extraction ledgers. Reformatting
+    // them is churn with no readers that care about whitespace.
+    "**/extraction.json",
+    "**/review.json",
+    // Frozen build input: byte-pinned by SOURCE_CATALOGUE_SHA in
+    // yinyangfit_interactive_v3.py; the formatter must not touch it.
+    "experiments/contextual_spacing/yinyangfit_interactive_v3_source/catalogue.json",
+    // Audited browser-instrumentation helper, vendored byte-identical;
+    // formatting must not alter its exact-match worker-source anchors.
+    "experiments/contextual_spacing/tests/yinyang_adoption_hook_final.js",
+    // dprint never covered these languages; keep the migration to its scope
+    // plus TypeScript/JavaScript.
+    "**/*.css",
+    "**/*.html",
+    "**/*.yml",
+    "**/*.yaml",
+    "**/*.toml",
+    "**/.mise/**",
+    "**/node_modules/**",
+    "**/target/**",
+    "**/out/**",
+    "**/.venv/**"
+  ]
+}

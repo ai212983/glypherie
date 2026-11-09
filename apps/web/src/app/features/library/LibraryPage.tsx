@@ -47,8 +47,25 @@ interface LibraryPageProps {
 }
 
 export function LibraryPage({
-  nav, fonts, notice, seedNote, importStatus, sampleText, sampleBaseSize, sampleZoom, samplePalette, sampleInverse, filter, library,
-  onAddVariant, onOpenVariant, onDeleteFont, onImport, onFilter, onSampleText, onSampleBaseSize,
+  nav,
+  fonts,
+  notice,
+  seedNote,
+  importStatus,
+  sampleText,
+  sampleBaseSize,
+  sampleZoom,
+  samplePalette,
+  sampleInverse,
+  filter,
+  library,
+  onAddVariant,
+  onOpenVariant,
+  onDeleteFont,
+  onImport,
+  onFilter,
+  onSampleText,
+  onSampleBaseSize,
 }: LibraryPageProps): React.JSX.Element {
   const { ensureLoaded, rendererAvailable, loadedIds } = library;
   // One reactive query for every saved variant; variant writes never touch
@@ -68,10 +85,7 @@ export function LibraryPage({
     const ids = [...byFont.keys()];
     if (ids.length > 0) ensureLoaded(ids);
   }, [byFont, ensureLoaded, rendererAvailable, loadedIds]);
-  const visibleFonts = React.useMemo(
-    () => fonts.filter((font) => matchesFontFilter(font, filter)),
-    [fonts, filter],
-  );
+  const visibleFonts = React.useMemo(() => fonts.filter((font) => matchesFontFilter(font, filter)), [fonts, filter]);
   return (
     <div className="flex flex-col lg:h-dvh lg:overflow-hidden">
       <div className="sticky top-0 z-40 shrink-0">
@@ -91,7 +105,9 @@ export function LibraryPage({
           </p>
         )}
         {seedNote && (
-          <p className="intro mx-6 mt-5 text-[.875rem] leading-[1.55] text-soft" role="status">{seedNote}</p>
+          <p className="intro mx-6 mt-5 text-[.875rem] leading-[1.55] text-soft" role="status">
+            {seedNote}
+          </p>
         )}
         {variantState.status === "error" && (
           <p className="mx-6 mt-5 max-w-[45rem] text-[.875rem] leading-[1.55]" role="alert" data-variant-list-error>
@@ -110,7 +126,11 @@ export function LibraryPage({
             onSampleBaseSize={onSampleBaseSize}
             onImport={onImport}
           />
-          <section aria-label="Font library" data-library-scroll className="min-w-0 flex-1 bg-studio-inset p-6 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+          <section
+            aria-label="Font library"
+            data-library-scroll
+            className="min-w-0 flex-1 bg-studio-inset p-6 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain"
+          >
             {fonts.length === 0 ? (
               <div className="content-state my-12 max-w-[45rem] leading-[1.6]">
                 <h2>No fonts</h2>
@@ -126,7 +146,10 @@ export function LibraryPage({
                 </div>
               </div>
             ) : (
-              <ul className="font-cards mx-auto my-0 grid w-full max-w-[60rem] grid-cols-1 list-none gap-6 p-0" data-font-cards>
+              <ul
+                className="font-cards mx-auto my-0 grid w-full max-w-[60rem] grid-cols-1 list-none gap-6 p-0"
+                data-font-cards
+              >
                 {visibleFonts.map((font) => (
                   <li key={font.id} className="min-w-0">
                     <FontCard

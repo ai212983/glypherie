@@ -1,0 +1,10 @@
+FontForge-derived envelope spacing
+
+Portions adapted from aw2_findedges, IterateSplineSolve and aw2_bbox_separation.
+Copyright (C) 2009-2012 George Williams.
+FontForge revision c41bdb922285f35defd1e1385adfd13bde1ab32a.
+https://github.com/fontforge/fontforge/blob/c41bdb922285f35defd1e1385adfd13bde1ab32a/fontforge/autowidth2.c
+
+The source-relative target, full-correction endpoint and placement feasibility
+are project adaptations, not FontForge shared-target AutoKern2 behavior.
+See LICENSE-BSD-3-Clause.txt for the retained upstream license.

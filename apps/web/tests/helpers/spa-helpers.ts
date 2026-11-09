@@ -6,19 +6,22 @@ import os from "node:os";
 import path from "node:path";
 import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { chromium, type Browser, type Locator, type Page } from "playwright-core";
+import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright-core";
 
 export const webRoot: string = fileURLToPath(new URL("../..", import.meta.url));
 export const repoRoot: string = path.resolve(webRoot, "..", "..");
 export const fontDir: string = path.join(repoRoot, "fonts");
 
-export const sha256 = (bytes: Uint8Array | string): string =>
-  createHash("sha256").update(bytes).digest("hex");
+export const sha256 = (bytes: Uint8Array | string): string => createHash("sha256").update(bytes).digest("hex");
 
 export async function buildApp(t: TestContext, base = "/preview/", siteUrl = ""): Promise<string> {
   const output = await fs.mkdtemp(path.join(os.tmpdir(), "font-spa-"));
   t.after(() => fs.rm(output, { recursive: true, force: true }));
-  execFileSync("npm", ["run", "build", "--", "--outDir", output], { cwd: webRoot, stdio: "pipe", env: { ...process.env, FONT_PREVIEW_BASE: base, FONT_PREVIEW_SITE_URL: siteUrl } });
+  execFileSync("npm", ["run", "build", "--", "--outDir", output], {
+    cwd: webRoot,
+    stdio: "pipe",
+    env: { ...process.env, FONT_PREVIEW_BASE: base, FONT_PREVIEW_SITE_URL: siteUrl },
+  });
   return output;
 }
 
@@ -54,26 +57,85 @@ export async function servePrefix(t: TestContext, root: string, prefix = "/previ
     }
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => new Promise<void>((resolve) => {
-    server.close(() => resolve());
-    server.closeAllConnections();
-  }));
+  t.after(
+    () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      }),
+  );
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Test server did not bind a port.");
   return `http://127.0.0.1:${address.port}${prefix}`;
 }
 
-export const browserPath: string | undefined = process.env.WEB_TEST_BROWSER
-  ?? (process.platform === "darwin" ? undefined : "/opt/google/chrome/chrome");
+export const browserPath: string | undefined =
+  process.env.WEB_TEST_BROWSER ?? (process.platform === "darwin" ? undefined : "/opt/google/chrome/chrome");
 // A standard `playwright-core install chromium` installs both Chromium and its
 // headless shell. Let Playwright select the shell on macOS to avoid Dock flashes.
-export const browserAvailable: boolean = await fs.access(browserPath ?? chromium.executablePath())
-  .then(() => true, () => false);
+export const browserAvailable: boolean = await fs.access(browserPath ?? chromium.executablePath()).then(
+  () => true,
+  () => false,
+);
 
 export async function launch(t: TestContext): Promise<Browser> {
   const browser = await chromium.launch({ executablePath: browserPath, headless: true });
   t.after(() => browser.close());
   return browser;
+}
+
+export interface PersistentContext {
+  readonly context: BrowserContext;
+  close: () => Promise<void>;
+}
+
+export interface PersistentProfile {
+  readonly profile: string;
+  open: () => Promise<PersistentContext>;
+}
+
+/**
+ * A browser profile directory shared across restarts for cold-boot tests.
+ * Every opened context registers an idempotent closer, and one after-hook
+ * closes all of them before removing the profile, so an early body failure
+ * still releases the headless shell instead of hanging the runner. The
+ * passing path still closes each context explicitly before reopening the
+ * same profile, since two browsers cannot share one profile directory.
+ */
+export async function persistentProfile(
+  t: TestContext,
+  viewport: { width: number; height: number } = { width: 1280, height: 900 },
+): Promise<PersistentProfile> {
+  const profile = await fs.mkdtemp(path.join(os.tmpdir(), "font-offline-profile-"));
+  const closers: Array<() => Promise<void>> = [];
+  t.after(async () => {
+    for (const close of closers.reverse()) {
+      try {
+        await close();
+      } catch {
+        // Already closed on the explicit passing path.
+      }
+    }
+    await fs.rm(profile, { recursive: true, force: true });
+  });
+  return {
+    profile,
+    open: async (): Promise<PersistentContext> => {
+      const context = await chromium.launchPersistentContext(profile, {
+        executablePath: browserPath,
+        headless: true,
+        viewport,
+      });
+      let closed = false;
+      const close = async (): Promise<void> => {
+        if (closed) return;
+        closed = true;
+        await context.close();
+      };
+      closers.push(close);
+      return { context, close };
+    },
+  };
 }
 
 export function canvasRendered(): boolean {
@@ -101,18 +163,165 @@ export async function canvasPixels(page: Page): Promise<{ width: number; height:
  * already carries the full catalog.
  */
 export async function bootLibrary(page: Page, url: string): Promise<void> {
-  await page.goto(`${url}fonts/`, { waitUntil: "networkidle" });
+  // domcontentloaded, not networkidle: the shared domain worker's script load
+  // never reports completion to the page target, so page-scoped networkidle
+  // cannot fire once the owner exists. The waits below prove settledness.
+  await page.goto(`${url}fonts/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
+}
+
+/**
+ * Record the domain SharedWorker script URL before the app boots so later
+ * page.evaluate calls can open their own port to the same single owner.
+ * The domain worker owns PGlite: its script fetch never surfaces in the
+ * page's resource timing (see probe), so page-scoped networkidle cannot
+ * observe it. Call this on the context before creating pages that need
+ * variantState/domainVariant below. Idempotent and independent of page-level
+ * worker wrappers (e.g. renderer SPEC_SCRIPT hooks).
+ */
+export async function captureDomainWorker(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    const holder = window as unknown as { SharedWorker?: unknown; __sharedWorkerUrls?: string[] };
+    const Ctor = holder.SharedWorker as unknown as
+      | (new (url: string | URL, options?: unknown) => SharedWorker)
+      | undefined;
+    if (typeof Ctor !== "function" || !Ctor) return;
+    if ((Ctor as unknown as { __glypherieCaptured?: boolean }).__glypherieCaptured) return;
+    const urls: string[] = [];
+    holder.__sharedWorkerUrls = urls;
+    function Wrapped(this: unknown, url: string | URL, options?: unknown): SharedWorker {
+      try {
+        urls.push(String(url));
+      } catch {
+        // Best-effort capture only.
+      }
+      return new (Ctor as new (url: string | URL, options?: unknown) => SharedWorker)(url, options);
+    }
+    Wrapped.prototype = (Ctor as unknown as { prototype: unknown }).prototype;
+    (Wrapped as unknown as { __glypherieCaptured?: boolean }).__glypherieCaptured = true;
+    holder.SharedWorker = Wrapped as unknown;
+  });
+}
+
+export interface DomainVariantState {
+  revision: number;
+  inheritSampleText: boolean;
+  paletteId: number;
+  profile: string;
+}
+
+/**
+ * Read one variant through the actual graph storage seam: a fresh port to
+ * the same SharedWorker owner the app uses, calling its getVariant command.
+ * Never touches the retired Dexie "font-library" database, which no longer
+ * receives writes. Throws when the worker URL was not captured (call
+ * captureDomainWorker on the context before booting).
+ */
+export async function variantState(page: Page, id: string): Promise<DomainVariantState> {
+  return page.evaluate(async (variantId): Promise<DomainVariantState> => {
+    const urls = (window as unknown as { __sharedWorkerUrls?: unknown }).__sharedWorkerUrls;
+    const workerUrl = Array.isArray(urls)
+      ? urls.find((entry): entry is string => typeof entry === "string")
+      : undefined;
+    if (!workerUrl)
+      throw new Error("domain worker URL was not captured; call captureDomainWorker(context) before booting.");
+    const shared = new SharedWorker(workerUrl, { type: "module", name: "glypherie-domain-v1" });
+    const port = shared.port;
+    const callId = Math.floor(Math.random() * 2 ** 31);
+    try {
+      const result = await new Promise<unknown>((resolve, reject) => {
+        const timer = window.setTimeout(() => reject(new Error("domain worker call timed out")), 20000);
+        port.onmessage = (event: MessageEvent) => {
+          const data = event.data as { id?: unknown; ok?: unknown; result?: unknown; error?: { message?: unknown } };
+          if (data?.id !== callId) return;
+          window.clearTimeout(timer);
+          if (data.ok) resolve(data.result);
+          else reject(new Error(typeof data.error?.message === "string" ? data.error.message : "domain call failed"));
+        };
+        port.onmessageerror = () => {
+          window.clearTimeout(timer);
+          reject(new Error("domain channel failed"));
+        };
+        port.start();
+        port.postMessage({ id: callId, method: "getVariant", params: [variantId] });
+      });
+      const variant = result as
+        | {
+            revision: unknown;
+            inheritSampleText?: unknown;
+            settings?: { paletteId?: unknown; profile?: unknown };
+          }
+        | undefined;
+      if (!variant || typeof variant !== "object") throw new Error(`variant ${variantId} is missing`);
+      return {
+        revision: Number(variant.revision),
+        inheritSampleText: variant.inheritSampleText !== false,
+        paletteId: typeof variant.settings?.paletteId === "number" ? variant.settings.paletteId : 0,
+        profile: typeof variant.settings?.profile === "string" ? variant.settings.profile : "",
+      };
+    } finally {
+      try {
+        port.close();
+      } catch {
+        // Best-effort teardown only.
+      }
+    }
+  }, id);
+}
+
+/**
+ * Fail only the domain owner (SharedWorker + its dedicated-worker fallback),
+ * keeping the renderer worker alive. The retired main-thread indexedDB stub
+ * cannot fail the worker-side PGlite engine, so denied-storage coverage uses
+ * this instead: domain calls reject with code "unavailable" and the library
+ * shows its supported message with a retry.
+ */
+export async function blockDomainStorage(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    const holder = window as unknown as { SharedWorker?: unknown; Worker?: unknown };
+    const isDomainUrl = (url: string | URL): boolean => {
+      const text = String(url);
+      // Hashed legacy ("worker-<hash>.js"), stable ("domain-worker.js") and
+      // dev ("worker.ts") domain entries; never the renderer font-worker.
+      return (
+        (text.includes("worker-") || text.includes("domain-worker") || text.includes("worker.")) &&
+        !text.includes("font-worker")
+      );
+    };
+    const SharedCtor = holder.SharedWorker as unknown as
+      | (new (url: string | URL, options?: unknown) => SharedWorker)
+      | undefined;
+    if (typeof SharedCtor === "function" && SharedCtor) {
+      function BlockedShared(this: unknown, url: string | URL, options?: unknown): SharedWorker {
+        if (isDomainUrl(url)) throw new Error("Domain storage is unavailable in this context.");
+        return new (SharedCtor as new (url: string | URL, options?: unknown) => SharedWorker)(url, options);
+      }
+      BlockedShared.prototype = (SharedCtor as unknown as { prototype: unknown }).prototype;
+      holder.SharedWorker = BlockedShared as unknown;
+    }
+    const WorkerCtor = holder.Worker as unknown as (new (url: string | URL, options?: unknown) => Worker) | undefined;
+    if (typeof WorkerCtor === "function" && WorkerCtor) {
+      function BlockedWorker(this: unknown, url: string | URL, options?: unknown): Worker {
+        if (isDomainUrl(url)) throw new Error("Domain storage is unavailable in this context.");
+        return new (WorkerCtor as new (url: string | URL, options?: unknown) => Worker)(url, options);
+      }
+      BlockedWorker.prototype = (WorkerCtor as unknown as { prototype: unknown }).prototype;
+      holder.Worker = BlockedWorker as unknown;
+    }
+  });
 }
 
 /** Read a hint through the same hover interaction as the app's tooltip triggers. */
 export async function tooltipText(page: Page, trigger: Locator): Promise<string> {
   await page.keyboard.press("Escape");
   await trigger.hover();
-  const describedBy = await page.waitForFunction((element) => element?.getAttribute("aria-describedby"), await trigger.elementHandle());
+  const describedBy = await page.waitForFunction(
+    (element) => element?.getAttribute("aria-describedby"),
+    await trigger.elementHandle(),
+  );
   const tooltip = page.locator(`[role="tooltip"][id="${await describedBy.jsonValue()}"]`);
   await tooltip.waitFor({ state: "visible" });
-  const content = await tooltip.textContent() ?? "";
+  const content = (await tooltip.textContent()) ?? "";
   await page.keyboard.press("Escape");
   await page.mouse.move(0, 0, { steps: 5 });
   await tooltip.waitFor({ state: "hidden" });
@@ -121,14 +330,18 @@ export async function tooltipText(page: Page, trigger: Locator): Promise<string>
 
 /** Wait for an unsaved font preview (font switcher plus rendered specimen). */
 export async function bootDetail(page: Page, url: string): Promise<void> {
-  await page.goto(url, { waitUntil: "networkidle" });
-  await page.waitForFunction(() => document.querySelector('#font-select[data-state]:not(:disabled), #font-select[data-slot="select-display"]') !== null);
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.waitForFunction(
+    () =>
+      document.querySelector('#font-select[data-state]:not(:disabled), #font-select[data-slot="select-display"]') !==
+      null,
+  );
   await page.waitForFunction(canvasRendered);
 }
 
 /** Wait for a saved variant editor plus its rendered specimen. */
 export async function bootVariant(page: Page, url: string): Promise<void> {
-  await page.goto(url, { waitUntil: "networkidle" });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelector("[data-variant-editor]") !== null);
   await page.waitForFunction(canvasRendered);
 }
@@ -156,9 +369,7 @@ export async function hashParam(page: Page, key: string): Promise<string | null>
 
 /** Card display names in library order. */
 export async function cardNames(page: Page): Promise<string[]> {
-  return page.locator("[data-font-name]").evaluateAll((names) =>
-    names.map((name) => name.textContent ?? ""),
-  );
+  return page.locator("[data-font-name]").evaluateAll((names) => names.map((name) => name.textContent ?? ""));
 }
 
 /** Set a range slider through React's change handling. */
@@ -177,8 +388,10 @@ export async function sourceReady(page: Page, fontId: string): Promise<boolean> 
   return page.evaluate((id) => {
     const source = document.querySelector(`[data-source-preview="${id}"]`) as HTMLElement | null;
     if (!source || source.dataset.rendered !== "true") return false;
-    return [...document.fonts].some((face) => face.family === `source-${id}` && face.status === "loaded")
-      && source.getBoundingClientRect().height > 0;
+    return (
+      [...document.fonts].some((face) => face.family === `source-${id}` && face.status === "loaded") &&
+      source.getBoundingClientRect().height > 0
+    );
   }, fontId);
 }
 
@@ -187,30 +400,37 @@ export async function sourceSnapshot(page: Page, fontId: string) {
   return page.locator(`[data-source-preview="${fontId}"]`).evaluate((source) => {
     const style = getComputedStyle(source);
     const box = source.getBoundingClientRect();
-    return { text: source.textContent, family: style.fontFamily, axes: style.fontVariationSettings,
-      size: style.fontSize, color: style.color, width: box.width, height: box.height };
+    return {
+      text: source.textContent,
+      family: style.fontFamily,
+      axes: style.fontVariationSettings,
+      size: style.fontSize,
+      color: style.color,
+      width: box.width,
+      height: box.height,
+    };
   });
 }
 
 /** Card content ids in library order. */
 export async function cardIds(page: Page): Promise<string[]> {
-  return page.locator("[data-font-card]").evaluateAll((cards) =>
-    cards.map((card) => card.getAttribute("data-font-card") ?? ""),
-  );
+  return page
+    .locator("[data-font-card]")
+    .evaluateAll((cards) => cards.map((card) => card.getAttribute("data-font-card") ?? ""));
 }
 
 /** Saved variant ids of one font in display order. */
 export async function cardVariantIds(page: Page, fontId: string): Promise<string[]> {
-  return page.locator(`[data-variant-link][data-variant-font="${fontId}"]`).evaluateAll((links) =>
-    links.map((link) => link.getAttribute("data-variant-link") ?? ""),
-  );
+  return page
+    .locator(`[data-variant-link][data-variant-font="${fontId}"]`)
+    .evaluateAll((links) => links.map((link) => link.getAttribute("data-variant-link") ?? ""));
 }
 
 /** Saved variant names of one font in display order (the links' accessible names). */
 export async function cardVariantNames(page: Page, fontId: string): Promise<string[]> {
-  return page.locator(`[data-variant-link][data-variant-font="${fontId}"]`).evaluateAll((links) =>
-    links.map((link) => link.getAttribute("aria-label") ?? ""),
-  );
+  return page
+    .locator(`[data-variant-link][data-variant-font="${fontId}"]`)
+    .evaluateAll((links) => links.map((link) => link.getAttribute("aria-label") ?? ""));
 }
 
 /**
@@ -263,7 +483,10 @@ export async function mutatedUploadBytes(sourceFile: string): Promise<Buffer> {
 
 /** Choose an explicit display magnification through the shared toolbar. */
 export async function setZoom(page: Page, value: string): Promise<void> {
-  await page.locator("#zoom").getByRole("radio", { name: `${value}×`, exact: true }).check();
+  await page
+    .locator("#zoom")
+    .getByRole("radio", { name: `${value}×`, exact: true })
+    .check();
 }
 
 export interface PalettePresetSpec {
@@ -281,7 +504,7 @@ export async function createPalettePreset(
   const depthLabel = `${spec.bits}-bit · ${levels} levels`;
   const palettesLink = page.locator('[data-primary-nav="palettes"]');
   if (await palettesLink.count()) await palettesLink.click();
-  else await page.goto(`${url}palettes/`, { waitUntil: "networkidle" });
+  else await page.goto(`${url}palettes/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     () => document.querySelector('main section[aria-label="Grayscale preview"]') !== null,
     null,
@@ -289,11 +512,9 @@ export async function createPalettePreset(
   );
   const before = await page.locator("[data-preset-row]").count();
   await page.getByRole("button", { name: "Add preset" }).click();
-  await page.waitForFunction(
-    (count) => document.querySelectorAll("[data-preset-row]").length === count + 1,
-    before,
-    { timeout: 20000 },
-  );
+  await page.waitForFunction((count) => document.querySelectorAll("[data-preset-row]").length === count + 1, before, {
+    timeout: 20000,
+  });
   const rowId: number = await page.evaluate(() => {
     const ids = [...document.querySelectorAll("[data-preset-row]")]
       .map((row) => Number(row.getAttribute("data-preset-row")))
@@ -319,7 +540,8 @@ export async function createPalettePreset(
   await nameBox.fill(spec.name);
   await nameBox.blur();
   await page.waitForFunction(
-    ([id, name]) => document.querySelector(`[data-preset-row="${id}"]`)?.getAttribute("aria-label")?.startsWith(`${name},`) === true,
+    ([id, name]) =>
+      document.querySelector(`[data-preset-row="${id}"]`)?.getAttribute("aria-label")?.startsWith(`${name},`) === true,
     [rowId, spec.name] as [number, string],
     { timeout: 20000 },
   );
@@ -329,9 +551,12 @@ export async function createPalettePreset(
 /** Select a palette preset through the editor Palette chooser. */
 export async function selectPalettePreset(page: Page, name: string): Promise<void> {
   await page.getByRole("combobox", { name: "Palette", exact: true }).click();
-  await page.getByRole("option").filter({ has: page.getByText(name, { exact: true }) }).click();
+  await page
+    .getByRole("option")
+    .filter({ has: page.getByText(name, { exact: true }) })
+    .click();
   await page.waitForFunction(
-    (expected) => document.querySelector('[data-output-palette] [data-palette-name]')?.textContent === expected,
+    (expected) => document.querySelector("[data-output-palette] [data-palette-name]")?.textContent === expected,
     name,
     { timeout: 20000 },
   );

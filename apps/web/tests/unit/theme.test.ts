@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  readStoredTheme,
-  THEME_STORAGE_KEY,
-  writeStoredTheme,
-} from "../../src/components/theme/theme.ts";
+import { readStoredTheme, THEME_STORAGE_KEY, writeStoredTheme } from "../../src/components/theme/theme.ts";
 
 function stubStorage(behavior: { get: () => string | null; set: (value: string) => void }): () => void {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
@@ -26,7 +22,12 @@ function stubStorage(behavior: { get: () => string | null; set: (value: string) 
 
 test("stored theme round-trips and rejects unknown values", () => {
   let held: string | null = null;
-  const restore = stubStorage({ get: () => held, set: (value) => { held = value; } });
+  const restore = stubStorage({
+    get: () => held,
+    set: (value) => {
+      held = value;
+    },
+  });
   try {
     assert.equal(readStoredTheme(), null);
     writeStoredTheme("dark");
@@ -41,8 +42,12 @@ test("stored theme round-trips and rejects unknown values", () => {
 
 test("unavailable storage degrades to defaults without throwing", () => {
   const restore = stubStorage({
-    get: () => { throw new Error("denied"); },
-    set: () => { throw new Error("denied"); },
+    get: () => {
+      throw new Error("denied");
+    },
+    set: () => {
+      throw new Error("denied");
+    },
   });
   try {
     assert.equal(readStoredTheme(), null);

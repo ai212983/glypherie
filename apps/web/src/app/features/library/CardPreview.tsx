@@ -23,7 +23,19 @@ interface CardPreviewProps {
 }
 
 // Source font and generated variant rows share the display frame.
-export function CardPreview({ font, text, baseSize, zoom, palette, inverse, loaded, loadError, variants, onOpenVariant, footer }: CardPreviewProps): React.JSX.Element {
+export function CardPreview({
+  font,
+  text,
+  baseSize,
+  zoom,
+  palette,
+  inverse,
+  loaded,
+  loadError,
+  variants,
+  onOpenVariant,
+  footer,
+}: CardPreviewProps): React.JSX.Element {
   const empty = text.length === 0;
   const frame = libraryFrame(palette, inverse);
   const rows = variants ?? [];
@@ -41,7 +53,11 @@ export function CardPreview({ font, text, baseSize, zoom, palette, inverse, load
         </div>
         {!empty && <SourcePreview font={font} text={text} sizePx={baseSize} zoom={zoom} ink={frame.inkCss} />}
         {rowsPresent && (
-          <ul data-variant-list={font.id} aria-label={`${displayName(font)} variants`} className="mt-3 mb-0 list-none p-0">
+          <ul
+            data-variant-list={font.id}
+            aria-label={`${displayName(font)} variants`}
+            className="mt-3 mb-0 list-none p-0"
+          >
             {rows.map((variant) => (
               <li
                 key={variant.id}

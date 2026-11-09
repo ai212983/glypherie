@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Whole-text spacing review</title>
+<style>/* REVIEW_CSS */</style>
+<main>
+  <p class="intro">Compare A and B in this one short Literata passage. Tell me in chat which feels more natural, or if there is no clear difference. Mention any distracting spacing you notice.</p>
+  <div class="controls">
+    <label>Enlargement<select id="zoom"><option value="2">2×</option><option value="3" selected>3×</option><option value="4">4×</option><option value="6">6×</option></select></label>
+    <label class="toggle"><input id="underline" type="checkbox" checked>Underline changed pairs</label>
+  </div>
+  <p class="annotation-hint">Faint underlines mark pairs whose spacing differs between A and B.</p>
+  <p id="review-status" role="status">Loading retained glyphs…</p>
+  <div class="comparison">
+    <section><h2 id="label-a">A</h2><p class="caption">Native size</p><div class="native"><div class="annotated"><canvas id="a-native" aria-label="Passage A at native size"></canvas></div></div><p class="caption">Enlarged inspection</p><div class="enlarged"><div class="annotated"><canvas id="a-zoom" aria-label="Passage A enlarged"></canvas></div></div><p id="stats-a" class="stats" hidden></p></section>
+    <section><h2 id="label-b">B</h2><p class="caption">Native size</p><div class="native"><div class="annotated"><canvas id="b-native" aria-label="Passage B at native size"></canvas></div></div><p class="caption">Enlarged inspection</p><div class="enlarged"><div class="annotated"><canvas id="b-zoom" aria-label="Passage B enlarged"></canvas></div></div><p id="stats-b" class="stats" hidden></p></section>
+  </div>
+  <details id="more">
+    <summary>Other fonts and full presets (optional)</summary>
+    <div class="controls">
+      <label>Font<select id="font"></select></label>
+      <label>Text preset<select id="preset"></select></label>
+      <label>Wrap width<select id="width"><option value="160">160 px</option><option value="280" selected>280 px</option><option value="400">400 px</option></select></label>
+    </div>
+  </details>
+  <details id="method-details"><summary>Methods (optional)</summary>
+    <p>Both views use the same captured glyphs at full optical strength and zero tracking. Their labels stay consistent across fonts and samples. Each wraps independently at the same width.</p>
+    <button id="reveal" type="button">Reveal methods</button>
+    <p id="methods" hidden></p>
+  </details>
+</main>
+<script>/* SHARED_HELPERS */</script>
+<script id="packed-review" type="application/octet-stream">__PACKED_DATA__</script>
+<script>/* REVIEW_JS */</script>
+</html>

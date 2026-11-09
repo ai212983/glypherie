@@ -64,21 +64,9 @@
     }
   ],
   "defaults": {
-    "sizes": [
-      14,
-      16,
-      18,
-      20
-    ],
-    "variants": [
-      "reference",
-      "iteration-02",
-      "iteration-03"
-    ],
-    "profiles": [
-      "mono_1bit",
-      "gray_3bit"
-    ]
+    "sizes": [14, 16, 18, 20],
+    "variants": ["reference", "iteration-02", "iteration-03"],
+    "profiles": ["mono_1bit", "gray_3bit"]
   },
   "families": [
     {
@@ -121,12 +109,7 @@
       "axes": {
         "wght": 400
       },
-      "sizes": [
-        14,
-        16,
-        18,
-        20
-      ]
+      "sizes": [14, 16, 18, 20]
     },
     {
       "id": "roboto-italic",

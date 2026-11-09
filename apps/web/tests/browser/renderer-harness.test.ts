@@ -2,12 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import assert from "node:assert/strict";
 import test, { after, type TestContext } from "node:test";
-import {
-  browserAvailable,
-  launch,
-  repoRoot,
-  webRoot,
-} from "../helpers/spa-helpers.ts";
+import { browserAvailable, launch, repoRoot, webRoot } from "../helpers/spa-helpers.ts";
 import type { Browser, Page } from "playwright-core";
 import { mkdir } from "node:fs/promises";
 
@@ -34,8 +29,10 @@ async function devBase(_t: TestContext): Promise<string> {
       [
         path.join(webRoot, "node_modules", "storybook", "dist", "bin", "dispatcher.js"),
         "dev",
-        "--host", "127.0.0.1",
-        "--port", String(DEV_PORT),
+        "--host",
+        "127.0.0.1",
+        "--port",
+        String(DEV_PORT),
         "--no-open",
         "--disable-telemetry",
       ],
@@ -61,6 +58,8 @@ async function devBase(_t: TestContext): Promise<string> {
 declare global {
   interface Window {
     __harnessRenderGate?: { hold: () => void; releaseNext: () => void; waitingCount: () => number };
+    __strictLibLoadGate?: { hold: () => void; releaseNext: () => void; open: () => void; waitingCount: () => number };
+    __strictLibShared?: { library: { loads: Array<{ fontId: string }> } };
   }
 }
 
@@ -132,8 +131,12 @@ interface PixelSummary {
 async function probePixels(page: Page): Promise<PixelSummary> {
   return page.evaluate(() => {
     const canvas = document.querySelector("canvas") as HTMLCanvasElement;
-    const data = (canvas.getContext("2d") as CanvasRenderingContext2D)
-      .getImageData(0, 0, canvas.width, canvas.height).data;
+    const data = (canvas.getContext("2d") as CanvasRenderingContext2D).getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    ).data;
     const at = (x: number, y: number): number[] => {
       const i = (y * canvas.width + x) * 4;
       return [data[i] as number, data[i + 1] as number, data[i + 2] as number, data[i + 3] as number];
@@ -157,20 +160,31 @@ async function probePixels(page: Page): Promise<PixelSummary> {
 }
 
 async function pixelAt(page: Page, x: number, y: number): Promise<number[]> {
-  return page.evaluate(([px, py]) => {
-    const canvas = document.querySelector("canvas") as HTMLCanvasElement;
-    const data = (canvas.getContext("2d") as CanvasRenderingContext2D)
-      .getImageData(0, 0, canvas.width, canvas.height).data;
-    const i = (py * canvas.width + px) * 4;
-    return [data[i] as number, data[i + 1] as number, data[i + 2] as number, data[i + 3] as number];
-  }, [x, y] as [number, number]);
+  return page.evaluate(
+    ([px, py]) => {
+      const canvas = document.querySelector("canvas") as HTMLCanvasElement;
+      const data = (canvas.getContext("2d") as CanvasRenderingContext2D).getImageData(
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      ).data;
+      const i = (py * canvas.width + px) * 4;
+      return [data[i] as number, data[i + 1] as number, data[i + 2] as number, data[i + 3] as number];
+    },
+    [x, y] as [number, number],
+  );
 }
 
 async function fullBuffer(page: Page): Promise<number[]> {
   return page.evaluate(() => {
     const canvas = document.querySelector("canvas") as HTMLCanvasElement;
-    const data = (canvas.getContext("2d") as CanvasRenderingContext2D)
-      .getImageData(0, 0, canvas.width, canvas.height).data;
+    const data = (canvas.getContext("2d") as CanvasRenderingContext2D).getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    ).data;
     return [...data];
   });
 }
@@ -207,39 +221,50 @@ function harnessErrors(page: Page): string[] {
   return (page as Page & { harnessErrors?: string[] }).harnessErrors ?? [];
 }
 
-test("render spinner is delayed, preserves pixels and stays through the second pass", { skip: !browserAvailable }, async (t) => {
-  const browser = await launch(t);
-  const page = await openStory(browser, await devBase(t), "renderer-lifecycleharness--default",
-    "&args=latencyMs:350;debounceMs:0;sizePx:8");
-  await painted(page);
-  const before = await fullBuffer(page);
-  const rect = await page.locator("canvas").boundingBox();
-  await holdRenders(page);
-  await page.locator("[data-harness-text]").fill("Slow replacement");
-  await page.waitForSelector('[data-font-canvas] [aria-busy="true"]');
-  await page.waitForTimeout(60);
-  assert.equal(await page.locator("[data-render-spinner]").count(), 0, "fast pending work has no spinner yet");
-  await page.locator("[data-render-spinner]").waitFor({ state: "visible" });
-  assert.deepEqual(await fullBuffer(page), before, "existing pixels remain visible");
-  assert.deepEqual(await page.locator("canvas").boundingBox(), rect, "indicator does not move the canvas");
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  assert.equal(await page.locator("[data-render-spinner] svg").evaluate((svg) => getComputedStyle(svg).animationName), "none");
-  await releaseNextRender(page);
-  await page.waitForFunction(() => {
-    const node = document.querySelector("[data-harness-calls]");
-    const calls = JSON.parse(node?.textContent || "{}").renders || [];
-    return calls.filter((call: { text: string }) => call.text === "Slow replacement").length === 2;
-  });
-  assert.equal(await page.locator("[data-render-spinner]").count(), 1, "second pass still has the spinner");
-  assert.deepEqual(await fullBuffer(page), before);
-  await mkdir(path.join(repoRoot, "out/diagnostics/render-spinner"), { recursive: true });
-  await page.screenshot({ path: path.join(repoRoot, "out/diagnostics/render-spinner/pending.png") });
-  await releaseNextRender(page);
-  await painted(page);
-  await page.locator("[data-render-spinner]").waitFor({ state: "detached" });
-  assert.equal(await page.locator('[data-font-canvas] [aria-busy="false"]').count(), 1);
-  assert.deepEqual(harnessErrors(page), []);
-});
+test(
+  "render spinner is delayed, preserves pixels and stays through the second pass",
+  { skip: !browserAvailable },
+  async (t) => {
+    const browser = await launch(t);
+    const page = await openStory(
+      browser,
+      await devBase(t),
+      "renderer-lifecycleharness--default",
+      "&args=latencyMs:350;debounceMs:0;sizePx:8",
+    );
+    await painted(page);
+    const before = await fullBuffer(page);
+    const rect = await page.locator("canvas").boundingBox();
+    await holdRenders(page);
+    await page.locator("[data-harness-text]").fill("Slow replacement");
+    await page.waitForSelector('[data-font-canvas] [aria-busy="true"]');
+    await page.waitForTimeout(60);
+    assert.equal(await page.locator("[data-render-spinner]").count(), 0, "fast pending work has no spinner yet");
+    await page.locator("[data-render-spinner]").waitFor({ state: "visible" });
+    assert.deepEqual(await fullBuffer(page), before, "existing pixels remain visible");
+    assert.deepEqual(await page.locator("canvas").boundingBox(), rect, "indicator does not move the canvas");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    assert.equal(
+      await page.locator("[data-render-spinner] svg").evaluate((svg) => getComputedStyle(svg).animationName),
+      "none",
+    );
+    await releaseNextRender(page);
+    await page.waitForFunction(() => {
+      const node = document.querySelector("[data-harness-calls]");
+      const calls = JSON.parse(node?.textContent || "{}").renders || [];
+      return calls.filter((call: { text: string }) => call.text === "Slow replacement").length === 2;
+    });
+    assert.equal(await page.locator("[data-render-spinner]").count(), 1, "second pass still has the spinner");
+    assert.deepEqual(await fullBuffer(page), before);
+    await mkdir(path.join(repoRoot, "out/diagnostics/render-spinner"), { recursive: true });
+    await page.screenshot({ path: path.join(repoRoot, "out/diagnostics/render-spinner/pending.png") });
+    await releaseNextRender(page);
+    await painted(page);
+    await page.locator("[data-render-spinner]").waitFor({ state: "detached" });
+    assert.equal(await page.locator('[data-font-canvas] [aria-busy="false"]').count(), 1);
+    assert.deepEqual(harnessErrors(page), []);
+  },
+);
 
 test("fast renders never mount a spinner, including the typing debounce", { skip: !browserAvailable }, async (t) => {
   const browser = await launch(t);
@@ -248,8 +273,15 @@ test("fast renders never mount a spinner, including the typing debounce", { skip
   await page.evaluate(() => {
     document.documentElement.dataset.spinnerSeen = "false";
     new MutationObserver((records) => {
-      if (records.some((record) => [...record.addedNodes].some((node) => node instanceof Element
-        && (node.matches("[data-render-spinner]") || node.querySelector("[data-render-spinner]"))))) {
+      if (
+        records.some((record) =>
+          [...record.addedNodes].some(
+            (node) =>
+              node instanceof Element &&
+              (node.matches("[data-render-spinner]") || node.querySelector("[data-render-spinner]")),
+          ),
+        )
+      ) {
         document.documentElement.dataset.spinnerSeen = "true";
       }
     }).observe(document.querySelector("[data-font-canvas]")!, { childList: true, subtree: true });
@@ -262,36 +294,53 @@ test("fast renders never mount a spinner, including the typing debounce", { skip
   assert.deepEqual(harnessErrors(page), []);
 });
 
-test("spinner follows superseding requests and clears on disable or failure", { skip: !browserAvailable }, async (t) => {
-  const browser = await launch(t);
-  const base = await devBase(t);
-  const page = await openStory(browser, base, "renderer-lifecycleharness--default",
-    "&args=latencyMs:500;debounceMs:0");
-  await painted(page);
-  const count = await paints(page);
-  await page.locator("[data-harness-text]").fill("Older input");
-  await page.locator("[data-render-spinner]").waitFor({ state: "visible" });
-  await page.locator("[data-harness-text]").fill("Latest input");
-  await page.waitForTimeout(350);
-  assert.equal(await paints(page), count, "superseded completion does not paint");
-  assert.equal(await page.locator("[data-render-spinner]").count(), 1, "old completion cannot hide the new spinner");
-  await page.locator("[data-harness-ready]").uncheck();
-  await page.locator("[data-render-spinner]").waitFor({ state: "detached" });
-  await page.waitForTimeout(550);
-  assert.equal(await page.locator("[data-render-spinner]").count(), 0);
-  assert.deepEqual(harnessErrors(page), []);
-  await page.close();
+test(
+  "spinner follows superseding requests and clears on disable or failure",
+  { skip: !browserAvailable },
+  async (t) => {
+    const browser = await launch(t);
+    const base = await devBase(t);
+    const page = await openStory(
+      browser,
+      base,
+      "renderer-lifecycleharness--default",
+      "&args=latencyMs:500;debounceMs:0",
+    );
+    await painted(page);
+    const count = await paints(page);
+    await page.locator("[data-harness-text]").fill("Older input");
+    await page.locator("[data-render-spinner]").waitFor({ state: "visible" });
+    await page.locator("[data-harness-text]").fill("Latest input");
+    await page.waitForTimeout(350);
+    assert.equal(await paints(page), count, "superseded completion does not paint");
+    assert.equal(await page.locator("[data-render-spinner]").count(), 1, "old completion cannot hide the new spinner");
+    await page.locator("[data-harness-ready]").uncheck();
+    await page.locator("[data-render-spinner]").waitFor({ state: "detached" });
+    await page.waitForTimeout(550);
+    assert.equal(await page.locator("[data-render-spinner]").count(), 0);
+    assert.deepEqual(harnessErrors(page), []);
+    await page.close();
 
-  const failure = await openStory(browser, base, "renderer-lifecycleharness--default",
-    "&args=latencyMs:500;renderScenario:error");
-  await failure.locator("[data-render-spinner]").waitFor({ state: "visible" });
-  await failure.waitForFunction(() => document.querySelector("[data-harness-status]")?.textContent?.startsWith("error:"));
-  assert.equal(await failure.locator("[data-render-spinner]").count(), 0);
-  assert.equal(await failure.locator('[data-font-canvas] [aria-busy="false"]').count(), 1);
-  assert.deepEqual(harnessErrors(failure), []);
-});
+    const failure = await openStory(
+      browser,
+      base,
+      "renderer-lifecycleharness--default",
+      "&args=latencyMs:500;renderScenario:error",
+    );
+    await failure.locator("[data-render-spinner]").waitFor({ state: "visible" });
+    await failure.waitForFunction(() =>
+      document.querySelector("[data-harness-status]")?.textContent?.startsWith("error:"),
+    );
+    assert.equal(await failure.locator("[data-render-spinner]").count(), 0);
+    assert.equal(await failure.locator('[data-font-canvas] [aria-busy="false"]').count(), 1);
+    assert.deepEqual(harnessErrors(failure), []);
+  },
+);
 
-async function strictCalls(page: Page, name: "canvas" | "lib"): Promise<HarnessCalls & { loads: Array<{ fontId: string }> }> {
+async function strictCalls(
+  page: Page,
+  name: "canvas" | "lib",
+): Promise<HarnessCalls & { loads: Array<{ fontId: string }> }> {
   const text = await probeText(page, `[data-strict-${name}-calls]`);
   return JSON.parse(text) as HarnessCalls & { loads: Array<{ fontId: string }> };
 }
@@ -300,82 +349,98 @@ async function strictText(page: Page, name: string): Promise<string> {
   return probeText(page, `[data-strict-${name}]`);
 }
 
-test("StrictMode replay settles canvas and library on exactly one live worker each", { skip: !browserAvailable }, async (t) => {
-  const base = await devBase(t);
-  const browser = await launch(t);
-  const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto(`${base}iframe.html?id=renderer-lifecycleharness--strict-root&viewMode=story`, {
-    waitUntil: "networkidle",
-  });
-  // Canvas: the replayed setup's pending render is dropped; the live worker
-  // issues the second render and paints.
-  await page.waitForFunction(
-    () => document.querySelector("[data-strict-canvas-status]")?.textContent === "painted",
-    null,
-    { timeout: 120000 },
-  );
-  // Library: delayed inspect/load boot completes on the live setup only, with
-  // exactly one load of the stored font and readiness exposed for it.
-  await page.waitForFunction(
-    () => document.querySelector("[data-strict-lib-load]")?.textContent === "ready"
-      && document.querySelector("[data-strict-lib-loaded]")?.textContent === "yes",
-    null,
-    { timeout: 120000 },
-  );
-  const canvas = await strictCalls(page, "canvas");
-  assert.equal(canvas.constructed, 2, "two canvas workers constructed across the replay");
-  assert.equal(canvas.terminated, 1, "the first canvas worker is terminated, none leak");
-  assert.equal(canvas.renders.length, 1, "only the live setup renders; replay issues no duplicate");
-  const canvasSession = Number(await strictText(page, "canvas-session"));
-  assert.ok(canvasSession > 1, `the live canvas session postdates the replay, got ${canvasSession}`);
+test(
+  "StrictMode replay settles canvas and library on exactly one live worker each",
+  { skip: !browserAvailable },
+  async (t) => {
+    const base = await devBase(t);
+    const browser = await launch(t);
+    const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(`${base}iframe.html?id=renderer-lifecycleharness--strict-root&viewMode=story`, {
+      waitUntil: "domcontentloaded",
+    });
+    // Canvas: the replayed setup's pending render is dropped; the live worker
+    // issues the second render and paints.
+    await page.waitForFunction(
+      () => document.querySelector("[data-strict-canvas-status]")?.textContent === "painted",
+      null,
+      { timeout: 120000 },
+    );
+    // Library: delayed inspect/load boot completes on the live setup only, with
+    // exactly one load of the stored font and readiness exposed for it.
+    await page.waitForFunction(
+      () =>
+        document.querySelector("[data-strict-lib-load]")?.textContent === "ready" &&
+        document.querySelector("[data-strict-lib-loaded]")?.textContent === "yes",
+      null,
+      { timeout: 120000 },
+    );
+    const canvas = await strictCalls(page, "canvas");
+    assert.equal(canvas.constructed, 2, "two canvas workers constructed across the replay");
+    assert.equal(canvas.terminated, 1, "the first canvas worker is terminated, none leak");
+    assert.equal(canvas.renders.length, 1, "only the live setup renders; replay issues no duplicate");
+    const canvasSession = Number(await strictText(page, "canvas-session"));
+    assert.ok(canvasSession > 1, `the live canvas session postdates the replay, got ${canvasSession}`);
 
-  const library = await strictCalls(page, "lib");
-  assert.equal(library.constructed, 2, "two library workers constructed across the replay");
-  assert.equal(library.terminated, 1, "the first library worker is terminated, none leak");
-  assert.equal(library.loads.length, 1, "no duplicate load from the retired setup");
-  const librarySession = Number(await strictText(page, "lib-session"));
-  assert.ok(librarySession > 1, `the live library session postdates the replay, got ${librarySession}`);
-  assert.ok(Number(await strictText(page, "lib-fonts")) >= 1, "stored fonts are listed");
-  assert.ok((await strictText(page, "lib-font-id")).length > 0, "the harness font seeded an id");
-  assert.equal(await strictText(page, "lib-available"), "true");
-  assert.deepEqual(errors, []);
+    const library = await strictCalls(page, "lib");
+    assert.equal(library.constructed, 2, "two library workers constructed across the replay");
+    assert.equal(library.terminated, 1, "the first library worker is terminated, none leak");
+    assert.equal(library.loads.length, 1, "no duplicate load from the retired setup");
+    const librarySession = Number(await strictText(page, "lib-session"));
+    assert.ok(librarySession > 1, `the live library session postdates the replay, got ${librarySession}`);
+    assert.ok(Number(await strictText(page, "lib-fonts")) >= 1, "stored fonts are listed");
+    assert.ok((await strictText(page, "lib-font-id")).length > 0, "the harness font seeded an id");
+    assert.equal(await strictText(page, "lib-available"), "true");
+    assert.deepEqual(errors, []);
 
-  // Session replacement reloads the font on the new worker only.
-  await page.locator("[data-strict-lib-replace]").click();
-  await page.waitForFunction(
-    (previous) => document.querySelector("[data-strict-lib-session]")?.textContent !== previous
-      && document.querySelector("[data-strict-lib-load]")?.textContent === "ready",
-    String(librarySession),
-    { timeout: 120000 },
-  );
-  const replaced = await strictCalls(page, "lib");
-  assert.equal(replaced.constructed, 3, "replacement constructs a new worker");
-  assert.equal(replaced.terminated, 2, "the replaced worker is terminated while the new one stays active");
-  assert.equal(replaced.loads.length, 2, "the new session loads the font once");
-  assert.equal(Number(await strictText(page, "lib-session")), librarySession + 1, "replacement bumps the session by one");
+    // Session replacement reloads the font on the new worker only.
+    await page.locator("[data-strict-lib-replace]").click();
+    await page.waitForFunction(
+      (previous) =>
+        document.querySelector("[data-strict-lib-session]")?.textContent !== previous &&
+        document.querySelector("[data-strict-lib-load]")?.textContent === "ready",
+      String(librarySession),
+      { timeout: 120000 },
+    );
+    const replaced = await strictCalls(page, "lib");
+    assert.equal(replaced.constructed, 3, "replacement constructs a new worker");
+    assert.equal(replaced.terminated, 2, "the replaced worker is terminated while the new one stays active");
+    assert.equal(replaced.loads.length, 2, "the new session loads the font once");
+    assert.equal(
+      Number(await strictText(page, "lib-session")),
+      librarySession + 1,
+      "replacement bumps the session by one",
+    );
 
-  // A replacement load pending at unmount is dropped; remount loads again.
-  await page.locator("[data-strict-lib-replace]").click();
-  await page.waitForFunction(
-    () => document.querySelector("[data-strict-lib-load]")?.textContent === "loading",
-    null,
-    { timeout: 120000 },
-  );
-  await page.locator("[data-strict-lib-mounted]").uncheck();
-  await page.waitForTimeout(500);
-  assert.equal(await page.locator("[data-strict-lib-load]").count(), 0, "unmounted library leaves no readout");
-  await page.locator("[data-strict-lib-mounted]").check();
-  await page.waitForFunction(
-    () => document.querySelector("[data-strict-lib-load]")?.textContent === "ready",
-    null,
-    { timeout: 120000 },
-  );
-  assert.equal((await strictCalls(page, "lib")).loads.length, 4, "dropped plus remount loads, no more");
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    // A replacement load pending at unmount is dropped; remount loads again.
+    // The gate parks the pending load at the renderer seam, so unmount
+    // provably retires it instead of racing the backend read before it.
+    await page.evaluate(() => {
+      const gate = window.__strictLibLoadGate;
+      if (!gate) throw new Error("strict library load gate is not installed");
+      gate.hold();
+    });
+    await page.locator("[data-strict-lib-replace]").click();
+    await page.waitForFunction(() => (window.__strictLibShared?.library.loads.length ?? 0) === 3, null, {
+      timeout: 120000,
+    });
+    await page.waitForFunction(() => (window.__strictLibLoadGate?.waitingCount() ?? 0) > 0, null, { timeout: 120000 });
+    await page.locator("[data-strict-lib-mounted]").uncheck();
+    assert.equal(await page.locator("[data-strict-lib-load]").count(), 0, "unmounted library leaves no readout");
+    await page.evaluate(() => {
+      window.__strictLibLoadGate?.open();
+    });
+    await page.locator("[data-strict-lib-mounted]").check();
+    await page.waitForFunction(() => document.querySelector("[data-strict-lib-load]")?.textContent === "ready", null, {
+      timeout: 120000,
+    });
+    assert.equal((await strictCalls(page, "lib")).loads.length, 4, "dropped plus remount loads, no more");
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
 test("replacing the renderer starts a new session without remounting", { skip: !browserAvailable }, async (t) => {
   const base = await devBase(t);
@@ -465,11 +530,7 @@ test("empty text paints a blank canvas and restores on input", { skip: !browserA
     1,
     "empty text keeps its mounted canvas",
   );
-  assert.match(
-    await probeText(page, "[data-harness-readiness]"),
-    /renderer ready/,
-    "empty input stays ready",
-  );
+  assert.match(await probeText(page, "[data-harness-readiness]"), /renderer ready/, "empty input stays ready");
   const observed = await calls(page);
   assert.equal(
     observed.renders[observed.renders.length - 1]?.text,
@@ -569,9 +630,11 @@ test("a throwing factory shows unavailable UI without crashing", { skip: !browse
 });
 
 async function waitPaints(page: Page, count: number): Promise<void> {
-  await page.waitForFunction((expected) => Number(
-    document.querySelector("[data-harness-paints]")?.textContent,
-  ) === expected, count, { timeout: 120000 });
+  await page.waitForFunction(
+    (expected) => Number(document.querySelector("[data-harness-paints]")?.textContent) === expected,
+    count,
+    { timeout: 120000 },
+  );
 }
 
 test("color-only changes rerender without remounting", { skip: !browserAvailable }, async (t) => {
@@ -597,7 +660,10 @@ test("color-only changes rerender without remounting", { skip: !browserAvailable
   assert.deepEqual(observed.renders[observed.renders.length - 1]?.background, [10, 20, 30, 255]);
   assert.deepEqual(
     observed.renders[observed.renders.length - 1]?.palette,
-    [[10, 20, 30, 255], [30, 90, 200, 255]],
+    [
+      [10, 20, 30, 255],
+      [30, 90, 200, 255],
+    ],
     "full palettes travel verbatim with entry 0 as paper",
   );
   assert.deepEqual(harnessErrors(page), []);
@@ -622,7 +688,10 @@ test("entry 0 paper and explicit ink paint expected mono RGBA", { skip: !browser
   // within one premultiply round-trip (worst case +/-0.5*255/40 ~= +/-3.2).
   assert.equal(pixels.row0[3], 40, "entry 0 paper applies once, not twice");
   for (let i = 0; i < 3; i += 1) {
-    assert.ok(Math.abs((pixels.row0[i] ?? Number.NaN) - ((([10, 20, 30] as const)[i]) ?? Number.NaN)) <= 4, `paper RGB holds, got ${pixels.row0}`);
+    assert.ok(
+      Math.abs((pixels.row0[i] ?? Number.NaN) - (([10, 20, 30] as const)[i] ?? Number.NaN)) <= 4,
+      `paper RGB holds, got ${pixels.row0}`,
+    );
   }
   await page.close();
 });
@@ -637,15 +706,25 @@ test("uneven opaque gray entries apply verbatim per level", { skip: !browserAvai
   // Distinct opaque RGB per level: no coverage alpha may reshape them, so
   // every row reads back its own entry exactly.
   const entries = [
-    [255, 255, 255, 255], [200, 30, 30, 255], [30, 90, 200, 255], [30, 180, 90, 255],
-    [150, 60, 200, 255], [200, 150, 30, 255], [90, 200, 180, 255], [40, 50, 60, 255],
+    [255, 255, 255, 255],
+    [200, 30, 30, 255],
+    [30, 90, 200, 255],
+    [30, 180, 90, 255],
+    [150, 60, 200, 255],
+    [200, 150, 30, 255],
+    [90, 200, 180, 255],
+    [40, 50, 60, 255],
   ];
   await page.locator("[data-harness-palette]").fill(JSON.stringify(entries));
   await waitPaints(page, startPaints + 1);
   const rows = await page.evaluate(() => {
     const canvas = document.querySelector("canvas") as HTMLCanvasElement;
-    const data = (canvas.getContext("2d") as CanvasRenderingContext2D)
-      .getImageData(0, 0, canvas.width, canvas.height).data;
+    const data = (canvas.getContext("2d") as CanvasRenderingContext2D).getImageData(
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    ).data;
     return [0, 1, 2, 3, 4, 5, 6, 7].map((row) => {
       const i = (row * canvas.width + 10) * 4;
       return [data[i], data[i + 1], data[i + 2], data[i + 3]];
@@ -664,9 +743,11 @@ test("full gray palette applies levels verbatim", { skip: !browserAvailable }, a
   await painted(page);
   const startPaints = await paints(page);
 
-  await page.locator("[data-harness-palette]").fill(
-    "[[0,0,0,0],[30,60,200,36],[30,90,200,72],[30,120,200,108],[30,150,200,144],[30,180,200,180],[30,210,200,216],[30,240,200,252]]",
-  );
+  await page
+    .locator("[data-harness-palette]")
+    .fill(
+      "[[0,0,0,0],[30,60,200,36],[30,90,200,72],[30,120,200,108],[30,150,200,144],[30,180,200,180],[30,210,200,216],[30,240,200,252]]",
+    );
   await waitPaints(page, startPaints + 1);
   const pixels = await probePixels(page);
   // Entry 0 is transparent, so the translucent level 1 entry composites to
@@ -678,35 +759,39 @@ test("full gray palette applies levels verbatim", { skip: !browserAvailable }, a
   await page.close();
 });
 
-test("opaque to transparent leaves no ghosting; partial repaints do not accumulate", { skip: !browserAvailable }, async (t) => {
-  const base = await devBase(t);
-  const browser = await launch(t);
-  const page = await openStory(browser, base, "renderer-lifecycleharness--default");
-  await painted(page);
-  let expectedPaints = await paints(page);
+test(
+  "opaque to transparent leaves no ghosting; partial repaints do not accumulate",
+  { skip: !browserAvailable },
+  async (t) => {
+    const base = await devBase(t);
+    const browser = await launch(t);
+    const page = await openStory(browser, base, "renderer-lifecycleharness--default");
+    await painted(page);
+    let expectedPaints = await paints(page);
 
-  await page.locator("[data-harness-palette]").fill("[[255,255,255,255],[200,30,30,255]]");
-  await waitPaints(page, expectedPaints + 1);
-  expectedPaints += 1;
-  await page.locator("[data-harness-palette]").fill("[[0,0,0,0],[200,30,30,255]]");
-  await waitPaints(page, expectedPaints + 1);
-  expectedPaints += 1;
-  let pixels = await probePixels(page);
-  assert.deepEqual(pixels.row0, [0, 0, 0, 0], "cleared paper holds no ghost of opaque white");
-  assert.deepEqual(pixels.row1, [200, 30, 30, 255], "opaque ink over transparency is exact");
+    await page.locator("[data-harness-palette]").fill("[[255,255,255,255],[200,30,30,255]]");
+    await waitPaints(page, expectedPaints + 1);
+    expectedPaints += 1;
+    await page.locator("[data-harness-palette]").fill("[[0,0,0,0],[200,30,30,255]]");
+    await waitPaints(page, expectedPaints + 1);
+    expectedPaints += 1;
+    let pixels = await probePixels(page);
+    assert.deepEqual(pixels.row0, [0, 0, 0, 0], "cleared paper holds no ghost of opaque white");
+    assert.deepEqual(pixels.row1, [200, 30, 30, 255], "opaque ink over transparency is exact");
 
-  await page.locator("[data-harness-palette]").fill("[[0,0,0,0],[30,90,200,160]]");
-  await waitPaints(page, expectedPaints + 1);
-  expectedPaints += 1;
-  const first = await fullBuffer(page);
-  await page.locator("[data-harness-ready]").uncheck();
-  await page.locator("[data-harness-ready]").check();
-  await waitPaints(page, expectedPaints + 1);
-  assert.deepEqual(await fullBuffer(page), first, "repeated same-size partial paints are byte-identical");
-  pixels = await probePixels(page);
-  assert.equal(pixels.row1[3], 160, "partial alpha does not accumulate across repaints");
-  await page.close();
-});
+    await page.locator("[data-harness-palette]").fill("[[0,0,0,0],[30,90,200,160]]");
+    await waitPaints(page, expectedPaints + 1);
+    expectedPaints += 1;
+    const first = await fullBuffer(page);
+    await page.locator("[data-harness-ready]").uncheck();
+    await page.locator("[data-harness-ready]").check();
+    await waitPaints(page, expectedPaints + 1);
+    assert.deepEqual(await fullBuffer(page), first, "repeated same-size partial paints are byte-identical");
+    pixels = await probePixels(page);
+    assert.equal(pixels.row1[3], 160, "partial alpha does not accumulate across repaints");
+    await page.close();
+  },
+);
 
 test("uncovered padding paints background once without accumulation", { skip: !browserAvailable }, async (t) => {
   const base = await devBase(t);
@@ -794,7 +879,8 @@ test("delayed stale color result is suppressed", { skip: !browserAvailable }, as
   await page.locator("[data-harness-palette]").fill("[[10,20,30,255],[200,30,30,255]]");
   await page.locator("[data-harness-palette]").fill("[[10,20,30,255],[30,90,200,255]]");
   await page.waitForFunction(
-    (expected) => JSON.parse(document.querySelector("[data-harness-calls]")?.textContent ?? "{}").renders?.length === expected,
+    (expected) =>
+      JSON.parse(document.querySelector("[data-harness-calls]")?.textContent ?? "{}").renders?.length === expected,
     startCalls + 2,
     { timeout: 120000 },
   );
@@ -804,7 +890,10 @@ test("delayed stale color result is suppressed", { skip: !browserAvailable }, as
   const observed = await calls(page);
   assert.deepEqual(
     observed.renders[observed.renders.length - 1]?.palette,
-    [[10, 20, 30, 255], [30, 90, 200, 255]],
+    [
+      [10, 20, 30, 255],
+      [30, 90, 200, 255],
+    ],
     "the latest full palette travels verbatim",
   );
   assert.deepEqual(harnessErrors(page), []);
@@ -815,16 +904,26 @@ test("alpha survives normal and exact paints", { skip: !browserAvailable }, asyn
   const base = await devBase(t);
   const browser = await launch(t);
   const cases: Array<{ extra: string; check: (page: Page) => Promise<void> }> = [
-    { extra: "&args=mode:normal", check: async (page: Page) => { assert.match(
-      await page.evaluate(() => (document.querySelector("canvas") as HTMLCanvasElement).style.width),
-      /^\d+px$/,
-      "normal canvas carries explicit pixel sizing",
-    ); } },
-    { extra: "&args=mode:exact", check: async (page: Page) => { assert.match(
-      await page.evaluate(() => (document.querySelector("canvas") as HTMLCanvasElement).style.transform),
-      /scale\(/,
-      "exact canvas keeps its pixel snap",
-    ); } },
+    {
+      extra: "&args=mode:normal",
+      check: async (page: Page) => {
+        assert.match(
+          await page.evaluate(() => (document.querySelector("canvas") as HTMLCanvasElement).style.width),
+          /^\d+px$/,
+          "normal canvas carries explicit pixel sizing",
+        );
+      },
+    },
+    {
+      extra: "&args=mode:exact",
+      check: async (page: Page) => {
+        assert.match(
+          await page.evaluate(() => (document.querySelector("canvas") as HTMLCanvasElement).style.transform),
+          /scale\(/,
+          "exact canvas keeps its pixel snap",
+        );
+      },
+    },
   ];
   for (const { extra: storyExtra, check: styleCheck } of cases) {
     const page = await openStory(browser, base, "renderer-lifecycleharness--default", storyExtra);

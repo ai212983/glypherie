@@ -3,7 +3,7 @@
 <!-- cspell:words Kelley Germer Darling Ferwerda Herle Hertel Penczek Wenzel Villanueva Quack Niels BRDF multispectral folios SPIE -->
 
 Edward F. Kelley, George R. Jones and Thomas A. Germer. _Display reflectance model based on the BRDF_. **Displays 19(1),
-27–34 (1998)**. [DOI: 10.1016/S0141-9382(98)00028-6](https://doi.org/10.1016/S0141-9382(98)00028-6).
+27–34 (1998)**. [DOI: 10.1016/S0141-9382(98)00028-6](<https://doi.org/10.1016/S0141-9382(98)00028-6>).
 
 - [Unchanged original PDF](paper.pdf)
 - [Complete machine transcription with targeted review](paper.md)

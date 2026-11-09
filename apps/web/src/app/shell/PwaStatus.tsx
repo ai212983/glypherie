@@ -3,11 +3,20 @@ import { TooltipHint } from "../../components/TooltipHint";
 import { useRegisterSW } from "virtual:pwa-register/react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "../../components/ui/button";
+import { DOMAIN_OWNER_STALE_EVENT } from "../domain/runtime";
 
 // https://vite-pwa-org.netlify.app/guide/prompt-for-update
 type Activity = "idle" | "checking" | "downloading" | "updating" | "current" | "error";
 
-export function PwaStatus({ version, online, children }: { version: string; online: boolean; children: React.ReactNode }): React.JSX.Element {
+export function PwaStatus({
+  version,
+  online,
+  children,
+}: {
+  version: string;
+  online: boolean;
+  children: React.ReactNode;
+}): React.JSX.Element {
   const [registration, setRegistration] = React.useState<ServiceWorkerRegistration>();
   const [activity, setActivity] = React.useState<Activity>("idle");
   const applying = React.useRef(false);
@@ -17,7 +26,9 @@ export function PwaStatus({ version, online, children }: { version: string; onli
     updateServiceWorker,
   } = useRegisterSW({
     immediate: false,
-    onRegisteredSW(_url, next) { setRegistration(next); },
+    onRegisteredSW(_url, next) {
+      setRegistration(next);
+    },
     onRegisterError(error: unknown) {
       setActivity("error");
       console.warn("Service worker registration failed; the app still works online.", error);
@@ -102,9 +113,23 @@ export function PwaStatus({ version, online, children }: { version: string; onli
       else setActivity("current");
     } catch {
       setActivity("error");
+    } finally {
+      busy.current = false;
     }
-    finally { busy.current = false; }
   };
+  const checkRef = React.useRef(check);
+  checkRef.current = check;
+
+  // A version-skewed domain owner means the new app may still be waiting on
+  // its update: check immediately so the pending Update action surfaces.
+  // The prompt policy is unchanged — nothing is applied without the click.
+  React.useEffect(() => {
+    const onStaleOwner = (): void => {
+      void checkRef.current();
+    };
+    window.addEventListener(DOMAIN_OWNER_STALE_EVENT, onStaleOwner);
+    return () => window.removeEventListener(DOMAIN_OWNER_STALE_EVENT, onStaleOwner);
+  }, []);
 
   if (!("serviceWorker" in navigator)) {
     return (
@@ -116,33 +141,55 @@ export function PwaStatus({ version, online, children }: { version: string; onli
   }
 
   const pending = activity === "checking" || activity === "downloading" || activity === "updating";
-  const message = activity === "updating" ? ""
-    : activity === "error" ? "Couldn’t check for updates."
-    : needRefresh ? ""
-    : !online ? ""
-    : activity === "checking" ? "Checking for updates…"
-    : activity === "current" ? "Up to date"
-    : "";
+  const message =
+    activity === "updating"
+      ? ""
+      : activity === "error"
+        ? "Couldn’t check for updates."
+        : needRefresh
+          ? ""
+          : !online
+            ? ""
+            : activity === "checking"
+              ? "Checking for updates…"
+              : activity === "current"
+                ? "Up to date"
+                : "";
   return (
     <div className="site-footer__updates" data-update-state={needRefresh ? "ready" : activity}>
       <TooltipHint content={needRefresh ? "Apply downloaded update" : "Check for updates"}>
-        <Button type="button" size="xs" variant="ghost"
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
           className="site-footer__version-button"
           data-app-version
           aria-label={needRefresh || activity === "downloading" ? undefined : `Version ${version}: check for updates`}
-          disabled={needRefresh ? activity === "updating" : pending || !online || (!registration && activity !== "error")}
+          disabled={
+            needRefresh ? activity === "updating" : pending || !online || (!registration && activity !== "error")
+          }
           onClick={() => {
             if (needRefresh) void apply();
             else if (!registration) window.location.reload();
             else void check();
-          }}>
+          }}
+        >
           <RefreshCw aria-hidden="true" className={pending ? "motion-safe:animate-spin" : undefined} />
-          <span aria-live="polite">{needRefresh ? activity === "updating" ? "Updating…" : "Update"
-            : activity === "downloading" ? "Downloading..." : version}</span>
+          <span aria-live="polite">
+            {needRefresh
+              ? activity === "updating"
+                ? "Updating…"
+                : "Update"
+              : activity === "downloading"
+                ? "Downloading..."
+                : version}
+          </span>
         </Button>
       </TooltipHint>
       {children}
-      <span role="status" data-update-success={activity === "current" && message ? true : undefined}>{message}</span>
+      <span role="status" data-update-success={activity === "current" && message ? true : undefined}>
+        {message}
+      </span>
     </div>
   );
 }

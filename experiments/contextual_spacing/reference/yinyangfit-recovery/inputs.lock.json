@@ -1,0 +1,45 @@
+{
+  "schema_version": "yinyangfit-input-source-lock-v1",
+  "tensorfont_revision": "ca40a251693022a86eff63301dbae45ec27b608e",
+  "crimson_revision": "685b5a2478a7213a806e9bbf1e36f6a9e7f5c7ef",
+  "historical_notebook_revision": "d9c7e2580f2ad4884c45e5081e8e4613b86632cf",
+  "historical_notebook_sha256": "078e9dda8c5217bc064f1b1b09f03e83fb2be03e7322885594eb2b5d50d59ba6",
+  "recovery_provenance": "Candidate dependency/font versions not later than notebook date; exact 2021 execution bytes were not recovered.",
+  "files": {
+    "CrimsonRoman.otf": {
+      "url": "https://raw.githubusercontent.com/skosch/Crimson/685b5a2478a7213a806e9bbf1e36f6a9e7f5c7ef/Desktop%20Fonts/OTF/Crimson-Roman.otf",
+      "sha256": "8e8472acb3aea81333fa6df4be1f4a3d708eada74dc62608d4b876b0bfa405d6",
+      "bytes": 199560
+    },
+    "Crimson-LICENSE.txt": {
+      "url": "https://raw.githubusercontent.com/skosch/Crimson/685b5a2478a7213a806e9bbf1e36f6a9e7f5c7ef/LICENSE.txt",
+      "sha256": "26ed7bb6be478f73d55c2cade75214c186ea28c06a57db75b9e378a16f0e2119",
+      "bytes": 4360
+    },
+    "tensorfont-__init__.py": {
+      "url": "https://raw.githubusercontent.com/simoncozens/tensorfont/ca40a251693022a86eff63301dbae45ec27b608e/tensorfont/__init__.py",
+      "sha256": "5b2ed2a1f59351e20fc03df1f14966951074ea8d63bd6787c3d02147a58ee875",
+      "bytes": 19929
+    },
+    "tensorfont-interpshape.py": {
+      "url": "https://raw.githubusercontent.com/simoncozens/tensorfont/ca40a251693022a86eff63301dbae45ec27b608e/tensorfont/interpshape.py",
+      "sha256": "fd5c5976f6e54c7e167c6b336eb2fa41a25540bf2b4499a21ce4435a5674dd0c",
+      "bytes": 2749
+    },
+    "tensorfont-README.rst": {
+      "url": "https://raw.githubusercontent.com/simoncozens/tensorfont/ca40a251693022a86eff63301dbae45ec27b608e/README.rst",
+      "sha256": "12d9b7e5894cdc5f46c2824f4f2ca30ff68516adebcf5955a29cc9cf976b92e8",
+      "bytes": 1026
+    },
+    "tensorfont-setup.py": {
+      "url": "https://raw.githubusercontent.com/simoncozens/tensorfont/ca40a251693022a86eff63301dbae45ec27b608e/setup.py",
+      "sha256": "0624acdf8c2bceee2ea5430b479e4ab7b14715d702fc6347dede0a139feae63a",
+      "bytes": 846
+    },
+    "YinYangFit.ipynb": {
+      "url": "https://raw.githubusercontent.com/skosch/YinYangFit/d9c7e2580f2ad4884c45e5081e8e4613b86632cf/YinYangFit.ipynb",
+      "sha256": "078e9dda8c5217bc064f1b1b09f03e83fb2be03e7322885594eb2b5d50d59ba6",
+      "bytes": 2884418
+    }
+  }
+}

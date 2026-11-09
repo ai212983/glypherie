@@ -1,7 +1,11 @@
-import { errorName, fontDatabase, isDatabaseBlocked, runWithReopen } from "../database.ts";
-import type { FontRow } from "../database.ts";
+// Browser-local font library, backed by the domain graph store. Same exports
+// and observable semantics as the legacy Dexie implementation: fonts stay
+// content-addressed by SHA-256, uploaded sources upgrade bundled rows, and
+// removal cascades the font's variants. Only the storage mechanics changed.
 
-export { fontDatabase };
+import { callDomain } from "../domain/runtime.ts";
+
+export { fontDatabase } from "../database.ts";
 
 export interface AxisMetadata {
   tag: string;
@@ -82,6 +86,8 @@ export type FontStorageErrorCode =
   | "seed-failed"
   | "quota-exceeded"
   | "blocked"
+  | "stale-owner"
+  | "referenced"
   | "unavailable";
 
 export class FontStorageError extends Error {
@@ -93,42 +99,38 @@ export class FontStorageError extends Error {
   }
 }
 
-const SEED_MARKER_KEY = "bundled-fonts";
+// "stale-owner" passes through with its honest message: a version-skewed
+// domain owner is never recast as generic unavailability.
+const KNOWN_CODES: ReadonlySet<string> = new Set([
+  "empty-bytes",
+  "invalid-metadata",
+  "invalid-input",
+  "invalid-descriptor",
+  "seed-failed",
+  "quota-exceeded",
+  "blocked",
+  "stale-owner",
+  "referenced",
+  "unavailable",
+]);
 
-export function isFontDatabaseBlocked(): boolean {
-  return isDatabaseBlocked();
-}
-
-function throwIfBlocked(): void {
-  if (isDatabaseBlocked()) {
-    throw new FontStorageError(
-      "blocked",
-      "Font storage is blocked by another open tab holding an older database version. Close other tabs and reload.",
-    );
-  }
-}
-
-async function runWithFonts<T>(operation: () => Promise<T>): Promise<T> {
-  throwIfBlocked();
-  try {
-    return await runWithReopen(operation);
-  } catch (error) {
-    throw mapStorageError(error);
-  }
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function mapStorageError(error: unknown): FontStorageError {
   if (error instanceof FontStorageError) return error;
-  if (errorName(error) === "QuotaExceededError") {
-    return new FontStorageError(
-      "quota-exceeded",
-      "Browser font storage is full. Remove an uploaded font to free space; nothing was uploaded anywhere.",
-      { cause: error },
-    );
+  const code = (error as { code?: unknown })?.code;
+  if (typeof code === "string" && KNOWN_CODES.has(code)) {
+    return new FontStorageError(code as FontStorageErrorCode, messageOf(error), { cause: error });
   }
   return new FontStorageError("unavailable", "Browser font storage is unavailable in this context.", {
     cause: error,
   });
+}
+
+export function isFontDatabaseBlocked(): boolean {
+  return false;
 }
 
 function validateFontMetadata(metadata: FontMetadata): void {
@@ -155,50 +157,32 @@ function validateFontMetadata(metadata: FontMetadata): void {
   }
 }
 
-function toStoredFont(row: FontRow): StoredFont {
-  return {
-    id: row.id,
-    name: row.name,
-    fileName: row.fileName,
-    bytes: row.bytes,
-    metadata: row.metadata,
-    source: row.source,
-    addedAt: row.addedAt,
-  };
-}
-
-async function contentId(bytes: ArrayBuffer): Promise<string> {
-  const subtle = globalThis.crypto?.subtle;
-  if (!subtle) {
-    throw new FontStorageError("unavailable", "Font storage needs WebCrypto SHA-256, missing in this context.");
-  }
-  const digest = await subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 export async function listFonts(): Promise<StoredFont[]> {
-  return runWithFonts(async () => {
-    const rows = await fontDatabase.fonts.orderBy("addedAt").toArray();
-    return rows.map(toStoredFont);
-  });
+  try {
+    return (await callDomain("listFonts", [])) as StoredFont[];
+  } catch (error) {
+    throw mapStorageError(error);
+  }
 }
 
-// Refresh descriptive metadata without replacing bytes, identity, variants,
-// user names or timestamps, and without resurrecting a concurrently deleted font.
 export async function updateFontMetadata(id: string, metadata: FontMetadata): Promise<void> {
   validateFontMetadata(metadata);
-  await runWithFonts(() => fontDatabase.fonts.update(id, { metadata }));
+  try {
+    await callDomain("updateFontMetadata", [id, metadata]);
+  } catch (error) {
+    throw mapStorageError(error);
+  }
 }
 
 export async function getFont(id: string): Promise<StoredFont | undefined> {
-  return runWithFonts(async () => {
-    const row = await fontDatabase.fonts.get(id);
-    return row ? toStoredFont(row) : undefined;
-  });
+  try {
+    return (await callDomain("getFont", [id])) as StoredFont | undefined;
+  } catch (error) {
+    throw mapStorageError(error);
+  }
 }
 
 export async function saveFont(input: SaveFontInput): Promise<StoredFont> {
-  throwIfBlocked();
   if (!(input.bytes instanceof ArrayBuffer) || input.bytes.byteLength === 0) {
     throw new FontStorageError("empty-bytes", "Refusing to store a font with no bytes.");
   }
@@ -212,40 +196,27 @@ export async function saveFont(input: SaveFontInput): Promise<StoredFont> {
     throw new FontStorageError("invalid-input", "Font source must be bundled or uploaded.");
   }
   validateFontMetadata(input.metadata);
-  const id = await contentId(input.bytes);
-  return runWithFonts(async () => {
-    return fontDatabase.transaction("rw", fontDatabase.fonts, async () => {
-      const existing = await fontDatabase.fonts.get(id);
-      if (existing) {
-        if (existing.source === "uploaded" || input.source === "bundled") return toStoredFont(existing);
-        existing.source = "uploaded";
-        await fontDatabase.fonts.put(existing);
-        return toStoredFont(existing);
-      }
-      const row: FontRow = {
-        id,
-        name: input.name,
+  try {
+    return (await callDomain("saveFont", [
+      {
+        bytes: input.bytes,
         fileName: input.fileName,
-        bytes: input.bytes.slice(0),
+        name: input.name,
         metadata: input.metadata,
         source: input.source,
-        addedAt: Date.now(),
-      };
-      await fontDatabase.fonts.add(row);
-      return toStoredFont(row);
-    });
-  });
+      },
+    ])) as StoredFont;
+  } catch (error) {
+    throw mapStorageError(error);
+  }
 }
 
 export async function removeFont(id: string): Promise<void> {
-  return runWithFonts(() =>
-    // One transaction: the font and its variants disappear together, so a
-    // concurrent reader never sees variants of a deleted font.
-    fontDatabase.transaction("rw", [fontDatabase.fonts, fontDatabase.variants], async () => {
-      await fontDatabase.variants.where("fontId").equals(id).delete();
-      await fontDatabase.fonts.delete(id);
-    }),
-  );
+  try {
+    await callDomain("removeFont", [id]);
+  } catch (error) {
+    throw mapStorageError(error);
+  }
 }
 
 function assertSameOriginUrl(url: string): void {
@@ -288,7 +259,6 @@ async function seedInner(
   descriptors: BundledFontDescriptor[],
   inspect: (bytes: ArrayBuffer) => Promise<FontMetadata>,
 ): Promise<void> {
-  throwIfBlocked();
   for (const descriptor of descriptors) {
     assertSameOriginUrl(descriptor.url);
     if (typeof descriptor.name !== "string" || descriptor.name.trim() === "") {
@@ -299,8 +269,10 @@ async function seedInner(
     }
   }
   const key = seedKey(descriptors);
-  const marker = await runWithFonts(() => fontDatabase.meta.get(SEED_MARKER_KEY));
-  if (marker?.value === key) return;
+  const marker = await callDomain("getSeedMarker", []).catch((error: unknown) => {
+    throw mapStorageError(error);
+  });
+  if (marker === key) return;
   for (const descriptor of descriptors) {
     let bytes: ArrayBuffer;
     try {
@@ -331,7 +303,11 @@ async function seedInner(
       rethrowUnlessStorage(error, descriptor.url);
     }
   }
-  await runWithFonts(() => fontDatabase.meta.put({ key: SEED_MARKER_KEY, value: key }));
+  try {
+    await callDomain("setSeedMarker", [key]);
+  } catch (error) {
+    throw mapStorageError(error);
+  }
 }
 
 let seedInFlight: Promise<void> | null = null;

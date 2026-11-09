@@ -1,0 +1,15 @@
+TypeFacet Autokern
+Copyright (c) 2012 Charles Matthew Chen
+charlesmchen@gmail.com
+https://github.com/charlesmchen/typefacet
+Reference revision: 8c6db26d0c599ece16f3704696811275120a4044
+Licensed under Apache License 2.0; see LICENSE-APACHE-2.0.txt.
+
+Modified for Glypherie: Rust port of TypeFacet's original line, quadratic and
+cubic profile construction, contour orientation, approximate segment inflation,
+and intrusion predicates on explicit closed contours in font units. The original
+one-decimal geometry-rounding override and fixed 16-subdivision curve evaluation
+are retained. UFO I/O, sidebearing changes, category overrides and logging are
+omitted. Invalid or unsupported geometry and excessive memory/work fail explicitly.
+Acquiring geometry, searching placement origins, feasibility checks and rendering
+remain caller policy. No automatic per-font calibration or density shift occurs.

@@ -130,6 +130,131 @@ fn local_curve_fitting_reaches_roboto_flex_without_changing_metrics_or_native_y(
 }
 
 #[test]
+fn flattened_curve_certificate_unblocks_roboto_flex_n_width_correction() {
+    use font_generator::{diagonal_fitting::curves, probe::FittedCommand};
+    let data = load("RobotoFlex.ttf");
+    let fitting = StemFittingStrategy::FontHintsAuto;
+    let request = capture_request(
+        fitting,
+        "HN",
+        MonoRasterSettings {
+            font_instructions: true,
+            include_stubs: true,
+            ..Default::default()
+        },
+    );
+    let render = |enabled| {
+        candidate::render_with_pipeline(
+            &data,
+            &request,
+            pipeline(fitting, Rasterization::FreeTypeMonoTerminals, enabled),
+        )
+        .unwrap()
+    };
+    let off = render(false);
+    let on = render(true);
+    let (up, fitted) = (&off.records[1], &on.records[1]);
+    assert_eq!(up.codepoint, u32::from('N'));
+    let capture = fitted
+        .diagonal_fitting
+        .as_ref()
+        .expect("flattened attachment curves must not veto the width correction");
+    assert_eq!(capture.reason, "placement:shared-placement");
+    assert_eq!(capture.upstream_commands, up.fitted_commands);
+    assert_eq!(up.advance_26_6, fitted.advance_26_6);
+    assert_eq!(up.hinted_advance_width, fitted.hinted_advance_width);
+    assert_eq!(up.selected_engine, fitted.selected_engine);
+    assert_eq!(up.font_scan, fitted.font_scan);
+    assert_ne!(up.pixels, fitted.pixels);
+    assert_eq!(
+        off.records[0].fitted_commands,
+        on.records[0].fitted_commands
+    );
+    assert_eq!(off.records[0].pixels, on.records[0].pixels);
+
+    let mut source_request = request.clone();
+    source_request.extensions = "none".into();
+    source_request.settings.hinting = Hinting::None;
+    source_request.settings.mono_raster = Default::default();
+    let source = reference(&data, &source_request).unwrap();
+    let source_commands = &source.records[1].fitted_commands;
+    assert!(curves::compare_commands(
+        source_commands,
+        &up.fitted_commands,
+        &up.fitted_commands
+    ));
+    // Moving attachment curves use the substituted-topology replay below;
+    // the historical fixed-curve comparator deliberately rejects movement.
+    let mut upstream_request = source_request;
+    upstream_request.settings.hinting = Hinting::Auto;
+    let upstream = reference(&data, &upstream_request).unwrap();
+    let evaluation = evaluate(&source, &upstream, &on);
+    assert!(
+        evaluation.hard_invariants_pass,
+        "{:?}",
+        evaluation.hard_failures
+    );
+
+    let endpoints = |commands: &[FittedCommand]| {
+        commands
+            .iter()
+            .filter_map(|c| match *c {
+                FittedCommand::MoveTo(x, y)
+                | FittedCommand::LineTo(x, y)
+                | FittedCommand::QuadTo(_, _, x, y)
+                | FittedCommand::CurveTo(_, _, _, _, x, y) => Some([x, y]),
+                FittedCommand::Close => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let raw = font_generator::fitting_source::draw(&data, &request.settings, up.glyph_id).unwrap();
+    let (old, new) = (
+        endpoints(&up.fitted_commands),
+        endpoints(&fitted.fitted_commands),
+    );
+    let diagonals = raw
+        .contours
+        .iter()
+        .flatten()
+        .filter(|s| s.is_line())
+        .filter_map(|s| {
+            let (a, b) = s.endpoints();
+            (raw.oncurve[a][0] != raw.oncurve[b][0] && raw.oncurve[a][1] != raw.oncurve[b][1])
+                .then_some((a, b))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(diagonals.len(), 2);
+    let [(a, b), (c, d)] = diagonals[..] else {
+        unreachable!()
+    };
+    let dx = raw.oncurve[b][0] - raw.oncurve[a][0];
+    let dy = raw.oncurve[b][1] - raw.oncurve[a][1];
+    let width = |points: &[[f32; 2]]| {
+        let mx = f64::from(points[a][0] + points[b][0] - points[c][0] - points[d][0]) / 2.0;
+        let my = f64::from(points[a][1] + points[b][1] - points[c][1] - points[d][1]) / 2.0;
+        (dy * mx - dx * my).abs() / dx.hypot(dy)
+    };
+    assert!(
+        width(&new) > 0.0 && width(&new) < width(&old),
+        "source-normal diagonal thickness must decrease"
+    );
+    for segment in raw.contours.iter().flatten().filter(|s| s.is_line()) {
+        let (a, b) = segment.endpoints();
+        for axis in 0..2 {
+            if raw.oncurve[a][axis] == raw.oncurve[b][axis] && old[a][axis] == old[b][axis] {
+                for v in [a, b] {
+                    assert_eq!(
+                        old[v][axis].to_bits(),
+                        new[v][axis].to_bits(),
+                        "axis-aligned attachment must stay pinned"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn diagonal_sequence_preserves_local_reference_heights_in_roboto_flex_k() {
     let data = load("RobotoFlex.ttf");
     let fitting = StemFittingStrategy::FontHintsAuto;

@@ -17,6 +17,11 @@
 //! commands with `applied=false`. Only malformed, non-finite or out-of-range
 //! input is an error. Runtime never uses experiments, Python, subprocesses
 //! or corpus corrections.
+//!
+//! `fit_shared` reuses the same source contacts, attachment variables and
+//! delivery guards with Hersch shared-slope parallelism and soft Hobby (17)
+//! widths. Its source-certified reflection phase is owned by `placement`;
+//! `fit` retains the historical integer-grid solve for packet replay.
 
 use super::curve_model as scf;
 use super::{
@@ -25,6 +30,14 @@ use super::{
 };
 use crate::{fail, probe::FittedCommand, Error};
 use std::collections::{HashMap, HashSet};
+
+mod placement;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Model {
+    IntegerGrid,
+    SharedPlacement,
+}
 
 /// Diagonal spread gate over one pair (prototype `GRID_SPREAD`).
 const GRID_SPREAD: f64 = 0.25;
@@ -57,6 +70,7 @@ fn grid_target(
     direction: [f64; 2],
     anchors: &[super::Anchor],
     size_px: f64,
+    model: Model,
 ) -> Option<Gate> {
     let widths = &info.src_widths;
     if widths.is_empty() {
@@ -104,7 +118,7 @@ fn grid_target(
     }
     // Deterministic nearest integer, ties to even (Python round).
     let integer = scaled.round_ties_even() as i64;
-    if integer <= 0 {
+    if !coupled.is_finite() || coupled <= 0.0 || (integer <= 0 && model == Model::IntegerGrid) {
         return None;
     }
     let mid = &info.stations[info.stations.len() / 2].hit;
@@ -142,6 +156,7 @@ fn recognize(
     fitted_oncurve: &[[f64; 2]],
     size_px: f64,
     anchors: &[super::Anchor],
+    model: Model,
 ) -> (Vec<AttachedPair>, Vec<String>) {
     let parsed = analysis.parsed().expect("validated source");
     let single = parsed.contours.len() == 1
@@ -201,7 +216,7 @@ fn recognize(
             skipped.push("no-corridor".to_string());
             continue;
         };
-        let Some(gate) = grid_target(&info, cor, anchors, size_px) else {
+        let Some(gate) = grid_target(&info, cor, anchors, size_px, model) else {
             skipped.push("no-grid-target".to_string());
             continue;
         };
@@ -562,6 +577,46 @@ pub(super) fn fit_with_analysis(
     native_axes: [bool; 2],
     analysis: &super::SourceAnalysis<'_>,
 ) -> Result<FitResult, Error> {
+    fit_model(
+        source,
+        upstream,
+        size_px,
+        reference,
+        native_axes,
+        analysis,
+        Model::IntegerGrid,
+    )
+}
+
+/// Shared-slope, source-relative widths and source-certified reflection phase.
+/// The historical integer-grid entrypoint stays the replay authority.
+pub fn fit_shared(
+    source: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size_px: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+) -> Result<FitResult, Error> {
+    fit_model(
+        source,
+        upstream,
+        size_px,
+        reference,
+        native_axes,
+        &super::SourceAnalysis::new(source),
+        Model::SharedPlacement,
+    )
+}
+
+fn fit_model(
+    source: &[FittedCommand],
+    upstream: &[FittedCommand],
+    size_px: f64,
+    reference: &Reference,
+    native_axes: [bool; 2],
+    analysis: &super::SourceAnalysis<'_>,
+    model: Model,
+) -> Result<FitResult, Error> {
     if native_axes[0] {
         return Ok(abstain(
             upstream,
@@ -645,7 +700,13 @@ pub(super) fn fit_with_analysis(
             serde_json::json!({"size_px": size_px}),
         ));
     }
-    let (prepared, skipped) = recognize(analysis, &fitted.oncurve, size_px, &reference.anchors);
+    let (prepared, skipped) = recognize(
+        analysis,
+        &fitted.oncurve,
+        size_px,
+        &reference.anchors,
+        model,
+    );
     if prepared.is_empty() {
         return Ok(abstain(
             upstream,
@@ -760,36 +821,51 @@ pub(super) fn fit_with_analysis(
     let up_flat: Vec<f64> = up.iter().flat_map(|p| [p[0], p[1]]).collect();
     let mut hard: Vec<HardRow> = Vec::new();
     for info in &prepared {
-        let n = info.normal;
-        for edge in [&info.a, &info.b] {
-            let row = system.projected(
-                &super::Sample::affine(edge.i0, 1.0 - edge.t1, edge.i1, edge.t1),
-                n,
-                Some(&super::Sample::affine(
-                    edge.i0,
-                    1.0 - edge.t0,
-                    edge.i1,
-                    edge.t0,
-                )),
-            );
+        if model == Model::SharedPlacement {
+            let Some(row) = placement::parallel_row(info, &up) else {
+                return Ok(abstain(
+                    upstream,
+                    "shared-axis-degenerate",
+                    serde_json::json!({}),
+                ));
+            };
             hard.push(HardRow {
-                kind: "parallel",
+                kind: "shared-slope",
                 constant: dot(&row, &up_flat),
                 row,
             });
+        } else {
+            let n = info.normal;
+            for edge in [&info.a, &info.b] {
+                let row = system.projected(
+                    &super::Sample::affine(edge.i0, 1.0 - edge.t1, edge.i1, edge.t1),
+                    n,
+                    Some(&super::Sample::affine(
+                        edge.i0,
+                        1.0 - edge.t0,
+                        edge.i1,
+                        edge.t0,
+                    )),
+                );
+                hard.push(HardRow {
+                    kind: "parallel",
+                    constant: dot(&row, &up_flat),
+                    row,
+                });
+            }
+            let ta = info.a.t0 + (info.a.t1 - info.a.t0) * info.gate.fa;
+            let tb = info.b.t0 + (info.b.t1 - info.b.t0) * info.gate.fb;
+            let row = system.projected(
+                &super::Sample::affine(info.b.i0, 1.0 - tb, info.b.i1, tb),
+                n,
+                Some(&super::Sample::affine(info.a.i0, 1.0 - ta, info.a.i1, ta)),
+            );
+            hard.push(HardRow {
+                kind: "separation",
+                constant: dot(&row, &up_flat) - info.gate.target,
+                row,
+            });
         }
-        let ta = info.a.t0 + (info.a.t1 - info.a.t0) * info.gate.fa;
-        let tb = info.b.t0 + (info.b.t1 - info.b.t0) * info.gate.fb;
-        let row = system.projected(
-            &super::Sample::affine(info.b.i0, 1.0 - tb, info.b.i1, tb),
-            n,
-            Some(&super::Sample::affine(info.a.i0, 1.0 - ta, info.a.i1, ta)),
-        );
-        hard.push(HardRow {
-            kind: "separation",
-            constant: dot(&row, &up_flat) - info.gate.target,
-            row,
-        });
         for st in &info.stations {
             let ta = info.a.t0 + (info.a.t1 - info.a.t0) * st.hit.sa;
             let tb = info.b.t0 + (info.b.t1 - info.b.t0) * st.hit.sb;
@@ -817,6 +893,29 @@ pub(super) fn fit_with_analysis(
                 obj_rows.push(error.iter().map(|x| x * scale).collect());
                 obj_const.push((dot(&error, &gaps) + anchor.rel) * scale);
             }
+        }
+    }
+    let phase = if model == Model::SharedPlacement {
+        placement::reflection_phase(&prepared, &parsed, &base, &up)
+    } else {
+        None
+    };
+    if let Some(phase) = &phase {
+        let row = phase.row(base.len());
+        hard.push(HardRow {
+            kind: "reflection-phase",
+            constant: dot(&row, &up_flat) - phase.target,
+            row,
+        });
+        for (row, constant) in super::joint::symmetry_rows(
+            &system,
+            &phase.matches,
+            phase.source_axis,
+            2.0 * phase.target,
+            size_px,
+        ) {
+            obj_const.push(dot(&row, &gaps) + constant);
+            obj_rows.push(row);
         }
     }
     // Hersch's border rotation changes angular line-line corners; curve
@@ -899,6 +998,13 @@ pub(super) fn fit_with_analysis(
     }
     for d in &weld_order {
         cand[*d] = cand[weld[d]];
+    }
+    if phase.as_ref().is_some_and(|p| !p.certified(&cand)) {
+        return Ok(abstain(
+            upstream,
+            "rounded-reflection-phase",
+            serde_json::json!({}),
+        ));
     }
     let movement = cand
         .iter()
@@ -988,9 +1094,15 @@ pub(super) fn fit_with_analysis(
     Ok(FitResult {
         commands,
         applied: true,
-        reason: "attached-grid".to_string(),
+        reason: if model == Model::SharedPlacement {
+            "shared-placement"
+        } else {
+            "attached-grid"
+        }
+        .to_string(),
         diagnostics: serde_json::json!({
             "native_axes": [native_axes[0], native_axes[1]],
+            "placement_phase": phase.as_ref().map(|p| serde_json::json!({"source_axis":p.source_axis,"target":p.target,"axis":p.axis(&cand)})),
             "retained_upstream_axes": [native_axes[0], true],
             "upright_x_pins": upright_sorted,
             "qp": {"iterations": qp_info.iterations, "equality_error": qp_info.equality_error,
@@ -1002,7 +1114,8 @@ pub(super) fn fit_with_analysis(
             "hard_checks": hard_checks,
             "continuity": continuity,
             "topology": {"ok": true},
-            "pairs": prepared.iter().map(|p| serde_json::json!({
+            "pairs": prepared.iter().map(|p| {
+                let mut pair = serde_json::json!({
                 "id": p.id,
                 "source_width": p.src_widths.iter().sum::<f64>() / p.src_widths.len() as f64,
                 "normal": p.normal,
@@ -1010,7 +1123,14 @@ pub(super) fn fit_with_analysis(
                          "integer": p.gate.integer, "target": p.gate.target,
                          "coupled": p.gate.coupled, "rel": p.gate.rel,
                          "w_src": p.gate.w_src, "fa": p.gate.fa, "fb": p.gate.fb},
-            })).collect::<Vec<_>>(),
+                });
+                if model == Model::SharedPlacement {
+                    pair["gate"].as_object_mut().unwrap().remove("integer");
+                    pair["gate"].as_object_mut().unwrap().remove("target");
+                    pair["gate"]["constraint"] = serde_json::json!("source-relative-objective");
+                }
+                pair
+            }).collect::<Vec<_>>(),
             "skipped": skipped,
             "size_px": size_px,
         }),

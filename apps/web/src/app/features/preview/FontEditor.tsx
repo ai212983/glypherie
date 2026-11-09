@@ -1,7 +1,19 @@
 import * as React from "react";
-import { ALargeSmall, FileText, MoveHorizontal, Palette, ScanLine, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import {
+  ALargeSmall,
+  FileText,
+  Monitor,
+  MoveHorizontal,
+  Palette,
+  ScanLine,
+  SlidersHorizontal,
+  type LucideIcon,
+} from "lucide-react";
 import { useDisplayPreferences } from "../../shell/DisplayPreferences";
 import type { StoredFont } from "../../fonts/storage.js";
+import { deviceById, DEVICE_CATALOG } from "../../devices/catalog.js";
+import { DeviceControls } from "./DeviceControls";
+import { DevicePreview } from "./DevicePreview";
 import { currentPreviewSettings, type VariantSettings } from "../../variants/model.js";
 import { useRenderer } from "../../renderer/renderer-context.js";
 import { classificationLabel, displayName } from "../../fonts/metadata";
@@ -40,7 +52,13 @@ export interface FontEditorProps {
   sidebarStart?: React.ReactNode;
 }
 
-function ControlSection({ title, icon: Icon, layer, appearance, children }: {
+function ControlSection({
+  title,
+  icon: Icon,
+  layer,
+  appearance,
+  children,
+}: {
   title: string;
   icon: LucideIcon;
   layer: string;
@@ -50,32 +68,49 @@ function ControlSection({ title, icon: Icon, layer, appearance, children }: {
   const headingId = React.useId();
   const studio = appearance === "studio";
   return (
-    <Card variant={studio ? "default" : "plain"} className={studio ? undefined : "min-w-0 gap-3 py-4"}
-      role="group" aria-labelledby={headingId} data-control-layer={layer}>
+    <Card
+      variant={studio ? "default" : "plain"}
+      className={studio ? undefined : "min-w-0 gap-3 py-4"}
+      role="group"
+      aria-labelledby={headingId}
+      data-control-layer={layer}
+    >
       <CardHeader className={studio ? undefined : "px-4"}>
-        <CardTitle asChild className={studio ? undefined : "flex items-center gap-[6px] text-[.875rem] text-studio-heading"}>
+        <CardTitle
+          asChild
+          className={studio ? undefined : "flex items-center gap-[6px] text-[.875rem] text-studio-heading"}
+        >
           <h2 id={headingId}>
             <Icon aria-hidden="true" className="size-3 shrink-0" />
             {title}
           </h2>
         </CardTitle>
       </CardHeader>
-      <CardContent className={`flex min-w-0 flex-col gap-3 ${studio ? "" : "px-4"}`}>
-        {children}
-      </CardContent>
+      <CardContent className={`flex min-w-0 flex-col gap-3 ${studio ? "" : "px-4"}`}>{children}</CardContent>
     </Card>
   );
 }
 
-function RenderingSection({ title, id, layer, children }: {
+function RenderingSection({
+  title,
+  id,
+  layer,
+  children,
+}: {
   title: string;
   id: string;
   layer: string;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <section aria-labelledby={id} data-control-layer={layer} className="flex min-w-0 flex-col gap-4 not-first:border-t not-first:border-border/80 not-first:pt-6 xl:not-first:border-t-0 xl:not-first:border-l xl:not-first:pt-0 xl:not-first:pl-6">
-      <h3 id={id} className="m-0 text-xs font-semibold">{title}</h3>
+    <section
+      aria-labelledby={id}
+      data-control-layer={layer}
+      className="flex min-w-0 flex-col gap-4 not-first:border-t not-first:border-border/80 not-first:pt-6 xl:not-first:border-t-0 xl:not-first:border-l xl:not-first:pt-0 xl:not-first:pl-6"
+    >
+      <h3 id={id} className="m-0 text-xs font-semibold">
+        {title}
+      </h3>
       {children}
     </section>
   );
@@ -86,11 +121,30 @@ function RenderingSection({ title, id, layer, children }: {
 // local view state. Both the saved-variant editor and the legacy unsaved
 // preview render through this component.
 export function FontEditor({
-  font, settings: storedSettings, sampleText, onSettings, onSampleText, onReset, resetDisabled,
-  fontReady, fontLoadError, previewStatus, onStatus,
-  appearance = "classic", sidebarHead, sidebarStart, specimenInheritance,
+  font,
+  settings: storedSettings,
+  sampleText,
+  onSettings,
+  onSampleText,
+  onReset,
+  resetDisabled,
+  fontReady,
+  fontLoadError,
+  previewStatus,
+  onStatus,
+  appearance = "classic",
+  sidebarHead,
+  sidebarStart,
+  specimenInheritance,
 }: FontEditorProps): React.JSX.Element {
-  const { zoom, canvas: { palette: paletteId, inverse } } = useDisplayPreferences();
+  const {
+    zoom,
+    canvas: { palette: paletteId, inverse },
+    device: deviceViewing,
+    onDevice,
+  } = useDisplayPreferences();
+  const catalogDevice = deviceById(DEVICE_CATALOG, deviceViewing.device);
+  const unknownDevice = deviceViewing.device !== null && !catalogDevice ? deviceViewing.device : null;
   const { available: rendererAvailable } = useRenderer();
   const { presets, ready: palettesReady, error: paletteError, retry: retryPalettes } = usePalettes();
   const preset = resolvePalette(presets, storedSettings.paletteId);
@@ -103,7 +157,20 @@ export function FontEditor({
     onSettings(currentPreviewSettings({ ...settings, ...next }));
   };
 
-  const exportControl = <PlaydateExport key={font.id} fontId={font.id} name={displayName(font)} settings={settings} ready={fontReady} />;
+  const availableRanges = React.useMemo(
+    () => (font.metadata.coverage?.ranges ?? []).map(([start, end]) => ({ start, end })),
+    [font],
+  );
+  const exportControl = (
+    <PlaydateExport
+      key={font.id}
+      fontId={font.id}
+      name={displayName(font)}
+      settings={settings}
+      ready={fontReady}
+      availableRanges={availableRanges}
+    />
+  );
   const disabled = rendererAvailable !== true;
   const specimenProps = {
     controlId: font.id,
@@ -117,23 +184,82 @@ export function FontEditor({
   const fontControls = (
     <ControlSection title="Font" icon={ALargeSmall} layer="font" appearance={appearance}>
       <FontSizeControl id={`size-${font.id}`} sizePx={settings.sizePx} onSize={(sizePx) => patch({ sizePx })} />
-      <AxisControls appearance="embedded" font={font} axes={settings.axes} advancedOpen={advancedOpen}
-        onAxes={(axes) => patch({ axes })} onAdvancedOpen={setAdvancedOpen} />
+      <AxisControls
+        appearance="embedded"
+        font={font}
+        axes={settings.axes}
+        advancedOpen={advancedOpen}
+        onAxes={(axes) => patch({ axes })}
+        onAdvancedOpen={setAdvancedOpen}
+      />
     </ControlSection>
   );
-  const fittingControls = <FittingControls profile={settings.profile} stemFitting={settings.stemFitting}
-    diagonalFitting={settings.diagonalFitting} disabled={disabled}
-    hasFontHints={font.metadata.font_hints === true}
-    onStemFitting={(stemFitting) => patch({ stemFitting })}
-    onDiagonalFitting={(diagonalFitting) => patch({ diagonalFitting })} />;
-  const outputControls = <>
-    <OutputControls presets={presets} paletteId={preset.id}
-      disabled={disabled || !palettesReady} onPalette={(id) => patch({ paletteId: id, profile: paletteProfile(resolvePalette(presets, id)) })} />
-    {paletteError && <p role="alert">{paletteError} <button onClick={retryPalettes}>Retry</button></p>}
-  </>;
-  const layoutControls = <LayoutControls fontId={font.id} spacingPx={settings.letterSpacingPx}
-    kerning={settings.kerning} onSpacing={(letterSpacingPx) => patch({ letterSpacingPx })}
-    onKerning={(kerning) => patch({ kerning })} />;
+  const fittingControls = (
+    <FittingControls
+      profile={settings.profile}
+      stemFitting={settings.stemFitting}
+      diagonalFitting={settings.diagonalFitting}
+      disabled={disabled}
+      hasFontHints={font.metadata.font_hints === true}
+      onStemFitting={(stemFitting) => patch({ stemFitting })}
+      onDiagonalFitting={(diagonalFitting) => patch({ diagonalFitting })}
+    />
+  );
+  const outputControls = (
+    <>
+      <OutputControls
+        presets={presets}
+        paletteId={preset.id}
+        disabled={disabled || !palettesReady}
+        onPalette={(id) => patch({ paletteId: id, profile: paletteProfile(resolvePalette(presets, id)) })}
+      />
+      {paletteError && (
+        <p role="alert">
+          {paletteError} <button onClick={retryPalettes}>Retry</button>
+        </p>
+      )}
+    </>
+  );
+  const layoutControls = (
+    <LayoutControls
+      fontId={font.id}
+      spacingPx={settings.letterSpacingPx}
+      kerning={settings.kerning}
+      onSpacing={(letterSpacingPx) => patch({ letterSpacingPx })}
+      onKerning={(kerning) => patch({ kerning })}
+    />
+  );
+  const deviceControls = (
+    <DeviceControls
+      deviceId={catalogDevice ? catalogDevice.id : null}
+      unknownDevice={unknownDevice}
+      scale={deviceViewing.scale}
+      onDevice={(device) => onDevice({ device })}
+      onScale={(scale) => onDevice({ scale })}
+    />
+  );
+  const devicePreview = catalogDevice && (
+    <DevicePreview
+      key={catalogDevice.id}
+      fontId={font.id}
+      text={sampleText}
+      sizePx={settings.sizePx}
+      axes={settings.axes}
+      profile={settings.profile}
+      role={settings.renderer}
+      spacing={settings.letterSpacingPx}
+      kerning={settings.kerning}
+      stemFitting={settings.stemFitting}
+      diagonalFitting={settings.diagonalFitting}
+      monoRaster={settings.monoRaster}
+      rasterization={settings.rasterization}
+      zoom={zoom}
+      palette={colors}
+      deviceId={catalogDevice.id}
+      scale={deviceViewing.scale}
+      onStatus={onStatus}
+    />
+  );
   const pipelineControls = (
     <>
       <ControlSection title="Fitting" icon={ScanLine} layer="fitting" appearance={appearance}>
@@ -145,6 +271,9 @@ export function FontEditor({
       <ControlSection title="Layout" icon={MoveHorizontal} layer="layout" appearance={appearance}>
         {layoutControls}
       </ControlSection>
+      <ControlSection title="Device" icon={Monitor} layer="device" appearance={appearance}>
+        {deviceControls}
+      </ControlSection>
     </>
   );
 
@@ -153,19 +282,35 @@ export function FontEditor({
     const statusText = previewStatus || fontLoadError;
     return (
       <>
-        <aside aria-label="Font" className="studio-card flex w-full shrink-0 flex-col gap-5 border-b border-studio-border bg-font-card p-4 lg:h-full lg:min-h-0 lg:w-96 lg:overflow-y-auto lg:border-r lg:border-b-0">
+        <aside
+          aria-label="Font"
+          className="studio-card flex w-full shrink-0 flex-col gap-5 border-b border-studio-border bg-font-card p-4 lg:h-full lg:min-h-0 lg:w-96 lg:overflow-y-auto lg:border-r lg:border-b-0"
+        >
           {sidebarStart}
           {fontControls}
         </aside>
-        <section id={`family-${font.id}`} aria-label="Variant preview" aria-labelledby={`heading-${font.id}`} className="family min-w-0 flex-1 bg-studio-inset p-4 sm:p-6 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+        <section
+          id={`family-${font.id}`}
+          aria-label="Variant preview"
+          aria-labelledby={`heading-${font.id}`}
+          className="family min-w-0 flex-1 bg-studio-inset p-4 sm:p-6 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain"
+        >
           <div aria-label="Variant controls" role="group" className="mx-auto flex w-full max-w-[60rem] flex-col gap-6">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <h2 id={`heading-${font.id}`} className="m-0 min-w-0 font-display text-[16px] leading-6 font-bold tracking-[0.4px] text-studio-foreground">
+              <h2
+                id={`heading-${font.id}`}
+                className="m-0 min-w-0 font-display text-[16px] leading-6 font-bold tracking-[0.4px] text-studio-foreground"
+              >
                 {displayName(font)}
               </h2>
-              {font.source === "bundled" && <Badge variant="outline" className="shrink-0 border-studio-border bg-studio-inset px-2 py-0.5 font-studio text-[9px] leading-4 font-bold text-studio-muted shadow-studio-inset">
-                Bundled
-              </Badge>}
+              {font.source === "bundled" && (
+                <Badge
+                  variant="outline"
+                  className="shrink-0 border-studio-border bg-studio-inset px-2 py-0.5 font-studio text-[9px] leading-4 font-bold text-studio-muted shadow-studio-inset"
+                >
+                  Bundled
+                </Badge>
+              )}
             </div>
             {rendererAvailable === false && (
               <section className="content-state my-6 max-w-[45rem] leading-[1.6]" role="alert">
@@ -173,7 +318,14 @@ export function FontEditor({
               </section>
             )}
             {sidebarHead}
-            <SpecimenBlock {...specimenProps} appearance={appearance} title="Preview" hideTextLabel inlinePreset insetSampleText>
+            <SpecimenBlock
+              {...specimenProps}
+              appearance={appearance}
+              title="Preview"
+              hideTextLabel
+              inlinePreset
+              insetSampleText
+            >
               <CardContent className="min-w-0">
                 <div
                   data-variant-paper
@@ -181,7 +333,12 @@ export function FontEditor({
                   style={{ backgroundColor: frame.paperCss, borderColor: frame.borderCss }}
                 >
                   <div className="flex w-full min-w-0 items-center justify-between gap-3 font-studio text-[9px] leading-4">
-                    <span data-status role="status" className="min-w-0 flex-1 text-left [overflow-wrap:anywhere]" style={{ color: frame.mutedCss }}>
+                    <span
+                      data-status
+                      role="status"
+                      className="min-w-0 flex-1 text-left [overflow-wrap:anywhere]"
+                      style={{ color: frame.mutedCss }}
+                    >
                       {statusText}
                     </span>
                     <span className="shrink-0" style={{ color: frame.mutedCss }}>
@@ -210,16 +367,33 @@ export function FontEditor({
                         onStatus={onStatus}
                       />
                     ) : (
-                      <p className="m-0 text-[.8rem]" role="status" style={{ color: frame.mutedCss }}>Loading preview…</p>
+                      <p className="m-0 text-[.8rem]" role="status" style={{ color: frame.mutedCss }}>
+                        Loading preview…
+                      </p>
                     )}
                   </div>
                 </div>
               </CardContent>
             </SpecimenBlock>
+            {devicePreview && (
+              <section
+                aria-label={`${catalogDevice?.label} preview`}
+                data-device-section
+                className="overflow-x-auto py-2"
+              >
+                <h3 className="m-0 mb-2 text-[14px] leading-5 font-bold text-studio-foreground">
+                  {catalogDevice?.label}
+                </h3>
+                {devicePreview}
+              </section>
+            )}
             <Card role="group" aria-labelledby={`rendering-${font.id}`}>
               <CardHeader>
                 <CardTitle asChild>
-                  <h2 id={`rendering-${font.id}`}><SlidersHorizontal aria-hidden="true" className="size-3 shrink-0" />Rendering &amp; spacing</h2>
+                  <h2 id={`rendering-${font.id}`}>
+                    <SlidersHorizontal aria-hidden="true" className="size-3 shrink-0" />
+                    Rendering &amp; spacing
+                  </h2>
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid gap-6 xl:grid-cols-3">
@@ -232,6 +406,9 @@ export function FontEditor({
                 <RenderingSection title="Spacing" id={`spacing-options-${font.id}`} layer="layout">
                   {layoutControls}
                 </RenderingSection>
+                <RenderingSection title="Device" id={`device-options-${font.id}`} layer="device">
+                  {deviceControls}
+                </RenderingSection>
               </CardContent>
             </Card>
             {exportControl}
@@ -239,7 +416,10 @@ export function FontEditor({
               <Card>
                 <CardHeader>
                   <CardTitle asChild>
-                    <h3><FileText aria-hidden="true" className="size-3 shrink-0" />License</h3>
+                    <h3>
+                      <FileText aria-hidden="true" className="size-3 shrink-0" />
+                      License
+                    </h3>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -281,11 +461,16 @@ export function FontEditor({
           </p>
         )}
         <section className="interactive-specimen mt-0 mb-7">
-          <SpecimenBlock {...specimenProps} appearance={appearance} title="Interactive specimen" status={
-            <CardDescription data-status role="status" hidden={!previewStatus && !fontLoadError}>
-              {previewStatus || fontLoadError}
-            </CardDescription>
-          }>
+          <SpecimenBlock
+            {...specimenProps}
+            appearance={appearance}
+            title="Interactive specimen"
+            status={
+              <CardDescription data-status role="status" hidden={!previewStatus && !fontLoadError}>
+                {previewStatus || fontLoadError}
+              </CardDescription>
+            }
+          >
             {fontReady ? (
               <PreviewCanvas
                 key={font.id}
@@ -306,10 +491,22 @@ export function FontEditor({
                 onStatus={onStatus}
               />
             ) : (
-              <p className="mx-4 mb-4 text-[.8rem] text-soft" role="status">Loading preview…</p>
+              <p className="mx-4 mb-4 text-[.8rem] text-soft" role="status">
+                Loading preview…
+              </p>
             )}
           </SpecimenBlock>
         </section>
+        {devicePreview && (
+          <section
+            aria-label={`${catalogDevice?.label} preview`}
+            data-device-section
+            className="mt-0 mb-7 overflow-x-auto py-2"
+          >
+            <h3 className="mb-[.65rem] text-[1.1rem] font-[650] tracking-[-.01em]">{catalogDevice?.label}</h3>
+            {devicePreview}
+          </section>
+        )}
         {exportControl}
       </section>
     </>

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YinYangFit-inspired interactive spacing feasibility</title>
+<style>
+:root { color-scheme: light; }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0;
+  color: #161616; background: #ffffff; line-height: 1.45; }
+header, main { max-width: 72rem; margin: 0 auto; padding: 1rem 1.25rem; }
+header { border-bottom: 1px solid #d4d4d4; }
+h1 { font-size: 1.35rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.05rem; margin: 1.5rem 0 .5rem; }
+p.lede { margin: .25rem 0; color: #333; max-width: 60rem; }
+p.pending { background: #f4f4f4; border: 1px solid #d4d4d4; padding: .6rem .8rem;
+  max-width: 60rem; }
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem; margin-top: 1rem; }
+fieldset { border: 1px solid #d4d4d4; padding: .7rem .9rem 1rem; margin: 0; }
+legend { font-weight: 600; padding: 0 .3rem; }
+label.row { display: flex; justify-content: space-between; font-weight: 600; }
+output { font-variant-numeric: tabular-nums; color: #333; }
+input[type="range"] { width: 100%; }
+select, button { font: inherit; padding: .3rem .6rem; }
+button { background: #161616; color: #fff; border: 1px solid #161616; cursor: pointer; }
+button.secondary { background: #fff; color: #161616; }
+table { border-collapse: collapse; margin-top: .75rem; font-size: .85rem; }
+th, td { border: 1px solid #d4d4d4; padding: .25rem .5rem; text-align: right;
+  font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+tr.chosen td { background: #e8f0ee; font-weight: 600; }
+tr.invalid td { color: #737373; }
+canvas { image-rendering: pixelated; border: 1px solid #d4d4d4; background: #fff; }
+.views { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; }
+figure { margin: 0; }
+figcaption { font-size: .8rem; color: #333; margin-top: .25rem; max-width: 22rem; }
+.meta { font-size: .8rem; color: #333; }
+code { font-size: .85em; }
+.sources { font-size: .85rem; max-width: 60rem; }
+.wordgap { font-size: .8rem; color: #333; }
+</style>
+</head>
+<body>
+<header>
+<h1>YinYangFit-inspired interactive spacing feasibility</h1>
+<p class="lede">Isolated experiment: three global controls rescore integer pair
+placements on delivered Mono and Gray cells. Glyph bitmaps never change; only
+whole-pixel origin steps move. Face and corner contact is permitted; occupied-cell
+overlap is forbidden and recorded.</p>
+<p class="pending"><strong>Not optically approved.</strong> Mechanical evidence only.
+Every slider position is an exactly precomputed setting (sliders snap to evaluated
+grid points; nothing is interpolated). This page is a fixed precomputed grid over
+fixed captured datasets and words: no live scorer, no arbitrary text. Boundary minima
+and invalid candidates are shown, not hidden. Unassessed visual findings stay pending
+under the evaluation rules.</p>
+</header>
+<main>
+<section aria-label="Data and controls">
+<div class="controls">
+<fieldset><legend>Dataset</legend>
+<label class="row" for="yy-dataset">Delivered cells</label>
+<select id="yy-dataset"></select>
+<p class="meta" id="yy-dataset-meta"></p>
+</fieldset>
+<fieldset><legend>Target cohesion</legend>
+<label class="row" for="yy-cohesion">Desired interaction <output id="yy-cohesion-v"></output></label>
+<input type="range" id="yy-cohesion" min="0" max="8" step="1" value="4">
+<p class="meta">Project-hypothesis set-point for the integer search (adapted from
+Electric Bubble). Low values loosen spacing; high values tighten it. Endpoints can
+saturate at the candidate-domain edge; the table flags those boundary minima.</p>
+</fieldset>
+<fieldset><legend>Interaction reach (px)</legend>
+<label class="row" for="yy-scale">Radial knee <output id="yy-scale-v"></output></label>
+<input type="range" id="yy-scale" min="0" max="3" step="1" value="2">
+<p class="meta">Larger reach weights distant ink more; smaller reach localizes the
+interaction to the gap. A radial knee in pixels, not V1 feature-scale filter
+weighting; the stored field keeps the compatible name feature_scale.</p>
+</fieldset>
+<fieldset><legend>Proximity falloff</legend>
+<label class="row" for="yy-falloff">Exponent q <output id="yy-falloff-v"></output></label>
+<input type="range" id="yy-falloff" min="0" max="3" step="1" value="2">
+<p class="meta">Radial decay shape: steeper falloff (larger q) weights near ink more
+sharply. Not an independently implemented crowding penalty.</p>
+</fieldset>
+</div>
+<p><button id="yy-reset" type="button">Reset to defaults</button>
+<span class="meta" id="yy-identity"></span></p>
+</section>
+<section aria-label="Pair inspection">
+<h2>Pair inspection</h2>
+<p><label for="yy-pair">Pair</label> <select id="yy-pair"></select>
+<label for="yy-zoom">Magnification</label>
+<select id="yy-zoom"><option value="6">6x</option><option value="10" selected>10x</option></select></p>
+<div class="views">
+<figure><canvas id="yy-metric1"></canvas>
+<figcaption id="yy-metric1-cap">Metric placement, native size.</figcaption></figure>
+<figure><canvas id="yy-metricN"></canvas>
+<figcaption>Metric placement, magnified. Reference control: per-pair rounded step
+(word draws accumulate fractionally; see the captured-source baseline below).</figcaption></figure>
+<figure><canvas id="yy-chosen1"></canvas>
+<figcaption id="yy-chosen1-cap">Chosen placement, native size.</figcaption></figure>
+<figure><canvas id="yy-chosenN"></canvas>
+<figcaption id="yy-chosenN-cap">Chosen placement, magnified.</figcaption></figure>
+</div>
+<div id="yy-table"></div>
+</section>
+<section aria-label="Short words">
+<h2>Short words</h2>
+<p><label for="yy-word">Text</label> <select id="yy-word"></select>
+<span class="wordgap" id="yy-word-gaps"></span></p>
+<div class="views">
+<figure><canvas id="yy-word1"></canvas><figcaption>Experiment word layout, native size:
+cumulative whole-pixel chosen steps, each resolved around its metric-rounded pair center.</figcaption></figure>
+<figure><canvas id="yy-wordN"></canvas><figcaption>Experiment word layout, magnified 4x.</figcaption></figure>
+</div>
+<p class="meta">Captured-source baseline, same word, same delivered cells: fractional
+26.6 pen accumulates advance plus pair adjustment per gap and only draw origins
+round, as in the native surface. For Gray this differs from per-pair rounded sums;
+for Mono both policies agree. The experiment layout above does not retain that
+fractional policy.</p>
+<p><span class="wordgap" id="yy-cword-gaps"></span></p>
+<div class="views">
+<figure><canvas id="yy-cword1"></canvas><figcaption>Captured-source word layout, native size.</figcaption></figure>
+<figure><canvas id="yy-cwordN"></canvas><figcaption>Captured-source word layout, magnified 4x.</figcaption></figure>
+</div>
+</section>
+<section aria-label="Provenance" class="sources">
+<h2>Model, sources and departures</h2>
+<ul>
+<li>Nearest-distance probe within YinYangFit feasibility work: a specifically
+sourced Electric Bubble-inspired project hypothesis, not a reproduction of
+YinYangFit&apos;s oriented model and not proof of its approach.</li>
+<li>Radial factors r^-q and r^-(q+1) with q near 2 borrow only the field shapes
+from the direct approximation (primary reference). No oriented convolution
+kernels, no ratio distance estimator, no multiscale V1C responses and no
+multiple contour support are implemented; those are explicit departures, and the
+single-nearest-sample rule ignores support multiplicity and orientation.</li>
+<li>Nearest-sample coverage takes each background point&apos;s nearest ink
+sample&apos;s coverage with no integration over support; the regularized power
+kernel g/(1+(r/scale)^q) is finite at r = 0 and claims no singularity treatment.
+The four same-named pair-field diagnostics record this probe&apos;s behavior and
+do not reproduce upstream oriented quantities.</li>
+<li>Attention-normalized mean interaction and the integer search toward a desired
+value follow Electric Bubble&apos;s browser prototype (superseded by YinYangFit).
+Using that normalization as the aggregation rule is an explicit project
+hypothesis, not an upstream specification; the JAX notebook defines no scalar reduction.</li>
+<li>Equidistance and opposing-gradient attention factors follow Electric Bubble;
+the vertical-position factor, which upstream parses but does not apply, is omitted here too.
+Single-scale evaluation is an acknowledged compromise from the distance-transform
+alternative, which assumes one dominant grouping scale.</li>
+<li>Gray coverage is used linearly as delivered (3-bit codes 0-7 mapped to 0-1)
+without thresholding, and exported to the page without rounding. Display mapping
+is a documented assumption, not a claim about luminance.</li>
+<li>Tie-break toward the metric step, the five-candidate domain (metric +/- 2 px),
+and the metric-nearest fallback are project choices, recorded per pair. The
+minimizing set anchors at the global valid minimum, then admits every valid
+candidate within tolerance; selection mirrors that rule exactly.</li>
+<li>Word layouts distinguish three policies: metric-rounded pair search centers,
+the experiment&apos;s cumulative whole-pixel word layout, and the captured-source
+fractional word baseline shown beside it.</li>
+</ul>
+<p class="meta" id="yy-model"></p>
+</section>
+</main>
+<script type="application/json" id="yy-data">
+__YY_DATA__
+</script>
+<script>
+__YY_APP_JS__
+</script>
+<script>
+__YY_WIRING_JS__
+</script>
+</body>
+</html>

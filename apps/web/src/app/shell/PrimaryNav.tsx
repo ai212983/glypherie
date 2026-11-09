@@ -1,16 +1,26 @@
 import { NavLink } from "../../components/NavLink";
 
 interface PrimaryNavProps {
-  active: "fonts" | "palettes" | null;
+  active: "fonts" | "palettes" | "screen" | null;
   fontsHref: string;
   palettesHref: string;
+  screenHref: string;
   onFonts: () => void;
   onPalettes: () => void;
+  onScreen: () => void;
 }
 
 // Top-level app navigation. Real anchors keep native behaviors (new tabs,
 // direct loads); the active section is exposed through aria-current.
-export function PrimaryNav({ active, fontsHref, palettesHref, onFonts, onPalettes }: PrimaryNavProps): React.JSX.Element {
+export function PrimaryNav({
+  active,
+  fontsHref,
+  palettesHref,
+  screenHref,
+  onFonts,
+  onPalettes,
+  onScreen,
+}: PrimaryNavProps): React.JSX.Element {
   return (
     <nav aria-label="Primary" className="site-header__navlinks">
       <NavLink
@@ -28,6 +38,14 @@ export function PrimaryNav({ active, fontsHref, palettesHref, onFonts, onPalette
         aria-current={active === "palettes" ? "page" : undefined}
       >
         Palettes
+      </NavLink>
+      <NavLink
+        href={screenHref}
+        data-primary-nav="screen"
+        onNavigate={onScreen}
+        aria-current={active === "screen" ? "page" : undefined}
+      >
+        Screen
       </NavLink>
     </nav>
   );

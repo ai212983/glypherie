@@ -11,14 +11,16 @@ export function SpecimenFrame({ frame, className, style, ...props }: SpecimenFra
     <div
       {...props}
       className={cn("rounded-[12px] border p-4 shadow-[inset_0_2px_4px_rgb(0_0_0/5%)]", className)}
-      style={{
-        backgroundColor: frame.paperCss,
-        borderColor: frame.borderCss,
-        "--specimen-paper": frame.paperCss,
-        "--specimen-ink": frame.inkCss,
-        "--specimen-border": frame.borderCss,
-        ...style,
-      } as React.CSSProperties}
+      style={
+        {
+          backgroundColor: frame.paperCss,
+          borderColor: frame.borderCss,
+          "--specimen-paper": frame.paperCss,
+          "--specimen-ink": frame.inkCss,
+          "--specimen-border": frame.borderCss,
+          ...style,
+        } as React.CSSProperties
+      }
     />
   );
 }
@@ -28,7 +30,13 @@ interface SpecimenFooterProps extends React.ComponentProps<"div"> {
   bordered?: boolean;
 }
 
-export function SpecimenFooter({ frame, bordered = true, className, style, ...props }: SpecimenFooterProps): React.JSX.Element {
+export function SpecimenFooter({
+  frame,
+  bordered = true,
+  className,
+  style,
+  ...props
+}: SpecimenFooterProps): React.JSX.Element {
   return (
     <div
       {...props}
