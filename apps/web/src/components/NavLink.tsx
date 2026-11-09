@@ -5,9 +5,14 @@ interface NavLinkProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
 }
 
 function isPlainLeftClick(event: React.MouseEvent): boolean {
-  return event.button === 0
-    && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
-    && !event.defaultPrevented;
+  return (
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !event.defaultPrevented
+  );
 }
 
 // Real anchor for in-app routes: unmodified primary clicks move through

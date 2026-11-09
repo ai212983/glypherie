@@ -90,26 +90,31 @@ function toPolicyInput(declared: DeclaredRenderer): PreviewPolicyInput {
     ...(typeof declared.diagonal_fitting === "boolean" ? { diagonalFitting: declared.diagonal_fitting } : {}),
     ...(typeof declared.dropout === "string" ? { dropout: declared.dropout } : {}),
     ...(typeof declared.include_stubs === "boolean" ? { includeStubs: declared.include_stubs } : {}),
-    ...(typeof declared.font_instructions === "boolean"
-      ? { fontInstructions: declared.font_instructions }
-      : {}),
+    ...(typeof declared.font_instructions === "boolean" ? { fontInstructions: declared.font_instructions } : {}),
   };
 }
 
 function validateCaptureInputs(
-  caseId: string, entry: Record<string, unknown>, owner: Record<string, unknown>, capture: Record<string, unknown>,
+  caseId: string,
+  entry: Record<string, unknown>,
+  owner: Record<string, unknown>,
+  capture: Record<string, unknown>,
 ): void {
   const inputs = capture.inputs;
-  if (!isRecord(inputs) || !isRecord(entry.axes)
-    || inputs.family_id !== entry.family_id || inputs.size_px !== entry.size_px
-    || canonicalPreviewPolicyJson(inputs.source_axes) !== canonicalPreviewPolicyJson(entry.axes)
-    || entry.family_id !== owner.family_id || entry.size_px !== owner.size_px) {
+  if (
+    !isRecord(inputs) ||
+    !isRecord(entry.axes) ||
+    inputs.family_id !== entry.family_id ||
+    inputs.size_px !== entry.size_px ||
+    canonicalPreviewPolicyJson(inputs.source_axes) !== canonicalPreviewPolicyJson(entry.axes) ||
+    entry.family_id !== owner.family_id ||
+    entry.size_px !== owner.size_px
+  ) {
     fail(caseId, "capture inputs do not match the configured matrix case");
   }
   const axes = entry.axes as Record<string, unknown>;
   if (owner.axes !== undefined) {
-    if (!isRecord(owner.axes)
-      || Object.entries(owner.axes).some(([tag, value]) => axes[tag] !== value)) {
+    if (!isRecord(owner.axes) || Object.entries(owner.axes).some(([tag, value]) => axes[tag] !== value)) {
       fail(caseId, "capture inputs do not match configured axes");
     }
   }
@@ -122,7 +127,10 @@ function validateCaptureInputs(
 }
 
 async function validateSampleAssets(
-  caseId: string, assetsDir: string, samples: unknown[], capture: Record<string, unknown>,
+  caseId: string,
+  assetsDir: string,
+  samples: unknown[],
+  capture: Record<string, unknown>,
 ): Promise<void> {
   if (!Array.isArray(capture.samples) || capture.samples.length !== samples.length) {
     fail(caseId, "sample package membership does not match the capture");
@@ -131,9 +139,14 @@ async function validateSampleAssets(
   const packageDir = path.posix.dirname(first.file as string);
   const ids = new Set<string>();
   for (const sample of samples) {
-    if (!isRecord(sample) || typeof sample.id !== "string" || typeof sample.file !== "string"
-      || !/^samples\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\.png$/.test(sample.file)
-      || path.posix.dirname(sample.file) !== packageDir || ids.has(sample.id)) {
+    if (
+      !isRecord(sample) ||
+      typeof sample.id !== "string" ||
+      typeof sample.file !== "string" ||
+      !/^samples\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\.png$/.test(sample.file) ||
+      path.posix.dirname(sample.file) !== packageDir ||
+      ids.has(sample.id)
+    ) {
       fail(caseId, "invalid sample package membership");
     }
     ids.add(sample.id);
@@ -158,11 +171,9 @@ export async function validateLandingCaptures(
   repoRoot: string,
   options: LandingCaptureGuardOptions = {},
 ): Promise<{ checked: number }> {
-  const assetsDir = options.assetsDir
-    ?? path.join(repoRoot, "apps/web/src/app/features/landing/assets/rasterizers");
+  const assetsDir = options.assetsDir ?? path.join(repoRoot, "apps/web/src/app/features/landing/assets/rasterizers");
   const matrixFile = options.matrixFile ?? path.join(assetsDir, "matrix.json");
-  const configFile = options.configFile
-    ?? path.join(repoRoot, "apps/web/scripts/landing-samples/main-page.json");
+  const configFile = options.configFile ?? path.join(repoRoot, "apps/web/scripts/landing-samples/main-page.json");
   let matrix: unknown;
   try {
     matrix = JSON.parse(await fs.readFile(matrixFile, "utf8"));
@@ -202,8 +213,11 @@ export async function validateLandingCaptures(
     if (seen.has(caseId)) fail(caseId, "duplicate matrix case");
     seen.add(caseId);
     const first = entry.samples[0];
-    if (!isRecord(first) || typeof first.file !== "string"
-      || !/^samples\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\.png$/.test(first.file)) {
+    if (
+      !isRecord(first) ||
+      typeof first.file !== "string" ||
+      !/^samples\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\.png$/.test(first.file)
+    ) {
       fail(caseId, "matrix entry has no sample file");
     }
     const owner = owning.get(caseId);
@@ -215,7 +229,10 @@ export async function validateLandingCaptures(
     try {
       capture = JSON.parse(await fs.readFile(captureFile, "utf8"));
     } catch (error) {
-      fail(caseId, `cannot read ${path.relative(repoRoot, captureFile)} (${error instanceof Error ? error.message : String(error)})`);
+      fail(
+        caseId,
+        `cannot read ${path.relative(repoRoot, captureFile)} (${error instanceof Error ? error.message : String(error)})`,
+      );
     }
     if (!isRecord(capture)) fail(caseId, "capture.json is not an object");
     const recorded = declaredFromRecord(capture.renderer_inputs, caseId);
@@ -236,8 +253,7 @@ export async function validateLandingCaptures(
       rasterization: expected.rasterization,
       diagonal_fitting: expected.diagonal_fitting,
     };
-    if (!isRecord(pipeline)
-      || canonicalPreviewPolicyJson(pipeline) !== canonicalPreviewPolicyJson(expectedPipeline)) {
+    if (!isRecord(pipeline) || canonicalPreviewPolicyJson(pipeline) !== canonicalPreviewPolicyJson(expectedPipeline)) {
       fail(caseId, "recorded Glypherie pipeline does not match the resolved policy");
     }
     const scan = capture.glypherie_scan;

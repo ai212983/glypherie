@@ -24,7 +24,11 @@ export function physicalWidthIn(deviceId: string | null): number | null {
 }
 
 export function DeviceControls({
-  deviceId, unknownDevice, scale, onDevice, onScale,
+  deviceId,
+  unknownDevice,
+  scale,
+  onDevice,
+  onScale,
 }: DeviceControlsProps): React.JSX.Element {
   const device = deviceById(DEVICE_CATALOG, deviceId);
   const inches = device ? device.widthPx / device.ppi : null;
@@ -43,7 +47,9 @@ export function DeviceControls({
             <SelectContent>
               <SelectItem value="specimen">Responsive specimen</SelectItem>
               {DEVICE_CATALOG.devices.map((entry) => (
-                <SelectItem key={entry.id} value={entry.id}>{entry.label}</SelectItem>
+                <SelectItem key={entry.id} value={entry.id}>
+                  {entry.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -62,7 +68,9 @@ export function DeviceControls({
           </p>
           <div className="flex items-center justify-between gap-3">
             <Label id="device-scale-label">Size</Label>
-            <TooltipHint content={`Reference size renders at the ${CSS_REFERENCE_PX_PER_IN} CSS px/in reference (unmeasured monitor); Pixel 1:1 maps one device pixel to one monitor pixel.`}>
+            <TooltipHint
+              content={`Reference size renders at the ${CSS_REFERENCE_PX_PER_IN} CSS px/in reference (unmeasured monitor); Pixel 1:1 maps one device pixel to one monitor pixel.`}
+            >
               <ToggleGroup
                 type="single"
                 aria-labelledby="device-scale-label"
@@ -72,8 +80,12 @@ export function DeviceControls({
                   if (next === "actual" || next === "one-to-one") onScale(next);
                 }}
               >
-                <ToggleGroupItem value="actual" aria-label="Actual size">Actual</ToggleGroupItem>
-                <ToggleGroupItem value="one-to-one" aria-label="Pixel 1:1">1:1</ToggleGroupItem>
+                <ToggleGroupItem value="actual" aria-label="Actual size">
+                  Actual
+                </ToggleGroupItem>
+                <ToggleGroupItem value="one-to-one" aria-label="Pixel 1:1">
+                  1:1
+                </ToggleGroupItem>
               </ToggleGroup>
             </TooltipHint>
           </div>

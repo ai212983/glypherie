@@ -22,7 +22,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }): Reac
 
   React.useEffect(() => {
     applyTheme(theme);
-  }, [theme ]);
+  }, [theme]);
 
   const toggle = React.useCallback(() => {
     const next: Theme = (explicit ?? (systemDark ? "dark" : "light")) === "dark" ? "light" : "dark";

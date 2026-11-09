@@ -298,6 +298,5 @@ h5dump -A out/diagnostics/contextual-spacing/yinyang-alternatives/atokern-2017/k
 [source-inventory]: ../../out/diagnostics/contextual-spacing/yinyang-alternatives/source-inventory.json
 [historical-evidence]: ../../out/diagnostics/contextual-spacing/yinyang-alternatives/atokern-2017/model-attributes.txt
 [preprocessing-probe]: ../../out/diagnostics/contextual-spacing/yinyang-alternatives/source-preprocessing-probe.json
-
 [requirements]: https://github.com/simoncozens/atokern/blob/6a315125d2b25548eb664bbae19e57c0b6d4b1d5/requirements.txt
 [historical-readme]: https://github.com/simoncozens/atokern/blob/206672c9ffce15710a02ac3f8fb58a9ee901e167/README.md

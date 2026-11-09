@@ -29,14 +29,19 @@ const fontBytes = (seed = 0): ArrayBuffer =>
   Uint8Array.from({ length: 64 }, (_, i) => (i * 7 + seed) % 251).buffer as ArrayBuffer;
 
 function validInput() {
-  return { bytes: fontBytes(3), fileName: "fixture.ttf", name: "Fixture", metadata: metadata(), source: "uploaded" as const };
+  return {
+    bytes: fontBytes(3),
+    fileName: "fixture.ttf",
+    name: "Fixture",
+    metadata: metadata(),
+    source: "uploaded" as const,
+  };
 }
 
 async function rejectsInvalidInput(input: unknown, pattern: RegExp): Promise<void> {
   await assert.rejects(
     saveFont(getBackend(), input as never),
-    (error: unknown) =>
-      error instanceof DomainError && error.code === "invalid-input" && pattern.test(error.message),
+    (error: unknown) => error instanceof DomainError && error.code === "invalid-input" && pattern.test(error.message),
   );
 }
 

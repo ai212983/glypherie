@@ -33,9 +33,11 @@ export interface LiveVariantList {
 function useVariantList(fontId?: string): LiveVariantList {
   const { attempt, retry } = useQueryAttempt();
   const version = useDomainVersion();
-  const [state, setState] = React.useState<{ status: "loading" | "error" | "ready"; variants: FontVariant[]; message: string }>(
-    { status: "loading", variants: [], message: "" },
-  );
+  const [state, setState] = React.useState<{
+    status: "loading" | "error" | "ready";
+    variants: FontVariant[];
+    message: string;
+  }>({ status: "loading", variants: [], message: "" });
   React.useEffect(() => {
     let live = true;
     void listVariants(fontId).then(
@@ -46,7 +48,9 @@ function useVariantList(fontId?: string): LiveVariantList {
         if (live) setState({ status: "error", variants: [], message: queryMessage(error) });
       },
     );
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [fontId, attempt, version]);
   return { ...state, retry };
 }
@@ -82,7 +86,9 @@ export function useLiveVariant(id: string): LiveVariant {
         if (live) setState({ status: "error", message: queryMessage(error), retry });
       },
     );
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [id, attempt, version, retry]);
   return state;
 }

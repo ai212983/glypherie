@@ -6,17 +6,22 @@ import path from "node:path";
 const inputs = ["apps/web", "crates/wasm", "crates/generator", "fonts", "justfile", ".node-version"];
 
 export function createBuildInfo(root: string, version: string, devServer: boolean, now = new Date()) {
-  const git = (...args: string[]): string => execFileSync("git", args, {
-    cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
-  }).trim();
+  const git = (...args: string[]): string =>
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
   let commit: string | null = null;
   let localFingerprint: string | null = null;
   try {
     commit = git("rev-parse", "HEAD");
-    const changed = new Set([
-      ...git("diff", "--name-only", "-z", "HEAD", "--", ...inputs).split("\0"),
-      ...git("ls-files", "--others", "--exclude-standard", "-z", "--", ...inputs).split("\0"),
-    ].filter(Boolean));
+    const changed = new Set(
+      [
+        ...git("diff", "--name-only", "-z", "HEAD", "--", ...inputs).split("\0"),
+        ...git("ls-files", "--others", "--exclude-standard", "-z", "--", ...inputs).split("\0"),
+      ].filter(Boolean),
+    );
     if (changed.size > 0) {
       const hash = createHash("sha256");
       for (const file of [...changed].sort()) {
@@ -41,12 +46,23 @@ export function createBuildInfo(root: string, version: string, devServer: boolea
   const local = devServer || localFingerprint !== null || commit === null;
   let renderer: string | null = null;
   try {
-    renderer = createHash("sha256").update(readFileSync(path.join(root,
-      "apps/web/src/app/renderer/wasm/font_wasm_bg.wasm"))).digest("hex");
-  } catch { /* The dev server can run with the renderer unavailable. */ }
+    renderer = createHash("sha256")
+      .update(readFileSync(path.join(root, "apps/web/src/app/renderer/wasm/font_wasm_bg.wasm")))
+      .digest("hex");
+  } catch {
+    /* The dev server can run with the renderer unavailable. */
+  }
   return {
     version: local ? `${version}-dev` : version,
-    build: now.toISOString().slice(2, 16).replace(/[-:T]/g, "").replace(/^(\d{6})(\d{4})$/, "$1-$2"),
-    builtAt: now.toISOString(), commit, localFingerprint, renderer, devServer,
+    build: now
+      .toISOString()
+      .slice(2, 16)
+      .replace(/[-:T]/g, "")
+      .replace(/^(\d{6})(\d{4})$/, "$1-$2"),
+    builtAt: now.toISOString(),
+    commit,
+    localFingerprint,
+    renderer,
+    devServer,
   };
 }

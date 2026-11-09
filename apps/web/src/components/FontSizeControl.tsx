@@ -20,7 +20,9 @@ export function FontSizeControl({ id, sizePx, disabled = false, onSize }: FontSi
   return (
     <div className="interactive-field flex min-w-0 flex-col gap-2" data-font-size-control data-value={sizePx}>
       <div className="flex items-center justify-between gap-3">
-        <Label id={labelId} htmlFor={inputId} variant="studio">Size</Label>
+        <Label id={labelId} htmlFor={inputId} variant="studio">
+          Size
+        </Label>
         <div className="relative w-24 shrink-0">
           <Input
             id={inputId}
@@ -45,7 +47,12 @@ export function FontSizeControl({ id, sizePx, disabled = false, onSize }: FontSi
               if (next !== sizePx) onSize(next);
             }}
           />
-          <span id={`${inputId}-unit`} className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted-foreground">px</span>
+          <span
+            id={`${inputId}-unit`}
+            className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted-foreground"
+          >
+            px
+          </span>
         </div>
       </div>
       <div className="px-2">
@@ -86,7 +93,7 @@ export function FontSizeControl({ id, sizePx, disabled = false, onSize }: FontSi
               aria-pressed={sizePx === size}
               disabled={disabled}
               className="absolute top-0 flex h-6 min-w-6 -translate-x-1/2 flex-col items-center rounded-sm focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 aria-pressed:font-bold aria-pressed:text-foreground"
-              style={{ left: `${index / (FONT_SIZE_STOPS.length - 1) * 100}%` }}
+              style={{ left: `${(index / (FONT_SIZE_STOPS.length - 1)) * 100}%` }}
               onClick={() => onSize(size)}
             >
               <span aria-hidden="true" className="mb-0.5 h-1 w-px bg-current" />

@@ -15,7 +15,8 @@ const { Font } = require(fileURLToPath(new URL("../pkg-nodejs/font_wasm.js", imp
 const cases = [];
 function add(font, extra = {}) {
   cases.push({
-    id: `case-${cases.length + 1}`, font_file: path.join(root, font),
+    id: `case-${cases.length + 1}`,
+    font_file: path.join(root, font),
     spec: { text: "AV To Qxy", width: 160, height: 80, ...extra },
   });
 }
@@ -37,7 +38,10 @@ for (const wght of [400, 700]) {
     for (const output_bits of [1, 3]) {
       for (const kerning of [true, false]) {
         add("fonts/RobotoFlex.ttf", {
-          text: "$A A$ $$ AV To", size_px: 14, output_bits, kerning,
+          text: "$A A$ $$ AV To",
+          size_px: 14,
+          output_bits,
+          kerning,
           axes: { wght, slnt, opsz: 14, wdth: 100 },
         });
       }
@@ -47,16 +51,24 @@ for (const wght of [400, 700]) {
 for (const hinting of ["none", "auto", "interpreter", "auto_fallback"]) {
   for (const output_bits of [1, 3]) {
     add("fonts/Roboto.ttf", {
-      hinting, output_bits, size_px: 18,
-      foreground: [23, 48, 149, 200], background: [33, 27, 90, 40],
+      hinting,
+      output_bits,
+      size_px: 18,
+      foreground: [23, 48, 149, 200],
+      background: [33, 27, 90, 40],
     });
   }
 }
 for (const wrap of ["clip", "word", "char"]) {
   for (const align of ["left", "center", "right"]) {
     add("fonts/Literata.ttf", {
-      wrap, align, text: " AV AV ToTo\r\nQxy\nАБ Ω ", width: 45, height: 50,
-      axes: { wght: 400, opsz: 16 }, output_bits: 3,
+      wrap,
+      align,
+      text: " AV AV ToTo\r\nQxy\nАБ Ω ",
+      width: 45,
+      height: 50,
+      axes: { wght: 400, opsz: 16 },
+      output_bits: 3,
     });
   }
 }
@@ -68,13 +80,22 @@ for (const font of ["static-cff.otf", "variable-cff2.otf"]) {
 }
 add("fonts/Roboto.ttf", { text: "A", output_bits: 3, foreground: [20, 30, 40, 255], background: [0, 0, 0, 0] });
 add("fonts/Roboto.ttf", {
-  text: "A", output_bits: 2, background: [35, 46, 57, 60],
-  palette: [[0, 0, 0, 0], [123, 45, 67, 255], [1, 34, 89, 128], [29, 13, 63, 255]],
+  text: "A",
+  output_bits: 2,
+  background: [35, 46, 57, 60],
+  palette: [
+    [0, 0, 0, 0],
+    [123, 45, 67, 255],
+    [1, 34, 89, 128],
+    [29, 13, 63, 255],
+  ],
 });
 
-const native = spawnSync("cargo", [
-  "run", "--locked", "--quiet", "--manifest-path", "crates/wasm/Cargo.toml", "--example", "parity_reference",
-], { cwd: root, input: JSON.stringify(cases), encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+const native = spawnSync(
+  "cargo",
+  ["run", "--locked", "--quiet", "--manifest-path", "crates/wasm/Cargo.toml", "--example", "parity_reference"],
+  { cwd: root, input: JSON.stringify(cases), encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+);
 assert.equal(native.error, undefined, String(native.error));
 assert.equal(native.status, 0, native.stderr);
 const expected = JSON.parse(native.stdout);
@@ -88,7 +109,11 @@ try {
     if (!fonts.has(font_file)) fonts.set(font_file, new Font(fs.readFileSync(font_file)));
     const font = fonts.get(font_file);
     if (reference.error) {
-      assert.throws(() => font.render(spec), (error) => String(error) === reference.error, id);
+      assert.throws(
+        () => font.render(spec),
+        (error) => String(error) === reference.error,
+        id,
+      );
       continue;
     }
     const result = font.render(spec);

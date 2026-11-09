@@ -17,7 +17,13 @@
 // depend on the other browser's storage or preset definitions. Unknown
 // query parameters are preserved; the hosting path prefix is untouched.
 import { cloneKerning, decodeKerning, encodeKerning, type KerningPreference } from "../../../kerning/model.ts";
-import type { MonoRaster, OutputProfile, Rasterization, RendererRole, StemFitting } from "../../../renderer/renderer-types.js";
+import type {
+  MonoRaster,
+  OutputProfile,
+  Rasterization,
+  RendererRole,
+  StemFitting,
+} from "../../../renderer/renderer-types.js";
 import type { VariantSettings } from "../../../variants/model.js";
 import { PREVIEW_MONO_RASTER } from "../../../renderer/render-spec.ts";
 import { resolveWorkingPreviewPolicy } from "../../../renderer/preview-policy.ts";
@@ -91,10 +97,7 @@ function parseBoolParam(value: string | null): boolean | null {
   return null;
 }
 
-export function presetForText(
-  presets: { id: string; content: string }[],
-  text: string,
-): string {
+export function presetForText(presets: { id: string; content: string }[], text: string): string {
   return presets.find((preset) => preset.content === text)?.id ?? "custom";
 }
 
@@ -116,10 +119,7 @@ export function defaultFamilySnapshot(meta: FamilyMeta): FamilySnapshot {
   };
 }
 
-export function defaultSnapshot(
-  metas: FamilyMeta[],
-  defaults: GlobalDefaults,
-): PreviewSnapshot {
+export function defaultSnapshot(metas: FamilyMeta[], defaults: GlobalDefaults): PreviewSnapshot {
   const policy = resolveWorkingPreviewPolicy();
   const families: Record<string, FamilySnapshot> = {};
   for (const meta of metas) families[meta.id] = defaultFamilySnapshot(meta);
@@ -151,22 +151,17 @@ function validateFamilySnapshot(raw: unknown, meta: FamilyMeta): FamilySnapshot 
     }
   }
   const presetIds = new Set([...meta.presets.map((preset) => preset.id), "custom"]);
-  const text = typeof raw.text === "string"
-    ? raw.text.slice(0, MAX_TEXT_LENGTH)
-    : fallback.text;
+  const text = typeof raw.text === "string" ? raw.text.slice(0, MAX_TEXT_LENGTH) : fallback.text;
   return {
     size: typeof raw.size === "number" ? clamp(raw.size, 1, 512, fallback.size) : fallback.size,
     axes,
     spacing: typeof raw.spacing === "number" ? clamp(raw.spacing, -2, 4, 0) : 0,
-    preset: typeof raw.preset === "string" && presetIds.has(raw.preset)
-      ? raw.preset
-      : presetForText(meta.presets, text),
+    preset:
+      typeof raw.preset === "string" && presetIds.has(raw.preset) ? raw.preset : presetForText(meta.presets, text),
     text,
     advancedOpen: raw.advancedOpen === true,
     kerningOpen: raw.kerningOpen === true,
-    kerningFilter: typeof raw.kerningFilter === "string"
-      ? raw.kerningFilter.slice(0, 64)
-      : "",
+    kerningFilter: typeof raw.kerningFilter === "string" ? raw.kerningFilter.slice(0, 64) : "",
   };
 }
 
@@ -188,9 +183,7 @@ export function parseUrlSnapshot(
   const ids = new Set(metas.map((meta) => meta.id));
   const hashId = hashFamilyId(hash ?? "");
   const fontParam = params.get("font");
-  const font = fontParam && ids.has(fontParam)
-    ? fontParam
-    : hashId && ids.has(hashId) ? hashId : defaults.font;
+  const font = fontParam && ids.has(fontParam) ? fontParam : hashId && ids.has(hashId) ? hashId : defaults.font;
   const profileParam = params.get("profile");
   const profile = (PROFILES as readonly string[]).includes(profileParam ?? "")
     ? (profileParam as OutputProfile)
@@ -202,20 +195,24 @@ export function parseUrlSnapshot(
   let familiesRaw: unknown = null;
   const familiesParam = params.get("families");
   if (familiesParam) {
-    try { familiesRaw = JSON.parse(familiesParam); } catch { familiesRaw = null; }
+    try {
+      familiesRaw = JSON.parse(familiesParam);
+    } catch {
+      familiesRaw = null;
+    }
   }
   const families: Record<string, FamilySnapshot> = {};
   for (const meta of metas) {
-    families[meta.id] = validateFamilySnapshot(
-      isRecord(familiesRaw) ? familiesRaw[meta.id] : null,
-      meta,
-    );
+    families[meta.id] = validateFamilySnapshot(isRecord(familiesRaw) ? familiesRaw[meta.id] : null, meta);
   }
   return {
     version: 1,
     font,
     profile,
-    paletteId: /^\d+$/.test(params.get("palette") ?? "") && Number.isSafeInteger(Number(params.get("palette"))) ? Number(params.get("palette")) : 0,
+    paletteId:
+      /^\d+$/.test(params.get("palette") ?? "") && Number.isSafeInteger(Number(params.get("palette")))
+        ? Number(params.get("palette"))
+        : 0,
     pixelAccurate: true,
     stemFitting: (STEM_FITTINGS as readonly string[]).includes(stemParam ?? "")
       ? (stemParam as StemFitting)

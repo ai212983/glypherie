@@ -11,13 +11,21 @@ test("servePrefix teardown resolves with an unfinished request body", { timeout:
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "font-spa-server-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const cleanups: Array<() => unknown> = [];
-  const fake = { after: (fn: () => unknown) => { cleanups.push(fn); } } as Pick<TestContext, "after">;
+  const fake = {
+    after: (fn: () => unknown) => {
+      cleanups.push(fn);
+    },
+  } as Pick<TestContext, "after">;
   const url = await servePrefix(fake as TestContext, root);
   const port = Number(new URL(url).port);
   const client = net.createConnection({ host: "127.0.0.1", port });
-  t.after(() => { client.destroy(); });
+  t.after(() => {
+    client.destroy();
+  });
   await once(client, "connect");
-  client.write("POST /preview/ HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 100000\r\nExpect: 100-continue\r\nConnection: keep-alive\r\n\r\n");
+  client.write(
+    "POST /preview/ HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 100000\r\nExpect: 100-continue\r\nConnection: keep-alive\r\n\r\n",
+  );
   const ack = await once(client, "data");
   assert.match(String(ack), /100 Continue/);
   const limitMs = 5000;
@@ -28,7 +36,9 @@ test("servePrefix teardown resolves with an unfinished request body", { timeout:
   });
   try {
     await Promise.race([
-      (async () => { for (const cleanup of cleanups) await cleanup(); })(),
+      (async () => {
+        for (const cleanup of cleanups) await cleanup();
+      })(),
       deadline,
     ]);
   } finally {

@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  logicalBounds,
-  normalizedSpacing,
-  toRenderSpec,
-} from "../../src/app/renderer/render-spec.ts";
+import { logicalBounds, normalizedSpacing, toRenderSpec } from "../../src/app/renderer/render-spec.ts";
 import type { RGBA } from "../../src/app/renderer/renderer-types.ts";
 import { editKerning, KERNING_METHODS, normalizeKerning, selectKerningMethod } from "../../src/app/kerning/model.ts";
 
@@ -15,16 +11,29 @@ function baseOptions() {
 test("kerning selection forwards only active settings independently of output profile", () => {
   const options = { ...baseOptions(), rasterization: "free_type_mono" as const };
   const state = editKerning(selectKerningMethod(false, "typefacet"), {
-    method: "typefacet", settings: { normalDistanceEm: 0.15, intrusionToleranceEm: 0.025, minimumDistanceEm: 0.02, maxXExtremaOverlapEm: 0.125 },
+    method: "typefacet",
+    settings: {
+      normalDistanceEm: 0.15,
+      intrusionToleranceEm: 0.025,
+      minimumDistanceEm: 0.02,
+      maxXExtremaOverlapEm: 0.125,
+    },
   });
   const typefacet = toRenderSpec({ ...options, kerning: state });
   assert.equal(typefacet.kerning, true, "source fallback is enabled independently of the retained Source toggle");
   assert.deepEqual(typefacet.kerning_method, {
-    method: "typefacet", normal_distance_em: 0.15, intrusion_tolerance_em: 0.025, minimum_distance_em: 0.02, max_x_extrema_overlap_em: 0.125,
+    method: "typefacet",
+    normal_distance_em: 0.15,
+    intrusion_tolerance_em: 0.025,
+    minimum_distance_em: 0.02,
+    max_x_extrema_overlap_em: 0.125,
   });
   const source = toRenderSpec({ ...options, kerning: selectKerningMethod(state, "source") });
   assert.deepEqual(source, toRenderSpec({ ...options, kerning: false }));
-  assert.deepEqual(toRenderSpec({ ...options, kerning: normalizeKerning(true) }), toRenderSpec({ ...options, kerning: true }));
+  assert.deepEqual(
+    toRenderSpec({ ...options, kerning: normalizeKerning(true) }),
+    toRenderSpec({ ...options, kerning: true }),
+  );
   assert.ok(!Object.hasOwn(source, "kerning_method"));
   for (const profile of ["gray_2bit", "gray_3bit", "gray_4bit"] as const) {
     const gray = toRenderSpec({ ...options, profile, kerning: state });
@@ -32,34 +41,58 @@ test("kerning selection forwards only active settings independently of output pr
     assert.equal(gray.kerning, true);
     assert.equal(gray.pipeline?.rasterization, "coverage");
     assert.ok(!Object.hasOwn(gray, "mono_raster"));
-    assert.deepEqual(toRenderSpec({ ...options, profile, kerning: selectKerningMethod(state, "source") }),
-      toRenderSpec({ ...options, profile, kerning: false }), "Source retains historical request identity for Gray");
+    assert.deepEqual(
+      toRenderSpec({ ...options, profile, kerning: selectKerningMethod(state, "source") }),
+      toRenderSpec({ ...options, profile, kerning: false }),
+      "Source retains historical request identity for Gray",
+    );
   }
-  assert.throws(() => toRenderSpec({ ...options, rasterization: undefined, kerning: state }), /TypeFacet requires.*current preview pipeline/);
+  assert.throws(
+    () => toRenderSpec({ ...options, rasterization: undefined, kerning: state }),
+    /TypeFacet requires.*current preview pipeline/,
+  );
 });
 
 test("every optical method forwards its own request across profiles and rejects historical routing", () => {
   const settings = [
-    editKerning(selectKerningMethod(false, "hu_hersch"), { method: "hu_hersch", settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 } }),
+    editKerning(selectKerningMethod(false, "hu_hersch"), {
+      method: "hu_hersch",
+      settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 },
+    }),
     selectKerningMethod(false, "fontforge"),
   ];
   for (const kerning of settings) {
     for (const profile of ["mono_1bit", "gray_2bit", "gray_3bit", "gray_4bit"] as const) {
-      const options = { ...baseOptions(), profile, kerning, rasterization: "free_type_mono" as const, letterSpacingPx: 1 };
+      const options = {
+        ...baseOptions(),
+        profile,
+        kerning,
+        rasterization: "free_type_mono" as const,
+        letterSpacingPx: 1,
+      };
       const request = toRenderSpec(options);
-      assert.deepEqual(request.kerning_method, kerning.method === "hu_hersch"
-        ? { method: "hu_hersch", aperture_depth_factor: 0.35, global_depth_factor: 0.4 } : { method: "fontforge" });
+      assert.deepEqual(
+        request.kerning_method,
+        kerning.method === "hu_hersch"
+          ? { method: "hu_hersch", aperture_depth_factor: 0.35, global_depth_factor: 0.4 }
+          : { method: "fontforge" },
+      );
       assert.equal(request.kerning, true);
       assert.equal(request.letter_spacing_px, 1, "tracking remains separate from method settings");
-      assert.throws(() => toRenderSpec({ ...options, rasterization: undefined }),
-        (error: unknown) => error instanceof Error && error.message.startsWith(`${KERNING_METHODS[kerning.method].label} requires`));
+      assert.throws(
+        () => toRenderSpec({ ...options, rasterization: undefined }),
+        (error: unknown) =>
+          error instanceof Error && error.message.startsWith(`${KERNING_METHODS[kerning.method].label} requires`),
+      );
     }
   }
 });
 
 test("separated stages forward extra tracking and do not send a historical role", () => {
   const options = {
-    ...baseOptions(), role: "candidate" as const, letterSpacingPx: -2,
+    ...baseOptions(),
+    role: "candidate" as const,
+    letterSpacingPx: -2,
     stemFitting: "font_hints_first" as const,
     monoRaster: { dropout: "off" as const, includeStubs: false, fontInstructions: false },
   };
@@ -88,13 +121,28 @@ test("stem fitting is explicit and restricted to candidate monochrome requests",
   const options = { text: "mut", sizePx: 14, axes: {}, width: 100, height: 40, stemFitting: "upstream_mono" as const };
   assert.equal(toRenderSpec({ ...options, role: "candidate", profile: "mono_1bit" }).stem_fitting, "upstream_mono");
   assert.equal(toRenderSpec({ ...options, role: "candidate", profile: "mono_1bit" }).hinting, "auto");
-  assert.equal(toRenderSpec({ ...options, stemFitting: undefined, role: "candidate", profile: "mono_1bit" }).hinting, "auto_fallback");
-  assert.equal(toRenderSpec({ ...options, stemFitting: "font_hints_first", role: "candidate", profile: "mono_1bit" }).hinting, "auto_fallback");
+  assert.equal(
+    toRenderSpec({ ...options, stemFitting: undefined, role: "candidate", profile: "mono_1bit" }).hinting,
+    "auto_fallback",
+  );
+  assert.equal(
+    toRenderSpec({ ...options, stemFitting: "font_hints_first", role: "candidate", profile: "mono_1bit" }).hinting,
+    "auto_fallback",
+  );
   for (const role of ["baseline", "reference"] as const) {
     assert.equal(Object.hasOwn(toRenderSpec({ ...options, role, profile: "mono_1bit" }), "stem_fitting"), false);
   }
-  assert.equal(Object.hasOwn(toRenderSpec({ ...options, role: "candidate", profile: "gray_3bit" }), "stem_fitting"), false);
-  assert.equal(Object.hasOwn(toRenderSpec({ ...options, stemFitting: undefined, role: "candidate", profile: "mono_1bit" }), "stem_fitting"), false);
+  assert.equal(
+    Object.hasOwn(toRenderSpec({ ...options, role: "candidate", profile: "gray_3bit" }), "stem_fitting"),
+    false,
+  );
+  assert.equal(
+    Object.hasOwn(
+      toRenderSpec({ ...options, stemFitting: undefined, role: "candidate", profile: "mono_1bit" }),
+      "stem_fitting",
+    ),
+    false,
+  );
 });
 
 test("scan controls are explicit and restricted to candidate monochrome requests", () => {
@@ -105,7 +153,8 @@ test("scan controls are explicit and restricted to candidate monochrome requests
     { dropout: "off", include_stubs: true, font_instructions: false },
   );
   assert.deepEqual(
-    toRenderSpec({ ...mono, monoRaster: { dropout: "smart", includeStubs: false, fontInstructions: false } }).mono_raster,
+    toRenderSpec({ ...mono, monoRaster: { dropout: "smart", includeStubs: false, fontInstructions: false } })
+      .mono_raster,
     { dropout: "smart", include_stubs: false, font_instructions: false },
   );
   assert.deepEqual(
@@ -114,31 +163,54 @@ test("scan controls are explicit and restricted to candidate monochrome requests
     "manual choices ride along untouched when following font instructions",
   );
   for (const role of ["baseline", "reference"] as const) {
-    assert.equal("mono_raster" in toRenderSpec({ ...mono, role, monoRaster: { dropout: "off", includeStubs: true, fontInstructions: false } }), false);
+    assert.equal(
+      "mono_raster" in
+        toRenderSpec({ ...mono, role, monoRaster: { dropout: "off", includeStubs: true, fontInstructions: false } }),
+      false,
+    );
   }
   assert.equal(
-    "mono_raster" in toRenderSpec({ ...mono, role: "candidate", profile: "gray_3bit", monoRaster: { dropout: "off", includeStubs: true, fontInstructions: false } }),
+    "mono_raster" in
+      toRenderSpec({
+        ...mono,
+        role: "candidate",
+        profile: "gray_3bit",
+        monoRaster: { dropout: "off", includeStubs: true, fontInstructions: false },
+      }),
     false,
   );
   assert.throws(
-    () => toRenderSpec({ ...mono, monoRaster: { dropout: "cleartype", includeStubs: false, fontInstructions: false } as never }),
+    () =>
+      toRenderSpec({
+        ...mono,
+        monoRaster: { dropout: "cleartype", includeStubs: false, fontInstructions: false } as never,
+      }),
     /Invalid mono raster dropout/,
   );
   assert.throws(
-    () => toRenderSpec({ ...mono, monoRaster: { dropout: "smart", includeStubs: "yes", fontInstructions: false } as never }),
+    () =>
+      toRenderSpec({
+        ...mono,
+        monoRaster: { dropout: "smart", includeStubs: "yes", fontInstructions: false } as never,
+      }),
     /Invalid mono raster stubs flag/,
   );
   assert.throws(
-    () => toRenderSpec({ ...mono, monoRaster: { dropout: "smart", includeStubs: false, fontInstructions: "yes" } as never }),
+    () =>
+      toRenderSpec({
+        ...mono,
+        monoRaster: { dropout: "smart", includeStubs: false, fontInstructions: "yes" } as never,
+      }),
     /Invalid mono raster font-instructions flag/,
   );
-  assert.throws(
-    () => toRenderSpec({ ...mono, monoRaster: "smart" as never }),
-    /Invalid mono raster settings/,
-  );
+  assert.throws(() => toRenderSpec({ ...mono, monoRaster: "smart" as never }), /Invalid mono raster settings/);
   for (const field of ["dropout", "includeStubs", "fontInstructions"]) {
     assert.throws(
-      () => toRenderSpec({ ...mono, monoRaster: { dropout: "smart", includeStubs: false, fontInstructions: false, [field]: null } as never }),
+      () =>
+        toRenderSpec({
+          ...mono,
+          monoRaster: { dropout: "smart", includeStubs: false, fontInstructions: false, [field]: null } as never,
+        }),
       /Invalid mono raster/,
       "only absent fields receive defaults",
     );
@@ -147,51 +219,149 @@ test("scan controls are explicit and restricted to candidate monochrome requests
 
 test("maps control state to the exact crates/wasm render request", () => {
   const spec = toRenderSpec({
-    text: "Ag", sizePx: 18, axes: { wght: 700 }, profile: "gray_3bit",
-    monoThreshold: 200, grayGamma: 2.2, width: 360, height: 120,
+    text: "Ag",
+    sizePx: 18,
+    axes: { wght: 700 },
+    profile: "gray_3bit",
+    monoThreshold: 200,
+    grayGamma: 2.2,
+    width: 360,
+    height: 120,
   });
   assert.deepEqual(spec, {
-    text: "Ag", width: 360, height: 120, size_px: 18, axes: { wght: 700 }, hinting: "auto", output_bits: 3,
-    mono_threshold: 200, gray_gamma: 2.2, missing_glyphs: "error", kerning: true, metric_rounding: "subpixel",
-    wrap: "word", align: "left", foreground: [36, 40, 43, 255], background: [255, 255, 255, 255],
-    letter_spacing_px: 0, renderer: "baseline",
+    text: "Ag",
+    width: 360,
+    height: 120,
+    size_px: 18,
+    axes: { wght: 700 },
+    hinting: "auto",
+    output_bits: 3,
+    mono_threshold: 200,
+    gray_gamma: 2.2,
+    missing_glyphs: "error",
+    kerning: true,
+    metric_rounding: "subpixel",
+    wrap: "word",
+    align: "left",
+    foreground: [36, 40, 43, 255],
+    background: [255, 255, 255, 255],
+    letter_spacing_px: 0,
+    renderer: "baseline",
   });
-  assert.equal(toRenderSpec({
-    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120, letterSpacingPx: 1.5,
-  }).letter_spacing_px, 2);
-  assert.equal(toRenderSpec({
-    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120, letterSpacingPx: -0.5,
-  }).letter_spacing_px, -1);
-  assert.equal(toRenderSpec({
-    text: "Ag", sizePx: 18, axes: {}, profile: "gray_3bit", width: 360, height: 120, letterSpacingPx: -0.5,
-  }).letter_spacing_px, -0.5);
+  assert.equal(
+    toRenderSpec({
+      text: "Ag",
+      sizePx: 18,
+      axes: {},
+      profile: "mono_1bit",
+      width: 360,
+      height: 120,
+      letterSpacingPx: 1.5,
+    }).letter_spacing_px,
+    2,
+  );
+  assert.equal(
+    toRenderSpec({
+      text: "Ag",
+      sizePx: 18,
+      axes: {},
+      profile: "mono_1bit",
+      width: 360,
+      height: 120,
+      letterSpacingPx: -0.5,
+    }).letter_spacing_px,
+    -1,
+  );
+  assert.equal(
+    toRenderSpec({
+      text: "Ag",
+      sizePx: 18,
+      axes: {},
+      profile: "gray_3bit",
+      width: 360,
+      height: 120,
+      letterSpacingPx: -0.5,
+    }).letter_spacing_px,
+    -0.5,
+  );
   // No spacing-model field is forwarded any more; kerning still forwards.
-  assert.equal("spacing_model" in toRenderSpec({
-    text: "AV", sizePx: 14, axes: {}, profile: "mono_1bit", width: 360, height: 120,
-  }), false);
-  assert.equal(toRenderSpec({
-    text: "AV", sizePx: 14, axes: {}, profile: "mono_1bit", width: 360, height: 120, kerning: false,
-  }).kerning, false);
+  assert.equal(
+    "spacing_model" in
+      toRenderSpec({
+        text: "AV",
+        sizePx: 14,
+        axes: {},
+        profile: "mono_1bit",
+        width: 360,
+        height: 120,
+      }),
+    false,
+  );
+  assert.equal(
+    toRenderSpec({
+      text: "AV",
+      sizePx: 14,
+      axes: {},
+      profile: "mono_1bit",
+      width: 360,
+      height: 120,
+      kerning: false,
+    }).kerning,
+    false,
+  );
   // Candidate Gray tracking is whole-pixel like candidate Mono, while
   // baseline Gray (above) keeps its fractional offset.
-  assert.equal(toRenderSpec({
-    text: "Ag", sizePx: 18, axes: {}, profile: "gray_3bit", width: 360, height: 120,
-    letterSpacingPx: -0.5, role: "candidate",
-  }).letter_spacing_px, -1);
-  assert.equal(toRenderSpec({
-    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120, letterSpacingPx: 99,
-  }).letter_spacing_px, 4);
-  assert.equal(toRenderSpec({
-    text: "Ag", sizePx: 18, axes: {}, profile: "mono_1bit", width: 360, height: 120, letterSpacingPx: "bad",
-  }).letter_spacing_px, 0);
+  assert.equal(
+    toRenderSpec({
+      text: "Ag",
+      sizePx: 18,
+      axes: {},
+      profile: "gray_3bit",
+      width: 360,
+      height: 120,
+      letterSpacingPx: -0.5,
+      role: "candidate",
+    }).letter_spacing_px,
+    -1,
+  );
+  assert.equal(
+    toRenderSpec({
+      text: "Ag",
+      sizePx: 18,
+      axes: {},
+      profile: "mono_1bit",
+      width: 360,
+      height: 120,
+      letterSpacingPx: 99,
+    }).letter_spacing_px,
+    4,
+  );
+  assert.equal(
+    toRenderSpec({
+      text: "Ag",
+      sizePx: 18,
+      axes: {},
+      profile: "mono_1bit",
+      width: 360,
+      height: 120,
+      letterSpacingPx: "bad",
+    }).letter_spacing_px,
+    0,
+  );
   const candidate = toRenderSpec({
-    text: "Ag", sizePx: 18, axes: { wght: 700 }, profile: "mono_1bit",
-    monoThreshold: 200, grayGamma: 2.2, width: 360, height: 120, role: "candidate",
+    text: "Ag",
+    sizePx: 18,
+    axes: { wght: 700 },
+    profile: "mono_1bit",
+    monoThreshold: 200,
+    grayGamma: 2.2,
+    width: 360,
+    height: 120,
+    role: "candidate",
   });
   assert.equal(candidate.renderer, "candidate");
   assert.equal(candidate.output_bits, 1);
-  assert.deepEqual([candidate.text, candidate.size_px, candidate.axes],
-    [spec.text, spec.size_px, spec.axes]);
+  assert.deepEqual([candidate.text, candidate.size_px, candidate.axes], [spec.text, spec.size_px, spec.axes]);
   const mono = toRenderSpec({ text: "", sizePx: 16, axes: {}, profile: "mono_1bit", width: 0.4, height: 5000 });
   assert.equal(mono.output_bits, 1);
   assert.equal(mono.width, 1);
@@ -236,9 +406,15 @@ test("omitted palette keeps the established default ink/paper render", () => {
 });
 
 test("a full mono palette passes through verbatim with entry 0 as background", () => {
-  const palette: RGBA[] = [[10, 20, 30, 40], [200, 30, 30, 255]];
+  const palette: RGBA[] = [
+    [10, 20, 30, 40],
+    [200, 30, 30, 255],
+  ];
   const spec = toRenderSpec({ ...baseOptions(), palette });
-  assert.deepEqual(spec.palette, [[10, 20, 30, 40], [200, 30, 30, 255]]);
+  assert.deepEqual(spec.palette, [
+    [10, 20, 30, 40],
+    [200, 30, 30, 255],
+  ]);
   assert.deepEqual(spec.background, [10, 20, 30, 40]);
   assert.deepEqual(spec.foreground, [36, 40, 43, 255]);
 });
@@ -260,11 +436,27 @@ test("the singleton convention is gone: one entry is a length error", () => {
 test("palette length mismatches are rejected per profile", () => {
   assert.throws(() => toRenderSpec({ ...baseOptions(), palette: [] }), /expected exactly 2 entries/);
   assert.throws(
-    () => toRenderSpec({ ...baseOptions(), palette: [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]] }),
+    () =>
+      toRenderSpec({
+        ...baseOptions(),
+        palette: [
+          [1, 2, 3, 4],
+          [5, 6, 7, 8],
+          [9, 10, 11, 12],
+        ],
+      }),
     /expected exactly 2 entries for profile mono_1bit, got 3/,
   );
   assert.throws(
-    () => toRenderSpec({ ...baseOptions(), profile: "gray_3bit", palette: [[1, 2, 3, 4], [5, 6, 7, 8]] }),
+    () =>
+      toRenderSpec({
+        ...baseOptions(),
+        profile: "gray_3bit",
+        palette: [
+          [1, 2, 3, 4],
+          [5, 6, 7, 8],
+        ],
+      }),
     /expected exactly 8 entries for profile gray_3bit, got 2/,
   );
   assert.throws(() => toRenderSpec({ ...baseOptions(), palette: "red" as unknown as RGBA[] }), /expected an array/);
@@ -272,9 +464,18 @@ test("palette length mismatches are rejected per profile", () => {
 
 test("malformed colors are rejected, including entry 0", () => {
   const bad: unknown[] = [
-    [1, 2, 3], [1, 2, 3, 4, 5], "white", null, 42,
-    [256, 0, 0, 255], [-1, 0, 0, 255], [0, 0, 0, 1.5], [0, 0, 0, NaN],
-    [0, 0, "x", 255], [null, 0, 0, 255], [[0, 0, 0, 0]],
+    [1, 2, 3],
+    [1, 2, 3, 4, 5],
+    "white",
+    null,
+    42,
+    [256, 0, 0, 255],
+    [-1, 0, 0, 255],
+    [0, 0, 0, 1.5],
+    [0, 0, 0, NaN],
+    [0, 0, "x", 255],
+    [null, 0, 0, 255],
+    [[0, 0, 0, 0]],
   ];
   for (const entry of bad) {
     assert.throws(
@@ -283,8 +484,28 @@ test("malformed colors are rejected, including entry 0", () => {
       `entry 0 ${JSON.stringify(entry)}`,
     );
   }
-  assert.throws(() => toRenderSpec({ ...baseOptions(), palette: [[1, 2, 3], [4, 5, 6]] as unknown as RGBA[] }), /Invalid palette color/);
-  assert.throws(() => toRenderSpec({ ...baseOptions(), palette: [[300, 0, 0, 0], [0, 0, 0, 0]] }), /Invalid palette color/);
+  assert.throws(
+    () =>
+      toRenderSpec({
+        ...baseOptions(),
+        palette: [
+          [1, 2, 3],
+          [4, 5, 6],
+        ] as unknown as RGBA[],
+      }),
+    /Invalid palette color/,
+  );
+  assert.throws(
+    () =>
+      toRenderSpec({
+        ...baseOptions(),
+        palette: [
+          [300, 0, 0, 0],
+          [0, 0, 0, 0],
+        ],
+      }),
+    /Invalid palette color/,
+  );
   const grayEntries = Array.from({ length: 8 }, () => [0, 0, 0, 0] as unknown as RGBA);
   grayEntries[5] = [1, 1, 1] as unknown as RGBA;
   assert.throws(
@@ -310,9 +531,18 @@ test("mapping clones palette entries and never aliases inputs", () => {
   assert.notEqual(spec.palette?.[1], entry);
   entry[0] = 1;
   palette[0] = [9, 9, 9, 9];
-  assert.deepEqual(spec.palette, [[10, 20, 30, 40], [200, 30, 30, 255]]);
-  const frozen = Object.freeze([[11, 22, 33, 44], [55, 66, 77, 88]]) as unknown as RGBA[];
-  assert.deepEqual(toRenderSpec({ ...baseOptions(), palette: frozen }).palette, [[11, 22, 33, 44], [55, 66, 77, 88]]);
+  assert.deepEqual(spec.palette, [
+    [10, 20, 30, 40],
+    [200, 30, 30, 255],
+  ]);
+  const frozen = Object.freeze([
+    [11, 22, 33, 44],
+    [55, 66, 77, 88],
+  ]) as unknown as RGBA[];
+  assert.deepEqual(toRenderSpec({ ...baseOptions(), palette: frozen }).palette, [
+    [11, 22, 33, 44],
+    [55, 66, 77, 88],
+  ]);
 });
 
 test("derives shrunken logical bounds for integer magnification", () => {

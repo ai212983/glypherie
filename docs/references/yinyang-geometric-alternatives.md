@@ -345,5 +345,4 @@ would require an explicit decision to take on another unfinished model.
 [ik-service]: https://www.ikern.space/the-service/details
 [ik-method]: https://www.ikern.space/letter-fitting-ikern/ikern
 [hz]: https://patents.google.com/patent/EP0466953B1/en
-
 [bk-helper]: https://github.com/Tosche/BubbleKern/blob/e2d2a3b02e91da0c1e1cb45075ca979b68e5b0a0/ShowKernBubbles.glyphsReporter/Contents/Resources/MakeBubbleLayers.py#L242-L334

@@ -38,15 +38,36 @@ const cases = [];
 for (const [font, axesFor] of FONTS) {
   for (const size_px of SIZES) {
     for (const kerning of [true, false]) {
-      cases.push({ id: String(cases.length),
+      cases.push({
+        id: String(cases.length),
         font_file: path.resolve(root, font),
-        spec: { text: TEXT, width: 640, height: 80, size_px, axes: axesFor(size_px),
-          output_bits: 1, kerning, pipeline } });
+        spec: {
+          text: TEXT,
+          width: 640,
+          height: 80,
+          size_px,
+          axes: axesFor(size_px),
+          output_bits: 1,
+          kerning,
+          pipeline,
+        },
+      });
     }
-    cases.push({ id: String(cases.length),
+    cases.push({
+      id: String(cases.length),
       font_file: path.resolve(root, font),
-      spec: { text: TEXT, width: 160, height: 240, size_px, axes: axesFor(size_px),
-        output_bits: 1, kerning: true, wrap: "word", pipeline } });
+      spec: {
+        text: TEXT,
+        width: 160,
+        height: 240,
+        size_px,
+        axes: axesFor(size_px),
+        output_bits: 1,
+        kerning: true,
+        wrap: "word",
+        pipeline,
+      },
+    });
   }
 }
 // One declared expected error: tab needs unsupported text-run shaping, and
@@ -55,15 +76,28 @@ for (const [font, axesFor] of FONTS) {
 const TAB_ERROR = "U+0009 requires unsupported text-run shaping";
 const expectedErrors = new Map();
 expectedErrors.set(String(cases.length), TAB_ERROR);
-cases.push({ id: String(cases.length),
+cases.push({
+  id: String(cases.length),
   font_file: path.resolve(root, "fonts/Roboto.ttf"),
-  spec: { text: "A\tB", width: 200, height: 60, size_px: 16, axes: { wght: 400, wdth: 100 },
-    output_bits: 1, pipeline } });
+  spec: { text: "A\tB", width: 200, height: 60, size_px: 16, axes: { wght: 400, wdth: 100 }, output_bits: 1, pipeline },
+});
 
-const native = spawnSync("cargo", ["run", "--release", "--locked", "--quiet",
-  "--manifest-path", "crates/wasm/Cargo.toml", "--features", "preview",
-  "--example", "parity_reference"],
-{ cwd: root, input: JSON.stringify(cases), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const native = spawnSync(
+  "cargo",
+  [
+    "run",
+    "--release",
+    "--locked",
+    "--quiet",
+    "--manifest-path",
+    "crates/wasm/Cargo.toml",
+    "--features",
+    "preview",
+    "--example",
+    "parity_reference",
+  ],
+  { cwd: root, input: JSON.stringify(cases), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+);
 assert.equal(native.error, undefined, String(native.error));
 assert.equal(native.status, 0, native.stderr);
 const expected = JSON.parse(native.stdout);
@@ -71,15 +105,21 @@ const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const fonts = new Map();
 try {
   for (let i = 0; i < cases.length; i++) {
-    const { font_file, spec } = cases[i], oracle = expected[i];
+    const { font_file, spec } = cases[i],
+      oracle = expected[i];
     if (!fonts.has(font_file)) fonts.set(font_file, new Font(fs.readFileSync(font_file)));
     const font = fonts.get(font_file);
     const declared = expectedErrors.get(cases[i].id);
     if (declared !== undefined) {
-      assert.ok(oracle.error !== undefined && oracle.error.includes(declared),
-        `native declares tab error ${cases[i].id}: ${oracle.error}`);
-      assert.throws(() => font.render(spec),
-        (error) => String(error).includes(declared), `wasm tab error ${cases[i].id}`);
+      assert.ok(
+        oracle.error !== undefined && oracle.error.includes(declared),
+        `native declares tab error ${cases[i].id}: ${oracle.error}`,
+      );
+      assert.throws(
+        () => font.render(spec),
+        (error) => String(error).includes(declared),
+        `wasm tab error ${cases[i].id}`,
+      );
       continue;
     }
     assert.equal(oracle.error, undefined, `native must succeed ${cases[i].id}`);
@@ -87,9 +127,13 @@ try {
     try {
       assert.equal(sha(result.pixels()), oracle.pixel_sha256, `pixels ${cases[i].id}`);
       assert.deepEqual(result.layout(), oracle.layout, `layout ${cases[i].id}`);
-    } finally { result.free(); }
+    } finally {
+      result.free();
+    }
   }
-} finally { for (const font of fonts.values()) font.free(); }
+} finally {
+  for (const font of fonts.values()) font.free();
+}
 
 // Playdate export parity with kerning on/off under the same pipeline.
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "compensation-export-"));
@@ -98,21 +142,47 @@ try {
     const exportFont = new Font(fs.readFileSync(path.resolve(root, fontFile)));
     try {
       for (const kerning of [true, false]) {
-        const request = { config: { characters: "ATVLYofar -.012", size_px: 16,
-          axes: axesFor(16), output_bits: 1, kerning }, pipeline, letter_spacing_px: 0 };
+        const request = {
+          config: { characters: "ATVLYofar -.012", size_px: 16, axes: axesFor(16), output_bits: 1, kerning },
+          pipeline,
+          letter_spacing_px: 0,
+        };
         const requestFile = path.join(temp, "request.json");
         const outputFile = path.join(temp, "font.fnt");
         fs.writeFileSync(requestFile, JSON.stringify(request));
-        execFileSync("cargo", ["run", "--release", "--quiet", "--locked", "--manifest-path",
-          path.join(root, "crates/wasm/Cargo.toml"), "--features", "preview", "--example",
-          "playdate_reference", "--", path.resolve(root, fontFile), requestFile, outputFile],
-        { stdio: "pipe" });
-        assert.deepEqual(Buffer.from(exportFont.export_playdate(request)),
-          fs.readFileSync(outputFile), `${fontFile} kerning=${kerning}`);
+        execFileSync(
+          "cargo",
+          [
+            "run",
+            "--release",
+            "--quiet",
+            "--locked",
+            "--manifest-path",
+            path.join(root, "crates/wasm/Cargo.toml"),
+            "--features",
+            "preview",
+            "--example",
+            "playdate_reference",
+            "--",
+            path.resolve(root, fontFile),
+            requestFile,
+            outputFile,
+          ],
+          { stdio: "pipe" },
+        );
+        assert.deepEqual(
+          Buffer.from(exportFont.export_playdate(request)),
+          fs.readFileSync(outputFile),
+          `${fontFile} kerning=${kerning}`,
+        );
       }
-    } finally { exportFont.free(); }
+    } finally {
+      exportFont.free();
+    }
   }
-} finally { fs.rmSync(temp, { recursive: true, force: true }); }
+} finally {
+  fs.rmSync(temp, { recursive: true, force: true });
+}
 
 // Literata descriptive inspection only: the ASCII pair table keeps reporting
 // its unsupported pairs as skipped rather than filling them with zeros. This
@@ -120,6 +190,8 @@ try {
 const literata = new Font(fs.readFileSync(path.join(root, "fonts/Literata.ttf")));
 try {
   assert.equal(literata.kerning_pairs(16, { wght: 400, opsz: 16 }).skipped_pairs, 27);
-} finally { literata.free(); }
+} finally {
+  literata.free();
+}
 
 console.log(`Compensated-spacing native/WASM parity passed for ${cases.length} render cases plus export parity.`);

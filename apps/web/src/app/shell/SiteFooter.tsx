@@ -32,9 +32,12 @@ function DevHmrStatus(): React.JSX.Element {
   return (
     <span className="site-footer__development">
       <TooltipHint content={state.hint}>
-        <span role="img" aria-label={state.label}
+        <span
+          role="img"
+          aria-label={state.label}
           data-hmr-status={status}
-          className={`site-footer__connection ${state.dot}`} />
+          className={`site-footer__connection ${state.dot}`}
+        />
       </TooltipHint>
       {state.text && <span>{state.text}</span>}
     </span>
@@ -55,7 +58,8 @@ function BuildDetails({ info }: { info: typeof __APP_BUILD__ }): React.JSX.Eleme
     return () => document.removeEventListener("pointerdown", dismissOutside, true);
   }, []);
   const fullInfo = [
-    `Glypherie ${info.version}`, `Build ${info.build} UTC`,
+    `Glypherie ${info.version}`,
+    `Build ${info.build} UTC`,
     `${info.devServer ? "Started" : "Built"}: ${info.builtAt}`,
     `Commit: ${info.commit ?? "unavailable"}`,
     `Local changes: ${info.localFingerprint ?? "none"}`,
@@ -65,29 +69,51 @@ function BuildDetails({ info }: { info: typeof __APP_BUILD__ }): React.JSX.Eleme
     try {
       await navigator.clipboard.writeText(fullInfo);
       setCopyStatus("Copied.");
-    } catch { setCopyStatus("Could not copy build info."); }
+    } catch {
+      setCopyStatus("Could not copy build info.");
+    }
   };
   return (
-    <details ref={detailsRef} className="site-footer__details" onKeyDown={(event) => {
-      if (event.key === "Escape") {
-        event.currentTarget.open = false;
-        event.currentTarget.querySelector("summary")?.focus();
-      }
-    }}>
+    <details
+      ref={detailsRef}
+      className="site-footer__details"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.currentTarget.open = false;
+          event.currentTarget.querySelector("summary")?.focus();
+        }
+      }}
+    >
       <TooltipHint content={`${info.devServer ? "Started" : "Built"} ${info.builtAt} (UTC)`}>
         <summary aria-label="Build details">
-          <span>Build <time dateTime={info.builtAt}>{info.build}</time></span>
+          <span>
+            Build <time dateTime={info.builtAt}>{info.build}</time>
+          </span>
         </summary>
       </TooltipHint>
       <div className="site-footer__info">
         <dl>
-          <dt>Version</dt><dd>{info.version}</dd>
-          <dt>{info.devServer ? "Started" : "Built"} (UTC)</dt><dd>{info.builtAt}</dd>
-          <dt>Commit</dt><dd>{info.commit?.slice(0, 12) ?? "Unavailable"}</dd>
-          <dt>Local changes</dt><dd>{info.localFingerprint ?? "None"}</dd>
-          <dt>Renderer</dt><dd>{info.renderer?.slice(0, 12) ?? "Unavailable"}</dd>
+          <dt>Version</dt>
+          <dd>{info.version}</dd>
+          <dt>{info.devServer ? "Started" : "Built"} (UTC)</dt>
+          <dd>{info.builtAt}</dd>
+          <dt>Commit</dt>
+          <dd>{info.commit?.slice(0, 12) ?? "Unavailable"}</dd>
+          <dt>Local changes</dt>
+          <dd>{info.localFingerprint ?? "None"}</dd>
+          <dt>Renderer</dt>
+          <dd>{info.renderer?.slice(0, 12) ?? "Unavailable"}</dd>
         </dl>
-        <Button type="button" size="xs" variant="outline" onClick={() => { void copy(); }}>Copy build info</Button>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          onClick={() => {
+            void copy();
+          }}
+        >
+          Copy build info
+        </Button>
         <span role="status">{copyStatus}</span>
       </div>
     </details>
@@ -112,13 +138,23 @@ export function SiteFooter(): React.JSX.Element {
         {import.meta.env.DEV && <DevHmrStatus />}
         {import.meta.env.PROD && !online && (
           <TooltipHint content="Offline. Your library and previews still work on this device.">
-            <span role="img" aria-label="Offline"
+            <span
+              role="img"
+              aria-label="Offline"
               data-connection="offline"
-              className="site-footer__connection bg-red-500" />
+              className="site-footer__connection bg-red-500"
+            />
           </TooltipHint>
         )}
-        {import.meta.env.PROD ? <PwaStatus version={info.version} online={online}><BuildDetails info={info} /></PwaStatus> : (
-          <><span data-app-version>{info.version}</span><BuildDetails info={info} /></>
+        {import.meta.env.PROD ? (
+          <PwaStatus version={info.version} online={online}>
+            <BuildDetails info={info} />
+          </PwaStatus>
+        ) : (
+          <>
+            <span data-app-version>{info.version}</span>
+            <BuildDetails info={info} />
+          </>
         )}
       </div>
     </footer>

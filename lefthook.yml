@@ -5,7 +5,9 @@ pre-commit:
   parallel: true
   jobs:
     - name: formatting
-      glob: "**/*.{md,json,jsonc}"
+      glob:
+        - "**/*.{md,json,jsonc}"
+        - "**/*.{ts,tsx,js,mjs,cjs}"
       exclude:
         - "docs/references/VisualTrueType/**"
         - "docs/references/specs/**"
@@ -16,7 +18,7 @@ pre-commit:
         - "**/target/**"
         - "**/out/**"
         - "**/.venv/**"
-      run: npx --no-install dprint check {staged_files}
+      run: npm run fmt:check -- {staged_files}
     - name: spelling
       glob:
         - "README.md"
@@ -35,15 +37,24 @@ pre-commit:
         - "**/target/**"
         - "**/out/**"
         - "**/.venv/**"
-      run: npx --no-install cspell --no-progress --gitignore --no-must-find-files {staged_files}
+      run: npm run spell:check -- {staged_files}
     - name: rust-formatting
       glob:
         - "crates/generator/**/*.rs"
         - "crates/generator/Cargo.toml"
       exclude: "crates/generator/vendor/**"
       run: cargo fmt --manifest-path crates/generator/Cargo.toml --check
+    - name: typescript-linting
+      glob:
+        - "apps/web/**/*.ts"
+        - "apps/web/**/*.tsx"
+      exclude:
+        - "**/node_modules/**"
+        - "**/target/**"
+        - "**/out/**"
+      run: npm --prefix apps/web run lint
 
 commit-msg:
   jobs:
     - name: conventional-commit
-      run: node node_modules/@commitlint/cli/cli.js --edit "{1}"
+      run: npm run commitlint -- --edit "{1}"

@@ -10,16 +10,29 @@ interface SpecimenListCardProps {
   frame: CanvasFrame;
   text: string;
   onText: (text: string) => void;
-  frameProps?: Omit<React.ComponentProps<typeof SpecimenFrame>, "frame" | "children"> & { [key: `data-${string}`]: string | number | boolean | undefined };
+  frameProps?: Omit<React.ComponentProps<typeof SpecimenFrame>, "frame" | "children"> & {
+    [key: `data-${string}`]: string | number | boolean | undefined;
+  };
   footer: React.ReactNode;
   children: React.ReactNode;
 }
 
-export function SpecimenListCard({ title, label, frame, text, onText, frameProps, footer, children }: SpecimenListCardProps): React.JSX.Element {
+export function SpecimenListCard({
+  title,
+  label,
+  frame,
+  text,
+  onText,
+  frameProps,
+  footer,
+  children,
+}: SpecimenListCardProps): React.JSX.Element {
   return (
     <Card>
       <CardHeader>
-        <CardTitle asChild><h2>{title}</h2></CardTitle>
+        <CardTitle asChild>
+          <h2>{title}</h2>
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <SampleTextControl data-specimen-list-text value={text} maxLength={512} onValueChange={onText} />
@@ -34,6 +47,16 @@ export function SpecimenListCard({ title, label, frame, text, onText, frameProps
   );
 }
 
-export function SpecimenListItem({ frame, children }: { frame: CanvasFrame; children: React.ReactNode }): React.JSX.Element {
-  return <li className="border-t py-1 first:border-t-0" style={{ borderColor: frame.dividerCss }}>{children}</li>;
+export function SpecimenListItem({
+  frame,
+  children,
+}: {
+  frame: CanvasFrame;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <li className="border-t py-1 first:border-t-0" style={{ borderColor: frame.dividerCss }}>
+      {children}
+    </li>
+  );
 }

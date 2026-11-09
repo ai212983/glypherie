@@ -50,15 +50,28 @@ const DEFAULTS: GlobalDefaults = { font: "alpha", profile: "mono_1bit" };
 test("kerning methods and retained controls round-trip in complete preview links", () => {
   const value = defaultSnapshot(METAS, DEFAULTS);
   const typefacet = editKerning(selectKerningMethod(false, "typefacet"), {
-    method: "typefacet", settings: { normalDistanceEm: 0.175, intrusionToleranceEm: 0.05, minimumDistanceEm: 0.025, maxXExtremaOverlapEm: 0.125 },
+    method: "typefacet",
+    settings: {
+      normalDistanceEm: 0.175,
+      intrusionToleranceEm: 0.05,
+      minimumDistanceEm: 0.025,
+      maxXExtremaOverlapEm: 0.125,
+    },
   });
   const fontforge = editKerning(selectKerningMethod(typefacet, "fontforge"), {
-    method: "fontforge", settings: {},
+    method: "fontforge",
+    settings: {},
   });
   const hu = editKerning(selectKerningMethod(fontforge, "hu_hersch"), {
-    method: "hu_hersch", settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 },
+    method: "hu_hersch",
+    settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 },
   });
-  for (const kerning of [hu, selectKerningMethod(hu, "fontforge"), selectKerningMethod(hu, "typefacet"), selectKerningMethod(hu, "source")]) {
+  for (const kerning of [
+    hu,
+    selectKerningMethod(hu, "fontforge"),
+    selectKerningMethod(hu, "typefacet"),
+    selectKerningMethod(hu, "source"),
+  ]) {
     for (const profile of ["mono_1bit", "gray_2bit", "gray_3bit", "gray_4bit"] as const) {
       value.profile = profile;
       value.kerning = kerning;
@@ -76,16 +89,22 @@ test("kerning methods and retained controls round-trip in complete preview links
 });
 
 test("retired strength blends in preview links are rejected back to the default", () => {
-  const retiredHu = encodeURIComponent(JSON.stringify({
-    method: "hu_hersch", source: { enabled: false },
-    typefacet: { normalDistanceEm: 0.1, intrusionToleranceEm: 0.1 },
-    hu_hersch: { strength: 0.35 },
-  }));
-  const retiredForge = encodeURIComponent(JSON.stringify({
-    method: "fontforge", source: { enabled: true },
-    typefacet: { normalDistanceEm: 0.1, intrusionToleranceEm: 0.1 },
-    fontforge: { strength: 0 },
-  }));
+  const retiredHu = encodeURIComponent(
+    JSON.stringify({
+      method: "hu_hersch",
+      source: { enabled: false },
+      typefacet: { normalDistanceEm: 0.1, intrusionToleranceEm: 0.1 },
+      hu_hersch: { strength: 0.35 },
+    }),
+  );
+  const retiredForge = encodeURIComponent(
+    JSON.stringify({
+      method: "fontforge",
+      source: { enabled: true },
+      typefacet: { normalDistanceEm: 0.1, intrusionToleranceEm: 0.1 },
+      fontforge: { strength: 0 },
+    }),
+  );
   assert.equal(parseUrlSnapshot(`?v=1&kerning=${retiredHu}`, "", METAS, DEFAULTS)?.kerning, true);
   assert.equal(parseUrlSnapshot(`?v=1&kerning=${retiredForge}`, "", METAS, DEFAULTS)?.kerning, true);
 });
@@ -107,14 +126,24 @@ function snapshot(): PreviewSnapshot {
   value.monoRaster = { dropout: "smart", includeStubs: true, fontInstructions: true };
   value.kerning = false;
   value.families.alpha = {
-    size: 24, axes: { wght: 700, wdth: 80, XOPQ: 130 }, spacing: 2,
-    preset: "custom", text: "Héllo 🌍\nSecond ß line",
-    advancedOpen: true, kerningOpen: true, kerningFilter: "AV",
+    size: 24,
+    axes: { wght: 700, wdth: 80, XOPQ: 130 },
+    spacing: 2,
+    preset: "custom",
+    text: "Héllo 🌍\nSecond ß line",
+    advancedOpen: true,
+    kerningOpen: true,
+    kerningFilter: "AV",
   };
   value.families.beta = {
-    size: 19, axes: {}, spacing: -0.5,
-    preset: "numbers", text: "0123456789",
-    advancedOpen: false, kerningOpen: false, kerningFilter: "",
+    size: 19,
+    axes: {},
+    spacing: -0.5,
+    preset: "numbers",
+    text: "0123456789",
+    advancedOpen: false,
+    kerningOpen: false,
+    kerningFilter: "",
   };
   return value;
 }
@@ -182,9 +211,14 @@ test("unknown or malformed versions fall back without throwing", () => {
 test("validation clamps numbers, drops unknown fonts/axes and rejects bad enums", () => {
   const families = JSON.stringify({
     alpha: {
-      size: 9999, axes: { wght: 9999, wdth: "bad", NOPE: 1, XOPQ: 10 },
-      spacing: 99, preset: "nope", text: 42,
-      advancedOpen: "yes", kerningOpen: true, kerningFilter: 7,
+      size: 9999,
+      axes: { wght: 9999, wdth: "bad", NOPE: 1, XOPQ: 10 },
+      spacing: 99,
+      preset: "nope",
+      text: 42,
+      advancedOpen: "yes",
+      kerningOpen: true,
+      kerningFilter: 7,
     },
     ghost: { size: 20, text: "Ghost" },
   });
@@ -225,20 +259,20 @@ test("obsolete spacing-model parameters in old links are ignored and dropped", (
 });
 
 test("legacy profile and hash selection stay readable while zoom is ignored", () => {
-  assert.deepEqual(
-    parseLegacyState("?profile=gray_3bit&zoom=3", "#family-beta", METAS),
-    { font: "beta", profile: "gray_3bit" },
-  );
+  assert.deepEqual(parseLegacyState("?profile=gray_3bit&zoom=3", "#family-beta", METAS), {
+    font: "beta",
+    profile: "gray_3bit",
+  });
   assert.deepEqual(parseLegacyState("?profile=nope&zoom=9", "#family-ghost", METAS), {});
   assert.deepEqual(parseLegacyState("", "#other", METAS), {});
 });
 
 test("minimal font links select known fonts and ignore unknown ones", () => {
   assert.deepEqual(parseLegacyState("?font=beta", "", METAS), { font: "beta" });
-  assert.deepEqual(
-    parseLegacyState("?font=beta&profile=gray_3bit&zoom=3", "", METAS),
-    { font: "beta", profile: "gray_3bit" },
-  );
+  assert.deepEqual(parseLegacyState("?font=beta&profile=gray_3bit&zoom=3", "", METAS), {
+    font: "beta",
+    profile: "gray_3bit",
+  });
   assert.deepEqual(parseLegacyState("?font=ghost", "#family-beta", METAS), { font: "beta" });
   assert.deepEqual(parseLegacyState("?font=ghost", "", METAS), {});
 });
@@ -280,7 +314,7 @@ test("historical URLs resolve to current controls", () => {
   assert.equal(indexPath("?v=1&raster=coverage&utm=keep"), "/fonts/?utm=keep");
 });
 
- test("old zoom and scan overrides are ignored and removed from shared links", () => {
+test("old zoom and scan overrides are ignored and removed from shared links", () => {
   const input = "?v=1&font=alpha&zoom=4&dropout=off&stubs=0&scanfont=0&utm=keep";
   const parsed = parseUrlSnapshot(input, "", METAS, DEFAULTS)!;
   assert.equal("zoom" in parsed, false);

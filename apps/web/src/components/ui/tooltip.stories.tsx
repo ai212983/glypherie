@@ -3,7 +3,11 @@ import { Button } from "./button";
 import { TooltipHint } from "../TooltipHint";
 
 function TooltipExample({ content }: { content: string }) {
-  return <TooltipHint content={content}><Button variant="outline">Hover or focus</Button></TooltipHint>;
+  return (
+    <TooltipHint content={content}>
+      <Button variant="outline">Hover or focus</Button>
+    </TooltipHint>
+  );
 }
 
 const meta = {

@@ -36,7 +36,13 @@ function editing(): RenderEditing {
 
 test("soft-break duplicates belong to both visual lines", () => {
   const lines = visualLines(editing());
-  assert.deepEqual(lines.map((line) => [line.index, line.start, line.end]), [[0, 0, 5], [1, 5, 8]]);
+  assert.deepEqual(
+    lines.map((line) => [line.index, line.start, line.end]),
+    [
+      [0, 0, 5],
+      [1, 5, 8],
+    ],
+  );
 });
 
 test("pointer hits pick the containing line then the nearest stop", () => {

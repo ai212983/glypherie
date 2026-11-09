@@ -1460,22 +1460,22 @@ The authors acknowledge the financial support by InnoSuisse (Grant No. 44027.1 I
     (2017).
 99. E. M. Barston, “Comments on ‘electrohydrodynamic Rayleigh-Taylor bulk instability’,” Phys. Fluids 13, 2876–2878
     (1970).
-100. L. Wang et al., “Driving scheme optimization for electrowetting displays based on contact angle hysteresis to
-     achieve precise gray-scales,” Front. Phys. 9, 655547 (2021).
-101. F. Li and F. Mugele, “How to make sticky surfaces slippery: contact angle hysteresis in electrowetting with
-     alternating voltage,” Appl. Phys. Lett. 92, 244108 (2008).
-102. Y.-C. Chen et al., “56.3: a charge trapping suppression method for quick response electrowetting displays,” in SID
-     Symp. Digest of Tech. Pap., Vol. 41, p. 842 (2010).
-103. J. R. Platt, “Electrochromism, a possible change of color producible in dyes by an electric field,” J. Chem. Phys.
-     34, 862–863 (1961).
-104. S. K. Deb, “A novel electrophotographic system,” Appl. Opt. 8, 192 (1969).
-105. J. Svensson and C. Granqvist, “Electrochromic tungsten oxide films for energy efficient windows,” Sol. Energy
-     Mater. 11, 29–34 (1984).
-106. C. M. Lampert, “Electrochromic materials and devices for energy efficient windows,” Sol. Energy Mater. 11, 1–27
-     (1984).
-107. C. M. Lampert, “The world of large-area glazing and displays,” Proc SPIE 3788 (1999).
-108. C. Lampert, “Large-area smart glass and integrated photovoltaics,” Sol. Energy Mater. Sol. Cells 76, 489–499
-     (2003).
+100.  L. Wang et al., “Driving scheme optimization for electrowetting displays based on contact angle hysteresis to
+      achieve precise gray-scales,” Front. Phys. 9, 655547 (2021).
+101.  F. Li and F. Mugele, “How to make sticky surfaces slippery: contact angle hysteresis in electrowetting with
+      alternating voltage,” Appl. Phys. Lett. 92, 244108 (2008).
+102.  Y.-C. Chen et al., “56.3: a charge trapping suppression method for quick response electrowetting displays,” in SID
+      Symp. Digest of Tech. Pap., Vol. 41, p. 842 (2010).
+103.  J. R. Platt, “Electrochromism, a possible change of color producible in dyes by an electric field,” J. Chem. Phys.
+      34, 862–863 (1961).
+104.  S. K. Deb, “A novel electrophotographic system,” Appl. Opt. 8, 192 (1969).
+105.  J. Svensson and C. Granqvist, “Electrochromic tungsten oxide films for energy efficient windows,” Sol. Energy
+      Mater. 11, 29–34 (1984).
+106.  C. M. Lampert, “Electrochromic materials and devices for energy efficient windows,” Sol. Energy Mater. 11, 1–27
+      (1984).
+107.  C. M. Lampert, “The world of large-area glazing and displays,” Proc SPIE 3788 (1999).
+108.  C. Lampert, “Large-area smart glass and integrated photovoltaics,” Sol. Energy Mater. Sol. Cells 76, 489–499
+      (2003).
 
 <!-- PDF page 32; printed page 020901-32 -->
 

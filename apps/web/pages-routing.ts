@@ -16,7 +16,11 @@ export function pagesRoutingPlugin(): Plugin {
       }
     },
     transformIndexHtml() {
-      return [{ tag: "script", injectTo: "head-prepend", children: `
+      return [
+        {
+          tag: "script",
+          injectTo: "head-prepend",
+          children: `
 // Restore the clean URL before the app or service worker starts.
 (() => {
   const route = new URLSearchParams(location.search).get("__pages_route");
@@ -25,10 +29,15 @@ export function pagesRoutingPlugin(): Plugin {
   if (target.origin === location.origin && target.pathname.startsWith(${JSON.stringify(base)})) {
     history.replaceState(null, "", target.pathname + target.search + target.hash);
   }
-})();` }];
+})();`,
+        },
+      ];
     },
     generateBundle() {
-      this.emitFile({ type: "asset", fileName: "404.html", source: `<!doctype html>
+      this.emitFile({
+        type: "asset",
+        fileName: "404.html",
+        source: `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,follow"><title>Page not found — Glypherie</title></head>
 <body><p>Page not found. <a href="${base}">Open Glypherie</a></p>
 <script>
@@ -38,7 +47,8 @@ export function pagesRoutingPlugin(): Plugin {
     location.replace(base + "?__pages_route=" + encodeURIComponent(location.pathname + location.search + location.hash));
   }
 })();
-</script></body></html>` });
+</script></body></html>`,
+      });
     },
   };
 }

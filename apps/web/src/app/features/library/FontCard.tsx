@@ -31,19 +31,43 @@ interface FontCardProps {
 // Plain container: the card itself is not clickable. Saved variants are the
 // clickable child rows; Add variant creates a default saved variant first and
 // navigates only after the write commits.
-export function FontCard({ font, text, baseSize, zoom, palette, inverse, library, variants, onAddVariant, onOpenVariant, onDeleteFont }: FontCardProps): React.JSX.Element {
+export function FontCard({
+  font,
+  text,
+  baseSize,
+  zoom,
+  palette,
+  inverse,
+  library,
+  variants,
+  onAddVariant,
+  onOpenVariant,
+  onDeleteFont,
+}: FontCardProps): React.JSX.Element {
   const load = library.loadStatus(font.id);
   return (
-    <Card variant="plain" data-font-card={font.id} className="min-w-0 rounded-[16px] border-studio-border bg-font-card py-0 shadow-studio-card">
+    <Card
+      variant="plain"
+      data-font-card={font.id}
+      className="min-w-0 rounded-[16px] border-studio-border bg-font-card py-0 shadow-studio-card"
+    >
       <CardHeader className="gap-0 px-4 pt-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
-            <CardTitle className="min-w-0 font-display text-[16px] leading-6 font-bold tracking-[0.4px] text-studio-foreground" data-font-name={font.id}>
+            <CardTitle
+              className="min-w-0 font-display text-[16px] leading-6 font-bold tracking-[0.4px] text-studio-foreground"
+              data-font-name={font.id}
+            >
               {displayName(font)}
             </CardTitle>
-            {font.source === "bundled" && <Badge variant="outline" className="shrink-0 border-studio-border bg-studio-inset px-2 py-0.5 font-studio text-[9px] leading-4 font-bold text-studio-muted shadow-studio-inset">
-              Bundled
-            </Badge>}
+            {font.source === "bundled" && (
+              <Badge
+                variant="outline"
+                className="shrink-0 border-studio-border bg-studio-inset px-2 py-0.5 font-studio text-[9px] leading-4 font-bold text-studio-muted shadow-studio-inset"
+              >
+                Bundled
+              </Badge>
+            )}
           </div>
           <Button
             variant="ghost"
@@ -59,9 +83,7 @@ export function FontCard({ font, text, baseSize, zoom, palette, inverse, library
 
         {typeof font.metadata.names.description === "string" && font.metadata.names.description.trim() !== "" && (
           <TooltipHint content={font.metadata.names.description.trim()}>
-            <CardDescription
-              className="wrap-anywhere font-studio text-[11px] leading-4 font-normal text-studio-muted line-clamp-2"
-            >
+            <CardDescription className="wrap-anywhere font-studio text-[11px] leading-4 font-normal text-studio-muted line-clamp-2">
               {font.metadata.names.description.trim()}
             </CardDescription>
           </TooltipHint>
@@ -82,7 +104,6 @@ export function FontCard({ font, text, baseSize, zoom, palette, inverse, library
       />
       <CardContent className="px-4 pb-4 text-[.8rem] text-soft">
         <FontInfoBoxes font={font} />
-
       </CardContent>
     </Card>
   );

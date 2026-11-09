@@ -17,7 +17,9 @@ function withStorage(values: Record<string, string>, body: () => void): void {
       configurable: true,
       value: {
         getItem: (key: string) => values[key] ?? null,
-        setItem: (key: string, value: string) => { values[key] = value; },
+        setItem: (key: string, value: string) => {
+          values[key] = value;
+        },
       },
     });
     body();
@@ -37,7 +39,7 @@ test("device viewing persists and validates stored values", () => {
   withStorage({}, () => {
     writeDeviceViewing({ device: "xteink-x4", scale: "one-to-one" });
     assert.deepEqual(readDeviceViewing(), { device: "xteink-x4", scale: "one-to-one" });
-    assert.equal(JSON.parse((globalThis.localStorage?.getItem(GLOBAL_DEVICE_KEY) ?? "")).device, "xteink-x4");
+    assert.equal(JSON.parse(globalThis.localStorage?.getItem(GLOBAL_DEVICE_KEY) ?? "").device, "xteink-x4");
   });
   for (const [stored, expected] of [
     ['{"device":"xteink-x3","scale":"one-to-one"}', { device: "xteink-x3", scale: "one-to-one" }],
@@ -109,8 +111,12 @@ test("device viewing tolerates unavailable storage", () => {
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
       value: {
-        getItem: () => { throw new Error("denied"); },
-        setItem: () => { throw new Error("denied"); },
+        getItem: () => {
+          throw new Error("denied");
+        },
+        setItem: () => {
+          throw new Error("denied");
+        },
       },
     });
     assert.deepEqual(readDeviceViewing(), { device: null, scale: "actual" });

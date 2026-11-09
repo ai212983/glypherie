@@ -41,7 +41,7 @@ export const REFLECTIVE_DEVICES: Record<ReflectiveDeviceId, ReflectiveDevicePres
     defaultPaper: "#999999",
     defaultInk: "#2D2D2D",
   },
-  "playdate": {
+  playdate: {
     id: "playdate",
     label: "Playdate",
     nativeWidthPx: 400,
@@ -125,7 +125,6 @@ export function computeReflectiveDisplay(config: ReflectiveDisplayConfig): Refle
       readonly paper: PaletteOrigin;
       readonly ink: PaletteOrigin;
     },
-    palette: Object.freeze([hexToRgba(paper.hex), hexToRgba(ink.hex)]) as unknown as
-      readonly [paper: RGBA, ink: RGBA],
+    palette: Object.freeze([hexToRgba(paper.hex), hexToRgba(ink.hex)]) as unknown as readonly [paper: RGBA, ink: RGBA],
   };
 }

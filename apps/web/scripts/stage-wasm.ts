@@ -11,8 +11,8 @@ import { fileURLToPath } from "node:url";
 
 const webRoot: string = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const allowMissing: boolean = process.argv.includes("--allow-missing");
-const previewDir: string = process.env.FONT_WASM_PREVIEW_DIR
-  ?? path.resolve(webRoot, "..", "..", "crates", "wasm", "pkg-web-preview-simd128");
+const previewDir: string =
+  process.env.FONT_WASM_PREVIEW_DIR ?? path.resolve(webRoot, "..", "..", "crates", "wasm", "pkg-web-preview-simd128");
 const outDir: string = path.join(webRoot, "src", "app", "renderer", "wasm");
 
 const STUB_JS: string = `// Generated degraded stub (preview WASM not staged). Every use throws.
@@ -73,7 +73,7 @@ const js: string = path.join(previewDir, "font_wasm.js");
 const dts: string = path.join(previewDir, "font_wasm.d.ts");
 const bin: string = path.join(previewDir, "font_wasm_bg.wasm");
 await fs.mkdir(outDir, { recursive: true });
-if (await exists(js) && await exists(bin)) {
+if ((await exists(js)) && (await exists(bin))) {
   await stageBytes(path.join(outDir, "font_wasm.js"), await fs.readFile(js));
   await stageBytes(path.join(outDir, "font_wasm_bg.wasm"), await fs.readFile(bin));
   if (await exists(dts)) await stageBytes(path.join(outDir, "font_wasm.d.ts"), await fs.readFile(dts));
@@ -87,7 +87,7 @@ if (await exists(js) && await exists(bin)) {
   console.warn(`stage-wasm: preview renderer missing in ${previewDir}; dev-degraded stubs written.`);
 } else {
   throw new Error(
-    `stage-wasm: preview renderer missing in ${previewDir}.\n`
-    + `Build it with \`just wasm-build-preview\`, or set FONT_WASM_PREVIEW_DIR.`,
+    `stage-wasm: preview renderer missing in ${previewDir}.\n` +
+      `Build it with \`just wasm-build-preview\`, or set FONT_WASM_PREVIEW_DIR.`,
   );
 }

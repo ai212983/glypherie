@@ -12,7 +12,13 @@ interface LayoutControlsProps {
   onSpacing: (value: number) => void;
   onKerning: (value: KerningPreference) => void;
 }
-export function LayoutControls({ fontId, spacingPx, kerning, onSpacing, onKerning }: LayoutControlsProps): React.JSX.Element {
+export function LayoutControls({
+  fontId,
+  spacingPx,
+  kerning,
+  onSpacing,
+  onKerning,
+}: LayoutControlsProps): React.JSX.Element {
   return (
     <div className="grid gap-3">
       <div className="interactive-spacing m-0 flex min-w-0 flex-wrap items-end gap-x-5 gap-y-[.85rem] border-0 p-0">

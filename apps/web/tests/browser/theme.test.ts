@@ -63,10 +63,7 @@ test("OS dark boots dark; toggle switches both ways and persists", { skip: !brow
   const names = await cardNames(page);
   const ids = await cardIds(page);
   await openNewVariant(page, ids[0]!);
-  await page.waitForFunction(
-    (name) => document.querySelector(".family h2")?.textContent === name,
-    names[0],
-  );
+  await page.waitForFunction((name) => document.querySelector(".family h2")?.textContent === name, names[0]);
   await page.waitForFunction(canvasRendered);
   assert.equal(await isDark(page), true, "explicit dark choice persists across navigation");
   await context.close();
@@ -105,10 +102,7 @@ test("sticky header, dark chrome, and theme-independent render bytes", { skip: !
   const names = await cardNames(page);
   const ids = await cardIds(page);
   await openNewVariant(page, ids[0]!);
-  await page.waitForFunction(
-    (name) => document.querySelector(".family h2")?.textContent === name,
-    names[0],
-  );
+  await page.waitForFunction((name) => document.querySelector(".family h2")?.textContent === name, names[0]);
   await page.waitForFunction(canvasRendered);
 
   const chrome = await page.evaluate(() => {
@@ -139,14 +133,16 @@ test("sticky header, dark chrome, and theme-independent render bytes", { skip: !
 
   await page.setViewportSize({ width: 1280, height: 600 });
   const paneScroll = await page.evaluate(() => {
-    const pane = document.querySelector('section.family')!;
+    const pane = document.querySelector("section.family")!;
     return pane.scrollHeight - pane.clientHeight;
   });
   assert.ok(paneScroll > 100, "variant controls scroll within their desktop pane");
   await page.evaluate(() => {
-    document.querySelector('section.family')!.scrollTop = 999999;
+    document.querySelector("section.family")!.scrollTop = 999999;
   });
-  const stuck = await page.evaluate(() => document.querySelector("[data-site-header]")?.getBoundingClientRect().top ?? -1);
+  const stuck = await page.evaluate(
+    () => document.querySelector("[data-site-header]")?.getBoundingClientRect().top ?? -1,
+  );
   assert.equal(stuck, 0, "title header sticks to the viewport top while panes scroll");
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -167,7 +163,9 @@ test("toggle works while bootstrapping and without storage", { skip: !browserAva
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: "light" });
   await context.addInitScript(() => {
     Storage.prototype.getItem = () => null;
-    Storage.prototype.setItem = () => { throw new Error("storage denied"); };
+    Storage.prototype.setItem = () => {
+      throw new Error("storage denied");
+    };
   });
   const page = await context.newPage();
   const errors: string[] = [];

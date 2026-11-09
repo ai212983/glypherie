@@ -2,22 +2,26 @@ export const PUBLIC_PAGES = {
   home: {
     path: "",
     title: "Glypherie — Bitmap fonts for low-resolution displays",
-    description: "Generate small bitmap fonts for monochrome and grayscale displays. Configure TrueType and OpenType rendering, compare rasterizers and export Playdate fonts.",
+    description:
+      "Generate small bitmap fonts for monochrome and grayscale displays. Configure TrueType and OpenType rendering, compare rasterizers and export Playdate fonts.",
   },
   fonts: {
     path: "fonts/",
     title: "Font library — Glypherie",
-    description: "Import and compare fonts, create bitmap font variants, and manage your browser-local font library in Glypherie.",
+    description:
+      "Import and compare fonts, create bitmap font variants, and manage your browser-local font library in Glypherie.",
   },
   palettes: {
     path: "palettes/",
     title: "Palettes — Glypherie",
-    description: "Create and compare monochrome and grayscale palettes with 2, 4, 8 or 16 levels for bitmap font previews in Glypherie.",
+    description:
+      "Create and compare monochrome and grayscale palettes with 2, 4, 8 or 16 levels for bitmap font previews in Glypherie.",
   },
   screen: {
     path: "screen/",
     title: "Screen — Glypherie",
-    description: "Place text labels on supported device screens and export their text styles as bitmap fonts in Glypherie.",
+    description:
+      "Place text labels on supported device screens and export their text styles as bitmap fonts in Glypherie.",
   },
   // Legacy alias: the same Screen document under the old path so saved
   // links keep working on static hosts; crawlers canonicalize to /screen/.
@@ -25,9 +29,12 @@ export const PUBLIC_PAGES = {
     path: "scenes/",
     canonicalPath: "screen/",
     title: "Screen — Glypherie",
-    description: "Place text labels on supported device screens and export their text styles as bitmap fonts in Glypherie.",
+    description:
+      "Place text labels on supported device screens and export their text styles as bitmap fonts in Glypherie.",
   },
 } as const;
 
-export const PREVIEW_DESCRIPTION = "Configure bitmap font rendering, compare the preview, and export a font in Glypherie. Fonts and settings stay in this browser.";
-export const VARIANT_DESCRIPTION = "Edit a saved bitmap font variant and preview its rendering in Glypherie. Fonts and variants stay in this browser.";
+export const PREVIEW_DESCRIPTION =
+  "Configure bitmap font rendering, compare the preview, and export a font in Glypherie. Fonts and settings stay in this browser.";
+export const VARIANT_DESCRIPTION =
+  "Edit a saved bitmap font variant and preview its rendering in Glypherie. Fonts and variants stay in this browser.";

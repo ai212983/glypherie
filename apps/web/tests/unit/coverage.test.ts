@@ -32,7 +32,10 @@ test("normalizeRanges sorts and joins overlapping/adjacent runs, keeping singlet
 test("resolveCoverage is additive over presets and custom ranges", () => {
   const resolved = resolveCoverage({
     presetIds: ["greek"],
-    extraRanges: [{ start: 0x3a0, end: 0x3a0 }, { start: 0x400, end: 0x401 }],
+    extraRanges: [
+      { start: 0x3a0, end: 0x3a0 },
+      { start: 0x400, end: 0x401 },
+    ],
   });
   // 0x400 is adjacent to the Greek block end 0x3FF, so it merges; the 0x3A0
   // singleton is already contained.
@@ -51,7 +54,10 @@ test("unknown preset IDs throw with the available catalog", () => {
     () => resolveCoverage({ presetIds: ["nope" as never], extraRanges: [] }),
     /Unknown coverage preset 'nope'. Available: /,
   );
-  assert.throws(() => normalizeCoverage({ presetIds: ["cjk-sc" as never], extraRanges: [] }), /Unknown coverage preset/);
+  assert.throws(
+    () => normalizeCoverage({ presetIds: ["cjk-sc" as never], extraRanges: [] }),
+    /Unknown coverage preset/,
+  );
 });
 
 test("invalid scalar intervals throw", () => {
@@ -75,7 +81,10 @@ test("default coverage matches the current export default of printable ASCII", (
   const resolved = resolveCoverage(DEFAULT_CHARACTER_COVERAGE);
   assert.deepEqual(resolved, [{ start: 0x20, end: 0x7e }]);
   assert.equal(coverageCount(resolved), 95);
-  assert.deepEqual(expandRanges(resolved, 1024), [...PLAYDATE_ASCII].map((ch) => ch.codePointAt(0)!));
+  assert.deepEqual(
+    expandRanges(resolved, 1024),
+    [...PLAYDATE_ASCII].map((ch) => ch.codePointAt(0)!),
+  );
 });
 
 test("reading preset is the union of the regional and symbol presets", () => {
@@ -109,7 +118,16 @@ test("coverageCount preflights huge inputs without expanding them", () => {
 });
 
 test("expandRanges is explicitly bounded and ascending", () => {
-  assert.deepEqual(expandRanges([{ start: 0x43, end: 0x43 }, { start: 0x41, end: 0x42 }], 4), [0x41, 0x42, 0x43]);
+  assert.deepEqual(
+    expandRanges(
+      [
+        { start: 0x43, end: 0x43 },
+        { start: 0x41, end: 0x42 },
+      ],
+      4,
+    ),
+    [0x41, 0x42, 0x43],
+  );
   assert.deepEqual(expandRanges([{ start: 0x41, end: 0x42 }], 2), [0x41, 0x42]);
   assert.deepEqual(expandRanges([], 0), []);
   assert.throws(() => expandRanges([{ start: 0x41, end: 0x42 }], 1), /expansion limit/);
@@ -125,10 +143,7 @@ test("splitCoverageByAvailability reports missing coverage instead of dropping i
     { start: 0x370, end: 0x3ff },
     { start: 0x1f00, end: 0x1fff },
   ]);
-  const partial = splitCoverageByAvailability(
-    [{ start: 0x20, end: 0x30 }],
-    [{ start: 0x25, end: 0x27 }],
-  );
+  const partial = splitCoverageByAvailability([{ start: 0x20, end: 0x30 }], [{ start: 0x25, end: 0x27 }]);
   assert.deepEqual(partial.covered, [{ start: 0x25, end: 0x27 }]);
   assert.deepEqual(partial.missing, [
     { start: 0x20, end: 0x24 },
@@ -137,19 +152,13 @@ test("splitCoverageByAvailability reports missing coverage instead of dropping i
 });
 
 test("splitCoverageByAvailability keeps a singleton/singleton intersection", () => {
-  const split = splitCoverageByAvailability(
-    [{ start: 0x41, end: 0x41 }],
-    [{ start: 0x41, end: 0x41 }],
-  );
+  const split = splitCoverageByAvailability([{ start: 0x41, end: 0x41 }], [{ start: 0x41, end: 0x41 }]);
   assert.deepEqual(split.covered, [{ start: 0x41, end: 0x41 }]);
   assert.deepEqual(split.missing, []);
 });
 
 test("splitCoverageByAvailability keeps an endpoint-only intersection", () => {
-  const split = splitCoverageByAvailability(
-    [{ start: 0x20, end: 0x30 }],
-    [{ start: 0x30, end: 0x35 }],
-  );
+  const split = splitCoverageByAvailability([{ start: 0x20, end: 0x30 }], [{ start: 0x30, end: 0x35 }]);
   assert.deepEqual(split.covered, [{ start: 0x30, end: 0x30 }]);
   assert.deepEqual(split.missing, [{ start: 0x20, end: 0x2f }]);
 });

@@ -40,14 +40,19 @@ function togglePreset(coverage: CharacterCoverage, id: CoveragePresetId): Charac
   });
 }
 
-export function CoverageControl({ coverage, onCoverage, disabled, availableRanges }: CoverageControlProps): React.JSX.Element {
+export function CoverageControl({
+  coverage,
+  onCoverage,
+  disabled,
+  availableRanges,
+}: CoverageControlProps): React.JSX.Element {
   const [customText, setCustomText] = React.useState("");
   const [customError, setCustomError] = React.useState("");
   const id = React.useId();
   const resolved = React.useMemo(() => resolveCoverage(coverage), [coverage]);
   const total = coverageCount(resolved);
   const split = React.useMemo(
-    () => availableRanges ? splitCoverageByAvailability(resolved, availableRanges) : null,
+    () => (availableRanges ? splitCoverageByAvailability(resolved, availableRanges) : null),
     [resolved, availableRanges],
   );
   const covered = split ? coverageCount(split.covered) : total;
@@ -76,7 +81,9 @@ export function CoverageControl({ coverage, onCoverage, disabled, availableRange
           return (
             <div key={presetId} className="flex items-center justify-between gap-3">
               <TooltipHint content={preset.summary}>
-                <Label htmlFor={`${id}-${presetId}`} className="text-xs">{preset.label}</Label>
+                <Label htmlFor={`${id}-${presetId}`} className="text-xs">
+                  {preset.label}
+                </Label>
               </TooltipHint>
               <Switch
                 id={`${id}-${presetId}`}
@@ -91,7 +98,9 @@ export function CoverageControl({ coverage, onCoverage, disabled, availableRange
         })}
       </fieldset>
       <div className="flex flex-col gap-1">
-        <Label htmlFor={`${id}-custom`} className="text-xs">Custom range</Label>
+        <Label htmlFor={`${id}-custom`} className="text-xs">
+          Custom range
+        </Label>
         <div className="flex gap-2">
           <Input
             id={`${id}-custom`}
@@ -101,30 +110,59 @@ export function CoverageControl({ coverage, onCoverage, disabled, availableRange
             autoComplete="off"
             spellCheck={false}
             placeholder="(0x2500-0x257F)"
-            onChange={(event) => { setCustomText(event.target.value); setCustomError(""); }}
-            onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addCustom(); } }}
+            onChange={(event) => {
+              setCustomText(event.target.value);
+              setCustomError("");
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                addCustom();
+              }
+            }}
           />
           <TooltipHint content="Add an inclusive Unicode range">
-            <Button type="button" variant="ghost" size="icon-xs" data-coverage-add disabled={disabled || !customText.trim()}
-              aria-label="Add custom range" onClick={addCustom}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              data-coverage-add
+              disabled={disabled || !customText.trim()}
+              aria-label="Add custom range"
+              onClick={addCustom}
+            >
               <Plus aria-hidden="true" />
             </Button>
           </TooltipHint>
         </div>
-        {customError && <p role="alert" className="m-0 text-xs" data-coverage-error>{customError}</p>}
+        {customError && (
+          <p role="alert" className="m-0 text-xs" data-coverage-error>
+            {customError}
+          </p>
+        )}
         {coverage.extraRanges.length > 0 && (
           <ul className="m-0 flex list-none flex-wrap gap-1 p-0">
             {coverage.extraRanges.map((range, index) => (
-              <li key={`${range.start}-${range.end}-${index}`}
-                className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs">
+              <li
+                key={`${range.start}-${range.end}-${index}`}
+                className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-xs"
+              >
                 <span>{formatCustomRange(range)}</span>
-                <button type="button" data-coverage-remove={index} disabled={disabled}
+                <button
+                  type="button"
+                  data-coverage-remove={index}
+                  disabled={disabled}
                   aria-label={`Remove range ${formatCustomRange(range)}`}
                   className="cursor-pointer bg-transparent p-0 text-soft underline"
-                  onClick={() => onCoverage(normalizeCoverage({
-                    presetIds: coverage.presetIds,
-                    extraRanges: coverage.extraRanges.filter((_, drop) => drop !== index),
-                  }))}>
+                  onClick={() =>
+                    onCoverage(
+                      normalizeCoverage({
+                        presetIds: coverage.presetIds,
+                        extraRanges: coverage.extraRanges.filter((_, drop) => drop !== index),
+                      }),
+                    )
+                  }
+                >
                   <X aria-hidden="true" className="size-3" />
                 </button>
               </li>
@@ -133,9 +171,7 @@ export function CoverageControl({ coverage, onCoverage, disabled, availableRange
         )}
       </div>
       <p className="m-0 text-xs text-soft" data-coverage-count>
-        {split
-          ? `${covered} of ${total} characters in this font`
-          : `${total} characters`}
+        {split ? `${covered} of ${total} characters in this font` : `${total} characters`}
       </p>
       {missing.length > 0 && (
         <p className="m-0 text-xs text-soft" data-coverage-missing>

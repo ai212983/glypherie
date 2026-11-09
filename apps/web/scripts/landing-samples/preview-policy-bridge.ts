@@ -6,7 +6,9 @@ import { fingerprintPreviewPolicy } from "../policy-fingerprint.ts";
 const raw = await new Promise<string>((resolve, reject) => {
   let text = "";
   process.stdin.setEncoding("utf8");
-  process.stdin.on("data", (chunk) => { text += chunk; });
+  process.stdin.on("data", (chunk) => {
+    text += chunk;
+  });
   process.stdin.on("end", () => resolve(text));
   process.stdin.on("error", reject);
 });
@@ -41,21 +43,17 @@ try {
   const policy = resolveWorkingPreviewPolicy({
     fitting: stringField(input.fitting, "fitting"),
     rasterization: stringField(input.rasterization, "rasterization"),
-    diagonalFitting: booleanField(
-      input.diagonalFitting ?? input.diagonal_fitting,
-      "diagonal_fitting",
-    ),
+    diagonalFitting: booleanField(input.diagonalFitting ?? input.diagonal_fitting, "diagonal_fitting"),
     dropout: stringField(input.dropout, "dropout"),
     includeStubs: booleanField(input.includeStubs ?? input.include_stubs, "include_stubs"),
-    fontInstructions: booleanField(
-      input.fontInstructions ?? input.font_instructions,
-      "font_instructions",
-    ),
+    fontInstructions: booleanField(input.fontInstructions ?? input.font_instructions, "font_instructions"),
   });
-  process.stdout.write(JSON.stringify({
-    policy,
-    fingerprint: fingerprintPreviewPolicy(policy),
-  }) + "\n");
+  process.stdout.write(
+    JSON.stringify({
+      policy,
+      fingerprint: fingerprintPreviewPolicy(policy),
+    }) + "\n",
+  );
 } catch (error) {
   console.error(`preview-policy-bridge: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);

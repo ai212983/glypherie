@@ -33,8 +33,7 @@ function metadata(): FontMetadata {
 const fontBytes = (seed = 0): ArrayBuffer =>
   Uint8Array.from({ length: 64 }, (_, i) => (i * 7 + seed) % 251).buffer as ArrayBuffer;
 
-const sha256 = (bytes: ArrayBuffer): string =>
-  createHash("sha256").update(Buffer.from(bytes)).digest("hex");
+const sha256 = (bytes: ArrayBuffer): string => createHash("sha256").update(Buffer.from(bytes)).digest("hex");
 
 function snapshot(): LegacySnapshot {
   const bytes = fontBytes(7);
@@ -42,7 +41,15 @@ function snapshot(): LegacySnapshot {
   const base = { fontId, revision: 1, createdAt: 5, updatedAt: 6 };
   return {
     fonts: [
-      { id: fontId, name: "Legacy", fileName: "legacy.ttf", bytes, metadata: metadata(), source: "uploaded", addedAt: 11 },
+      {
+        id: fontId,
+        name: "Legacy",
+        fileName: "legacy.ttf",
+        bytes,
+        metadata: metadata(),
+        source: "uploaded",
+        addedAt: 11,
+      },
     ],
     variants: [
       {
@@ -110,10 +117,7 @@ test("concurrent imports serialize: one winner, honest loser, singular state", a
 
   // Singular state: one font, both variants, one completion marker.
   assert.ok(await getFont(snap.fonts[0]!.id));
-  assert.deepEqual(
-    (await listVariants()).map((variant) => variant.id).sort(),
-    ["variant-a", "variant-b"],
-  );
+  assert.deepEqual((await listVariants()).map((variant) => variant.id).sort(), ["variant-a", "variant-b"]);
   assert.ok(await getVariant("variant-a"));
   assert.ok(await getVariant("variant-b"));
   const marker = JSON.parse((await kvGet(getBackend().db, IMPORT_MARKER_KEY)) ?? "{}");

@@ -18,29 +18,43 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const require = createRequire(import.meta.url);
 let Font;
-const previewPackage = process.env.DIAGONAL_SIMD128 === "1"
-  ? "../pkg-nodejs-preview-simd128/font_wasm.js" : "../pkg-nodejs-preview/font_wasm.js";
+const previewPackage =
+  process.env.DIAGONAL_SIMD128 === "1"
+    ? "../pkg-nodejs-preview-simd128/font_wasm.js"
+    : "../pkg-nodejs-preview/font_wasm.js";
 try {
   ({ Font } = require(fileURLToPath(new URL(previewPackage, import.meta.url))));
 } catch {
-  throw new Error("Missing nodejs preview package; run crates/wasm/build.sh nodejs preview with the selected SIMD setting first.");
+  throw new Error(
+    "Missing nodejs preview package; run crates/wasm/build.sh nodejs preview with the selected SIMD setting first.",
+  );
 }
 
 // Frozen exercise text; export repertoire is its distinct characters.
 const corpus = process.env.DIAGONAL_CORPUS === "1";
 const defaults = process.env.DIAGONAL_DEFAULTS === "1";
 const [shardIndex, shardCount] = (process.env.DIAGONAL_SHARD ?? "0/1").split("/").map(Number);
-assert.ok(Number.isInteger(shardIndex) && Number.isInteger(shardCount)
-  && shardCount > 0 && shardIndex >= 0 && shardIndex < shardCount, "invalid DIAGONAL_SHARD index/count");
-const TEXT = corpus ? Array.from({ length: 95 }, (_, i) => String.fromCodePoint(i + 32)).join(" ")
+assert.ok(
+  Number.isInteger(shardIndex) &&
+    Number.isInteger(shardCount) &&
+    shardCount > 0 &&
+    shardIndex >= 0 &&
+    shardIndex < shardCount,
+  "invalid DIAGONAL_SHARD index/count",
+);
+const TEXT = corpus
+  ? Array.from({ length: 95 }, (_, i) => String.fromCodePoint(i + 32)).join(" ")
   : "cC kyxzvAW sX2 MN^ We walked by the river.";
 const CHARACTERS = [...new Set(TEXT)].join("");
 const SIZES = defaults ? [16] : corpus ? [12, 14, 16, 18, 20, 24] : [12, 16, 24];
 const WEIGHTS = defaults ? [400] : [300, 400, 700];
 const FITTINGS = ["font_hints_auto", "upstream_mono"];
 const RASTERS = ["free_type_mono", "free_type_mono_terminals"];
-const FONTS = process.env.DIAGONAL_FOCUS === "1" ? ["fonts/Roboto.ttf"] : ["fonts/Roboto.ttf", "fonts/SourceSans3.ttf", "fonts/RobotoFlex.ttf"];
-const axesFor = (font, wght) => font.endsWith("Roboto.ttf") ? { wght, wdth: 100 } : { wght };
+const FONTS =
+  process.env.DIAGONAL_FOCUS === "1"
+    ? ["fonts/Roboto.ttf"]
+    : ["fonts/Roboto.ttf", "fonts/SourceSans3.ttf", "fonts/RobotoFlex.ttf"];
+const axesFor = (font, wght) => (font.endsWith("Roboto.ttf") ? { wght, wdth: 100 } : { wght });
 
 const cases = [];
 let pairCount = 0;
@@ -50,15 +64,31 @@ for (const font of FONTS) {
     for (const wght of WEIGHTS) {
       for (const fitting of FITTINGS) {
         for (const rasterization of RASTERS) {
-          const defaultControl = font.endsWith("Roboto.ttf") && size_px === 16 && wght === 400
-            && fitting === "font_hints_auto" && rasterization === "free_type_mono";
+          const defaultControl =
+            font.endsWith("Roboto.ttf") &&
+            size_px === 16 &&
+            wght === 400 &&
+            fitting === "font_hints_auto" &&
+            rasterization === "free_type_mono";
           if (matrixPair++ % shardCount !== shardIndex && !defaultControl) continue;
-          const base = { text: TEXT, width: corpus ? 800 : 400, height: corpus ? 384 : 160,
-            size_px, axes: axesFor(font, wght), output_bits: 1 };
-          cases.push({ id: String(cases.length), font_file: path.resolve(root, font),
-            spec: { ...base, pipeline: { fitting, rasterization } } });
-          cases.push({ id: String(cases.length), font_file: path.resolve(root, font),
-            spec: { ...base, pipeline: { fitting, rasterization, diagonal_fitting: true } } });
+          const base = {
+            text: TEXT,
+            width: corpus ? 800 : 400,
+            height: corpus ? 384 : 160,
+            size_px,
+            axes: axesFor(font, wght),
+            output_bits: 1,
+          };
+          cases.push({
+            id: String(cases.length),
+            font_file: path.resolve(root, font),
+            spec: { ...base, pipeline: { fitting, rasterization } },
+          });
+          cases.push({
+            id: String(cases.length),
+            font_file: path.resolve(root, font),
+            spec: { ...base, pipeline: { fitting, rasterization, diagonal_fitting: true } },
+          });
           pairCount += 1;
         }
       }
@@ -68,14 +98,42 @@ for (const font of FONTS) {
 const invalid = [];
 for (const text of [TEXT, ""]) {
   invalid.push(
-    { text, width: 400, height: 160, size_px: 16, axes: { wght: 400, wdth: 100 }, output_bits: 3,
-      pipeline: { fitting: "font_hints_auto", rasterization: "coverage", diagonal_fitting: true } },
-    { text, width: 400, height: 160, size_px: 16, axes: { wght: 400, wdth: 100 }, output_bits: 1,
-      pipeline: { fitting: "font_hints_auto", rasterization: "coverage", diagonal_fitting: true } },
-    { text, width: 400, height: 160, size_px: 16, axes: { wght: 400, wdth: 100 }, output_bits: 1,
-      pipeline: { fitting: "source_relative", rasterization: "free_type_mono", diagonal_fitting: true } },
-    { text, width: 400, height: 160, size_px: 16, axes: { wght: 400, wdth: 100 }, output_bits: 1,
-      pipeline: { fitting: "font_hints_first", rasterization: "free_type_mono", diagonal_fitting: true } },
+    {
+      text,
+      width: 400,
+      height: 160,
+      size_px: 16,
+      axes: { wght: 400, wdth: 100 },
+      output_bits: 3,
+      pipeline: { fitting: "font_hints_auto", rasterization: "coverage", diagonal_fitting: true },
+    },
+    {
+      text,
+      width: 400,
+      height: 160,
+      size_px: 16,
+      axes: { wght: 400, wdth: 100 },
+      output_bits: 1,
+      pipeline: { fitting: "font_hints_auto", rasterization: "coverage", diagonal_fitting: true },
+    },
+    {
+      text,
+      width: 400,
+      height: 160,
+      size_px: 16,
+      axes: { wght: 400, wdth: 100 },
+      output_bits: 1,
+      pipeline: { fitting: "source_relative", rasterization: "free_type_mono", diagonal_fitting: true },
+    },
+    {
+      text,
+      width: 400,
+      height: 160,
+      size_px: 16,
+      axes: { wght: 400, wdth: 100 },
+      output_bits: 1,
+      pipeline: { fitting: "font_hints_first", rasterization: "free_type_mono", diagonal_fitting: true },
+    },
   );
 }
 const invalidStart = cases.length;
@@ -84,9 +142,22 @@ for (const spec of invalid) {
 }
 
 const started = performance.now();
-const native = spawnSync("cargo", ["run", "--release", "--locked", "--quiet", "--manifest-path", "crates/wasm/Cargo.toml",
-  "--features", "preview", "--example", "parity_reference"],
-{ cwd: root, input: JSON.stringify(cases), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const native = spawnSync(
+  "cargo",
+  [
+    "run",
+    "--release",
+    "--locked",
+    "--quiet",
+    "--manifest-path",
+    "crates/wasm/Cargo.toml",
+    "--features",
+    "preview",
+    "--example",
+    "parity_reference",
+  ],
+  { cwd: root, input: JSON.stringify(cases), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+);
 assert.equal(native.error, undefined, String(native.error));
 assert.equal(native.status, 0, native.stderr);
 const expected = JSON.parse(native.stdout);
@@ -99,12 +170,16 @@ let wasmMs = 0;
 try {
   const begin = performance.now();
   for (let i = 0; i < pairCount * 2; i += 2) {
-    const off = cases[i], on = cases[i + 1];
+    const off = cases[i],
+      on = cases[i + 1];
     const file = off.font_file;
     if (!fonts.has(file)) fonts.set(file, new Font(fs.readFileSync(file)));
     const font = fonts.get(file);
     const layouts = [];
-    for (const [entry, oracle] of [[off, expected[i]], [on, expected[i + 1]]]) {
+    for (const [entry, oracle] of [
+      [off, expected[i]],
+      [on, expected[i + 1]],
+    ]) {
       assert.equal(oracle.error, undefined, `native ${entry.id}`);
       const result = font.render(entry.spec);
       try {
@@ -112,7 +187,9 @@ try {
         const layout = result.layout();
         assert.deepEqual(layout, oracle.layout, `layout ${entry.id}`);
         layouts.push(layout);
-      } finally { result.free(); }
+      } finally {
+        result.free();
+      }
     }
     // Shared bitmap layout is metric policy: identical advances with/without fitting.
     assert.deepEqual(layouts[1], layouts[0], `on/off layout ${on.id}`);
@@ -121,17 +198,27 @@ try {
     }
   }
   // Omitted and explicit false are the same serde default.
-  const probe = { text: TEXT, width: 400, height: 160, size_px: 16, axes: { wght: 400, wdth: 100 },
-    output_bits: 1, pipeline: { fitting: "font_hints_auto", rasterization: "free_type_mono_terminals" } };
+  const probe = {
+    text: TEXT,
+    width: 400,
+    height: 160,
+    size_px: 16,
+    axes: { wght: 400, wdth: 100 },
+    output_bits: 1,
+    pipeline: { fitting: "font_hints_auto", rasterization: "free_type_mono_terminals" },
+  };
   const font = fonts.get(path.resolve(root, "fonts/Roboto.ttf"));
   for (const fitting of FITTINGS) {
     for (const rasterization of RASTERS) {
       const spec = { ...probe, pipeline: { fitting, rasterization } };
-      const omitted = font.render(spec), explicit = font.render({ ...spec,
-        pipeline: { ...spec.pipeline, diagonal_fitting: false } });
+      const omitted = font.render(spec),
+        explicit = font.render({ ...spec, pipeline: { ...spec.pipeline, diagonal_fitting: false } });
       try {
         assert.equal(sha(explicit.pixels()), sha(omitted.pixels()), `omitted/false ${fitting}/${rasterization}`);
-      } finally { omitted.free(); explicit.free(); }
+      } finally {
+        omitted.free();
+        explicit.free();
+      }
     }
   }
   // Invalid combinations fail natively and in WASM, including blank text.
@@ -141,16 +228,27 @@ try {
   }
   for (const text of [TEXT, ""]) {
     for (const diagonal_fitting of ["yes", 1, null]) {
-      assert.throws(() => font.render({ ...probe, text,
-        pipeline: { fitting: "font_hints_auto", rasterization: "free_type_mono", diagonal_fitting } }));
+      assert.throws(() =>
+        font.render({
+          ...probe,
+          text,
+          pipeline: { fitting: "font_hints_auto", rasterization: "free_type_mono", diagonal_fitting },
+        }),
+      );
     }
-    assert.throws(() => font.render({ ...probe, text, pipeline: undefined,
-      renderer: "candidate", diagonal_fitting: true }));
+    assert.throws(() =>
+      font.render({ ...probe, text, pipeline: undefined, renderer: "candidate", diagonal_fitting: true }),
+    );
   }
   wasmMs = performance.now() - begin;
-} finally { for (const font of fonts.values()) font.free(); }
+} finally {
+  for (const font of fonts.values()) font.free();
+}
 // At least one default 400/16 native pair must change, proving a live path.
-assert.ok(changed.some(([a, b]) => a !== b), "diagonal fitting changed no default Roboto 400/16 output");
+assert.ok(
+  changed.some(([a, b]) => a !== b),
+  "diagonal fitting changed no default Roboto 400/16 output",
+);
 
 // Playdate export forwards the flag; parity follows the existing export smoke style.
 const exportShas = [];
@@ -164,31 +262,85 @@ if (shardIndex === 0) {
     const begin = performance.now();
     for (const fitting of FITTINGS) {
       for (const diagonal_fitting of [false, true]) {
-        const request = { config: { characters: CHARACTERS, size_px: 16, axes: { wght: 400, wdth: 100 },
-          output_bits: 1, kerning: true,
-          mono_raster: { dropout: "smart", include_stubs: true, font_instructions: true } },
-          pipeline: { fitting, rasterization: "free_type_mono_terminals", ...(diagonal_fitting ? { diagonal_fitting: true } : {}) },
-          letter_spacing_px: 0 };
-        const requestFile = path.join(temp, "request.json"), outputFile = path.join(temp, "font.fnt");
+        const request = {
+          config: {
+            characters: CHARACTERS,
+            size_px: 16,
+            axes: { wght: 400, wdth: 100 },
+            output_bits: 1,
+            kerning: true,
+            mono_raster: { dropout: "smart", include_stubs: true, font_instructions: true },
+          },
+          pipeline: {
+            fitting,
+            rasterization: "free_type_mono_terminals",
+            ...(diagonal_fitting ? { diagonal_fitting: true } : {}),
+          },
+          letter_spacing_px: 0,
+        };
+        const requestFile = path.join(temp, "request.json"),
+          outputFile = path.join(temp, "font.fnt");
         fs.writeFileSync(requestFile, JSON.stringify(request));
-        for (const [fontFile, font] of [["fonts/Roboto.ttf", exportFont], ["fonts/RobotoFlex.ttf", flexExportFont]]) {
-          execFileSync("cargo", ["run", "--release", "--quiet", "--locked", "--manifest-path", path.join(root, "crates/wasm/Cargo.toml"),
-            "--features", "preview", "--example", "playdate_reference",
-            "--", path.join(root, fontFile), requestFile, outputFile], { stdio: "pipe" });
+        for (const [fontFile, font] of [
+          ["fonts/Roboto.ttf", exportFont],
+          ["fonts/RobotoFlex.ttf", flexExportFont],
+        ]) {
+          execFileSync(
+            "cargo",
+            [
+              "run",
+              "--release",
+              "--quiet",
+              "--locked",
+              "--manifest-path",
+              path.join(root, "crates/wasm/Cargo.toml"),
+              "--features",
+              "preview",
+              "--example",
+              "playdate_reference",
+              "--",
+              path.join(root, fontFile),
+              requestFile,
+              outputFile,
+            ],
+            { stdio: "pipe" },
+          );
           const wasm = font.export_playdate(request);
-          assert.deepEqual(Buffer.from(wasm), fs.readFileSync(outputFile), `${fontFile}: ${JSON.stringify(request.pipeline)}`);
+          assert.deepEqual(
+            Buffer.from(wasm),
+            fs.readFileSync(outputFile),
+            `${fontFile}: ${JSON.stringify(request.pipeline)}`,
+          );
           exportShas.push(sha(wasm));
         }
       }
     }
-    const gray = { config: { characters: CHARACTERS, size_px: 16, axes: {}, output_bits: 3, kerning: true },
-      pipeline: { fitting: "font_hints_auto", rasterization: "coverage", diagonal_fitting: true }, letter_spacing_px: 0 };
+    const gray = {
+      config: { characters: CHARACTERS, size_px: 16, axes: {}, output_bits: 3, kerning: true },
+      pipeline: { fitting: "font_hints_auto", rasterization: "coverage", diagonal_fitting: true },
+      letter_spacing_px: 0,
+    };
     assert.throws(() => exportFont.export_playdate(gray), "gray export rejects the flag");
     exportMs = performance.now() - begin;
-  } finally { exportFont.free(); flexExportFont.free(); fs.rmSync(temp, { recursive: true, force: true }); }
+  } finally {
+    exportFont.free();
+    flexExportFont.free();
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
 }
 
-console.log(JSON.stringify({ cases: cases.length, corpus, defaults, shard: [shardIndex, shardCount], focus: process.env.DIAGONAL_FOCUS === "1",
-  defaultChangedPairs: changed.filter(([a, b]) => a !== b).length, exportShas,
-  ms: { oracle: Math.round(oracleMs), wasm: Math.round(wasmMs), export: Math.round(exportMs) } }));
-console.log(`Diagonal opt-in native/WASM parity passed for ${cases.length} render cases${exportShas.length ? " plus export parity" : ""}.`);
+console.log(
+  JSON.stringify({
+    cases: cases.length,
+    corpus,
+    defaults,
+    shard: [shardIndex, shardCount],
+    focus: process.env.DIAGONAL_FOCUS === "1",
+    defaultChangedPairs: changed.filter(([a, b]) => a !== b).length,
+    exportShas,
+    ms: { oracle: Math.round(oracleMs), wasm: Math.round(wasmMs), export: Math.round(exportMs) },
+  }),
+);
+console.log(
+  `Diagonal opt-in native/WASM parity passed for ${cases.length} render cases${exportShas.length ? " plus export parity" : ""}.`,
+);

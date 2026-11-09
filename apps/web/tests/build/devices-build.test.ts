@@ -65,10 +65,7 @@ async function stageDeviceFixtures(
 
 // A broken device asset must reject the production build itself, not just a
 // runtime probe: the guard's message reaches the build's stderr.
-async function assertBuildRejects(
-  t: Parameters<typeof buildApp>[0],
-  expected: RegExp,
-): Promise<void> {
+async function assertBuildRejects(t: Parameters<typeof buildApp>[0], expected: RegExp): Promise<void> {
   let stderr = "";
   try {
     await buildApp(t);
@@ -115,7 +112,14 @@ test("device catalog reaches the built app chunk", async (t) => {
   for (const name of assets.filter((name) => name.endsWith(".js"))) {
     bundle += await fs.readFile(path.join(output, "assets", name), "utf8");
   }
-  for (const id of ["xteink-x4", "xteink-x3", "inkplate-4-tempera", "waveshare-esp32-s3-rlcd-4-2", "playdate", "boox-picco"]) {
+  for (const id of [
+    "xteink-x4",
+    "xteink-x3",
+    "inkplate-4-tempera",
+    "waveshare-esp32-s3-rlcd-4-2",
+    "playdate",
+    "boox-picco",
+  ]) {
     assert.ok(bundle.includes(id), `built app references ${id}`);
   }
 });

@@ -37,15 +37,7 @@ function resolveFont() {
     process.env.FONT_WASM_FIXTURE,
     path.join(here, "fonts", "Roboto.ttf"),
     path.join(here, "..", "..", "..", "fonts", "Roboto.ttf"),
-    path.join(
-      here,
-      "..",
-      "..",
-      "generator",
-      "tests",
-      "fixtures",
-      "static-cff.otf",
-    ),
+    path.join(here, "..", "..", "generator", "tests", "fixtures", "static-cff.otf"),
   ].filter(Boolean);
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
@@ -65,9 +57,7 @@ try {
   assert("names" in meta && "axes" in meta, "metadata has names/axes keys");
   assert(!(meta.names instanceof Map), "metadata names use an ordinary object");
 
-  const spec = JSON.parse(
-    fs.readFileSync(path.join(here, "spec.json"), "utf8"),
-  );
+  const spec = JSON.parse(fs.readFileSync(path.join(here, "spec.json"), "utf8"));
   for (const extra of [{ characters: "A" }, { fontSize: 16 }]) {
     throws(
       () => {
@@ -95,20 +85,11 @@ try {
     const h = result.height();
     assert(w === spec.width && h === spec.height, `canvas is ${w}x${h}`);
     const pixels = result.pixels();
-    assert(
-      pixels.length === w * h * 4,
-      `pixels length ${pixels.length} == w*h*4`,
-    );
+    assert(pixels.length === w * h * 4, `pixels length ${pixels.length} == w*h*4`);
     assert(result.line_count() >= 1, "at least one laid-out line");
     const layout = result.layout();
-    assert(
-      typeof layout === "object" && Array.isArray(layout.lines),
-      "layout() exposes lines",
-    );
-    assert(
-      layout.lines.length === result.line_count(),
-      "layout lines match line_count()",
-    );
+    assert(typeof layout === "object" && Array.isArray(layout.lines), "layout() exposes lines");
+    assert(layout.lines.length === result.line_count(), "layout lines match line_count()");
     const inked = pixels.some((v, i) => v !== spec.background[i % 4]);
     assert(inked, "rendered text differs from the background");
   } finally {

@@ -4,10 +4,7 @@
 // The device list rides in as fixture data; production passes the shipped catalog.
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  defaultNewSceneDevice,
-  resolveSceneScreen,
-} from "../../src/app/features/screen/device-resolution.ts";
+import { defaultNewSceneDevice, resolveSceneScreen } from "../../src/app/features/screen/device-resolution.ts";
 import type { DeviceDefinition } from "../../src/app/devices/catalog.ts";
 
 function device(id: string, width: number, height: number): DeviceDefinition {

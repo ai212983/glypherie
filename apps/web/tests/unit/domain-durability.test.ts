@@ -5,11 +5,7 @@
 // the interface and the flag plumbing without claiming browser persistence.
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  createDomainBackend,
-  kvGet,
-  kvPut,
-} from "../../src/app/domain/backend.ts";
+import { createDomainBackend, kvGet, kvPut } from "../../src/app/domain/backend.ts";
 
 test("memory backend exposes a flush that resolves", async () => {
   const backend = await createDomainBackend();

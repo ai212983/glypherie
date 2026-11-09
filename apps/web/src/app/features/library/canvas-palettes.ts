@@ -65,7 +65,11 @@ const PALETTE_REFS: Record<CanvasPaletteId, { normal: readonly RGBA[]; inverse: 
   },
 };
 
-export function libraryPalette(id: CanvasPaletteId, inverse: boolean, profile: OutputProfile = "mono_1bit"): readonly RGBA[] {
+export function libraryPalette(
+  id: CanvasPaletteId,
+  inverse: boolean,
+  profile: OutputProfile = "mono_1bit",
+): readonly RGBA[] {
   if (profile === "gray_3bit") {
     const ramp = GRAY_RAMPS[id] ?? GRAY_RAMPS["black-white"];
     return inverse ? ramp.inverse : ramp.normal;
@@ -111,7 +115,9 @@ function mixHex(inkCss: string, paperCss: string, inkShare: number): string {
   const channels = [1, 3, 5].map((at) => {
     const ink = parseInt(inkCss.slice(at, at + 2), 16);
     const paper = parseInt(paperCss.slice(at, at + 2), 16);
-    return Math.round(ink * inkShare + paper * (1 - inkShare)).toString(16).padStart(2, "0");
+    return Math.round(ink * inkShare + paper * (1 - inkShare))
+      .toString(16)
+      .padStart(2, "0");
   });
   return `#${channels.join("")}`;
 }

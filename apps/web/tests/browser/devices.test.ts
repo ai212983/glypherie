@@ -42,8 +42,9 @@ test("device selector renders shelled fixed-framebuffer previews", { skip: !brow
     const preview = page.locator(`[data-device-preview="${device.id}"]`);
     await preview.waitFor();
     await page.waitForFunction(
-      (deviceId) => (document.querySelector(`[data-device-preview="${deviceId}"] canvas`) as HTMLElement | null)
-        ?.dataset.rendered === "true",
+      (deviceId) =>
+        (document.querySelector(`[data-device-preview="${deviceId}"] canvas`) as HTMLElement | null)?.dataset
+          .rendered === "true",
       device.id,
       { timeout: 20000 },
     );
@@ -69,11 +70,15 @@ test("device selector renders shelled fixed-framebuffer previews", { skip: !brow
     assert.equal(geometry.nativeWidth, String(device.width));
     assert.equal(geometry.nativeHeight, String(device.height));
     assert.equal(geometry.backingWidth % device.width, 0, "backing is an integer multiple of the framebuffer");
-    assert.ok(geometry.backingHeight > 0 && geometry.backingHeight <= device.height,
-      "backing holds the shown rows within the fixed framebuffer");
+    assert.ok(
+      geometry.backingHeight > 0 && geometry.backingHeight <= device.height,
+      "backing holds the shown rows within the fixed framebuffer",
+    );
     const expectedStyleWidth = (device.width * 96) / device.ppi;
-    assert.ok(Math.abs(parseFloat(geometry.styleWidth) - expectedStyleWidth) < 1,
-      `actual-size width follows 96/ppi (saw ${geometry.styleWidth})`);
+    assert.ok(
+      Math.abs(parseFloat(geometry.styleWidth) - expectedStyleWidth) < 1,
+      `actual-size width follows 96/ppi (saw ${geometry.styleWidth})`,
+    );
     assert.ok(geometry.shellComplete && geometry.shellWidth > 0, "vector shell artwork loads");
     assert.ok(geometry.shellWider, "shell surrounds the screen");
     assert.ok(
@@ -98,10 +103,13 @@ test("device selector renders shelled fixed-framebuffer previews", { skip: !brow
     480 / dpr,
     { timeout: 20000 },
   );
-  const oneToOneWidth = await page.locator('[data-device-preview="xteink-x4"] canvas').evaluate(
-    (canvas) => parseFloat(canvas.style.width),
+  const oneToOneWidth = await page
+    .locator('[data-device-preview="xteink-x4"] canvas')
+    .evaluate((canvas) => parseFloat(canvas.style.width));
+  assert.ok(
+    Math.abs(oneToOneWidth - 480 / dpr) < 1,
+    `1:1 maps one device pixel per monitor pixel (saw ${oneToOneWidth})`,
   );
-  assert.ok(Math.abs(oneToOneWidth - 480 / dpr) < 1, `1:1 maps one device pixel per monitor pixel (saw ${oneToOneWidth})`);
   await page.getByRole("radio", { name: "Actual size" }).click();
 
   // The selection persists as viewing state, not font state.
@@ -111,10 +119,12 @@ test("device selector renders shelled fixed-framebuffer previews", { skip: !brow
 
   // Unknown stored devices recover to the specimen with a notice, and any
   // legacy calibration is dropped while the unknown id stays for the notice.
-  await page.evaluate(() => window.localStorage.setItem(
-    "font-preview.device",
-    JSON.stringify({ device: "paperwhite", scale: "actual", calibration: 96 }),
-  ));
+  await page.evaluate(() =>
+    window.localStorage.setItem(
+      "font-preview.device",
+      JSON.stringify({ device: "paperwhite", scale: "actual", calibration: 96 }),
+    ),
+  );
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForFunction(canvasRendered);
   assert.equal(await page.locator("[data-device-preview]").count(), 0);
@@ -126,71 +136,83 @@ test("device selector renders shelled fixed-framebuffer previews", { skip: !brow
   assert.deepEqual(errors, []);
 });
 
-test("device previews work on the saved variant route without touching settings", { skip: !browserAvailable }, async (t) => {
-  const output = await buildApp(t);
-  const url = await servePrefix(t, output);
-  const browser = await launch(t);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  t.after(() => page.close());
-  await bootLibrary(page, url);
-  const id = (await cardIds(page))[0]!;
-  await openNewVariant(page, id);
-  await page.waitForFunction(canvasRendered);
-  const nameBefore = await page.locator("[data-variant-name]").inputValue();
-  await page.waitForFunction(
-    () => document.querySelector("[data-save-status]")?.textContent?.startsWith("Saved"),
-    null,
-    { timeout: 20000 },
-  );
+test(
+  "device previews work on the saved variant route without touching settings",
+  { skip: !browserAvailable },
+  async (t) => {
+    const output = await buildApp(t);
+    const url = await servePrefix(t, output);
+    const browser = await launch(t);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    t.after(() => page.close());
+    await bootLibrary(page, url);
+    const id = (await cardIds(page))[0]!;
+    await openNewVariant(page, id);
+    await page.waitForFunction(canvasRendered);
+    const nameBefore = await page.locator("[data-variant-name]").inputValue();
+    await page.waitForFunction(
+      () => document.querySelector("[data-save-status]")?.textContent?.startsWith("Saved"),
+      null,
+      { timeout: 20000 },
+    );
 
-  await page.getByRole("combobox", { name: "Device" }).click();
-  await page.getByRole("option", { name: "Inkplate 4 TEMPERA", exact: true }).click();
-  const preview = page.locator('[data-device-preview="inkplate-4-tempera"]');
-  await preview.waitFor();
-  await page.waitForFunction(
-    (deviceId) => (document.querySelector(`[data-device-preview="${deviceId}"] canvas`) as HTMLElement | null)
-      ?.dataset.rendered === "true",
-    "inkplate-4-tempera",
-    { timeout: 20000 },
-  );
-  const geometry = await preview.evaluate((element) => {
-    const canvas = element.querySelector("canvas") as HTMLCanvasElement | null;
-    const shell = element.querySelector("img[data-device-shell]") as HTMLImageElement | null;
-    if (!canvas || !shell) throw new Error("Device preview is missing its screen or shell.");
-    const screenBox = (canvas.parentElement as HTMLElement).getBoundingClientRect();
-    return {
-      nativeWidth: element.getAttribute("data-native-width"),
-      nativeHeight: element.getAttribute("data-native-height"),
-      backingWidth: canvas.width,
-      styleWidth: canvas.style.width,
-      shellComplete: shell.complete,
-      shellWidth: shell.naturalWidth,
-      screenAspect: screenBox.width / screenBox.height,
-      shellWider: shell.getBoundingClientRect().width > screenBox.width,
-    };
-  });
-  assert.equal(geometry.nativeWidth, "600");
-  assert.equal(geometry.nativeHeight, "600");
-  assert.equal(geometry.backingWidth % 600, 0, "backing is an integer multiple of the framebuffer");
-  const expectedStyleWidth = (600 * 96) / 223.3;
-  assert.ok(Math.abs(parseFloat(geometry.styleWidth) - expectedStyleWidth) < 1,
-    `actual-size width follows 96/ppi (saw ${geometry.styleWidth})`);
-  assert.ok(geometry.shellComplete && geometry.shellWidth > 0, "vector shell artwork loads");
-  assert.ok(geometry.shellWider, "shell surrounds the screen");
-  assert.ok(Math.abs(geometry.screenAspect / 1 - 1) < 0.02, "screen keeps the square native aspect");
+    await page.getByRole("combobox", { name: "Device" }).click();
+    await page.getByRole("option", { name: "Inkplate 4 TEMPERA", exact: true }).click();
+    const preview = page.locator('[data-device-preview="inkplate-4-tempera"]');
+    await preview.waitFor();
+    await page.waitForFunction(
+      (deviceId) =>
+        (document.querySelector(`[data-device-preview="${deviceId}"] canvas`) as HTMLElement | null)?.dataset
+          .rendered === "true",
+      "inkplate-4-tempera",
+      { timeout: 20000 },
+    );
+    const geometry = await preview.evaluate((element) => {
+      const canvas = element.querySelector("canvas") as HTMLCanvasElement | null;
+      const shell = element.querySelector("img[data-device-shell]") as HTMLImageElement | null;
+      if (!canvas || !shell) throw new Error("Device preview is missing its screen or shell.");
+      const screenBox = (canvas.parentElement as HTMLElement).getBoundingClientRect();
+      return {
+        nativeWidth: element.getAttribute("data-native-width"),
+        nativeHeight: element.getAttribute("data-native-height"),
+        backingWidth: canvas.width,
+        styleWidth: canvas.style.width,
+        shellComplete: shell.complete,
+        shellWidth: shell.naturalWidth,
+        screenAspect: screenBox.width / screenBox.height,
+        shellWider: shell.getBoundingClientRect().width > screenBox.width,
+      };
+    });
+    assert.equal(geometry.nativeWidth, "600");
+    assert.equal(geometry.nativeHeight, "600");
+    assert.equal(geometry.backingWidth % 600, 0, "backing is an integer multiple of the framebuffer");
+    const expectedStyleWidth = (600 * 96) / 223.3;
+    assert.ok(
+      Math.abs(parseFloat(geometry.styleWidth) - expectedStyleWidth) < 1,
+      `actual-size width follows 96/ppi (saw ${geometry.styleWidth})`,
+    );
+    assert.ok(geometry.shellComplete && geometry.shellWidth > 0, "vector shell artwork loads");
+    assert.ok(geometry.shellWider, "shell surrounds the screen");
+    assert.ok(Math.abs(geometry.screenAspect / 1 - 1) < 0.02, "screen keeps the square native aspect");
 
-  // Device choice is viewer state: the saved settings stay untouched.
-  assert.equal(await page.locator("[data-variant-name]").inputValue(), nameBefore,
-    "device selection leaves the saved name alone");
-  assert.ok((await page.locator("[data-save-status]").textContent() ?? "").startsWith("Saved"),
-    "device selection triggers no variant save");
+    // Device choice is viewer state: the saved settings stay untouched.
+    assert.equal(
+      await page.locator("[data-variant-name]").inputValue(),
+      nameBefore,
+      "device selection leaves the saved name alone",
+    );
+    assert.ok(
+      ((await page.locator("[data-save-status]").textContent()) ?? "").startsWith("Saved"),
+      "device selection triggers no variant save",
+    );
 
-  // The selection persists across reload on the saved route too.
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(canvasRendered);
-  await page.locator('[data-device-preview="inkplate-4-tempera"]').waitFor({ timeout: 20000 });
-  assert.equal(await page.locator("[data-variant-name]").inputValue(), nameBefore);
-  assert.deepEqual(errors, []);
-});
+    // The selection persists across reload on the saved route too.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(canvasRendered);
+    await page.locator('[data-device-preview="inkplate-4-tempera"]').waitFor({ timeout: 20000 });
+    assert.equal(await page.locator("[data-variant-name]").inputValue(), nameBefore);
+    assert.deepEqual(errors, []);
+  },
+);

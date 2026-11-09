@@ -37,7 +37,11 @@ test("shipped device assets validate clean", async () => {
 });
 
 test("guard names the broken device asset", async () => {
-  const cases: Array<{ name: string; mutate: (fixtures: { catalogFile: string; shellsDir: string }) => Promise<void>; match: RegExp }> = [
+  const cases: Array<{
+    name: string;
+    mutate: (fixtures: { catalogFile: string; shellsDir: string }) => Promise<void>;
+    match: RegExp;
+  }> = [
     {
       name: "missing catalog",
       mutate: async ({ catalogFile }) => {
@@ -106,8 +110,8 @@ test("guard names the broken device asset", async () => {
 
 test("vector-only rule ignores the svg namespace but nothing else", () => {
   assert.equal(vectorSvgViolation('<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>'), null);
-  assert.match(vectorSvgViolation("<svg><image href=\"x.png\"/></svg>") ?? "", /raster/);
-  assert.match(vectorSvgViolation("<svg><use href=\"https://example.com/a.svg\"/></svg>") ?? "", /remote/);
+  assert.match(vectorSvgViolation('<svg><image href="x.png"/></svg>') ?? "", /raster/);
+  assert.match(vectorSvgViolation('<svg><use href="https://example.com/a.svg"/></svg>') ?? "", /remote/);
   assert.match(vectorSvgViolation("plain text") ?? "", /not SVG/);
 });
 

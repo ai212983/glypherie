@@ -75,9 +75,7 @@ export function normalizeRanges(ranges: readonly CodepointRange[]): CodepointRan
 
 function checkPresetId(id: string): asserts id is CoveragePresetId {
   if (!Object.hasOwn(COVERAGE_PRESETS, id)) {
-    throw new CoverageError(
-      `Unknown coverage preset '${id}'. Available: ${COVERAGE_PRESET_IDS.join(", ")}.`,
-    );
+    throw new CoverageError(`Unknown coverage preset '${id}'. Available: ${COVERAGE_PRESET_IDS.join(", ")}.`);
   }
 }
 

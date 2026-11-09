@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    // Warn first: fixes change effect and memo behavior, so they land separately.
+    "react-hooks/exhaustive-deps": "warn",
+    // The app uses the react-jsx runtime, so no React import is needed.
+    "react/react-in-jsx-scope": "off",
+    // CSS side-effect imports are how Vite and Tailwind load styles.
+    "import/no-unassigned-import": "off",
+    // `import Dexie from "dexie"` is the documented Dexie usage.
+    "import/no-named-as-default": "off",
+    // `__`-prefixed page globals are the browser-test harness convention.
+    "eslint/no-underscore-dangle": "off",
+    // Experimental React Compiler rules; the app's ref patterns predate them.
+    "react/refs": "off",
+    "react/set-state-in-effect": "off",
+    "react/immutability": "off",
+    "react/memo-dependencies": "off",
+    "react/exhaustive-effect-dependencies": "off",
+    "react/globals": "off"
+  }
+}

@@ -87,5 +87,16 @@ export function useSceneHistory(): {
     setFuture([]);
   }, []);
 
-  return { canUndo: past.length > 0, canRedo: future.length > 0, checkpoint, peekUndo, peekRedo, takeUndo, takeRedo, stashForRedo, stashForUndo, reset };
+  return {
+    canUndo: past.length > 0,
+    canRedo: future.length > 0,
+    checkpoint,
+    peekUndo,
+    peekRedo,
+    takeUndo,
+    takeRedo,
+    stashForRedo,
+    stashForUndo,
+    reset,
+  };
 }

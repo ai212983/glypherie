@@ -20,12 +20,17 @@ function loadGitHubStars(): Promise<number | null> {
     referrerPolicy: "no-referrer",
     cache: "no-cache",
     signal: AbortSignal.timeout(5000),
-  }).then(async (response) => {
-    if (!response.ok) return null;
-    const data: unknown = await response.json();
-    const count = data && typeof data === "object" && "stargazers_count" in data ? data.stargazers_count : null;
-    return typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : null;
-  }).catch(() => null).finally(() => { starsRequest = undefined; });
+  })
+    .then(async (response) => {
+      if (!response.ok) return null;
+      const data: unknown = await response.json();
+      const count = data && typeof data === "object" && "stargazers_count" in data ? data.stargazers_count : null;
+      return typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : null;
+    })
+    .catch(() => null)
+    .finally(() => {
+      starsRequest = undefined;
+    });
   return starsRequest;
 }
 
@@ -41,7 +46,9 @@ export function LandingPage({ nav, fontsHref, onFonts }: LandingPageProps): Reac
     let active = true;
     const refresh = (): void => {
       if (document.visibilityState !== "visible") return;
-      void loadGitHubStars().then((count) => { if (active && count !== null) setStars(count); });
+      void loadGitHubStars().then((count) => {
+        if (active && count !== null) setStars(count);
+      });
     };
     refresh();
     window.addEventListener("focus", refresh);
@@ -78,14 +85,19 @@ export function LandingPage({ nav, fontsHref, onFonts }: LandingPageProps): Reac
       const { fontDatabase } = await import("../../database");
       const blocked = (): void => setCacheMessage("Close other Glypherie tabs to finish deleting local data.");
       fontDatabase.on("blocked", blocked);
-      try { await fontDatabase.delete(); }
-      finally { fontDatabase.on("blocked").unsubscribe(blocked); }
+      try {
+        await fontDatabase.delete();
+      } finally {
+        fontDatabase.on("blocked").unsubscribe(blocked);
+      }
       const registrations = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistrations() : [];
       const registration = registrations.find((entry) => entry.scope === scope);
       // Workbox names caches with the worker scope; leave other apps on this origin alone.
       // https://github.com/GoogleChrome/workbox/blob/v7/packages/workbox-core/src/_private/cacheNames.ts
-      const names = "caches" in window
-        ? (await caches.keys()).filter((name) => name.startsWith("workbox-") && name.endsWith(`-${scope}`)) : [];
+      const names =
+        "caches" in window
+          ? (await caches.keys()).filter((name) => name.startsWith("workbox-") && name.endsWith(`-${scope}`))
+          : [];
       if (registration) await registration.unregister();
       await Promise.all(names.map((name) => caches.delete(name)));
       for (const storage of [localStorage, sessionStorage]) {
@@ -109,12 +121,25 @@ export function LandingPage({ nav, fontsHref, onFonts }: LandingPageProps): Reac
           <p className="landing__intro">Convert TTF and OTF fonts for monochrome and grayscale displays.</p>
           <div className="landing__actions">
             <Button asChild size="lg" className="landing__primary-action">
-              <NavLink href={fontsHref} onNavigate={onFonts}>Open font library <img src={heroArrow} width="10.6667" height="10.6667" alt="" /></NavLink>
+              <NavLink href={fontsHref} onNavigate={onFonts}>
+                Open font library <img src={heroArrow} width="10.6667" height="10.6667" alt="" />
+              </NavLink>
             </Button>
             <Button asChild size="sm" variant="outline" className="landing__source-action">
-              <a href={SOURCE}><img className="landing__github-icon" src={githubIcon} width="16" height="16" alt="" />GitHub
-                <span className="landing__github-stars" role="img" aria-label={stars === null ? "Star on GitHub" : `${stars.toLocaleString("en-US")} GitHub stars`}>
-                  <span aria-hidden="true">★ {stars === null ? "Star" : new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(stars)}</span>
+              <a href={SOURCE}>
+                <img className="landing__github-icon" src={githubIcon} width="16" height="16" alt="" />
+                GitHub
+                <span
+                  className="landing__github-stars"
+                  role="img"
+                  aria-label={stars === null ? "Star on GitHub" : `${stars.toLocaleString("en-US")} GitHub stars`}
+                >
+                  <span aria-hidden="true">
+                    ★{" "}
+                    {stars === null
+                      ? "Star"
+                      : new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(stars)}
+                  </span>
                 </span>
               </a>
             </Button>
@@ -124,41 +149,96 @@ export function LandingPage({ nav, fontsHref, onFonts }: LandingPageProps): Reac
         <RasterizerComparison />
 
         <section className="landing__workflow" aria-labelledby="landing-start">
-          <div className="landing__section-heading"><h2 id="landing-start">Import, configure, export</h2></div>
+          <div className="landing__section-heading">
+            <h2 id="landing-start">Import, configure, export</h2>
+          </div>
           <ol className="landing__steps">
-            <li><span className="landing__step-number">01</span><h3>Import a font</h3><p>Choose a bundled font or upload your own.</p></li>
-            <li><span className="landing__step-number">02</span><h3>Adjust</h3><p>Adjust size, style and spacing. Save your settings as a variant.</p></li>
-            <li><span className="landing__step-number">03</span><h3>Export</h3><p>Export your font and test it on your display. For pixel editing, use <a href="https://play.date/caps/">Playdate Caps</a> or <a href="https://github.com/kreativekorp/bitsnpicas">Bits’N’Picas</a>.</p></li>
+            <li>
+              <span className="landing__step-number">01</span>
+              <h3>Import a font</h3>
+              <p>Choose a bundled font or upload your own.</p>
+            </li>
+            <li>
+              <span className="landing__step-number">02</span>
+              <h3>Adjust</h3>
+              <p>Adjust size, style and spacing. Save your settings as a variant.</p>
+            </li>
+            <li>
+              <span className="landing__step-number">03</span>
+              <h3>Export</h3>
+              <p>
+                Export your font and test it on your display. For pixel editing, use{" "}
+                <a href="https://play.date/caps/">Playdate Caps</a> or{" "}
+                <a href="https://github.com/kreativekorp/bitsnpicas">Bits’N’Picas</a>.
+              </p>
+            </li>
           </ol>
         </section>
 
-        <section className="landing__details" aria-labelledby="storage-title" data-confirming-reset={confirmingReset}
+        <section
+          className="landing__details"
+          aria-labelledby="storage-title"
+          data-confirming-reset={confirmingReset}
           onKeyDown={(event) => {
             if (event.key === "Escape" && confirmingReset && !clearingCache) {
               event.preventDefault();
               cancelReset();
             }
-          }}>
+          }}
+        >
           <img className="landing__storage-icon" src={localStorageIcon} width="35.3333" height="41.8" alt="" />
           <div className="landing__storage-copy">
             <h2 id="storage-title">{confirmingReset ? "Delete all local data?" : "Your fonts stay private"}</h2>
-            <p id="storage-description">{confirmingReset
-              ? "This removes all imported fonts, saved variants, palettes, settings, and the app cache. This cannot be undone."
-              : "Your fonts never leave your browser. All changes happen on your device, and your settings are saved here too."}</p>
+            <p id="storage-description">
+              {confirmingReset
+                ? "This removes all imported fonts, saved variants, palettes, settings, and the app cache. This cannot be undone."
+                : "Your fonts never leave your browser. All changes happen on your device, and your settings are saved here too."}
+            </p>
             <p role="status">{cacheMessage}</p>
           </div>
           <div className="landing__storage-actions">
-            {confirmingReset ? <>
-              <Button type="button" variant="outline" size="sm" className="landing__storage-action landing__storage-cancel"
-                autoFocus disabled={clearingCache} onClick={cancelReset}>Cancel</Button>
-              <Button type="button" variant="destructive" size="sm" className="landing__storage-action"
-                aria-describedby="storage-description" disabled={clearingCache} onClick={() => { void clearLocalCache(); }}>
-                {clearingCache ? "Clearing…" : "Delete everything"}
+            {confirmingReset ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="landing__storage-action landing__storage-cancel"
+                  autoFocus
+                  disabled={clearingCache}
+                  onClick={cancelReset}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="landing__storage-action"
+                  aria-describedby="storage-description"
+                  disabled={clearingCache}
+                  onClick={() => {
+                    void clearLocalCache();
+                  }}
+                >
+                  {clearingCache ? "Clearing…" : "Delete everything"}
+                </Button>
+              </>
+            ) : (
+              <Button
+                ref={resetTrigger}
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="landing__storage-action"
+                onClick={() => {
+                  setCacheMessage("");
+                  setConfirmingReset(true);
+                }}
+              >
+                Delete data
               </Button>
-            </> : <Button ref={resetTrigger} type="button" variant="destructive" size="sm" className="landing__storage-action"
-              onClick={() => { setCacheMessage(""); setConfirmingReset(true); }}>
-              Delete data
-            </Button>}
+            )}
           </div>
         </section>
       </main>

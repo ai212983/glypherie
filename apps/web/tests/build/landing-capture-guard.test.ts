@@ -65,7 +65,12 @@ async function writeFixture(
   const assetsDir = path.join(repoRoot, "assets");
   const configFile = path.join(repoRoot, "config.json");
   const matrixFile = path.join(assetsDir, "matrix.json");
-  const owners: Array<Record<string, unknown>> = configCases.map((entry) => ({ family_id: "roboto", size_px: 16, axes: {}, ...entry }));
+  const owners: Array<Record<string, unknown>> = configCases.map((entry) => ({
+    family_id: "roboto",
+    size_px: 16,
+    axes: {},
+    ...entry,
+  }));
   await fs.writeFile(configFile, JSON.stringify(owners));
   const matrixCases = [];
   for (const [caseId, capture] of Object.entries(captures)) {
@@ -75,11 +80,20 @@ async function writeFixture(
     const captureFile = path.join(sampleDir, "capture.json");
     const bytes = Buffer.from("fixture image");
     await fs.writeFile(path.join(sampleDir, "repo.png"), bytes);
-    await fs.writeFile(captureFile, JSON.stringify({
-      inputs: { family_id: owner.family_id, size_px: owner.size_px, source_axes: owner.axes, text: owner.text, source_kerning: true },
-      ...capture,
-      samples: [{ id: "repo", file: "repo.png", display_sha256: createHash("sha256").update(bytes).digest("hex") }],
-    }));
+    await fs.writeFile(
+      captureFile,
+      JSON.stringify({
+        inputs: {
+          family_id: owner.family_id,
+          size_px: owner.size_px,
+          source_axes: owner.axes,
+          text: owner.text,
+          source_kerning: true,
+        },
+        ...capture,
+        samples: [{ id: "repo", file: "repo.png", display_sha256: createHash("sha256").update(bytes).digest("hex") }],
+      }),
+    );
     matrixCases.push({
       id: caseId,
       family_id: owner.family_id,
@@ -167,7 +181,10 @@ test("every configured case appears exactly once in the matrix", async (t) => {
   const matrix = JSON.parse(await fs.readFile(duplicate.matrixFile, "utf8"));
   matrix.cases.push(matrix.cases[0]);
   await fs.writeFile(duplicate.matrixFile, JSON.stringify(matrix));
-  await assert.rejects(() => validateLandingCaptures(duplicate.repoRoot, optionsOf(duplicate)), /duplicate matrix case/);
+  await assert.rejects(
+    () => validateLandingCaptures(duplicate.repoRoot, optionsOf(duplicate)),
+    /duplicate matrix case/,
+  );
 });
 
 test("a capture recorded under older defaults fails after the shared defaults move on", async (t) => {
@@ -235,20 +252,16 @@ test("a tampered pipeline fails beside a valid policy and fingerprint", async (t
 });
 
 test("recorded declarations must match the current configuration", async (t) => {
-  const configured = await writeFixture(
-    t,
-    [{ id: "roboto-16", dropout: "simple" }],
-    { "roboto-16": recordedCapture({}) },
-  );
+  const configured = await writeFixture(t, [{ id: "roboto-16", dropout: "simple" }], {
+    "roboto-16": recordedCapture({}),
+  });
   await assert.rejects(
     () => validateLandingCaptures(configured.repoRoot, optionsOf(configured)),
     /recorded renderer declarations differ/,
   );
-  const recorded = await writeFixture(
-    t,
-    [{ id: "roboto-16" }],
-    { "roboto-16": recordedCapture({ dropout: "simple" }) },
-  );
+  const recorded = await writeFixture(t, [{ id: "roboto-16" }], {
+    "roboto-16": recordedCapture({ dropout: "simple" }),
+  });
   await assert.rejects(
     () => validateLandingCaptures(recorded.repoRoot, optionsOf(recorded)),
     /recorded renderer declarations differ/,
@@ -257,27 +270,26 @@ test("recorded declarations must match the current configuration", async (t) => 
 
 test("explicit configuration overrides are honored", async (t) => {
   const declared = { dropout: "simple" };
-  const fixture = await writeFixture(
-    t,
-    [{ id: "roboto-16", ...declared }],
-    { "roboto-16": recordedCapture(declared) },
-  );
+  const fixture = await writeFixture(t, [{ id: "roboto-16", ...declared }], { "roboto-16": recordedCapture(declared) });
   assert.deepEqual(await validateLandingCaptures(fixture.repoRoot, optionsOf(fixture)), { checked: 1 });
 });
 
 test("missing renderer metadata fails with the regenerate command", async (t) => {
   const fixture = await writeFixture(t, [{ id: "roboto-16" }], { "roboto-16": { samples: [] } });
-  await assert.rejects(() => validateLandingCaptures(fixture.repoRoot, optionsOf(fixture)), (error: unknown) => {
-    assert.match((error as Error).message, /renderer_inputs/);
-    assert.ok((error as Error).message.includes(REGENERATE_COMMAND.slice(0, 40)));
-    return true;
-  });
+  await assert.rejects(
+    () => validateLandingCaptures(fixture.repoRoot, optionsOf(fixture)),
+    (error: unknown) => {
+      assert.match((error as Error).message, /renderer_inputs/);
+      assert.ok((error as Error).message.includes(REGENERATE_COMMAND.slice(0, 40)));
+      return true;
+    },
+  );
 });
 
 test("corrupt declarations fail loudly instead of coercing to absent", async (t) => {
   const base = recordedCapture({});
   for (const [name, inputs] of [
-    ["unknown key", { ...base.renderer_inputs as object, fontInstructionz: true }],
+    ["unknown key", { ...(base.renderer_inputs as object), fontInstructionz: true }],
     ["null value", { dropout: null }],
     ["wrong type", { fitting: 42 }],
   ] as const) {
@@ -318,10 +330,7 @@ test("a combination the resolver rejects fails with its declaration error", asyn
 
 test("a matrix case without an owning configuration entry fails", async (t) => {
   const fixture = await writeFixture(t, [{ id: "other-case" }], { "roboto-16": recordedCapture({}) });
-  await assert.rejects(
-    () => validateLandingCaptures(fixture.repoRoot, optionsOf(fixture)),
-    /no owning entry/,
-  );
+  await assert.rejects(() => validateLandingCaptures(fixture.repoRoot, optionsOf(fixture)), /no owning entry/);
 });
 
 test("the build hook revalidates on every build", async (t) => {

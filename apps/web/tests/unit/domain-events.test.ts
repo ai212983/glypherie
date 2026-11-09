@@ -21,7 +21,9 @@ afterEach(() => {
 
 test("stamps from one owner epoch advance every tab exactly once", () => {
   let calls = 0;
-  subscribeDomain(() => { calls += 1; });
+  subscribeDomain(() => {
+    calls += 1;
+  });
   adoptOwnerWrite({ epoch: "a", seq: 1 });
   assert.equal(getDomainVersion(), 1);
   assert.equal(calls, 1);
@@ -32,7 +34,9 @@ test("stamps from one owner epoch advance every tab exactly once", () => {
 
 test("stale duplicates and out-of-order events within one epoch are ignored", () => {
   let calls = 0;
-  subscribeDomain(() => { calls += 1; });
+  subscribeDomain(() => {
+    calls += 1;
+  });
   adoptOwnerWrite({ epoch: "a", seq: 5 });
   assert.equal(calls, 1);
   adoptOwnerWrite({ epoch: "a", seq: 5 });
@@ -46,7 +50,9 @@ test("stale duplicates and out-of-order events within one epoch are ignored", ()
 
 test("a restarted owner epoch is adopted even though its sequence restarts", () => {
   let calls = 0;
-  subscribeDomain(() => { calls += 1; });
+  subscribeDomain(() => {
+    calls += 1;
+  });
   adoptOwnerWrite({ epoch: "a", seq: 7 });
   assert.equal(getDomainVersion(), 1);
   // The new owner's seq 1 is incomparable with epoch "a": suppressing it
@@ -71,7 +77,9 @@ test("a restarted owner epoch is adopted even though its sequence restarts", () 
 
 test("legacy bare numbers never suppress a real change", () => {
   let calls = 0;
-  subscribeDomain(() => { calls += 1; });
+  subscribeDomain(() => {
+    calls += 1;
+  });
   // Legacy counters from pre-stamp peers carry no epoch: every delivery fans
   // out locally instead of risking suppression by an unrelated counter.
   adoptOwnerWrite(5);
@@ -87,9 +95,13 @@ test("legacy bare numbers never suppress a real change", () => {
 });
 
 test("a failing subscriber never breaks the write path", () => {
-  subscribeDomain(() => { throw new Error("boom"); });
+  subscribeDomain(() => {
+    throw new Error("boom");
+  });
   let calls = 0;
-  subscribeDomain(() => { calls += 1; });
+  subscribeDomain(() => {
+    calls += 1;
+  });
   notifyDomainWrite();
   assert.equal(calls, 1);
   adoptOwnerWrite({ epoch: "a", seq: 9 });

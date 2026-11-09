@@ -27,7 +27,9 @@ export function relativeFontUrl(url: string): string {
     const absolute = new URL(url, document.baseURI).href;
     const base = new URL(".", document.baseURI).href;
     if (absolute.startsWith(base)) return absolute.slice(base.length);
-  } catch { /* keep the original URL */ }
+  } catch {
+    /* keep the original URL */
+  }
   return url;
 }
 

@@ -1,6 +1,13 @@
 import * as React from "react";
 import type { PalettePreset } from "../../../palettes/model";
-import { Select, SelectContent, SelectDisplay, SelectItem, SelectTrigger, SelectValue } from "../../../../components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectDisplay,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../../components/ui/select";
 import { Label } from "../../../../components/ui/label";
 import { PaletteDepthLabel } from "../../grayscale/PaletteDepthLabel";
 import { curveLevels } from "../../grayscale/response-curve";
@@ -11,7 +18,9 @@ function PaletteChoice({ preset }: { preset: PalettePreset }): React.JSX.Element
   return (
     <span className="palette-choice">
       <span className="palette-choice-heading">
-        <span data-palette-name className="palette-choice-name">{preset.name || "Untitled grayscale"}</span>{" "}
+        <span data-palette-name className="palette-choice-name">
+          {preset.name || "Untitled grayscale"}
+        </span>{" "}
         <PaletteDepthLabel count={levels.length} className="palette-choice-depth" />
       </span>
       <span className="palette-choice-swatches" aria-hidden="true">
@@ -23,7 +32,12 @@ function PaletteChoice({ preset }: { preset: PalettePreset }): React.JSX.Element
   );
 }
 
-export function OutputControls({ presets, paletteId, disabled, onPalette }: {
+export function OutputControls({
+  presets,
+  paletteId,
+  disabled,
+  onPalette,
+}: {
   presets: readonly PalettePreset[];
   paletteId: number;
   disabled: boolean;
@@ -41,16 +55,20 @@ export function OutputControls({ presets, paletteId, disabled, onPalette }: {
         <SelectDisplay id={id} data-output-palette role="group" aria-labelledby={`${id}-label`}>
           {selected && <PaletteChoice preset={selected} />}
         </SelectDisplay>
-      ) : <Select value={String(paletteId)} onValueChange={(value) => onPalette(Number(value))}>
-        <SelectTrigger id={id} data-output-palette><SelectValue /></SelectTrigger>
-        <SelectContent className="palette-picker-menu">
-          {presets.map((preset) => (
-            <SelectItem key={preset.id} value={String(preset.id)} textValue={preset.name || "Untitled grayscale"}>
-              <PaletteChoice preset={preset} />
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>}
+      ) : (
+        <Select value={String(paletteId)} onValueChange={(value) => onPalette(Number(value))}>
+          <SelectTrigger id={id} data-output-palette>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="palette-picker-menu">
+            {presets.map((preset) => (
+              <SelectItem key={preset.id} value={String(preset.id)} textValue={preset.name || "Untitled grayscale"}>
+                <PaletteChoice preset={preset} />
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
     </div>
   );
 }

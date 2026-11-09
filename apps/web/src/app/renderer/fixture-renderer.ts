@@ -23,17 +23,18 @@ type Channels = readonly [number, number, number, number];
 // Synthetic source-over matching the native composite (surface.rs): coverage
 // scales source alpha in floating point with no intermediate rounding, the
 // background contributes by its own alpha, and only the final bytes round.
-export function compositeSourceOver(
-  src: Channels,
-  dst: Channels,
-  coverage: number,
-): [number, number, number, number] {
+export function compositeSourceOver(src: Channels, dst: Channels, coverage: number): [number, number, number, number] {
   const sa = (src[3] / 255) * coverage;
   const da = dst[3] / 255;
   const outa = sa + da * (1 - sa);
   if (outa <= 0) return [0, 0, 0, 0];
   const blend = (s: number, d: number): number => (s * sa + d * da * (1 - sa)) / outa;
-  return [Math.round(blend(src[0], dst[0])), Math.round(blend(src[1], dst[1])), Math.round(blend(src[2], dst[2])), Math.round(outa * 255)];
+  return [
+    Math.round(blend(src[0], dst[0])),
+    Math.round(blend(src[1], dst[1])),
+    Math.round(blend(src[2], dst[2])),
+    Math.round(outa * 255),
+  ];
 }
 
 // Lifecycle observations for mounted harness tests: construction,
@@ -54,11 +55,7 @@ export interface FixtureRendererEvents {
   loadCalled?: (call: { fontId: string }) => void;
 }
 
-function synthesizeFixturePixels(
-  spec: RenderSpec,
-  lineHeight: number,
-  scenario: FixtureScenario,
-): RenderPixels {
+function synthesizeFixturePixels(spec: RenderSpec, lineHeight: number, scenario: FixtureScenario): RenderPixels {
   const width = Math.min(4096, Math.max(1, Math.ceil(spec.width)));
   const height = Math.min(4096, Math.max(1, Math.ceil(spec.height)));
   // Empty text lays out zero lines and paints a blank canvas.
@@ -88,9 +85,10 @@ function synthesizeFixturePixels(
       const level = row % Math.max(1, levels);
       if (level === 0) continue;
       const explicit = palette !== null ? palette[level % palette.length] : undefined;
-      const color = explicit !== undefined
-        ? compositeSourceOver(explicit, background, 1)
-        : compositeSourceOver(foreground, background, level / Math.max(1, levels - 1));
+      const color =
+        explicit !== undefined
+          ? compositeSourceOver(explicit, background, 1)
+          : compositeSourceOver(foreground, background, level / Math.max(1, levels - 1));
       for (let col = 4; col < 4 + inkCols; col += 1) {
         const at = ((top + row) * width + col) * 4;
         view[at] = color[0];
@@ -113,7 +111,21 @@ function synthesizeFixturePixels(
 
 function fixtureMetadata(): FontMetadata {
   return {
-    names: { family: "Fixture", style: null, full: "Fixture Regular", postscript: null, version: null, copyright: null, manufacturer: null, designer: null, description: null, vendor_url: null, designer_url: null, license: null, license_url: null },
+    names: {
+      family: "Fixture",
+      style: null,
+      full: "Fixture Regular",
+      postscript: null,
+      version: null,
+      copyright: null,
+      manufacturer: null,
+      designer: null,
+      description: null,
+      vendor_url: null,
+      designer_url: null,
+      license: null,
+      license_url: null,
+    },
     axes: [],
     kerning: { horizontal: false, vertical: false, sources: [] },
     style: { slope: "upright", weight_class: 400, width_class: 5, italic_angle: 0 },
@@ -167,7 +179,11 @@ export function createFixtureRenderer(options: FixtureRendererOptions = {}): Ren
       token += 1;
       return token;
     },
-    async render(fontId: string, renderToken: number, spec: RenderSpec): Promise<{
+    async render(
+      fontId: string,
+      renderToken: number,
+      spec: RenderSpec,
+    ): Promise<{
       token: number;
       dropped: boolean;
       pixels: RenderPixels;

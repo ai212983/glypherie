@@ -20,9 +20,7 @@ import {
 } from "../helpers/spa-helpers.ts";
 
 async function grayscaleReady(page: Parameters<typeof hashPath>[0]): Promise<void> {
-  await page.waitForFunction(
-    () => document.querySelector('main section[aria-label="Grayscale preview"]') !== null,
-  );
+  await page.waitForFunction(() => document.querySelector('main section[aria-label="Grayscale preview"]') !== null);
 }
 
 async function presetCanvasRendered(page: Page, id: number): Promise<void> {
@@ -41,14 +39,17 @@ async function presetRatio(page: Page, id: number): Promise<number> {
 }
 
 async function presetPixel(page: Page, id: number, x: number, y: number): Promise<[number, number, number]> {
-  return page.evaluate(([rowId, px, py]) => {
-    const canvas = document.querySelector(`[data-preset-row="${rowId}"] canvas`);
-    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("preset canvas is missing");
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("canvas 2d is unavailable");
-    const [r, g, b] = context.getImageData(px, py, 1, 1).data;
-    return [r ?? -1, g ?? -1, b ?? -1];
-  }, [id, x, y] as const);
+  return page.evaluate(
+    ([rowId, px, py]) => {
+      const canvas = document.querySelector(`[data-preset-row="${rowId}"] canvas`);
+      if (!(canvas instanceof HTMLCanvasElement)) throw new Error("preset canvas is missing");
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("canvas 2d is unavailable");
+      const [r, g, b] = context.getImageData(px, py, 1, 1).data;
+      return [r ?? -1, g ?? -1, b ?? -1];
+    },
+    [id, x, y] as const,
+  );
 }
 
 async function framePaper(page: Page): Promise<string> {
@@ -64,14 +65,17 @@ async function mainRatio(page: Page): Promise<number> {
 }
 
 async function mainPixel(page: Page, x: number, y: number): Promise<[number, number, number]> {
-  return page.evaluate(([px, py]) => {
-    const canvas = document.querySelector('main section[aria-label="Grayscale preview"] canvas');
-    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("main canvas is missing");
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("canvas 2d is unavailable");
-    const [r, g, b] = context.getImageData(px, py, 1, 1).data;
-    return [r ?? -1, g ?? -1, b ?? -1];
-  }, [x, y] as const);
+  return page.evaluate(
+    ([px, py]) => {
+      const canvas = document.querySelector('main section[aria-label="Grayscale preview"] canvas');
+      if (!(canvas instanceof HTMLCanvasElement)) throw new Error("main canvas is missing");
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("canvas 2d is unavailable");
+      const [r, g, b] = context.getImageData(px, py, 1, 1).data;
+      return [r ?? -1, g ?? -1, b ?? -1];
+    },
+    [x, y] as const,
+  );
 }
 
 async function presetViewport(page: Page, id: number): Promise<string> {
@@ -92,17 +96,20 @@ async function presetBackingHeight(page: Page, id: number): Promise<number> {
 }
 
 async function presetHasInk(page: Page, id: number, paper: number): Promise<boolean> {
-  return page.evaluate(([rowId, paperValue]) => {
-    const canvas = document.querySelector(`[data-preset-row="${rowId}"] canvas`);
-    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("preset canvas is missing");
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("canvas 2d is unavailable");
-    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    for (let offset = 0; offset < data.length; offset += 4) {
-      if ((data[offset] ?? paperValue) !== paperValue) return true;
-    }
-    return false;
-  }, [id, paper] as const);
+  return page.evaluate(
+    ([rowId, paperValue]) => {
+      const canvas = document.querySelector(`[data-preset-row="${rowId}"] canvas`);
+      if (!(canvas instanceof HTMLCanvasElement)) throw new Error("preset canvas is missing");
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("canvas 2d is unavailable");
+      const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      for (let offset = 0; offset < data.length; offset += 4) {
+        if ((data[offset] ?? paperValue) !== paperValue) return true;
+      }
+      return false;
+    },
+    [id, paper] as const,
+  );
 }
 
 async function presetInk(page: Page, id: number): Promise<number[]> {
@@ -140,7 +147,11 @@ test("primary nav switches between fonts and palettes with active state", { skip
   assert.equal(await hashPath(page), "/palettes/");
   assert.equal(await palettesNav.getAttribute("aria-current"), "page");
   assert.equal(await fontsNav.getAttribute("aria-current"), null);
-  assert.equal(await page.getByRole("group", { name: "Preview zoom" }).count(), 0, "local zoom removed in favor of global zoom");
+  assert.equal(
+    await page.getByRole("group", { name: "Preview zoom" }).count(),
+    0,
+    "local zoom removed in favor of global zoom",
+  );
   assert.equal(await page.locator("[data-global-zoom]").count(), 1, "palettes shares the global display controls");
   assert.equal(await page.locator("[data-theme-toggle]").count(), 1, "theme control stays on palettes");
   assert.equal(await page.locator("[data-library-filter]").count(), 0, "font filter stays off palettes");
@@ -158,11 +169,22 @@ test("primary nav switches between fonts and palettes with active state", { skip
   assert.equal(await preview.getByRole("combobox", { name: "Preset", exact: true }).count(), 1);
   const titleStyle = (element: HTMLElement): string[] => {
     const style = getComputedStyle(element);
-    return [style.fontFamily, style.fontSize, style.fontWeight, style.lineHeight, style.letterSpacing, style.color, style.textTransform];
+    return [
+      style.fontFamily,
+      style.fontSize,
+      style.fontWeight,
+      style.lineHeight,
+      style.letterSpacing,
+      style.color,
+      style.textTransform,
+    ];
   };
   const previewStyle = await page.getByRole("heading", { name: "Preview", exact: true }).evaluate(titleStyle);
   assert.equal(previewStyle[1], "10px");
-  assert.deepEqual(previewStyle, await page.getByRole("heading", { name: "Presets", exact: true }).evaluate(titleStyle));
+  assert.deepEqual(
+    previewStyle,
+    await page.getByRole("heading", { name: "Presets", exact: true }).evaluate(titleStyle),
+  );
   assert.equal(order.includes("Preset parameters"), false);
 
   await page.goBack();
@@ -213,16 +235,31 @@ test("preset specimen rows select, edit, and stay local-only", { skip: !browserA
   assert.equal(await page.getByLabel("Selected preset").count(), 0, "dropdown selector is gone");
   const sidebar = page.getByRole("complementary", { name: "Grayscale presets" });
   const main = page.getByRole("region", { name: "Grayscale preview" });
-  assert.equal(await sidebar.getByRole("textbox", { name: "Sample text", exact: true }).count(), 1, "shared preset sample text lives in the left panel");
-  assert.equal(await sidebar.locator("input, textarea, select, [role=slider], [role=combobox]").count(), 1, "sample text is the only editor in the left panel");
-  assert.equal(await main.getByRole("textbox", { name: "Sample text", exact: true }).count(), 1, "main specimen keeps its independent sample text");
+  assert.equal(
+    await sidebar.getByRole("textbox", { name: "Sample text", exact: true }).count(),
+    1,
+    "shared preset sample text lives in the left panel",
+  );
+  assert.equal(
+    await sidebar.locator("input, textarea, select, [role=slider], [role=combobox]").count(),
+    1,
+    "sample text is the only editor in the left panel",
+  );
+  assert.equal(
+    await main.getByRole("textbox", { name: "Sample text", exact: true }).count(),
+    1,
+    "main specimen keeps its independent sample text",
+  );
   const group = page.getByRole("group", { name: "Presets" });
   const mono = group.getByRole("button", { name: /Monochrome/ });
   assert.equal(await mono.getAttribute("aria-pressed"), "true");
   assert.equal(await page.locator('[data-preset-caption="0"]').textContent(), "16 px / 1-bit · 2 levels");
   assert.equal(await page.locator('[data-preset-row="0"] button').count(), 0, "rows carry no nested controls");
   await presetCanvasRendered(page, 0);
-  assert.ok((await presetInk(page, 0)).every((value) => value === 0 || value === 255), "mono specimen uses its palette");
+  assert.ok(
+    (await presetInk(page, 0)).every((value) => value === 0 || value === 255),
+    "mono specimen uses its palette",
+  );
   const geometry = await page.evaluate(() => {
     const row = document.querySelector('[data-preset-row="0"]');
     const parent = row?.parentElement;
@@ -255,35 +292,79 @@ test("preset specimen rows select, edit, and stay local-only", { skip: !browserA
   assert.equal(await specimen.locator("canvas").count(), 1, "sample controls and rendered preview share a panel");
   assert.equal(await specimen.getByRole("combobox", { name: "Preset", exact: true }).count(), 1);
   assert.equal(await specimen.getByRole("textbox", { name: "Sample text", exact: true }).count(), 1);
-  const presetLabel = await specimen.locator("label").filter({ hasText: /^Preset$/ }).boundingBox();
+  const presetLabel = await specimen
+    .locator("label")
+    .filter({ hasText: /^Preset$/ })
+    .boundingBox();
   const presetSelect = await specimen.getByRole("combobox", { name: "Preset", exact: true }).boundingBox();
-  assert.ok(presetLabel && presetSelect && presetSelect.x > presetLabel.x && Math.abs((presetLabel.y + presetLabel.height / 2) - (presetSelect.y + presetSelect.height / 2)) < 1, "Preset label and dropdown share a row");
+  assert.ok(
+    presetLabel &&
+      presetSelect &&
+      presetSelect.x > presetLabel.x &&
+      Math.abs(presetLabel.y + presetLabel.height / 2 - (presetSelect.y + presetSelect.height / 2)) < 1,
+    "Preset label and dropdown share a row",
+  );
   assert.equal(await specimen.getByRole("combobox").count(), 2, "preview contains the text preset and font selectors");
   const fieldStyle = (element: HTMLElement): string[] => {
     const field = getComputedStyle(element.parentElement!);
     const input = getComputedStyle(element);
-    return [field.borderColor, field.borderRadius, field.backgroundColor, field.padding, field.boxShadow, input.fontFamily, input.fontSize, input.lineHeight, input.padding, input.backgroundColor];
+    return [
+      field.borderColor,
+      field.borderRadius,
+      field.backgroundColor,
+      field.padding,
+      field.boxShadow,
+      input.fontFamily,
+      input.fontSize,
+      input.lineHeight,
+      input.padding,
+      input.backgroundColor,
+    ];
   };
-  assert.deepEqual(await specimen.getByRole("textbox", { name: "Sample text", exact: true }).evaluate(fieldStyle), await sidebar.getByRole("textbox", { name: "Sample text", exact: true }).evaluate(fieldStyle), "sample text fields share styling");
+  assert.deepEqual(
+    await specimen.getByRole("textbox", { name: "Sample text", exact: true }).evaluate(fieldStyle),
+    await sidebar.getByRole("textbox", { name: "Sample text", exact: true }).evaluate(fieldStyle),
+    "sample text fields share styling",
+  );
   const swatches = response.getByRole("group", { name: "Gray level swatches", exact: true });
   assert.equal(await swatches.getByRole("heading").count(), 0);
   const preview = main.getByRole("group", { name: "Preview", exact: true });
-  assert.equal(await main.getByRole("group", { name: "Gray level swatches", exact: true }).count(), 1, "only one ramp remains");
+  assert.equal(
+    await main.getByRole("group", { name: "Gray level swatches", exact: true }).count(),
+    1,
+    "only one ramp remains",
+  );
   assert.equal(await preview.locator("canvas").count(), 1, "rendered specimen lives in Preview");
-  assert.equal(await preview.evaluate((element) => element.matches('[data-slot="card"]')), true, "preview and controls share the specimen panel");
+  assert.equal(
+    await preview.evaluate((element) => element.matches('[data-slot="card"]')),
+    true,
+    "preview and controls share the specimen panel",
+  );
   assert.equal(await preview.getByRole("group", { name: "Gray level swatches", exact: true }).count(), 0);
   assert.equal(await response.locator("canvas").count(), 0, "palette panel contains no preview");
-  assert.equal(await response.getByRole("group", { name: "Gray response graph", exact: true }).count(), 1, "graph and selector share a panel");
+  assert.equal(
+    await response.getByRole("group", { name: "Gray response graph", exact: true }).count(),
+    1,
+    "graph and selector share a panel",
+  );
   await swatches.getByRole("button", { name: "Select level 1", exact: true }).click();
   const grayValue = response.getByRole("spinbutton", { name: "Gray value", exact: true });
   assert.equal(await grayValue.inputValue(), "170", "swatch selection opens the corresponding gray editor");
   await grayValue.fill("150");
   await page.waitForFunction(
-    () => getComputedStyle(document.querySelector('[aria-label="Select level 1"]')!).backgroundColor === "rgb(150, 150, 150)",
+    () =>
+      getComputedStyle(document.querySelector('[aria-label="Select level 1"]')!).backgroundColor ===
+      "rgb(150, 150, 150)",
     null,
     { timeout: 20000 },
   );
-  assert.equal(await swatches.getByRole("button", { name: "Select level 1", exact: true }).evaluate((element) => getComputedStyle(element).backgroundColor), "rgb(150, 150, 150)", "edited gray updates its palette swatch");
+  assert.equal(
+    await swatches
+      .getByRole("button", { name: "Select level 1", exact: true })
+      .evaluate((element) => getComputedStyle(element).backgroundColor),
+    "rgb(150, 150, 150)",
+    "edited gray updates its palette swatch",
+  );
   await swatches.getByRole("button", { name: "Select level 2", exact: true }).focus();
   await page.keyboard.press("Space");
   await page.waitForFunction(
@@ -295,16 +376,24 @@ test("preset specimen rows select, edit, and stay local-only", { skip: !browserA
     null,
     { timeout: 20000 },
   );
-  assert.equal(await grayValue.inputValue(), "66", "keyboard selection shows the neighboring level shaped by the sparse curve");
+  assert.equal(
+    await grayValue.inputValue(),
+    "66",
+    "keyboard selection shows the neighboring level shaped by the sparse curve",
+  );
   const remove = sidebar.getByRole("button", { name: "Delete preset Grayscale 1", exact: true });
   assert.equal(await remove.locator("svg").count(), 1, "preset row uses a delete icon");
   assert.equal(await custom.locator("button").count(), 0, "delete stays separate from selection");
   const deleteGeometry = await remove.boundingBox();
   const captionGeometry = await page.locator('[data-preset-caption="1"]').boundingBox();
-  assert.ok(deleteGeometry && captionGeometry && captionGeometry.x + captionGeometry.width <= deleteGeometry.x, "caption leaves room for the delete icon");
+  assert.ok(
+    deleteGeometry && captionGeometry && captionGeometry.x + captionGeometry.width <= deleteGeometry.x,
+    "caption leaves room for the delete icon",
+  );
   await main.getByRole("textbox", { name: "Name", exact: true }).fill("Soft proof");
   await page.waitForFunction(
-    () => document.querySelector('[data-preset-row="1"]')?.getAttribute("aria-label")?.startsWith("Soft proof,") === true,
+    () =>
+      document.querySelector('[data-preset-row="1"]')?.getAttribute("aria-label")?.startsWith("Soft proof,") === true,
     null,
     { timeout: 20000 },
   );
@@ -331,7 +420,10 @@ test("preset specimen rows select, edit, and stay local-only", { skip: !browserA
   await presetCanvasRendered(page, 1);
   const updated = await presetInk(page, 1);
   assert.ok(updated.every((value) => Number.isInteger(value) && value >= 0 && value <= 255));
-  assert.ok(updated.some((value) => ![0, 85, 170, 255].includes(value)), "raster follows the new count");
+  assert.ok(
+    updated.some((value) => ![0, 85, 170, 255].includes(value)),
+    "raster follows the new count",
+  );
 
   await response.getByRole("radio", { name: "4-bit · 16 levels", exact: true }).click();
   await page.waitForFunction(
@@ -343,47 +435,71 @@ test("preset specimen rows select, edit, and stay local-only", { skip: !browserA
   await swatches.getByRole("button", { name: "Select level 15", exact: true }).focus();
   await page.keyboard.press("Space");
   assert.equal(await grayValue.inputValue(), "0", "last swatch remains reachable at mobile width");
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "palette controls do not widen the page");
+  assert.equal(
+    await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    true,
+    "palette controls do not widen the page",
+  );
   await page.setViewportSize({ width: 1280, height: 900 });
 
   await group.getByRole("button", { name: "Delete preset Soft proof", exact: true }).click();
-  await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 1, null, { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 1, null, {
+    timeout: 20000,
+  });
   assert.equal(await group.locator("[data-preset-row]").count(), 1);
   assert.equal(await mono.getAttribute("aria-pressed"), "true");
 
   await page.getByRole("button", { name: "Add preset" }).click();
-  await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 2, null, { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 2, null, {
+    timeout: 20000,
+  });
   assert.equal(await group.locator("[data-preset-row]").count(), 2, "second custom preset rows render before reload");
   await main.getByRole("textbox", { name: "Name", exact: true }).fill("Keep this preset");
   await page.waitForFunction(
-    () => [...document.querySelectorAll("[data-preset-row]")].some((row) => row.getAttribute("aria-label")?.startsWith("Keep this preset,") === true),
+    () =>
+      [...document.querySelectorAll("[data-preset-row]")].some(
+        (row) => row.getAttribute("aria-label")?.startsWith("Keep this preset,") === true,
+      ),
     null,
     { timeout: 20000 },
   );
   await page.getByRole("button", { name: "Add preset" }).click();
-  await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 3, null, { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 3, null, {
+    timeout: 20000,
+  });
   await main.getByRole("textbox", { name: "Name", exact: true }).fill("Remove this preset");
   await page.waitForFunction(
-    () => [...document.querySelectorAll("[data-preset-row]")].some((row) => row.getAttribute("aria-label")?.startsWith("Remove this preset,") === true),
+    () =>
+      [...document.querySelectorAll("[data-preset-row]")].some(
+        (row) => row.getAttribute("aria-label")?.startsWith("Remove this preset,") === true,
+      ),
     null,
     { timeout: 20000 },
   );
   await group.locator('[data-preset-row="2"]').click();
   await group.getByRole("button", { name: "Delete preset Remove this preset", exact: true }).focus();
   await page.keyboard.press("Enter");
-  await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 2, null, { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 2, null, {
+    timeout: 20000,
+  });
   await page.waitForFunction(
     () => (document.querySelector('main input[id$="-name"]') as HTMLInputElement | null)?.value === "Keep this preset",
     null,
     { timeout: 20000 },
   );
-  assert.equal(await main.getByRole("textbox", { name: "Name", exact: true }).inputValue(), "Keep this preset", "deleting another row preserves the active preset");
+  assert.equal(
+    await main.getByRole("textbox", { name: "Name", exact: true }).inputValue(),
+    "Keep this preset",
+    "deleting another row preserves the active preset",
+  );
   assert.equal(await group.locator("[data-preset-row]").count(), 2);
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
   const reloaded = page.getByRole("group", { name: "Presets" });
-  await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 2, null, { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelectorAll("[data-preset-row]").length === 2, null, {
+    timeout: 20000,
+  });
   assert.equal(await reloaded.locator("[data-preset-row]").count(), 2, "presets persist across reload");
   assert.ok(await reloaded.locator('[data-preset-row][aria-label^="Keep this preset,"]').isVisible());
   assert.equal(await reloaded.getByRole("button", { name: /Monochrome/ }).getAttribute("aria-pressed"), "true");
@@ -406,7 +522,10 @@ async function waitSaved(page: Page): Promise<void> {
 
 // Variant reads go through the same SharedWorker owner the app uses (the
 // retired Dexie "font-library" database no longer receives writes).
-async function variantRow(page: Page, id: string): Promise<{ revision: number; inheritSampleText: boolean; paletteId: number; profile: string }> {
+async function variantRow(
+  page: Page,
+  id: string,
+): Promise<{ revision: number; inheritSampleText: boolean; paletteId: number; profile: string }> {
   return variantState(page, id);
 }
 
@@ -434,26 +553,23 @@ test("palette depth edits settle variant autosave without revision drift", { ski
   await editor.keyboard.press("ArrowDown");
   const option = editor.getByRole("option", { name: "Live gray 2-bit · 4 levels", exact: true });
   assert.ok(await option.isVisible(), "dropdown options expose name, depth and levels");
-  assert.deepEqual(await option.locator(".palette-choice-swatches > span").evaluateAll((swatches) =>
-    swatches.map((swatch) => getComputedStyle(swatch).backgroundColor)),
-  ["rgb(255, 255, 255)", "rgb(170, 170, 170)", "rgb(85, 85, 85)", "rgb(0, 0, 0)"]);
-  await editor.waitForFunction(
-    () => document.activeElement?.getAttribute("role") === "option",
-    null,
-    { timeout: 20000 },
+  assert.deepEqual(
+    await option
+      .locator(".palette-choice-swatches > span")
+      .evaluateAll((swatches) => swatches.map((swatch) => getComputedStyle(swatch).backgroundColor)),
+    ["rgb(255, 255, 255)", "rgb(170, 170, 170)", "rgb(85, 85, 85)", "rgb(0, 0, 0)"],
   );
+  await editor.waitForFunction(() => document.activeElement?.getAttribute("role") === "option", null, {
+    timeout: 20000,
+  });
   await editor.keyboard.press("Home");
-  await editor.waitForFunction(
-    () => (document.activeElement?.textContent ?? "").startsWith("Monochrome"),
-    null,
-    { timeout: 20000 },
-  );
+  await editor.waitForFunction(() => (document.activeElement?.textContent ?? "").startsWith("Monochrome"), null, {
+    timeout: 20000,
+  });
   await editor.keyboard.press("l");
-  await editor.waitForFunction(
-    () => (document.activeElement?.textContent ?? "").startsWith("Live gray"),
-    null,
-    { timeout: 20000 },
-  );
+  await editor.waitForFunction(() => (document.activeElement?.textContent ?? "").startsWith("Live gray"), null, {
+    timeout: 20000,
+  });
   await editor.keyboard.press("Enter");
   assert.match(await picker.innerText(), /Live gray/, "palette names remain searchable by keyboard");
   assert.match(
@@ -502,7 +618,8 @@ test("palette depth edits settle variant autosave without revision drift", { ski
     for (let i = 0; i < data.length; i += 4) {
       if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) {
         ink += 1;
-        if (data[i] !== data[i + 1] || data[i + 1] !== data[i + 2]) return { ink, distinct: [] as number[], tinted: true };
+        if (data[i] !== data[i + 1] || data[i + 1] !== data[i + 2])
+          return { ink, distinct: [] as number[], tinted: true };
         distinct.add(data[i]!);
       }
     }
@@ -511,76 +628,78 @@ test("palette depth edits settle variant autosave without revision drift", { ski
   assert.ok(tones.ink > 0, "the 4-bit specimen paints");
   assert.equal(tones.tinted, false, "painted texels keep untinted gray tones");
   const levels = Array.from({ length: 16 }, (_, i) => Math.round(255 * (1 - i / 15)));
-  assert.ok(tones.distinct.every((value) => levels.includes(value)), "painted texels use only the preset levels");
+  assert.ok(
+    tones.distinct.every((value) => levels.includes(value)),
+    "painted texels use only the preset levels",
+  );
   await context.close();
 });
 
-test("palette deletion falls back another tab to Monochrome with a conflict", { skip: !browserAvailable }, async (t) => {
-  const output = await buildApp(t);
-  const url = await servePrefix(t, output);
-  const browser = await launch(t);
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await captureDomainWorker(context);
-  const editor = await context.newPage();
-  await bootLibrary(editor, url);
-  const fontId = (await cardIds(editor))[0]!;
-  const variantId = await openNewVariant(editor, fontId);
-  await waitEditor(editor);
-  await waitSaved(editor);
+test(
+  "palette deletion falls back another tab to Monochrome with a conflict",
+  { skip: !browserAvailable },
+  async (t) => {
+    const output = await buildApp(t);
+    const url = await servePrefix(t, output);
+    const browser = await launch(t);
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await captureDomainWorker(context);
+    const editor = await context.newPage();
+    await bootLibrary(editor, url);
+    const fontId = (await cardIds(editor))[0]!;
+    const variantId = await openNewVariant(editor, fontId);
+    await waitEditor(editor);
+    await waitSaved(editor);
 
-  const lab = await context.newPage();
-  const { rowId } = await createPalettePreset(lab, url, { name: "Doomed gray", bits: 2 });
-  await selectPalettePreset(editor, "Doomed gray");
-  await waitSaved(editor);
+    const lab = await context.newPage();
+    const { rowId } = await createPalettePreset(lab, url, { name: "Doomed gray", bits: 2 });
+    await selectPalettePreset(editor, "Doomed gray");
+    await waitSaved(editor);
 
-  // Keep the editor typing so its draft stays dirty; the lab deletes the
-  // selected preset mid-typing and the pending save then conflicts on its
-  // stale revision instead of resurrecting the preset.
-  const text = editor.locator("[data-text]");
-  await text.click();
-  await editor.keyboard.press("ControlOrMeta+a");
-  const typing = text.pressSequentially("edit after delete", { delay: 40 });
-  await editor.waitForFunction(
-    () => document.querySelector("[data-save-status]")?.textContent?.startsWith("Saving"),
-    null,
-    { timeout: 20000 },
-  );
-  await lab.locator(`[data-delete-preset="${rowId}"]`).click();
-  await lab.waitForFunction(
-    (id) => document.querySelector(`[data-preset-row="${id}"]`) === null,
-    rowId,
-    { timeout: 20000 },
-  );
-  await editor.waitForFunction(
-    () => document.querySelector("[data-output-palette] [data-palette-name]")?.textContent === "Monochrome",
-    null,
-    { timeout: 20000 },
-  );
-  await typing;
-  await editor.waitForFunction(() => document.querySelector("[data-variant-error]") !== null, null, {
-    timeout: 20000,
-  });
-  assert.equal(
-    await editor.locator("[data-variant-error] h2").innerText(),
-    "Another tab changed this variant.",
-  );
-  await editor.locator("[data-error-reload]").click();
-  await editor.waitForFunction(
-    () => (document.querySelector("[data-variant-name]") as HTMLInputElement | null) !== null,
-    null,
-    { timeout: 20000 },
-  );
-  assert.equal(await editor.locator("[data-output-palette] [data-palette-name]").textContent(), "Monochrome");
-  const row = await variantRow(editor, variantId);
-  assert.equal(row.paletteId, 0, "no stale write resurrects the removed preset");
-  await waitSaved(editor);
-  await editor.locator("[data-text]").pressSequentially("clean edit");
-  await waitSaved(editor);
-  const settled = await variantRow(editor, variantId);
-  assert.equal(settled.revision, row.revision + 1, "the clean reloaded draft saves without conflict");
-  assert.equal(settled.paletteId, 0);
-  await context.close();
-});
+    // Keep the editor typing so its draft stays dirty; the lab deletes the
+    // selected preset mid-typing and the pending save then conflicts on its
+    // stale revision instead of resurrecting the preset.
+    const text = editor.locator("[data-text]");
+    await text.click();
+    await editor.keyboard.press("ControlOrMeta+a");
+    const typing = text.pressSequentially("edit after delete", { delay: 40 });
+    await editor.waitForFunction(
+      () => document.querySelector("[data-save-status]")?.textContent?.startsWith("Saving"),
+      null,
+      { timeout: 20000 },
+    );
+    await lab.locator(`[data-delete-preset="${rowId}"]`).click();
+    await lab.waitForFunction((id) => document.querySelector(`[data-preset-row="${id}"]`) === null, rowId, {
+      timeout: 20000,
+    });
+    await editor.waitForFunction(
+      () => document.querySelector("[data-output-palette] [data-palette-name]")?.textContent === "Monochrome",
+      null,
+      { timeout: 20000 },
+    );
+    await typing;
+    await editor.waitForFunction(() => document.querySelector("[data-variant-error]") !== null, null, {
+      timeout: 20000,
+    });
+    assert.equal(await editor.locator("[data-variant-error] h2").innerText(), "Another tab changed this variant.");
+    await editor.locator("[data-error-reload]").click();
+    await editor.waitForFunction(
+      () => (document.querySelector("[data-variant-name]") as HTMLInputElement | null) !== null,
+      null,
+      { timeout: 20000 },
+    );
+    assert.equal(await editor.locator("[data-output-palette] [data-palette-name]").textContent(), "Monochrome");
+    const row = await variantRow(editor, variantId);
+    assert.equal(row.paletteId, 0, "no stale write resurrects the removed preset");
+    await waitSaved(editor);
+    await editor.locator("[data-text]").pressSequentially("clean edit");
+    await waitSaved(editor);
+    const settled = await variantRow(editor, variantId);
+    assert.equal(settled.revision, row.revision + 1, "the clean reloaded draft saves without conflict");
+    assert.equal(settled.paletteId, 0);
+    await context.close();
+  },
+);
 
 test("palettes renders while font bootstrap is still pending", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
@@ -593,7 +712,10 @@ test("palettes renders while font bootstrap is still pending", { skip: !browserA
   assert.equal(await hashPath(page), "/palettes/");
   assert.equal(await page.locator("[data-font-card]").count(), 0, "no font cards while bootstrap hangs");
   assert.equal(
-    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Palettes" }).getAttribute("aria-current"),
+    await page
+      .getByRole("navigation", { name: "Primary" })
+      .getByRole("link", { name: "Palettes" })
+      .getAttribute("aria-current"),
     "page",
   );
 });
@@ -609,11 +731,13 @@ test("empty-library history navigation leaves palettes for the index", { skip: !
   assert.equal(await page.locator("[data-font-card]").count(), 0, "seed failure settles to an empty library");
 
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Fonts" }).click();
-  await page.waitForFunction(
-    () => document.querySelector("main")?.textContent?.includes("No fonts") === true,
-  );
+  await page.waitForFunction(() => document.querySelector("main")?.textContent?.includes("No fonts") === true);
   assert.equal(await hashPath(page), "/fonts/");
-  assert.equal(await page.locator('main section[aria-label="Grayscale preview"]').count(), 0, "palettes unmounts on the index route");
+  assert.equal(
+    await page.locator('main section[aria-label="Grayscale preview"]').count(),
+    0,
+    "palettes unmounts on the index route",
+  );
   assert.equal(await page.getByRole("heading", { level: 1 }).innerText(), "Font library");
 
   await page.goBack();
@@ -634,7 +758,11 @@ test("preset frame follows display settings with independent sample text", { ski
 
   assert.equal(await page.locator("[data-preset-frame]").count(), 1, "presets share one frame");
   assert.equal(await page.locator("[data-preset-frame] [data-preset-row]").count(), 1);
-  assert.equal(await page.locator('[data-preset-caption="0"]').textContent(), "32 px / 1-bit · 2 levels", "rows use the global base size");
+  assert.equal(
+    await page.locator('[data-preset-caption="0"]').textContent(),
+    "32 px / 1-bit · 2 levels",
+    "rows use the global base size",
+  );
   assert.equal(await framePaper(page), "rgb(255, 255, 255)");
 
   await setZoom(page, "4");
@@ -645,112 +773,190 @@ test("preset frame follows display settings with independent sample text", { ski
   await page.getByRole("combobox", { name: "Canvas preset" }).click();
   await page.getByRole("option", { name: "Warm", exact: true }).click();
   await page.waitForFunction(
-    () => (document.querySelector("[data-preset-frame]") as HTMLElement | null)?.style.backgroundColor === "rgb(244, 236, 220)",
+    () =>
+      (document.querySelector("[data-preset-frame]") as HTMLElement | null)?.style.backgroundColor ===
+      "rgb(244, 236, 220)",
   );
   assert.deepEqual(await presetPixel(page, 0, 0, 0), [244, 236, 220], "paper pixel uses the warm paper");
   assert.deepEqual(await mainPixel(page, 0, 0), [244, 236, 220], "main preview shares the canvas palette");
 
   await page.locator("[data-canvas-inverse]").click();
   await page.waitForFunction(
-    () => (document.querySelector("[data-preset-frame]") as HTMLElement | null)?.style.backgroundColor === "rgb(26, 24, 21)",
+    () =>
+      (document.querySelector("[data-preset-frame]") as HTMLElement | null)?.style.backgroundColor ===
+      "rgb(26, 24, 21)",
   );
   assert.deepEqual(await presetPixel(page, 0, 0, 0), [26, 24, 21], "inverse swaps the paper pixel");
-  assert.equal(await page.locator('[data-preset-caption="0"]').textContent(), "32 px / 1-bit · 2 levels", "captions ignore display settings");
+  assert.equal(
+    await page.locator('[data-preset-caption="0"]').textContent(),
+    "32 px / 1-bit · 2 levels",
+    "captions ignore display settings",
+  );
 
   const mainPreview = page.getByRole("img", { name: /Rasterized text preview/ });
-  const mainBefore = await page.getByRole("region", { name: "Grayscale preview" }).getByRole("textbox", { name: "Sample text", exact: true }).inputValue();
-  await page.getByRole("complementary", { name: "Grayscale presets" }).getByRole("textbox", { name: "Sample text", exact: true }).fill("Zz 99");
-  assert.equal(await page.getByRole("region", { name: "Grayscale preview" }).getByRole("textbox", { name: "Sample text", exact: true }).inputValue(), mainBefore, "preset text leaves main text alone");
-  assert.ok((await mainPreview.getAttribute("aria-label"))?.includes(mainBefore), "preset text leaves main preview alone");
-  await page.getByRole("region", { name: "Grayscale preview" }).getByRole("textbox", { name: "Sample text", exact: true }).fill("Hello");
-  assert.equal(await page.getByRole("complementary", { name: "Grayscale presets" }).getByRole("textbox", { name: "Sample text", exact: true }).inputValue(), "Zz 99", "main text leaves preset text alone");
+  const mainBefore = await page
+    .getByRole("region", { name: "Grayscale preview" })
+    .getByRole("textbox", { name: "Sample text", exact: true })
+    .inputValue();
+  await page
+    .getByRole("complementary", { name: "Grayscale presets" })
+    .getByRole("textbox", { name: "Sample text", exact: true })
+    .fill("Zz 99");
+  assert.equal(
+    await page
+      .getByRole("region", { name: "Grayscale preview" })
+      .getByRole("textbox", { name: "Sample text", exact: true })
+      .inputValue(),
+    mainBefore,
+    "preset text leaves main text alone",
+  );
+  assert.ok(
+    (await mainPreview.getAttribute("aria-label"))?.includes(mainBefore),
+    "preset text leaves main preview alone",
+  );
+  await page
+    .getByRole("region", { name: "Grayscale preview" })
+    .getByRole("textbox", { name: "Sample text", exact: true })
+    .fill("Hello");
+  assert.equal(
+    await page
+      .getByRole("complementary", { name: "Grayscale presets" })
+      .getByRole("textbox", { name: "Sample text", exact: true })
+      .inputValue(),
+    "Zz 99",
+    "main text leaves preset text alone",
+  );
   assert.ok((await mainPreview.getAttribute("aria-label"))?.includes("Hello"));
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
-  assert.equal(await page.getByRole("complementary", { name: "Grayscale presets" }).getByRole("textbox", { name: "Sample text", exact: true }).inputValue(), "Aa 0123", "preset text stays local-only");
+  assert.equal(
+    await page
+      .getByRole("complementary", { name: "Grayscale presets" })
+      .getByRole("textbox", { name: "Sample text", exact: true })
+      .inputValue(),
+    "Aa 0123",
+    "preset text stays local-only",
+  );
   const reloaded = page.getByRole("group", { name: "Presets" });
   assert.equal(await reloaded.locator("[data-preset-row]").count(), 1);
 });
 
-test("preview font selector renders bundled fonts in the main preview and preset rows", { skip: !browserAvailable }, async (t) => {
-  const output = await buildApp(t);
-  const url = await servePrefix(t, output);
-  const browser = await launch(t);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
-  await grayscaleReady(page);
-  await presetCanvasRendered(page, 0);
-  const preview = page.getByRole("group", { name: "Preview", exact: true });
-  const selector = preview.getByRole("combobox", { name: "Preview font", exact: true });
-  assert.equal((await selector.textContent())?.trim(), "Roboto");
-  assert.equal(await selector.evaluate((element) => document.querySelector('section[aria-label="Grayscale preview"] canvas')?.parentElement?.contains(element)), true, "font selector lives inside the colored canvas frame");
-  const before = await page.evaluate(() => [...document.querySelectorAll("main canvas")].map((canvas) => (canvas as HTMLCanvasElement).toDataURL()));
-  await selector.focus();
-  await page.keyboard.press("Space");
-  assert.equal(await page.getByRole("option").count(), 5, "selector reuses the five bundled fonts");
-  await page.getByRole("option", { name: "Literata", exact: true }).focus();
-  await page.keyboard.press("Enter");
-  assert.equal((await selector.textContent())?.trim(), "Literata");
-  await page.waitForFunction((previous) => [...document.querySelectorAll("main canvas")].every((canvas, index) => (canvas as HTMLCanvasElement).toDataURL() !== previous[index]), before);
-  assert.equal(await page.getByRole("alert").count(), 0, "bundled fonts load without a fallback error");
-  await selector.click();
-  await page.getByRole("option", { name: "Roboto", exact: true }).click();
-  await page.waitForFunction((previous) => [...document.querySelectorAll("main canvas")].every((canvas, index) => (canvas as HTMLCanvasElement).toDataURL() === previous[index]), before);
-});
+test(
+  "preview font selector renders bundled fonts in the main preview and preset rows",
+  { skip: !browserAvailable },
+  async (t) => {
+    const output = await buildApp(t);
+    const url = await servePrefix(t, output);
+    const browser = await launch(t);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+    await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
+    await grayscaleReady(page);
+    await presetCanvasRendered(page, 0);
+    const preview = page.getByRole("group", { name: "Preview", exact: true });
+    const selector = preview.getByRole("combobox", { name: "Preview font", exact: true });
+    assert.equal((await selector.textContent())?.trim(), "Roboto");
+    assert.equal(
+      await selector.evaluate((element) =>
+        document.querySelector('section[aria-label="Grayscale preview"] canvas')?.parentElement?.contains(element),
+      ),
+      true,
+      "font selector lives inside the colored canvas frame",
+    );
+    const before = await page.evaluate(() =>
+      [...document.querySelectorAll("main canvas")].map((canvas) => (canvas as HTMLCanvasElement).toDataURL()),
+    );
+    await selector.focus();
+    await page.keyboard.press("Space");
+    assert.equal(await page.getByRole("option").count(), 5, "selector reuses the five bundled fonts");
+    await page.getByRole("option", { name: "Literata", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    assert.equal((await selector.textContent())?.trim(), "Literata");
+    await page.waitForFunction(
+      (previous) =>
+        [...document.querySelectorAll("main canvas")].every(
+          (canvas, index) => (canvas as HTMLCanvasElement).toDataURL() !== previous[index],
+        ),
+      before,
+    );
+    assert.equal(await page.getByRole("alert").count(), 0, "bundled fonts load without a fallback error");
+    await selector.click();
+    await page.getByRole("option", { name: "Roboto", exact: true }).click();
+    await page.waitForFunction(
+      (previous) =>
+        [...document.querySelectorAll("main canvas")].every(
+          (canvas, index) => (canvas as HTMLCanvasElement).toDataURL() === previous[index],
+        ),
+      before,
+    );
+  },
+);
 
-test("preset rows and main preview fit text bounds and wrap within their frames", { skip: !browserAvailable }, async (t) => {
-  const output = await buildApp(t);
-  const url = await servePrefix(t, output);
-  const browser = await launch(t);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
-  await grayscaleReady(page);
-  await presetCanvasRendered(page, 0);
-  const caps16 = await presetBackingHeight(page, 0);
-  assert.ok(caps16 > 0 && caps16 < 23, `16px caps row trims the full 23px line box (got ${caps16})`);
+test(
+  "preset rows and main preview fit text bounds and wrap within their frames",
+  { skip: !browserAvailable },
+  async (t) => {
+    const output = await buildApp(t);
+    const url = await servePrefix(t, output);
+    const browser = await launch(t);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
+    await grayscaleReady(page);
+    await presetCanvasRendered(page, 0);
+    const caps16 = await presetBackingHeight(page, 0);
+    assert.ok(caps16 > 0 && caps16 < 23, `16px caps row trims the full 23px line box (got ${caps16})`);
 
-  await bootLibrary(page, url);
-  await page.locator('[data-size-stop="32"]').click();
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Palettes" }).click();
-  await grayscaleReady(page);
-  await setZoom(page, "1");
+    await bootLibrary(page, url);
+    await page.locator('[data-size-stop="32"]').click();
+    await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Palettes" }).click();
+    await grayscaleReady(page);
+    await setZoom(page, "1");
 
-  const presetInput = page.getByRole("complementary", { name: "Grayscale presets" }).getByRole("textbox", { name: "Sample text", exact: true });
-  await presetInput.fill("Aa 0123");
-  await presetCanvasRendered(page, 0);
-  const caps = await presetBackingHeight(page, 0);
-  assert.ok(caps > 0 && caps < 46, `caps row trims the full 46px line box (got ${caps})`);
+    const presetInput = page
+      .getByRole("complementary", { name: "Grayscale presets" })
+      .getByRole("textbox", { name: "Sample text", exact: true });
+    await presetInput.fill("Aa 0123");
+    await presetCanvasRendered(page, 0);
+    const caps = await presetBackingHeight(page, 0);
+    assert.ok(caps > 0 && caps < 46, `caps row trims the full 46px line box (got ${caps})`);
 
-  await presetInput.fill("gjpqy 0123");
-  await presetCanvasRendered(page, 0);
-  const descenders = await presetBackingHeight(page, 0);
-  assert.ok(descenders > caps, `descenders extend the row (${descenders} vs ${caps})`);
-  assert.ok(descenders < 70, "descender row stays below the untrimmed line box");
-  assert.ok(await presetHasInk(page, 0, 255), "descender sample remains visible after trimming");
+    await presetInput.fill("gjpqy 0123");
+    await presetCanvasRendered(page, 0);
+    const descenders = await presetBackingHeight(page, 0);
+    assert.ok(descenders > caps, `descenders extend the row (${descenders} vs ${caps})`);
+    assert.ok(descenders < 70, "descender row stays below the untrimmed line box");
+    assert.ok(await presetHasInk(page, 0, 255), "descender sample remains visible after trimming");
 
-  await setZoom(page, "4");
-  await presetCanvasRendered(page, 0);
-  const wrapped = await presetBackingHeight(page, 0);
-  assert.ok(wrapped > descenders, `narrow zoom wraps instead of clipping (${wrapped} vs ${descenders})`);
-  assert.ok(await presetHasInk(page, 0, 255), "descender sample remains visible across zoom");
+    await setZoom(page, "4");
+    await presetCanvasRendered(page, 0);
+    const wrapped = await presetBackingHeight(page, 0);
+    assert.ok(wrapped > descenders, `narrow zoom wraps instead of clipping (${wrapped} vs ${descenders})`);
+    assert.ok(await presetHasInk(page, 0, 255), "descender sample remains visible across zoom");
 
-  const mainCanvas = page.locator('main section[aria-label="Grayscale preview"] canvas');
-  await page.getByRole("region", { name: "Grayscale preview" }).getByRole("textbox", { name: "Sample text", exact: true }).fill("gjpqy 0123");
-  await page.waitForFunction((expected) => {
-    const el = document.querySelector('main section[aria-label="Grayscale preview"] canvas');
-    return el instanceof HTMLCanvasElement && el.height === expected;
-  }, descenders);
-  assert.equal(await mainCanvas.evaluate((el) => (el as HTMLCanvasElement).height), descenders, "main uses the same text bounds as the unwrapped preset");
-  assert.ok(
-    await mainCanvas.evaluate((el) => {
-      const viewport = el.parentElement;
-      if (!(viewport instanceof HTMLElement)) throw new Error("main viewport is missing");
-      return viewport.classList.contains("rounded-lg") && viewport.scrollHeight <= viewport.clientHeight + 1;
-    }),
-    "main frame and scroll behavior stay intact",
-  );
-});
+    const mainCanvas = page.locator('main section[aria-label="Grayscale preview"] canvas');
+    await page
+      .getByRole("region", { name: "Grayscale preview" })
+      .getByRole("textbox", { name: "Sample text", exact: true })
+      .fill("gjpqy 0123");
+    await page.waitForFunction((expected) => {
+      const el = document.querySelector('main section[aria-label="Grayscale preview"] canvas');
+      return el instanceof HTMLCanvasElement && el.height === expected;
+    }, descenders);
+    assert.equal(
+      await mainCanvas.evaluate((el) => (el as HTMLCanvasElement).height),
+      descenders,
+      "main uses the same text bounds as the unwrapped preset",
+    );
+    assert.ok(
+      await mainCanvas.evaluate((el) => {
+        const viewport = el.parentElement;
+        if (!(viewport instanceof HTMLElement)) throw new Error("main viewport is missing");
+        return viewport.classList.contains("rounded-lg") && viewport.scrollHeight <= viewport.clientHeight + 1;
+      }),
+      "main frame and scroll behavior stay intact",
+    );
+  },
+);
 
 test("preview spacing stays consistent across fonts and zoom", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
@@ -761,7 +967,10 @@ test("preview spacing stays consistent across fonts and zoom", { skip: !browserA
   await grayscaleReady(page);
   const preview = page.getByRole("region", { name: "Grayscale preview" });
   await preview.getByRole("textbox", { name: "Sample text", exact: true }).fill("Ágj");
-  await page.getByRole("complementary", { name: "Grayscale presets" }).getByRole("textbox", { name: "Sample text", exact: true }).fill("Ágj");
+  await page
+    .getByRole("complementary", { name: "Grayscale presets" })
+    .getByRole("textbox", { name: "Sample text", exact: true })
+    .fill("Ágj");
 
   for (const font of ["Roboto", "Roboto Italic", "Roboto Flex", "Literata", "Source Sans 3"]) {
     await preview.getByRole("combobox", { name: "Preview font", exact: true }).click();
@@ -770,24 +979,36 @@ test("preview spacing stays consistent across fonts and zoom", { skip: !browserA
       await setZoom(page, zoom);
       await page.waitForFunction((expectedZoom) => {
         const canvases = [...document.querySelectorAll("main canvas")];
-        return canvases.length === 2 && canvases.every((element) => element instanceof HTMLCanvasElement
-          && element.dataset.rendered === "true" && element.height > 0
-          && element.getBoundingClientRect().height / element.height === expectedZoom);
+        return (
+          canvases.length === 2 &&
+          canvases.every(
+            (element) =>
+              element instanceof HTMLCanvasElement &&
+              element.dataset.rendered === "true" &&
+              element.height > 0 &&
+              element.getBoundingClientRect().height / element.height === expectedZoom,
+          )
+        );
       }, Number(zoom));
-      const [preset, main] = await page.locator("main canvas").evaluateAll((canvases) => canvases.map((element) => {
-        const canvas = element as HTMLCanvasElement;
-        const context = canvas.getContext("2d")!;
-        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-        const hasInk = pixels.some((value, index) => index % 4 === 0 && value !== 255);
-        const style = getComputedStyle(canvas);
-        const bounds = canvas.getBoundingClientRect();
-        const frame = canvas.parentElement!.getBoundingClientRect();
-        const header = canvas.previousElementSibling?.getBoundingClientRect();
-        return { height: canvas.height, hasInk,
-          margin: [style.marginTop, style.marginBottom],
-          headerGap: header ? bounds.top - header.bottom : 0,
-          bottomGap: frame.bottom - bounds.bottom };
-      }));
+      const [preset, main] = await page.locator("main canvas").evaluateAll((canvases) =>
+        canvases.map((element) => {
+          const canvas = element as HTMLCanvasElement;
+          const context = canvas.getContext("2d")!;
+          const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+          const hasInk = pixels.some((value, index) => index % 4 === 0 && value !== 255);
+          const style = getComputedStyle(canvas);
+          const bounds = canvas.getBoundingClientRect();
+          const frame = canvas.parentElement!.getBoundingClientRect();
+          const header = canvas.previousElementSibling?.getBoundingClientRect();
+          return {
+            height: canvas.height,
+            hasInk,
+            margin: [style.marginTop, style.marginBottom],
+            headerGap: header ? bounds.top - header.bottom : 0,
+            bottomGap: frame.bottom - bounds.bottom,
+          };
+        }),
+      );
       assert.ok(preset && main);
       assert.equal(main.height, preset.height, `${font} at ${zoom}× shares text bounds`);
       // Native Canvas text metrics and antialiasing vary across platforms;
@@ -812,7 +1033,8 @@ test("preset viewport matches tinted paper on narrow inverse rows", { skip: !bro
 
   await page.locator("[data-canvas-inverse]").click();
   await page.waitForFunction(
-    () => (document.querySelector("[data-preset-frame]") as HTMLElement | null)?.style.backgroundColor === "rgb(0, 0, 0)",
+    () =>
+      (document.querySelector("[data-preset-frame]") as HTMLElement | null)?.style.backgroundColor === "rgb(0, 0, 0)",
   );
   await setZoom(page, "4");
   await presetCanvasRendered(page, 0);
@@ -828,20 +1050,27 @@ test("main sample text wraps multiline and canvas follows content", { skip: !bro
   await page.goto(`${url}#/palettes/`, { waitUntil: "domcontentloaded" });
   await grayscaleReady(page);
 
-  const input = page.getByRole("region", { name: "Grayscale preview" }).getByRole("textbox", { name: "Sample text", exact: true });
+  const input = page
+    .getByRole("region", { name: "Grayscale preview" })
+    .getByRole("textbox", { name: "Sample text", exact: true });
   assert.equal(await input.evaluate((el) => el.tagName), "TEXTAREA");
   const canvas = page.locator('main section[aria-label="Grayscale preview"] canvas');
-  const canvasHeight = (): Promise<number> => canvas.evaluate((el) => parseFloat((el as HTMLCanvasElement).style.height));
-  const viewportFits = (): Promise<boolean> => canvas.evaluate((el) => {
-    const viewport = el.parentElement;
-    if (!(viewport instanceof HTMLElement)) throw new Error("main viewport is missing");
-    return viewport.scrollHeight <= viewport.clientHeight + 1;
-  });
+  const canvasHeight = (): Promise<number> =>
+    canvas.evaluate((el) => parseFloat((el as HTMLCanvasElement).style.height));
+  const viewportFits = (): Promise<boolean> =>
+    canvas.evaluate((el) => {
+      const viewport = el.parentElement;
+      if (!(viewport instanceof HTMLElement)) throw new Error("main viewport is missing");
+      return viewport.scrollHeight <= viewport.clientHeight + 1;
+    });
   const canvasLabel = (): Promise<string | null> => canvas.getAttribute("aria-label");
 
   await input.fill("Line one\nLine two\n\nLine four");
-  await page.waitForFunction(
-    () => document.querySelector('main section[aria-label="Grayscale preview"] canvas')?.getAttribute("aria-label")?.includes("Line two\n\nLine four"),
+  await page.waitForFunction(() =>
+    document
+      .querySelector('main section[aria-label="Grayscale preview"] canvas')
+      ?.getAttribute("aria-label")
+      ?.includes("Line two\n\nLine four"),
   );
   assert.ok((await canvasLabel())?.includes("Line two\n\nLine four"), "explicit blank lines survive");
 
@@ -867,22 +1096,32 @@ test("main sample text wraps multiline and canvas follows content", { skip: !bro
     const el = document.querySelector('main section[aria-label="Grayscale preview"] canvas');
     return el instanceof HTMLCanvasElement && parseFloat(el.style.height) > previous;
   }, short);
-  assert.ok((await canvasHeight()) > short + 2 * 16 * (34 / 24), "leading and trailing blank lines retain their line boxes");
+  assert.ok(
+    (await canvasHeight()) > short + 2 * 16 * (34 / 24),
+    "leading and trailing blank lines retain their line boxes",
+  );
 
   await input.fill("");
   await page.waitForFunction(() => {
     const el = document.querySelector('main section[aria-label="Grayscale preview"] canvas');
     return el instanceof HTMLCanvasElement && el.height === 23;
   });
-  assert.equal(await canvas.evaluate((el) => {
-    const element = el as HTMLCanvasElement;
-    const pixels = element.getContext("2d")!.getImageData(0, 0, element.width, element.height).data;
-    return pixels.every((value) => value === 255);
-  }), true, "empty text retains one blank line without ink");
+  assert.equal(
+    await canvas.evaluate((el) => {
+      const element = el as HTMLCanvasElement;
+      const pixels = element.getContext("2d")!.getImageData(0, 0, element.width, element.height).data;
+      return pixels.every((value) => value === 255);
+    }),
+    true,
+    "empty text retains one blank line without ink",
+  );
 
   await input.fill(`${"word ".repeat(100)}`);
-  await page.waitForFunction(
-    () => document.querySelector('main section[aria-label="Grayscale preview"] canvas')?.getAttribute("aria-label")?.includes("word word"),
+  await page.waitForFunction(() =>
+    document
+      .querySelector('main section[aria-label="Grayscale preview"] canvas')
+      ?.getAttribute("aria-label")
+      ?.includes("word word"),
   );
   const wrapped = await canvas.evaluate((el) => {
     if (!(el instanceof HTMLCanvasElement)) throw new Error("main canvas is missing");
@@ -890,7 +1129,10 @@ test("main sample text wraps multiline and canvas follows content", { skip: !bro
     if (!(viewport instanceof HTMLElement)) throw new Error("main viewport is missing");
     return { backing: el.width, visible: viewport.clientWidth };
   });
-  assert.ok(wrapped.backing <= wrapped.visible, `width wraps instead of overflowing (${wrapped.backing} vs ${wrapped.visible})`);
+  assert.ok(
+    wrapped.backing <= wrapped.visible,
+    `width wraps instead of overflowing (${wrapped.backing} vs ${wrapped.visible})`,
+  );
 });
 
 test("a debounced preview write cannot undo navigation to palettes", { skip: !browserAvailable }, async (t) => {
@@ -901,7 +1143,7 @@ test("a debounced preview write cannot undo navigation to palettes", { skip: !br
   await bootLibrary(page, url);
   const ids = await cardIds(page);
   await page.goto(`${url}#/font/${ids[0]}/`, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => document.querySelector('#font-select[data-state]:not(:disabled)') !== null);
+  await page.waitForFunction(() => document.querySelector("#font-select[data-state]:not(:disabled)") !== null);
   await page.locator("[data-text]").fill("Palettes race probe");
   await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Palettes" }).click();
   await grayscaleReady(page);
@@ -931,20 +1173,35 @@ test("bit depth selector preserves curves, selection, and preset ownership", { s
     { timeout: 20000 },
   );
   assert.equal(await depth(2).getAttribute("aria-checked"), "true");
-  assert.equal(await selector.getByRole("slider", { name: "Selected gray value", exact: true }).count(), 0, "gray editing uses only the numerical input");
+  assert.equal(
+    await selector.getByRole("slider", { name: "Selected gray value", exact: true }).count(),
+    0,
+    "gray editing uses only the numerical input",
+  );
   const reset = selector.getByRole("button", { name: "Reset levels", exact: true });
-  assert.equal(await reset.evaluate((button) => !!button.closest('[data-slot="card-header"]')), true, "reset lives in the panel header");
+  assert.equal(
+    await reset.evaluate((button) => !!button.closest('[data-slot="card-header"]')),
+    true,
+    "reset lives in the panel header",
+  );
   assert.equal(await reset.textContent(), "", "reset is icon-only");
   assert.equal(await reset.locator("svg").count(), 1);
-  assert.equal(await selector.getByText("Quantization depth", { exact: true }).evaluate((element) => element.parentElement?.textContent),
-    "Quantization depth", "depth title does not repeat the selected option");
+  assert.equal(
+    await selector
+      .getByText("Quantization depth", { exact: true })
+      .evaluate((element) => element.parentElement?.textContent),
+    "Quantization depth",
+    "depth title does not repeat the selected option",
+  );
   await depth(2).click();
   assert.equal(await depth(2).getAttribute("aria-checked"), "true", "current depth cannot be deselected");
   await selector.getByRole("button", { name: "Select level 1", exact: true }).click();
   const gray = page.getByRole("spinbutton", { name: "Gray value", exact: true });
   await gray.fill("150");
   await page.waitForFunction(
-    () => getComputedStyle(document.querySelector('[aria-label="Select level 1"]')!).backgroundColor === "rgb(150, 150, 150)",
+    () =>
+      getComputedStyle(document.querySelector('[aria-label="Select level 1"]')!).backgroundColor ===
+      "rgb(150, 150, 150)",
     null,
     { timeout: 20000 },
   );
@@ -955,12 +1212,23 @@ test("bit depth selector preserves curves, selection, and preset ownership", { s
     { timeout: 20000 },
   );
   assert.equal(await depth(3).getAttribute("aria-checked"), "true");
-  const desktopWidths = await pills.getByRole("radio").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().width));
-  assert.ok(Math.max(...desktopWidths) - Math.min(...desktopWidths) < 1, "all four grid columns have equal width, including the selected item");
+  const desktopWidths = await pills
+    .getByRole("radio")
+    .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().width));
+  assert.ok(
+    Math.max(...desktopWidths) - Math.min(...desktopWidths) < 1,
+    "all four grid columns have equal width, including the selected item",
+  );
   const swatches = selector.getByRole("group", { name: "Gray level swatches", exact: true });
   assert.equal(await swatches.getByRole("heading").count(), 0);
-  const values = await swatches.getByRole("button").evaluateAll((buttons) => buttons.map((button) => getComputedStyle(button).backgroundColor));
-  assert.deepEqual(values, [255, 207, 163, 125, 89, 56, 26, 0].map((gray) => `rgb(${gray}, ${gray}, ${gray})`), "ramp samples the smooth edited response in graph level order");
+  const values = await swatches
+    .getByRole("button")
+    .evaluateAll((buttons) => buttons.map((button) => getComputedStyle(button).backgroundColor));
+  assert.deepEqual(
+    values,
+    [255, 207, 163, 125, 89, 56, 26, 0].map((gray) => `rgb(${gray}, ${gray}, ${gray})`),
+    "ramp samples the smooth edited response in graph level order",
+  );
   await page.waitForFunction(
     () => {
       const label = [...document.querySelectorAll("label")].find((entry) => entry.textContent === "Gray value");
@@ -971,8 +1239,13 @@ test("bit depth selector preserves curves, selection, and preset ownership", { s
     { timeout: 20000 },
   );
   assert.equal(await gray.inputValue(), "163", "selected curve position follows the new count");
-  assert.deepEqual(await swatches.getByRole("button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label"))),
-    Array.from({ length: 8 }, (_, index) => `Select level ${index}`), "visual and keyboard order follow increasing level indices");
+  assert.deepEqual(
+    await swatches
+      .getByRole("button")
+      .evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label"))),
+    Array.from({ length: 8 }, (_, index) => `Select level ${index}`),
+    "visual and keyboard order follow increasing level indices",
+  );
   async function waitGrayValue(want: string): Promise<void> {
     await page.waitForFunction(
       (expected) => {
@@ -987,11 +1260,17 @@ test("bit depth selector preserves curves, selection, and preset ownership", { s
   await swatches.getByRole("button").first().click();
   await waitGrayValue("255");
   assert.equal(await gray.inputValue(), "255", "leftmost swatch selects paper, level zero");
-  assert.equal(await selector.getByRole("slider", { name: "Level 0 gray value", exact: true }).getAttribute("aria-valuenow"), "255");
+  assert.equal(
+    await selector.getByRole("slider", { name: "Level 0 gray value", exact: true }).getAttribute("aria-valuenow"),
+    "255",
+  );
   await swatches.getByRole("button").last().click();
   await waitGrayValue("0");
   assert.equal(await gray.inputValue(), "0", "rightmost swatch selects full ink, the final graph level");
-  assert.equal(await selector.getByRole("slider", { name: "Level 7 gray value", exact: true }).getAttribute("tabindex"), "0");
+  assert.equal(
+    await selector.getByRole("slider", { name: "Level 7 gray value", exact: true }).getAttribute("tabindex"),
+    "0",
+  );
   await gray.fill("12");
   await waitGrayValue("12");
   await reset.click();
@@ -1001,13 +1280,22 @@ test("bit depth selector preserves curves, selection, and preset ownership", { s
   // the committed ramp itself rather than trusting the first "0".
   const linearRamp = [255, 219, 182, 146, 109, 73, 36, 0].map((gray) => `rgb(${gray}, ${gray}, ${gray})`);
   await page.waitForFunction(
-    (want) => JSON.stringify([...document.querySelectorAll('[role="group"][aria-label="Gray level swatches"] button')]
-      .map((button) => getComputedStyle(button).backgroundColor)) === JSON.stringify(want),
+    (want) =>
+      JSON.stringify(
+        [...document.querySelectorAll('[role="group"][aria-label="Gray level swatches"] button')].map(
+          (button) => getComputedStyle(button).backgroundColor,
+        ),
+      ) === JSON.stringify(want),
     linearRamp,
     { timeout: 20000 },
   );
-  assert.deepEqual(await swatches.getByRole("button").evaluateAll((buttons) => buttons.map((button) => getComputedStyle(button).backgroundColor)),
-    linearRamp, "header reset restores the entire ramp at the current depth");
+  assert.deepEqual(
+    await swatches
+      .getByRole("button")
+      .evaluateAll((buttons) => buttons.map((button) => getComputedStyle(button).backgroundColor)),
+    linearRamp,
+    "header reset restores the entire ramp at the current depth",
+  );
   await depth(3).focus();
   await page.keyboard.press("ArrowRight");
   await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "4-bit · 16 levels");
@@ -1047,13 +1335,20 @@ test("bit depth selector preserves curves, selection, and preset ownership", { s
   await page.setViewportSize({ width: 390, height: 844 });
   const bounds = await selector.boundingBox();
   assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 390, "selector fits a narrow viewport");
-  const mobileWidths = await pills.getByRole("radio").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().width));
+  const mobileWidths = await pills
+    .getByRole("radio")
+    .evaluateAll((items) => items.map((item) => item.getBoundingClientRect().width));
   assert.ok(Math.max(...mobileWidths) - Math.min(...mobileWidths) < 1, "grid columns stay equal at mobile width");
-  const icon = selector.getByRole("heading", { name: "Bit-depth & gray levels", exact: true }).locator('span[aria-hidden="true"]');
-  assert.deepEqual(await icon.evaluate((element) => {
-    const bounds = element.getBoundingClientRect();
-    return [getComputedStyle(element).maskImage.includes("bit-depth"), bounds.width, bounds.height];
-  }), [true, 11.25, 11.25]);
+  const icon = selector
+    .getByRole("heading", { name: "Bit-depth & gray levels", exact: true })
+    .locator('span[aria-hidden="true"]');
+  assert.deepEqual(
+    await icon.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return [getComputedStyle(element).maskImage.includes("bit-depth"), bounds.width, bounds.height];
+    }),
+    [true, 11.25, 11.25],
+  );
   await page.locator('[data-preset-row="0"]').click();
   assert.equal(await depth(1).getAttribute("aria-checked"), "true");
   assert.equal(await depth(2).isDisabled(), true);
@@ -1079,27 +1374,35 @@ test("sparse response handles and exact edits use one graph at every depth", { s
   const gray = panel.getByRole("spinbutton", { name: "Gray value", exact: true });
   const reset = panel.getByRole("button", { name: "Reset levels", exact: true });
   const point = (i: number) => graph.getByRole("slider", { name: `Level ${i} gray value`, exact: true });
-  const values = () => graph.getByRole("slider").evaluateAll((items) => items.map((item) => Number(item.getAttribute("aria-valuenow"))));
+  const values = () =>
+    graph.getByRole("slider").evaluateAll((items) => items.map((item) => Number(item.getAttribute("aria-valuenow"))));
   const wantValues = async (expected: number[]): Promise<void> => {
     await page.waitForFunction(
-      (want) => JSON.stringify([...document.querySelectorAll('[role="slider"][aria-label$="gray value"]')]
-        .map((item) => Number(item.getAttribute("aria-valuenow")))) === JSON.stringify(want),
+      (want) =>
+        JSON.stringify(
+          [...document.querySelectorAll('[role="slider"][aria-label$="gray value"]')].map((item) =>
+            Number(item.getAttribute("aria-valuenow")),
+          ),
+        ) === JSON.stringify(want),
       expected,
       { timeout: 20000 },
     );
   };
   const waitPin = async (index: number, pinned: boolean): Promise<void> => {
     await page.waitForFunction(
-      ([i, state]) => document.querySelector(`[role="slider"][aria-label="Level ${i} gray value"]`)
-        ?.getAttribute("data-pinned") === state,
+      ([i, state]) =>
+        document.querySelector(`[role="slider"][aria-label="Level ${i} gray value"]`)?.getAttribute("data-pinned") ===
+        state,
       [index, String(pinned)] as [number, string],
       { timeout: 20000 },
     );
   };
   const waitLevelValue = async (index: number, want: number): Promise<void> => {
     await page.waitForFunction(
-      ([i, value]) => Number(document.querySelector(`[role="slider"][aria-label="Level ${i} gray value"]`)
-        ?.getAttribute("aria-valuenow")) === value,
+      ([i, value]) =>
+        Number(
+          document.querySelector(`[role="slider"][aria-label="Level ${i} gray value"]`)?.getAttribute("aria-valuenow"),
+        ) === value,
       [index, want] as [number, number],
       { timeout: 20000 },
     );
@@ -1141,7 +1444,11 @@ test("sparse response handles and exact edits use one graph at every depth", { s
     if (count > 2) {
       await point(index).click();
       await waitPin(index, false);
-      assert.equal(await point(index).getAttribute("data-pinned"), "false", "clicking a pinned interior level unpins it");
+      assert.equal(
+        await point(index).getAttribute("data-pinned"),
+        "false",
+        "clicking a pinned interior level unpins it",
+      );
       assert.deepEqual(await values(), initial);
       await point(index).click();
       await waitPin(index, true);
@@ -1179,14 +1486,20 @@ test("sparse response handles and exact edits use one graph at every depth", { s
     assert.equal(await graph.locator('[data-pinned="true"]').count(), count);
     await panel.getByRole("button", { name: `Select level ${index}`, exact: true }).click();
     await point(index).press("ArrowUp");
-    await wantValues(beforePin.map((value, i) => i === index ? value + 1 : value));
-    assert.deepEqual(await values(), beforePin.map((value, i) => i === index ? value + 1 : value));
+    await wantValues(beforePin.map((value, i) => (i === index ? value + 1 : value)));
+    assert.deepEqual(
+      await values(),
+      beforePin.map((value, i) => (i === index ? value + 1 : value)),
+    );
     await point(index).press("Shift+ArrowDown");
-    await wantValues(beforePin.map((value, i) => i === index ? Math.max(0, value - 9) : value));
+    await wantValues(beforePin.map((value, i) => (i === index ? Math.max(0, value - 9) : value)));
     assert.equal((await values())[index], Math.max(0, beforePin[index]! - 9));
     await gray.fill(String(beforePin[index]! + 2));
-    await wantValues(beforePin.map((value, i) => i === index ? value + 2 : value));
-    assert.deepEqual(await values(), beforePin.map((value, i) => i === index ? value + 2 : value));
+    await wantValues(beforePin.map((value, i) => (i === index ? value + 2 : value)));
+    assert.deepEqual(
+      await values(),
+      beforePin.map((value, i) => (i === index ? value + 2 : value)),
+    );
   }
 
   // Keyboard selection moves focus without pinning; Enter/Delete edit handle ownership.
@@ -1228,14 +1541,19 @@ test("sparse response handles and exact edits use one graph at every depth", { s
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 25, { steps: 5 });
   await page.waitForFunction(
-    () => Number(document.querySelector('[role="slider"][aria-label="Level 7 gray value"]')?.getAttribute("aria-valuenow")) > 136,
+    () =>
+      Number(
+        document.querySelector('[role="slider"][aria-label="Level 7 gray value"]')?.getAttribute("aria-valuenow"),
+      ) > 136,
     null,
     { timeout: 20000 },
   );
   assert.ok((await values())[7]! > 136);
   await page.mouse.move(box.x + box.width / 2, -20, { steps: 5 });
   await page.waitForFunction(
-    () => document.querySelector('[role="slider"][aria-label="Level 7 gray value"]')?.getAttribute("aria-valuenow") === "255",
+    () =>
+      document.querySelector('[role="slider"][aria-label="Level 7 gray value"]')?.getAttribute("aria-valuenow") ===
+      "255",
     null,
     { timeout: 20000 },
   );
@@ -1249,7 +1567,8 @@ test("sparse response handles and exact edits use one graph at every depth", { s
   // Handles belong to their preset, and built-in Monochrome has no editing controls.
   await page.getByRole("button", { name: "Add preset" }).click();
   await page.waitForFunction(
-    () => document.querySelectorAll('[role="group"][aria-label="Gray response graph"] [data-pinned="true"]').length === 2,
+    () =>
+      document.querySelectorAll('[role="group"][aria-label="Gray response graph"] [data-pinned="true"]').length === 2,
     null,
     { timeout: 20000 },
   );

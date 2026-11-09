@@ -22,24 +22,51 @@ interface SiteHeaderProps {
   displayControls?: boolean;
 }
 
-export function SiteHeader({ eyebrow, title, titleAs: Title = "h1", sub, controls, search, actions, nav, displayControls = true, variant = "default" }: SiteHeaderProps): React.JSX.Element {
+export function SiteHeader({
+  eyebrow,
+  title,
+  titleAs: Title = "h1",
+  sub,
+  controls,
+  search,
+  actions,
+  nav,
+  displayControls = true,
+  variant = "default",
+}: SiteHeaderProps): React.JSX.Element {
   const { zoom, onZoom } = useDisplayPreferences();
   const brand = variant === "brand";
   return (
-    <header data-site-header className={cn("site-header sticky top-0 z-40 w-full border-b", brand
-      ? "studio-card border-studio-border bg-font-card shadow-studio-card"
-      : "border-line bg-card", !displayControls && "site-header--no-display")}>
+    <header
+      data-site-header
+      className={cn(
+        "site-header sticky top-0 z-40 w-full border-b",
+        brand ? "studio-card border-studio-border bg-font-card shadow-studio-card" : "border-line bg-card",
+        !displayControls && "site-header--no-display",
+      )}
+    >
       <div className="site-header__inner">
         <div className="site-header__identity">
           {eyebrow && <div className="site-header__eyebrow">{eyebrow}</div>}
-          <Title className={cn("m-0 truncate", brand
-            ? "font-display text-[16px] leading-6 font-bold tracking-[1.6px] text-studio-foreground uppercase"
-            : "font-[650] text-[clamp(1.2rem,2.4vw,1.5rem)] tracking-[-.035em]")}>
+          <Title
+            className={cn(
+              "m-0 truncate",
+              brand
+                ? "font-display text-[16px] leading-6 font-bold tracking-[1.6px] text-studio-foreground uppercase"
+                : "font-[650] text-[clamp(1.2rem,2.4vw,1.5rem)] tracking-[-.035em]",
+            )}
+          >
             {title === "Glypherie" ? (
-              <NavLink href={homePath(readRouteSearch())} onNavigate={() => navigateTo(homePath(readRouteSearch()))} className="text-inherit no-underline">
+              <NavLink
+                href={homePath(readRouteSearch())}
+                onNavigate={() => navigateTo(homePath(readRouteSearch()))}
+                className="text-inherit no-underline"
+              >
                 {title}
               </NavLink>
-            ) : title}
+            ) : (
+              title
+            )}
           </Title>
           {sub}
         </div>
@@ -49,7 +76,9 @@ export function SiteHeader({ eyebrow, title, titleAs: Title = "h1", sub, control
         {displayControls && (
           <div className="site-header__display" aria-label="Preview display">
             <CanvasControls />
-            <div data-global-zoom><ZoomControl zoom={zoom} onZoom={onZoom} /></div>
+            <div data-global-zoom>
+              <ZoomControl zoom={zoom} onZoom={onZoom} />
+            </div>
             <span className="site-header__divider" aria-hidden="true" />
           </div>
         )}

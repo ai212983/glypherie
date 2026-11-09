@@ -31,10 +31,7 @@ test("hash routes parse the library and font paths", () => {
   assert.deepEqual(parseRoute("#/font/aaa/?v=1"), { name: "font", font: "aaa" });
   assert.deepEqual(parseRoute("#/font/aaa/variant/vvv/"), { name: "variant", font: "aaa", variant: "vvv" });
   assert.deepEqual(parseRoute("#/font/aaa/variant/vvv"), { name: "variant", font: "aaa", variant: "vvv" });
-  assert.deepEqual(
-    parseRoute("#/font/aaa/variant/vvv/?utm=keep"),
-    { name: "variant", font: "aaa", variant: "vvv" },
-  );
+  assert.deepEqual(parseRoute("#/font/aaa/variant/vvv/?utm=keep"), { name: "variant", font: "aaa", variant: "vvv" });
   assert.equal(parseRoute("#/nope"), null);
   assert.equal(parseRoute("#/font/"), null);
   assert.equal(parseRoute("#/font/aaa/extra"), null);
@@ -54,25 +51,20 @@ test("bare roots resolve to the landing and legacy library hashes migrate", () =
 test("canonical font hashes select known fonts", () => {
   assert.deepEqual(resolveRoute("#/font/bbb/", "", IDS), { page: "font", font: "bbb" });
   assert.deepEqual(resolveRoute("#/font/bbb", "", IDS), { page: "font", font: "bbb" });
-  assert.deepEqual(
-    resolveRoute("#/font/bbb/?v=1&profile=gray_3bit&families=%7B%7D", "", IDS),
-    { page: "font", font: "bbb" },
-  );
+  assert.deepEqual(resolveRoute("#/font/bbb/?v=1&profile=gray_3bit&families=%7B%7D", "", IDS), {
+    page: "font",
+    font: "bbb",
+  });
 });
 
 test("variant hashes resolve to the variant page for known fonts", () => {
-  assert.deepEqual(
-    resolveRoute("#/font/bbb/variant/vvv/", "", IDS),
-    { page: "variant", font: "bbb", variant: "vvv" },
-  );
-  assert.deepEqual(
-    resolveRoute("#/font/bbb/variant/vvv", "", IDS),
-    { page: "variant", font: "bbb", variant: "vvv" },
-  );
-  assert.deepEqual(
-    resolveRoute("#/font/bbb/variant/vvv/?utm=keep", "", IDS),
-    { page: "variant", font: "bbb", variant: "vvv" },
-  );
+  assert.deepEqual(resolveRoute("#/font/bbb/variant/vvv/", "", IDS), { page: "variant", font: "bbb", variant: "vvv" });
+  assert.deepEqual(resolveRoute("#/font/bbb/variant/vvv", "", IDS), { page: "variant", font: "bbb", variant: "vvv" });
+  assert.deepEqual(resolveRoute("#/font/bbb/variant/vvv/?utm=keep", "", IDS), {
+    page: "variant",
+    font: "bbb",
+    variant: "vvv",
+  });
   assert.equal(variantPath("bbb", "vvv"), "/font/bbb/variant/vvv/");
   assert.equal(variantPathKeeping("bbb", "vvv", ""), "/font/bbb/variant/vvv/");
   assert.equal(
@@ -99,10 +91,10 @@ test("legacy outer queries and family hashes still resolve", () => {
   assert.deepEqual(resolveRoute("", "?font=bbb", IDS), { page: "font", font: "bbb" });
   assert.deepEqual(resolveRoute("", "?font=bbb&utm=keep", IDS), { page: "font", font: "bbb" });
   assert.deepEqual(resolveRoute("#family-bbb", "", IDS), { page: "font", font: "bbb" });
-  assert.deepEqual(
-    resolveRoute("", "?v=1&font=bbb&profile=gray_3bit&families=%7B%7D", IDS),
-    { page: "font", font: "bbb" },
-  );
+  assert.deepEqual(resolveRoute("", "?v=1&font=bbb&profile=gray_3bit&families=%7B%7D", IDS), {
+    page: "font",
+    font: "bbb",
+  });
 });
 
 test("versioned snapshots without a font stay on the library", () => {
@@ -157,7 +149,6 @@ test("clean paths resolve the library, previews, variants and palette lab", () =
   assert.equal(parseRoute("/font/%zz/"), null);
   assert.equal(variantPath("a/b", "v?x"), "/font/a%2Fb/variant/v%3Fx/");
 });
-
 
 test("library paths are explicit and ignore stale font query state", () => {
   for (const path of ["/fonts/", "/fonts", "#/fonts/"]) {

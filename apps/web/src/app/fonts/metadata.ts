@@ -26,15 +26,21 @@ interface RawAxis {
 }
 
 export function controlAxes(metadata: FontMetadata | null | undefined): AxisControl[] {
-  const raw = metadata && Array.isArray((metadata as { axes?: unknown }).axes)
-    ? (metadata as { axes: RawAxis[] }).axes : [];
+  const raw =
+    metadata && Array.isArray((metadata as { axes?: unknown }).axes) ? (metadata as { axes: RawAxis[] }).axes : [];
   return raw
-    .filter((axis) => axis && typeof axis.tag === "string" && AXIS_TAG.test(axis.tag)
-      && [axis.min, axis.default, axis.max].every((value) => Number.isFinite(value as number))
-      && (axis.min as number) <= (axis.default as number) && (axis.default as number) <= (axis.max as number))
+    .filter(
+      (axis) =>
+        axis &&
+        typeof axis.tag === "string" &&
+        AXIS_TAG.test(axis.tag) &&
+        [axis.min, axis.default, axis.max].every((value) => Number.isFinite(value as number)) &&
+        (axis.min as number) <= (axis.default as number) &&
+        (axis.default as number) <= (axis.max as number),
+    )
     .map((axis) => ({
       tag: axis.tag as string,
-      name: typeof axis.name === "string" && axis.name.trim() ? axis.name : axis.tag as string,
+      name: typeof axis.name === "string" && axis.name.trim() ? axis.name : (axis.tag as string),
       min: axis.min as number,
       defaultValue: axis.default as number,
       max: axis.max as number,
@@ -59,9 +65,13 @@ export function classificationLabel(metadata: FontMetadata | null | undefined): 
   const sources = Array.isArray(kerning?.sources)
     ? kerning.sources.filter((source) => typeof source === "string" && source.trim())
     : [];
-  parts.push(kerning && kerning.horizontal === true
-    ? sources.length ? `Source kerning available (${sources.join(", ")}).` : "Source kerning available."
-    : "No horizontal source kerning.");
+  parts.push(
+    kerning && kerning.horizontal === true
+      ? sources.length
+        ? `Source kerning available (${sources.join(", ")}).`
+        : "Source kerning available."
+      : "No horizontal source kerning.",
+  );
   const coverage = (metadata as { coverage?: { character_count?: number } }).coverage;
   if (coverage && Number.isFinite(coverage.character_count)) {
     parts.push(`${coverage.character_count} encoded characters.`);
@@ -84,14 +94,21 @@ export function licenseBadge(metadata: FontMetadata): { label: string; descripti
   let label = text || url ? "Provided" : "Unknown";
   // Identify only explicitly named licenses; an unfamiliar notice does not
   // establish a commercial, open-source, or other permission category.
-  if (/\bSIL Open Font License\b/i.test(text)
-    || /^https?:\/\/(?:www\.)?(?:openfontlicense\.org(?:\/|$)|scripts\.sil\.org\/OFL(?:[/?#]|$))/i.test(url)) {
+  if (
+    /\bSIL Open Font License\b/i.test(text) ||
+    /^https?:\/\/(?:www\.)?(?:openfontlicense\.org(?:\/|$)|scripts\.sil\.org\/OFL(?:[/?#]|$))/i.test(url)
+  ) {
     label = "SIL OFL";
-  } else if (/\bApache License,?\s*(?:Version\s*)?2\.0\b/i.test(text)
-    || /^https?:\/\/(?:www\.)?apache\.org\/licenses\/LICENSE-2\.0(?:[/?#]|$)/i.test(url)) {
+  } else if (
+    /\bApache License,?\s*(?:Version\s*)?2\.0\b/i.test(text) ||
+    /^https?:\/\/(?:www\.)?apache\.org\/licenses\/LICENSE-2\.0(?:[/?#]|$)/i.test(url)
+  ) {
     label = "Apache 2.0";
   } else if (/\bMIT License\b/i.test(text)) {
     label = "MIT";
   }
-  return { label, description: [text, url].filter(Boolean).join("\n") || "No license information is embedded in this font." };
+  return {
+    label,
+    description: [text, url].filter(Boolean).join("\n") || "No license information is embedded in this font.",
+  };
 }

@@ -14,10 +14,7 @@
         "fitted_width": 1.0,
         "rel": -0.24705882352941178,
         "length": 9.171874999999996,
-        "tangent": [
-          0.0,
-          1.0
-        ],
+        "tangent": [0.0, 1.0],
         "source_ids": "r1:c0a(0,0.0000,1.0000)/b(2,0.0000,1.0000)"
       },
       {
@@ -25,10 +22,7 @@
         "fitted_width": 1.0,
         "rel": -0.23809523809523814,
         "length": 6.046875,
-        "tangent": [
-          0.0,
-          1.0
-        ],
+        "tangent": [0.0, 1.0],
         "source_ids": "r4:c0a(0,0.0000,0.7448)/b(10,0.2552,1.0000)"
       },
       {
@@ -36,10 +30,7 @@
         "fitted_width": 1.0,
         "rel": -0.23809523809523814,
         "length": 1.21875,
-        "tangent": [
-          0.0,
-          1.0
-        ],
+        "tangent": [0.0, 1.0],
         "source_ids": "r4:c0a(0,0.8641,1.0000)/b(10,0.0000,0.1354)"
       },
       {
@@ -47,10 +38,7 @@
         "fitted_width": 1.0,
         "rel": -0.23809523809523814,
         "length": 4.1093750000000036,
-        "tangent": [
-          0.0,
-          -1.0
-        ],
+        "tangent": [0.0, -1.0],
         "source_ids": "r5:c0a(8,0.0000,1.0000)/b(10,0.0000,1.0000)"
       },
       {
@@ -58,10 +46,7 @@
         "fitted_width": 1.0,
         "rel": -0.23809523809523814,
         "length": 6.468750000000001,
-        "tangent": [
-          0.0,
-          1.0
-        ],
+        "tangent": [0.0, 1.0],
         "source_ids": "r6:c0a(0,0.0000,1.0000)/b(2,0.0000,1.0000)"
       },
       {
@@ -69,10 +54,7 @@
         "fitted_width": 1.0,
         "rel": -0.23809523809523814,
         "length": 9.125000000000002,
-        "tangent": [
-          0.0,
-          1.0
-        ],
+        "tangent": [0.0, 1.0],
         "source_ids": "r8:c0a(3,0.0000,1.0000)/b(5,0.0000,1.0000)"
       },
       {
@@ -80,10 +62,7 @@
         "fitted_width": 1.0,
         "rel": -0.23809523809523814,
         "length": 4.1093750000000036,
-        "tangent": [
-          0.0,
-          -1.0
-        ],
+        "tangent": [0.0, -1.0],
         "source_ids": "r9:c0a(8,0.0000,1.0000)/b(10,0.0000,1.0000)"
       },
       {
@@ -91,10 +70,7 @@
         "fitted_width": 1.0,
         "rel": -0.23809523809523814,
         "length": 4.25,
-        "tangent": [
-          0.0,
-          1.0
-        ],
+        "tangent": [0.0, 1.0],
         "source_ids": "r10:c0a(2,0.0000,1.0000)/b(12,0.0000,1.0000)"
       }
     ],
@@ -108,10 +84,7 @@
   "cases": {
     "A": {
       "codepoint": 65,
-      "native_axes": [
-        false,
-        false
-      ],
+      "native_axes": [false, false],
       "raw_source": [
         {
           "op": "move_to",
@@ -621,73 +594,43 @@
         ],
         "caps": [
           {
-            "vertices": [
-              1,
-              2
-            ],
+            "vertices": [1, 2],
             "plane": "max",
             "source_y": 10.501120651068158,
             "upstream_y": 11.0
           },
           {
-            "vertices": [
-              3,
-              4
-            ],
+            "vertices": [3, 4],
             "plane": "min",
             "source_y": 0.0,
             "upstream_y": 0.0
           },
           {
-            "vertices": [
-              11,
-              0
-            ],
+            "vertices": [11, 0],
             "plane": "min",
             "source_y": 0.0,
             "upstream_y": 0.0
           }
         ],
-        "cap_vertices": [
-          0,
-          1,
-          2,
-          3,
-          4,
-          11
-        ],
+        "cap_vertices": [0, 1, 2, 3, 4, 11],
         "uprights": [
           {
-            "vertices": [
-              12,
-              13
-            ],
+            "vertices": [12, 13],
             "source_x": 1.9097586978636825,
             "upstream_x": 2.0
           },
           {
-            "vertices": [
-              14,
-              15
-            ],
+            "vertices": [14, 15],
             "source_x": 6.744957070193286,
             "upstream_x": 7.0
           }
         ],
-        "upright_vertices": [
-          12,
-          13,
-          14,
-          15
-        ]
+        "upright_vertices": [12, 13, 14, 15]
       }
     },
     "y": {
       "codepoint": 121,
-      "native_axes": [
-        false,
-        false
-      ],
+      "native_axes": [false, false],
       "raw_source": [
         {
           "op": "move_to",
@@ -1493,30 +1436,19 @@
         ],
         "caps": [
           {
-            "vertices": [
-              9,
-              10
-            ],
+            "vertices": [9, 10],
             "plane": "max",
             "source_y": 7.777529296875,
             "upstream_y": 8.0
           },
           {
-            "vertices": [
-              17,
-              18
-            ],
+            "vertices": [17, 18],
             "plane": "max",
             "source_y": 7.777529296875,
             "upstream_y": 8.0
           }
         ],
-        "cap_vertices": [
-          9,
-          10,
-          17,
-          18
-        ],
+        "cap_vertices": [9, 10, 17, 18],
         "uprights": [],
         "upright_vertices": []
       }

@@ -10,16 +10,8 @@
 
 import assert from "node:assert/strict";
 import test, { after, beforeEach } from "node:test";
-import {
-  closeDomainForTests,
-  getBackend,
-  resetDomainForTests,
-} from "../../src/app/domain/node-backend.ts";
-import {
-  listOutputProfiles,
-  resolveTextStyle,
-  resolveTextStyles,
-} from "../../src/app/domain/service.ts";
+import { closeDomainForTests, getBackend, resetDomainForTests } from "../../src/app/domain/node-backend.ts";
+import { listOutputProfiles, resolveTextStyle, resolveTextStyles } from "../../src/app/domain/service.ts";
 import { saveFont, type FontMetadata } from "../../src/app/fonts/storage.ts";
 import { createVariant, getVariant, updateVariant } from "../../src/app/variants/repository.ts";
 import { kvGet } from "../../src/app/domain/backend.ts";
@@ -198,9 +190,7 @@ test("variant views stay coherent across a concurrent committed edit", async () 
           get(target, key) {
             const value: unknown = Reflect.get(target, key);
             if (key !== "execute") {
-              return typeof value === "function"
-                ? (value as (...args: never[]) => unknown).bind(target)
-                : value;
+              return typeof value === "function" ? (value as (...args: never[]) => unknown).bind(target) : value;
             }
             return async (...args: never[]) => {
               if (!intercepted) {
@@ -264,17 +254,19 @@ test("control: separated autocommit reads mix revisions without a snapshot", asy
   const profileEdge = (await backend.store.edges.usesProfile.findFrom(style))[0];
   assert.ok(variantEdge);
   assert.ok(profileEdge);
-  const variantBefore = (await backend.store.nodes.FontVariant.getById(
-    variantEdge.toId,
-  )) as unknown as Record<string, unknown>;
+  const variantBefore = (await backend.store.nodes.FontVariant.getById(variantEdge.toId)) as unknown as Record<
+    string,
+    unknown
+  >;
   await updateVariant(
     initial.id,
     { name: "Ctl after", settings: { ...initial.settings, sizePx: 30, letterSpacingPx: 3 } },
     initial.revision,
   );
-  const profileAfter = (await backend.store.nodes.RenderingProfile.getById(
-    profileEdge.toId,
-  )) as unknown as Record<string, unknown>;
+  const profileAfter = (await backend.store.nodes.RenderingProfile.getById(profileEdge.toId)) as unknown as Record<
+    string,
+    unknown
+  >;
   const torn = { size: variantBefore["fontSize"], spacing: profileAfter["letterSpacing"] };
   const coherent =
     (torn.size === initial.settings.sizePx && torn.spacing === initial.settings.letterSpacingPx) ||
@@ -292,9 +284,10 @@ test("control: separated graph and preference reads mix revisions without a snap
   assert.ok(style);
   const variantEdge = (await backend.store.edges.usesVariant.findFrom(style))[0];
   assert.ok(variantEdge);
-  const variantBefore = (await backend.store.nodes.FontVariant.getById(
-    variantEdge.toId,
-  )) as unknown as Record<string, unknown>;
+  const variantBefore = (await backend.store.nodes.FontVariant.getById(variantEdge.toId)) as unknown as Record<
+    string,
+    unknown
+  >;
   await updateVariant(
     initial.id,
     { settings: { ...initial.settings, sizePx: 30 }, sampleText: "after" },

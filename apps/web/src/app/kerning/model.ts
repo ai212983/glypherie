@@ -42,18 +42,27 @@ export type KerningState = { method: KerningMethod } & KerningSettingsMap;
 
 /** Historical booleans and two-method values migrate on normalization. The retired
  * `strength` blend is rejected wherever it appears. */
-export type KerningPreference = boolean | (
-  Pick<KerningState, "method" | "source"> & { typefacet: TypeFacetPreference } &
-  { hu_hersch?: Partial<HuHerschSettings> } &
-  { fontforge?: FontForgeSettings }
-);
+export type KerningPreference =
+  | boolean
+  | (Pick<KerningState, "method" | "source"> & { typefacet: TypeFacetPreference } & {
+      hu_hersch?: Partial<HuHerschSettings>;
+    } & { fontforge?: FontForgeSettings });
 
 export type KerningEdit = {
-  [Method in KerningMethod]: { method: Method; settings: Method extends "typefacet" ? TypeFacetPreference : KerningSettingsMap[Method] }
+  [Method in KerningMethod]: {
+    method: Method;
+    settings: Method extends "typefacet" ? TypeFacetPreference : KerningSettingsMap[Method];
+  };
 }[KerningMethod];
 
 export type KerningMethodRequest =
-  | { method: "typefacet"; normal_distance_em: number; intrusion_tolerance_em: number; minimum_distance_em: number; max_x_extrema_overlap_em: number }
+  | {
+      method: "typefacet";
+      normal_distance_em: number;
+      intrusion_tolerance_em: number;
+      minimum_distance_em: number;
+      max_x_extrema_overlap_em: number;
+    }
   | { method: "hu_hersch"; aperture_depth_factor: number; global_depth_factor: number }
   | { method: "fontforge" };
 
@@ -66,19 +75,23 @@ interface KerningMethodDescription {
 /** Only methods compiled into the shared native/WASM renderer belong here. */
 export const KERNING_METHODS = {
   source: {
-    label: "Source", requiresExplicitPipeline: false,
+    label: "Source",
+    requiresExplicitPipeline: false,
     description: "Keeps the font's source kerning and fitted bearing corrections.",
   },
   typefacet: {
-    label: "TypeFacet", requiresExplicitPipeline: true,
+    label: "TypeFacet",
+    requiresExplicitPipeline: true,
     description: "Manual optical spacing; adjust these parameters for the font.",
   },
   hu_hersch: {
-    label: "Hu/Hersch", requiresExplicitPipeline: true,
+    label: "Hu/Hersch",
+    requiresExplicitPipeline: true,
     description: "Calibrates optical spacing to the font's reference alphabet density.",
   },
   fontforge: {
-    label: "FontForge source-relative", requiresExplicitPipeline: true,
+    label: "FontForge source-relative",
+    requiresExplicitPipeline: true,
     description: "Targets each source pair's original optical separation after fitting.",
   },
 } as const satisfies Record<KerningMethod, KerningMethodDescription>;
@@ -143,13 +156,12 @@ function validateHuHerschSettings(value: unknown): void {
   for (const key of Object.keys(value)) {
     if (!known.has(key)) throw new Error(`Hu/Hersch does not accept ${key}.`);
   }
-  const aperture = value.apertureDepthFactor === undefined
-    ? HU_HERSCH_DEFAULTS.apertureDepthFactor : value.apertureDepthFactor;
+  const aperture =
+    value.apertureDepthFactor === undefined ? HU_HERSCH_DEFAULTS.apertureDepthFactor : value.apertureDepthFactor;
   if (!isFiniteRange(aperture, HU_HERSCH_APERTURE_MIN, HU_HERSCH_APERTURE_MAX)) {
     throw new Error("Hu/Hersch cavity depth must be between 0 and 1.");
   }
-  const global = value.globalDepthFactor === undefined
-    ? HU_HERSCH_DEFAULTS.globalDepthFactor : value.globalDepthFactor;
+  const global = value.globalDepthFactor === undefined ? HU_HERSCH_DEFAULTS.globalDepthFactor : value.globalDepthFactor;
   if (!isFiniteRange(global, HU_HERSCH_GLOBAL_MIN, HU_HERSCH_GLOBAL_MAX)) {
     throw new Error("Hu/Hersch maximum visual depth must be between 0 and 1.");
   }
@@ -208,15 +220,33 @@ export function editKerning(value: KerningPreference, edit: KerningEdit): Kernin
   if (edit.method !== state.method) throw new Error("The kerning controls are no longer active.");
   let next: KerningState;
   switch (edit.method) {
-    case "source": next = { ...state, source: { ...edit.settings } }; break;
-    case "typefacet": next = { ...state, typefacet: {
-      ...edit.settings,
-      minimumDistanceEm: edit.settings.minimumDistanceEm === undefined ? state.typefacet.minimumDistanceEm : edit.settings.minimumDistanceEm,
-      maxXExtremaOverlapEm: edit.settings.maxXExtremaOverlapEm === undefined ? state.typefacet.maxXExtremaOverlapEm : edit.settings.maxXExtremaOverlapEm,
-    } }; break;
-    case "hu_hersch": next = { ...state, hu_hersch: { ...edit.settings } }; break;
-    case "fontforge": next = { ...state, fontforge: { ...edit.settings } }; break;
-    default: return assertNever(edit);
+    case "source":
+      next = { ...state, source: { ...edit.settings } };
+      break;
+    case "typefacet":
+      next = {
+        ...state,
+        typefacet: {
+          ...edit.settings,
+          minimumDistanceEm:
+            edit.settings.minimumDistanceEm === undefined
+              ? state.typefacet.minimumDistanceEm
+              : edit.settings.minimumDistanceEm,
+          maxXExtremaOverlapEm:
+            edit.settings.maxXExtremaOverlapEm === undefined
+              ? state.typefacet.maxXExtremaOverlapEm
+              : edit.settings.maxXExtremaOverlapEm,
+        },
+      };
+      break;
+    case "hu_hersch":
+      next = { ...state, hu_hersch: { ...edit.settings } };
+      break;
+    case "fontforge":
+      next = { ...state, fontforge: { ...edit.settings } };
+      break;
+    default:
+      return assertNever(edit);
   }
   return normalizeKerning(next);
 }
@@ -232,21 +262,32 @@ export function resolveKerning(value: KerningPreference = true): {
 } {
   const state = normalizeKerning(value);
   switch (state.method) {
-    case "source": return { kerning: state.source.enabled };
-    case "typefacet": return {
-      kerning: true,
-      kerning_method: {
-        method: "typefacet", normal_distance_em: state.typefacet.normalDistanceEm,
-        intrusion_tolerance_em: state.typefacet.intrusionToleranceEm,
-        minimum_distance_em: state.typefacet.minimumDistanceEm,
-        max_x_extrema_overlap_em: state.typefacet.maxXExtremaOverlapEm,
-      },
-    };
-    case "hu_hersch": return { kerning: true, kerning_method: { method: "hu_hersch",
-      aperture_depth_factor: state.hu_hersch.apertureDepthFactor,
-      global_depth_factor: state.hu_hersch.globalDepthFactor } };
-    case "fontforge": return { kerning: true, kerning_method: { method: "fontforge" } };
-    default: return assertNever(state.method);
+    case "source":
+      return { kerning: state.source.enabled };
+    case "typefacet":
+      return {
+        kerning: true,
+        kerning_method: {
+          method: "typefacet",
+          normal_distance_em: state.typefacet.normalDistanceEm,
+          intrusion_tolerance_em: state.typefacet.intrusionToleranceEm,
+          minimum_distance_em: state.typefacet.minimumDistanceEm,
+          max_x_extrema_overlap_em: state.typefacet.maxXExtremaOverlapEm,
+        },
+      };
+    case "hu_hersch":
+      return {
+        kerning: true,
+        kerning_method: {
+          method: "hu_hersch",
+          aperture_depth_factor: state.hu_hersch.apertureDepthFactor,
+          global_depth_factor: state.hu_hersch.globalDepthFactor,
+        },
+      };
+    case "fontforge":
+      return { kerning: true, kerning_method: { method: "fontforge" } };
+    default:
+      return assertNever(state.method);
   }
 }
 
@@ -254,16 +295,22 @@ export function parseKerning(value: unknown): KerningPreference | null {
   try {
     validateKerningPreference(value);
     return cloneKerning(value);
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export function decodeKerning(value: string | null): KerningPreference | null {
   if (value === "1" || value === "true") return true;
   if (value === "0" || value === "false") return false;
-  try { return parseKerning(JSON.parse(value ?? "")); } catch { return null; }
+  try {
+    return parseKerning(JSON.parse(value ?? ""));
+  } catch {
+    return null;
+  }
 }
 
 export function encodeKerning(value: KerningPreference): string {
   validateKerningPreference(value);
-  return typeof value === "boolean" ? value ? "1" : "0" : JSON.stringify(normalizeKerning(value));
+  return typeof value === "boolean" ? (value ? "1" : "0") : JSON.stringify(normalizeKerning(value));
 }

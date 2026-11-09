@@ -1,7 +1,14 @@
 // cspell:words TEMPERA
 import * as React from "react";
 import type { KerningPreference } from "../../kerning/model.js";
-import type { MonoRaster, OutputProfile, Rasterization, RendererRole, RGBA, StemFitting } from "../../renderer/renderer-types.js";
+import type {
+  MonoRaster,
+  OutputProfile,
+  Rasterization,
+  RendererRole,
+  RGBA,
+  StemFitting,
+} from "../../renderer/renderer-types.js";
 import { FontCanvas } from "../../renderer/FontCanvas.js";
 import { oneToOneCssScale, referenceSizeCssScale } from "../../renderer/display-scaling.js";
 import { useLiveRatio } from "../../renderer/live-ratio.js";
@@ -47,11 +54,7 @@ export function DevicePreview(props: DevicePreviewProps): React.JSX.Element | nu
     () => (device ? { width: device.widthPx, height: device.heightPx } : null),
     [device],
   );
-  const cssScale = device
-    ? scale === "one-to-one"
-      ? oneToOneCssScale(ratio)
-      : referenceSizeCssScale(device.ppi)
-    : 1;
+  const cssScale = device ? (scale === "one-to-one" ? oneToOneCssScale(ratio) : referenceSizeCssScale(device.ppi)) : 1;
   if (!device || !nativeSize) return null;
   return (
     <DeviceShell device={device} cssScale={cssScale}>
@@ -98,7 +101,9 @@ export function DevicePreview(props: DevicePreviewProps): React.JSX.Element | nu
           }}
           onError={(message, info) => {
             console.warn("Device preview failed", info.renderer, message);
-            props.onStatus(message.includes("requires the current preview pipeline") ? message : "Couldn’t render preview.");
+            props.onStatus(
+              message.includes("requires the current preview pipeline") ? message : "Couldn’t render preview.",
+            );
           }}
         />
       )}

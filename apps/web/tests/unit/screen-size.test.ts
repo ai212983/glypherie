@@ -14,7 +14,9 @@ function withStorage(values: Record<string, string>, body: () => void): void {
       configurable: true,
       value: {
         getItem: (key: string) => values[key] ?? null,
-        setItem: (key: string, value: string) => { values[key] = value; },
+        setItem: (key: string, value: string) => {
+          values[key] = value;
+        },
       },
     });
     body();
@@ -68,8 +70,12 @@ test("screen size writes clamp into range and survive denied storage", () => {
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
       value: {
-        getItem: () => { throw new Error("denied"); },
-        setItem: () => { throw new Error("denied"); },
+        getItem: () => {
+          throw new Error("denied");
+        },
+        setItem: () => {
+          throw new Error("denied");
+        },
       },
     });
     assert.equal(readScreenSizePercent(), SCREEN_SIZE_DEFAULT);

@@ -12,7 +12,15 @@ interface PrimaryNavProps {
 
 // Top-level app navigation. Real anchors keep native behaviors (new tabs,
 // direct loads); the active section is exposed through aria-current.
-export function PrimaryNav({ active, fontsHref, palettesHref, screenHref, onFonts, onPalettes, onScreen }: PrimaryNavProps): React.JSX.Element {
+export function PrimaryNav({
+  active,
+  fontsHref,
+  palettesHref,
+  screenHref,
+  onFonts,
+  onPalettes,
+  onScreen,
+}: PrimaryNavProps): React.JSX.Element {
   return (
     <nav aria-label="Primary" className="site-header__navlinks">
       <NavLink

@@ -1,14 +1,12 @@
-import * as React from "react"
-import { ToggleGroup as ToggleGroupPrimitive } from "radix-ui"
-import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "utils"
+import * as React from "react";
+import { ToggleGroup as ToggleGroupPrimitive } from "radix-ui";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "utils";
 
-const ToggleGroupContext = React.createContext<
-  VariantProps<typeof toggleGroupItemVariants>
->({
+const ToggleGroupContext = React.createContext<VariantProps<typeof toggleGroupItemVariants>>({
   size: "default",
   variant: "default",
-})
+});
 
 function ToggleGroup({
   className,
@@ -16,24 +14,18 @@ function ToggleGroup({
   size,
   children,
   ...props
-}: React.ComponentProps<typeof ToggleGroupPrimitive.Root> &
-  VariantProps<typeof toggleGroupItemVariants>) {
+}: React.ComponentProps<typeof ToggleGroupPrimitive.Root> & VariantProps<typeof toggleGroupItemVariants>) {
   return (
     <ToggleGroupPrimitive.Root
       data-slot="toggle-group"
       data-variant={variant}
       data-size={size}
-      className={cn(
-        "group/toggle-group flex w-fit items-center gap-1 data-[variant=outline]:shadow-xs",
-        className
-      )}
+      className={cn("group/toggle-group flex w-fit items-center gap-1 data-[variant=outline]:shadow-xs", className)}
       {...props}
     >
-      <ToggleGroupContext.Provider value={{ variant, size }}>
-        {children}
-      </ToggleGroupContext.Provider>
+      <ToggleGroupContext.Provider value={{ variant, size }}>{children}</ToggleGroupContext.Provider>
     </ToggleGroupPrimitive.Root>
-  )
+  );
 }
 
 const toggleGroupItemVariants = cva(
@@ -41,7 +33,8 @@ const toggleGroupItemVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-transparent hover:bg-muted hover:text-muted-foreground data-[state=on]:bg-accent data-[state=on]:text-accent-foreground",
+        default:
+          "bg-transparent hover:bg-muted hover:text-muted-foreground data-[state=on]:bg-accent data-[state=on]:text-accent-foreground",
         outline:
           "border border-input bg-transparent shadow-xs hover:bg-accent hover:text-accent-foreground data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:shadow-xs",
       },
@@ -55,8 +48,8 @@ const toggleGroupItemVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
-)
+  },
+);
 
 function ToggleGroupItem({
   className,
@@ -64,9 +57,8 @@ function ToggleGroupItem({
   variant,
   size,
   ...props
-}: React.ComponentProps<typeof ToggleGroupPrimitive.Item> &
-  VariantProps<typeof toggleGroupItemVariants>) {
-  const context = React.useContext(ToggleGroupContext)
+}: React.ComponentProps<typeof ToggleGroupPrimitive.Item> & VariantProps<typeof toggleGroupItemVariants>) {
+  const context = React.useContext(ToggleGroupContext);
 
   return (
     <ToggleGroupPrimitive.Item
@@ -78,13 +70,13 @@ function ToggleGroupItem({
           variant: context.variant || variant,
           size: context.size || size,
         }),
-        className
+        className,
       )}
       {...props}
     >
       {children}
     </ToggleGroupPrimitive.Item>
-  )
+  );
 }
 
-export { ToggleGroup, ToggleGroupItem }
+export { ToggleGroup, ToggleGroupItem };

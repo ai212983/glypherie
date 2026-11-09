@@ -23,10 +23,8 @@ export function resolveDeviceAssetSources(
   env: Record<string, string | undefined> = process.env,
 ): { catalogFile: string; shellsDir: string } {
   return {
-    catalogFile: env.FONT_DEVICE_CATALOG
-      ?? path.join(webRoot, "src", "app", "devices", "devices.json"),
-    shellsDir: env.FONT_DEVICE_SHELLS
-      ?? path.join(webRoot, "public", "devices", "shells"),
+    catalogFile: env.FONT_DEVICE_CATALOG ?? path.join(webRoot, "src", "app", "devices", "devices.json"),
+    shellsDir: env.FONT_DEVICE_SHELLS ?? path.join(webRoot, "public", "devices", "shells"),
   };
 }
 
@@ -80,9 +78,7 @@ export async function validateDeviceAssets(
 }
 
 /** Vite plugin: enforce the guard on every production build, never during dev. */
-export function devicePackagingPlugin(
-  webRoot: string,
-): { name: string; buildStart(): Promise<void> } {
+export function devicePackagingPlugin(webRoot: string): { name: string; buildStart(): Promise<void> } {
   return {
     name: "device-packaging-guard",
     async buildStart() {

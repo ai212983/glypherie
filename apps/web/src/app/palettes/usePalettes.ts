@@ -6,16 +6,24 @@ import { MONOCHROME, type PalettePreset } from "./model.ts";
 export function usePalettes(): { presets: PalettePreset[]; ready: boolean; error: string; retry: () => void } {
   const [attempt, setAttempt] = React.useState(0);
   const version = React.useSyncExternalStore(subscribeDomain, getDomainVersion);
-  const [state, setState] = React.useState<{ presets: PalettePreset[]; error: string; loaded: boolean }>(
-    { presets: [MONOCHROME], error: "", loaded: false },
-  );
+  const [state, setState] = React.useState<{ presets: PalettePreset[]; error: string; loaded: boolean }>({
+    presets: [MONOCHROME],
+    error: "",
+    loaded: false,
+  });
   React.useEffect(() => {
     let live = true;
     void listPalettes().then(
-      (presets) => { if (live) setState({ presets, error: "", loaded: true }); },
-      () => { if (live) setState({ presets: [MONOCHROME], error: "Couldn’t load palettes. Try again.", loaded: true }); },
+      (presets) => {
+        if (live) setState({ presets, error: "", loaded: true });
+      },
+      () => {
+        if (live) setState({ presets: [MONOCHROME], error: "Couldn’t load palettes. Try again.", loaded: true });
+      },
     );
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [attempt, version]);
   return {
     presets: state.presets,

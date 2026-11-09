@@ -60,7 +60,9 @@ function readStoredGlobals(): { kerning?: KerningPreference } {
       const kerning = parseKerning((parsed as Record<string, unknown>).kerning);
       if (kerning !== null) result.kerning = kerning;
     }
-  } catch { /* storage unavailable */ }
+  } catch {
+    /* storage unavailable */
+  }
   return result;
 }
 
@@ -148,7 +150,9 @@ export function writeSnapshotNow(snapshot: PreviewSnapshot, familyOrder: string[
   try {
     localStorage.setItem(EXACT_KEY, "true");
     localStorage.setItem(SPACING_KEY, JSON.stringify({ kerning: snapshot.kerning }));
-  } catch { /* storage unavailable */ }
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 // Canonical URL for a resolved route, migrating legacy queries and fragments.

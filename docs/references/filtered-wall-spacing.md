@@ -80,5 +80,4 @@ acceptance; native-size reading assessment remains necessary.
 - Changyuan Hu. _Synthesis of Parametrisable Fonts by Shape Components_. EPFL thesis 1905, 1998, §4.4.
 - Roger D. Hersch, Claude Betrisey, Justin Bur and André Gürtler. _Perceptually Tuned Generation of Grayscale Fonts_.
   IEEE Computer Graphics and Applications 15(6), 1995.
-- Kei Nakatsuru and Seiichi Uchida. _Learning to Kern: Set-wise Estimation of Optimal Letter Space_. arXiv:2402.14313v2,
-  2024.
+- Kei Nakatsuru and Seiichi Uchida. _Learning to Kern: Set-wise Estimation of Optimal Letter Space_. arXiv:2402.14313v2, 2024.

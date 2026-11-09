@@ -9,7 +9,8 @@ import { resetDomainTransportForTests } from "./runtime.ts";
 let backend: DomainBackend | null = null;
 
 export function getBackend(): DomainBackend {
-  if (!backend) throw new Error("Domain backend is not configured; call configureDomain() or initBrowserDomain() first.");
+  if (!backend)
+    throw new Error("Domain backend is not configured; call configureDomain() or initBrowserDomain() first.");
   return backend;
 }
 

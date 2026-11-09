@@ -9,7 +9,11 @@ export interface CurveLevel {
 }
 
 export type GrayCurve = readonly CurveLevel[];
-interface Knot { x: number; value: number; slope: number }
+interface Knot {
+  x: number;
+  value: number;
+  slope: number;
+}
 
 function endpointSlope(h0: number, h1: number, d0: number, d1: number): number {
   const slope = ((2 * h0 + h1) * d0 - h0 * d1) / (h0 + h1);
@@ -51,10 +55,15 @@ function evaluate(knots: readonly Knot[], x: number): { value: number; slope: nu
   const t2 = t * t;
   const t3 = t2 * t;
   return {
-    value: (2 * t3 - 3 * t2 + 1) * a.value + (t3 - 2 * t2 + t) * h * a.slope
-      + (-2 * t3 + 3 * t2) * b.value + (t3 - t2) * h * b.slope,
-    slope: ((6 * t2 - 6 * t) * a.value + (-6 * t2 + 6 * t) * b.value) / h
-      + (3 * t2 - 4 * t + 1) * a.slope + (3 * t2 - 2 * t) * b.slope,
+    value:
+      (2 * t3 - 3 * t2 + 1) * a.value +
+      (t3 - 2 * t2 + t) * h * a.slope +
+      (-2 * t3 + 3 * t2) * b.value +
+      (t3 - t2) * h * b.slope,
+    slope:
+      ((6 * t2 - 6 * t) * a.value + (-6 * t2 + 6 * t) * b.value) / h +
+      (3 * t2 - 4 * t + 1) * a.slope +
+      (3 * t2 - 2 * t) * b.slope,
   };
 }
 
@@ -70,7 +79,9 @@ function rebuild(curve: GrayCurve): GrayCurve {
 export function linearCurve(count: number): GrayCurve {
   // Preview gray codes only; this is not a measured panel response.
   return Array.from({ length: count }, (_, i) => ({
-    value: 255 * (1 - i / (count - 1)), slope: -255, pinned: i === 0 || i === count - 1,
+    value: 255 * (1 - i / (count - 1)),
+    slope: -255,
+    pinned: i === 0 || i === count - 1,
   }));
 }
 
@@ -79,7 +90,7 @@ export function curveLevels(curve: GrayCurve): number[] {
 }
 
 export function pinCurveLevel(curve: GrayCurve, index: number): GrayCurve {
-  return curve.map((level, i) => i === index ? { ...level, pinned: true } : level);
+  return curve.map((level, i) => (i === index ? { ...level, pinned: true } : level));
 }
 
 export function pinAllCurveLevels(curve: GrayCurve): GrayCurve {
@@ -90,21 +101,28 @@ export function editCurveLevel(curve: GrayCurve, index: number, gray: number): G
   const pinned = pinCurveLevel(curve, index);
   // A no-op numeric edit must not reshape a curve just to round a handle.
   if (curveLevels(curve)[index] === gray) return pinned;
-  return rebuild(pinned.map((level, i) => i === index ? { ...level, value: Math.min(255, Math.max(0, Math.round(gray))) } : level));
+  return rebuild(
+    pinned.map((level, i) => (i === index ? { ...level, value: Math.min(255, Math.max(0, Math.round(gray))) } : level)),
+  );
 }
 
 export function unpinCurveLevel(curve: GrayCurve, index: number): GrayCurve {
   if (index <= 0 || index >= curve.length - 1 || !curve[index]?.pinned) return curve;
-  return rebuild(curve.map((level, i) => i === index ? { ...level, pinned: false } : level));
+  return rebuild(curve.map((level, i) => (i === index ? { ...level, pinned: false } : level)));
 }
 
 export function resizeCurve(curve: GrayCurve, count: number): GrayCurve {
   if (count === curve.length) return curve;
   const knots = knotsOf(curve);
-  const pinned = new Set(curve.flatMap((level, i) => level.pinned ? [Math.round(i * (count - 1) / (curve.length - 1))] : []));
+  const pinned = new Set(
+    curve.flatMap((level, i) => (level.pinned ? [Math.round((i * (count - 1)) / (curve.length - 1))] : [])),
+  );
   // Sample the current response, not a previously rounded palette. Handle
   // positions follow the nearest available output level at the new depth.
-  const samples = Array.from({ length: count }, (_, i) => ({ x: i / (count - 1), value: evaluate(knots, i / (count - 1)).value }));
+  const samples = Array.from({ length: count }, (_, i) => ({
+    x: i / (count - 1),
+    value: evaluate(knots, i / (count - 1)).value,
+  }));
   // Old knots may fall between the new output positions. Recalculate the
   // derivatives to retain PCHIP's bounds rather than copying incompatible
   // tangents across those now-absent knots.

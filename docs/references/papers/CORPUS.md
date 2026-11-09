@@ -9,7 +9,7 @@ Research sources relevant to the project, grouped by topic. Local papers are lis
   ([full text](https://pages.cs.huji.ac.il/sites/www-arir/storage/extraction-typographic-elements.pdf)) — stems, serifs,
   bows, arcs, and curved strokes. Sections 3–4 require prepared curve points and tolerance-aware classification; serif
   detection uses finite automata. Full text reviewed.
-- [Shamir & Rappoport (1997), Quality Enhancements of Digital Outline Fonts](https://doi.org/10.1016/S0097-8493(97)00049-6)
+- [Shamir & Rappoport (1997), Quality Enhancements of Digital Outline Fonts](<https://doi.org/10.1016/S0097-8493(97)00049-6>)
   ([abstract](https://pages.cs.huji.ac.il/sites/www-arir/storage/quality-abs.html)) — contour orientation and
   interpenetration correction. The complete algorithm remains unverified; modern Boolean normalization is an
   implementation choice.

@@ -10,7 +10,9 @@ export function readScreenSizePercent(): number {
     const value = Number(raw);
     if (!Number.isFinite(value)) return SCREEN_SIZE_DEFAULT;
     return Math.min(SCREEN_SIZE_MAX, Math.max(SCREEN_SIZE_MIN, Math.round(value)));
-  } catch { return SCREEN_SIZE_DEFAULT; }
+  } catch {
+    return SCREEN_SIZE_DEFAULT;
+  }
 }
 
 export function writeScreenSizePercent(percent: number): void {
@@ -20,5 +22,7 @@ export function writeScreenSizePercent(percent: number): void {
       ? Math.min(SCREEN_SIZE_MAX, Math.max(SCREEN_SIZE_MIN, Math.round(value)))
       : SCREEN_SIZE_DEFAULT;
     globalThis.localStorage?.setItem(SCREEN_SIZE_KEY, String(clamped));
-  } catch { /* storage unavailable */ }
+  } catch {
+    /* storage unavailable */
+  }
 }

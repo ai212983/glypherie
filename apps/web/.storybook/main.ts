@@ -9,7 +9,10 @@ const config: StorybookConfig = {
   ],
   addons: ["@storybook/addon-docs", "@storybook/addon-themes"],
   core: {
-    allowedHosts: process.env.STORYBOOK_ALLOWED_HOSTS?.split(",").map((host) => host.trim()).filter(Boolean) ?? [],
+    allowedHosts:
+      process.env.STORYBOOK_ALLOWED_HOSTS?.split(",")
+        .map((host) => host.trim())
+        .filter(Boolean) ?? [],
   },
   framework: {
     name: "@storybook/react-vite",
