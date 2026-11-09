@@ -1048,6 +1048,7 @@ mod tests {
             diagonal_fitting: None,
             top_alignment: None,
             baseline_alignment: None,
+            extremity_phase: None,
             coverage: vec![],
             coverage_sha256: String::new(),
             left: bitmap["left"].as_i64().unwrap() as i32,

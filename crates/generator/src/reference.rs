@@ -90,6 +90,8 @@ pub struct ReferenceRecord {
     pub top_alignment: Option<TopAlignmentCapture>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub baseline_alignment: Option<BaselineAlignmentCapture>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extremity_phase: Option<ExtremityPhaseCapture>,
     pub coverage: Vec<u8>,
     pub coverage_sha256: String,
     pub left: i32,
@@ -152,6 +154,18 @@ pub struct DiagonalFittingCapture {
     // under the legacy field.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_shape: Option<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ExtremityPhaseCapture {
+    pub model: String,
+    pub size_px: f32,
+    pub upstream_commands: Vec<FittedCommand>,
+    pub native_axes: [bool; 2],
+    // Applied per-loop affine maps as JSON values: the baseline build has
+    // no core type. Independent replay deserializes these with the recorded
+    // upstream outline instead of re-deriving eligibility.
+    pub loops: Vec<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -503,6 +517,7 @@ impl CaptureSession<'_> {
                 selective_fitting: None,
                 top_alignment: None,
                 baseline_alignment: None,
+                extremity_phase: None,
                 diagonal_fitting: None,
                 coverage_sha256: format!("{:x}", Sha256::digest(&output.coverage)),
                 coverage: output.coverage,

@@ -69,10 +69,125 @@ pub(crate) fn render_with_pipeline_in_session(
         apply_baseline_alignment(session, request, &mut report)?;
     }
     if !pipeline.diagonal_fitting {
+        apply_extremity_phase(session, request, &pipeline, &mut report)?;
         return Ok(report);
     }
     apply_diagonal_fitting(session, request, &pipeline, &mut report)?;
+    // Extremity phase runs last among fitting stages so no later geometry
+    // stage can move a corrected extremum back onto a pixel center.
+    apply_extremity_phase(session, request, &pipeline, &mut report)?;
     Ok(report)
+}
+
+// Smooth-arc extremity phase placement over the preceding fit. Only wholly
+// automatic outlines without executed scan state qualify; native-owned
+// geometry retains upstream coordinates through the stage itself.
+fn apply_extremity_phase(
+    session: &CaptureSession<'_>,
+    request: &ReferenceRequest,
+    pipeline: &crate::renderer::RenderPipeline,
+    report: &mut ReferenceReport,
+) -> Result<(), Error> {
+    // Same strategy scope as the neighboring alignment stages: explicit
+    // automatic fitting on 1-bit FreeType output. Grayscale keeps its own
+    // fitting path; the spur class is bilevel-specific.
+    if request.settings.output_bits != 1
+        || !matches!(
+            pipeline.rasterization,
+            crate::renderer::Rasterization::FreeTypeMono
+                | crate::renderer::Rasterization::FreeTypeMonoTerminals
+        )
+        || !matches!(
+            pipeline.fitting,
+            StemFittingStrategy::FontHintsAuto | StemFittingStrategy::UpstreamMono
+        )
+        || !report
+            .records
+            .iter()
+            .any(|r| r.selected_engine == "auto" && r.font_scan.is_none())
+    {
+        return Ok(());
+    }
+    let mut source_request = request.clone();
+    source_request.extensions = "none".into();
+    source_request.settings.hinting = Hinting::None;
+    source_request.settings.mono_raster = Default::default();
+    let source = session.source(&source_request)?;
+    let mut applied = false;
+    for record in &mut report.records {
+        if record.selected_engine != "auto" || record.font_scan.is_some() {
+            continue;
+        }
+        let Some(raw) = source
+            .records
+            .iter()
+            .find(|r| r.codepoint == record.codepoint && r.glyph_id == record.glyph_id)
+        else {
+            continue;
+        };
+        let native_axes = record
+            .selective_fitting
+            .as_ref()
+            .map(|capture| capture.native_axes)
+            .unwrap_or([false, false]);
+        let Ok(fit) =
+            crate::curve_extremity::fit(&raw.fitted_commands, &record.fitted_commands, native_axes)
+        else {
+            continue;
+        };
+        if !fit.applied {
+            continue;
+        }
+        let mut config = request.settings.clone();
+        config.mono_raster = record.mono_raster.unwrap_or(request.settings.mono_raster);
+        // Records render under the gated FreeType pipeline, so no Coverage arm.
+        let raster = match record.raster_policy {
+            crate::reference::RasterPolicy::FreeTypeMono => crate::mono::rasterize_with_scan_state(
+                &fit.commands,
+                &config,
+                record.font_scan.as_ref(),
+            ),
+            crate::reference::RasterPolicy::FreeTypeMonoTerminals => {
+                rasterize_terminals(&raw.fitted_commands, &fit.commands, &config)
+            }
+            _ => continue,
+        };
+        let Ok(raster) = raster else {
+            continue;
+        };
+        let loops = match fit
+            .loops
+            .iter()
+            .map(serde_json::to_value)
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(loops) => loops,
+            Err(_) => continue,
+        };
+        record.extremity_phase = Some(crate::reference::ExtremityPhaseCapture {
+            model: crate::curve_extremity::MODEL.into(),
+            size_px: request.settings.size_px,
+            upstream_commands: record.fitted_commands.clone(),
+            native_axes,
+            loops,
+        });
+        record.source_commands = Some(raw.fitted_commands.clone());
+        record.fitted_commands = fit.commands;
+        record.coverage_sha256 = format!("{:x}", sha2::Sha256::digest(&raster.coverage));
+        record.coverage = raster.coverage;
+        record.pixels = raster.pixels;
+        record.left = raster.left;
+        record.top = raster.top;
+        record.width = raster.width;
+        record.height = raster.height;
+        applied = true;
+    }
+    if applied {
+        report
+            .implementation
+            .push_str(&format!(":{}", crate::curve_extremity::MODEL));
+    }
+    Ok(())
 }
 
 // Reviewed stroke fitting sequence over the frozen donor reference.

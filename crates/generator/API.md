@@ -172,6 +172,13 @@ native_axes, reference, reason, raw_source? }`. `reference` contains the capture
 the unrounded feature input when available. Earlier width/selective captures describe `upstream_commands`; the record's
 final commands and scan policy reproduce its bitmap.
 
+Records changed by the trailing extremity phase stage additionally carry `extremity_phase: { model, size_px,
+upstream_commands, native_axes, loops }`. `loops` holds the applied local extremum corrections (contour, axis,
+direction, segment, interior/flat kind and signed apex delta) for independent replay; the stage runs after diagonal
+fitting, so each earlier stage replays against its successor's `upstream_commands` while only extremity replays against
+the final commands. Evaluation rejects forged size, native-axis, source, truncated-loop or tampered-delta provenance.
+Advances and bearing residuals stay with the preceding fit.
+
 `diagonal_fitting::curve_model::diagnose_automatic_shape` runs the same source-shape selection as `fit_automatic_shape`,
 adding a full binding witness on solve failure. The renderer entry returns only the failure reason and movement caps for
 that failure, without the diagnostic retry; applied geometry and fallback commands agree.

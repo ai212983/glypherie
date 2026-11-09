@@ -223,7 +223,7 @@ fn index_records<'a>(
         if index.insert(record.codepoint, record).is_some() {
             push(name, Some(record.codepoint), "duplicate glyph record");
         }
-        for invariant in validate_record(record) {
+        for invariant in validate_record(record, report.size_px) {
             push(name, Some(record.codepoint), invariant);
         }
         if record.target != report.target
@@ -361,7 +361,8 @@ impl GlyphComparison<'_> {
                     && self.candidate.selective_fitting.is_none()
                     && self.candidate.diagonal_fitting.is_none()
                     && self.candidate.top_alignment.is_none()
-                    && self.candidate.baseline_alignment.is_none()))
+                    && self.candidate.baseline_alignment.is_none()
+                    && self.candidate.extremity_phase.is_none()))
                 || *commands != self.source.fitted_commands
             {
                 push(
@@ -636,7 +637,11 @@ enum DiagonalReplay {
 }
 
 #[cfg(feature = "candidate")]
-fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
+fn validate_diagonal_replay(
+    record: &ReferenceRecord,
+    report_size_px: f32,
+    selective_axes: Option<[bool; 2]>,
+) -> DiagonalReplay {
     let Some(diagonal) = &record.diagonal_fitting else {
         return DiagonalReplay::Consistent;
     };
@@ -759,15 +764,92 @@ fn validate_diagonal_replay(record: &ReferenceRecord) -> DiagonalReplay {
             diagonal.native_axes,
         )
     };
+    // Each earlier stage validates against its successor's input; only
+    // the last stage validates against the final commands. Fitting runs
+    // before the extremity stage, so the re-fit must reproduce the
+    // extremity stage's input (or the final commands when no later stage
+    // ran), never the post-extremity outline.
+    let expected = record
+        .extremity_phase
+        .as_ref()
+        .map(|extremity| extremity.upstream_commands.as_slice())
+        .unwrap_or(record.fitted_commands.as_slice());
     match replay {
-        Ok(fit)
-            if fit.applied
-                && fit.reason == diagonal.reason
-                && fit.commands == record.fitted_commands =>
-        {
+        Ok(fit) if fit.applied && fit.reason == diagonal.reason && fit.commands == expected => {
+            // Provenance gate: the replay is size- and axis-insensitive in
+            // some regimes, so forged size or native ownership that still
+            // reproduces must fail here. Established replay diagnostics
+            // keep priority: a re-fit that already diverges reports the
+            // replay flaw above, never this one.
+            if diagonal.size_px as f32 != report_size_px
+                || selective_axes.is_some_and(|axes| axes != diagonal.native_axes)
+            {
+                return DiagonalReplay::Flaw("diagonal input identity changed");
+            }
             DiagonalReplay::Consistent
         }
         _ => DiagonalReplay::Flaw("diagonal fitting does not reproduce from captured inputs"),
+    }
+}
+
+#[cfg(feature = "candidate")]
+enum ExtremityReplay {
+    Consistent,
+    Flaw(&'static str),
+    Abort(&'static str),
+}
+
+#[cfg(feature = "candidate")]
+fn validate_extremity_replay(
+    record: &ReferenceRecord,
+    report_size_px: f32,
+    selective_axes: Option<[bool; 2]>,
+) -> ExtremityReplay {
+    let Some(extremity) = &record.extremity_phase else {
+        return ExtremityReplay::Consistent;
+    };
+    // Extremity runs last, so it validates against the final commands.
+    // Independent replay from captured inputs: the recorded upstream
+    // outline and native ownership must reproduce the applied loops and
+    // exact fitted commands.
+    if extremity.model != crate::curve_extremity::MODEL
+        || !matches!(
+            record.raster_policy,
+            RasterPolicy::FreeTypeMono | RasterPolicy::FreeTypeMonoTerminals
+        )
+        || extremity.upstream_commands.is_empty()
+        || extremity.loops.is_empty()
+    {
+        return ExtremityReplay::Flaw("extremity capture inconsistent");
+    }
+    let Some(source) = &record.source_commands else {
+        return ExtremityReplay::Abort("extremity source outline missing");
+    };
+    let loops: Vec<crate::curve_extremity::LoopCorrection> = match extremity
+        .loops
+        .iter()
+        .map(|value| serde_json::from_value(value.clone()))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(loops) => loops,
+        Err(_) => {
+            return ExtremityReplay::Abort("extremity loops do not deserialize");
+        }
+    };
+    match crate::curve_extremity::fit(source, &extremity.upstream_commands, extremity.native_axes) {
+        Ok(fit) if fit.applied && fit.commands == record.fitted_commands && fit.loops == loops => {
+            // Provenance gate: the replay fixes size and native ownership
+            // only through behavior, so forged identity that still
+            // reproduces must fail here. Established replay diagnostics
+            // keep priority, as with the diagonal stage.
+            if extremity.size_px != report_size_px
+                || selective_axes.is_some_and(|axes| axes != extremity.native_axes)
+            {
+                return ExtremityReplay::Flaw("extremity input identity changed");
+            }
+            ExtremityReplay::Consistent
+        }
+        _ => ExtremityReplay::Flaw("extremity phase does not reproduce from captured inputs"),
     }
 }
 
@@ -848,11 +930,18 @@ fn selective_replay_valid(
             axes,
         )
     };
-    // Post-diagonal records reproduce the pre-diagonal outline.
+    // Each earlier stage validates against its successor's input; only
+    // the last stage validates against the final commands.
     let expected = record
         .diagonal_fitting
         .as_ref()
         .map(|diagonal| &diagonal.upstream_commands)
+        .or_else(|| {
+            record
+                .extremity_phase
+                .as_ref()
+                .map(|extremity| &extremity.upstream_commands)
+        })
         .unwrap_or(&record.fitted_commands);
     !(record.selected_engine != engine
         || engine == "invalid"
@@ -934,7 +1023,7 @@ fn reproduce_raster(record: &ReferenceRecord, config: &Config, failures: &mut Ve
     }
 }
 
-fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
+fn validate_record(record: &ReferenceRecord, report_size_px: f32) -> Vec<&'static str> {
     let mut failures = metric_failures(record);
     let size = u64::from(record.width) * u64::from(record.height);
     if size > 4_194_304
@@ -970,7 +1059,8 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
                 || record.selective_fitting.is_some()
                 || record.diagonal_fitting.is_some()
                 || record.top_alignment.is_some()
-                || record.baseline_alignment.is_some()))
+                || record.baseline_alignment.is_some()
+                || record.extremity_phase.is_some()))
         && !(record.raster_policy == RasterPolicy::Coverage
             && record.output_bits == 1
             && record.baseline_alignment.is_some())
@@ -978,10 +1068,24 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
         failures.push("source outline on an incompatible raster policy");
     }
     #[cfg(feature = "candidate")]
-    match validate_diagonal_replay(record) {
+    let selective_axes = record
+        .selective_fitting
+        .as_ref()
+        .map(|selective| selective.native_axes);
+    #[cfg(feature = "candidate")]
+    match validate_diagonal_replay(record, report_size_px, selective_axes) {
         DiagonalReplay::Consistent => {}
         DiagonalReplay::Flaw(failure) => failures.push(failure),
         DiagonalReplay::Abort(failure) => {
+            failures.push(failure);
+            return failures;
+        }
+    }
+    #[cfg(feature = "candidate")]
+    match validate_extremity_replay(record, report_size_px, selective_axes) {
+        ExtremityReplay::Consistent => {}
+        ExtremityReplay::Flaw(failure) => failures.push(failure),
+        ExtremityReplay::Abort(failure) => {
             failures.push(failure);
             return failures;
         }
@@ -1022,6 +1126,12 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
                     .as_ref()
                     .map(|diagonal| diagonal.upstream_commands.as_slice())
             })
+            .or_else(|| {
+                record
+                    .extremity_phase
+                    .as_ref()
+                    .map(|extremity| extremity.upstream_commands.as_slice())
+            })
             .unwrap_or(record.fitted_commands.as_slice());
         match crate::source_width::fit(source, &width.upstream_commands, width.size_px) {
             Ok(fit) if fit.applied && fit.commands == expected => {}
@@ -1052,6 +1162,12 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
                     .diagonal_fitting
                     .as_ref()
                     .map(|diagonal| diagonal.upstream_commands.as_slice())
+            })
+            .or_else(|| {
+                record
+                    .extremity_phase
+                    .as_ref()
+                    .map(|extremity| extremity.upstream_commands.as_slice())
             })
             .unwrap_or(record.fitted_commands.as_slice());
         let zone = crate::top_alignment::Zone {
@@ -1097,6 +1213,12 @@ fn validate_record(record: &ReferenceRecord) -> Vec<&'static str> {
             .diagonal_fitting
             .as_ref()
             .map(|diagonal| diagonal.upstream_commands.as_slice())
+            .or_else(|| {
+                record
+                    .extremity_phase
+                    .as_ref()
+                    .map(|extremity| extremity.upstream_commands.as_slice())
+            })
             .unwrap_or(&record.fitted_commands);
         match crate::baseline_alignment::fit(source, &baseline.upstream_commands, baseline.size_px)
         {

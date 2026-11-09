@@ -10,6 +10,8 @@ pub mod candidate;
 #[cfg(feature = "native-io")]
 pub mod comparison;
 #[cfg(feature = "candidate")]
+pub mod curve_extremity;
+#[cfg(feature = "candidate")]
 pub mod diagonal_fitting;
 pub mod dropout;
 pub mod evaluation;
