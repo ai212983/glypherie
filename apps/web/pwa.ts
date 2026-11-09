@@ -33,6 +33,13 @@ export function fontPwaPlugin(): Plugin[] {
       globPatterns: ["**/*.{html,js,css,wasm,data,ttf,otf,woff,woff2,svg,png,webmanifest,txt}"],
       globIgnores: ["content/**", "comparison-content/**"],
       maximumFileSizeToCacheInBytes: 16 * 1024 * 1024,
+      // Workbox gives revision:null entries no cache-buster (createCacheKey
+      // treats them as already versioned, so the precache serves the cached
+      // copy without revalidating). The default excludes every assets/ URL,
+      // which fits hashed bundles but pins the stable domain-worker.js entry
+      // across deployments. Exclude only that entry so it ships with a
+      // content revision and a redeploy displaces the retained owner bytes.
+      dontCacheBustURLsMatching: /^assets\/(?!domain-worker\.js$)/,
       navigateFallback: "index.html",
       navigateFallbackDenylist: [/\/[^/?]+\.[^/]+$/],
       cleanupOutdatedCaches: true,
@@ -40,19 +47,20 @@ export function fontPwaPlugin(): Plugin[] {
       skipWaiting: false,
     },
   };
-  return [{
-    name: "retire-production-worker-in-dev",
-    // A cached production page can still own this origin after switching to
-    // Vite. Replace its worker using the documented self-destroying pattern:
-    // Keep the existing explicit Update action before retiring the worker.
-    // https://vite-pwa-org.netlify.app/guide/unregister-service-worker
-    configureServer(server) {
-      server.middlewares.use((request, response, next) => {
-        const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
-        if (pathname !== `${server.config.base}sw.js`) return next();
-        response.setHeader("Content-Type", "application/javascript");
-        response.setHeader("Cache-Control", "no-store");
-        response.end(`
+  return [
+    {
+      name: "retire-production-worker-in-dev",
+      // A cached production page can still own this origin after switching to
+      // Vite. Replace its worker using the documented self-destroying pattern:
+      // Keep the existing explicit Update action before retiring the worker.
+      // https://vite-pwa-org.netlify.app/guide/unregister-service-worker
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+          if (pathname !== `${server.config.base}sw.js`) return next();
+          response.setHeader("Content-Type", "application/javascript");
+          response.setHeader("Cache-Control", "no-store");
+          response.end(`
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") event.waitUntil(self.skipWaiting());
 });
@@ -63,7 +71,9 @@ self.addEventListener("activate", (event) => {
   })());
 });
 `);
-      });
+        });
+      },
     },
-  }, ...VitePWA(options)];
+    ...VitePWA(options),
+  ];
 }

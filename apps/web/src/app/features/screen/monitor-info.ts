@@ -2,6 +2,8 @@
 // disclosure. The browser exposes CSS screen dimensions and device pixel
 // ratio; physical monitor size and true PPI stay unknowable without native
 // access, so this module never produces them.
+import { sanitizeDevicePixelRatio } from "../../renderer/display-scaling.ts";
+
 export interface MonitorSnapshot {
   screenWidth: unknown;
   screenHeight: unknown;
@@ -27,14 +29,9 @@ function sizeOf(width: unknown, height: unknown): MonitorSize | null {
   return { width: Math.round(w), height: Math.round(h) };
 }
 
-function ratioOf(value: unknown): number {
-  const ratio = Number(value);
-  return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
-}
-
 export function resolveMonitorReading(snapshot: MonitorSnapshot): MonitorReading {
   return {
     screen: sizeOf(snapshot.screenWidth, snapshot.screenHeight),
-    dpr: ratioOf(snapshot.devicePixelRatio),
+    dpr: sanitizeDevicePixelRatio(snapshot.devicePixelRatio),
   };
 }

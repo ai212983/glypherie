@@ -1,11 +1,13 @@
 // Scene stage: positioned WASM label layers over the screen paper with a
-// react-moveable drag frame around the selected label's tight ink box. All
+// react-moveable frame around the selected label's tight ink box. All
 // coordinates entering the store are integer native device pixels; the
 // cssScale presentation factor only converts pointer deltas and display
 // sizes. Moveable is unmounted while a label edits text. Moveable's own
 // lines are the single visible selection outline (the label frame draws
 // none); Moveable also owns the drag hit geometry, so its cached rect must
-// be refreshed whenever the committed label moves or resizes.
+// be refreshed whenever the committed label moves or resizes. Variant-backed
+// labels drag only and show a grey outline; direct-font labels also resize,
+// which changes their own renderer font size and saved wrap width.
 import * as React from "react";
 import Moveable from "react-moveable";
 import type { VariantSettings } from "../../variants/model.js";
@@ -20,16 +22,30 @@ export interface StagePaint {
   palette: RGBA[];
 }
 
+export interface StagePlacementPreview {
+  id: string;
+  x: number;
+  y: number;
+  fontSize?: number;
+  width?: number;
+}
+
 export interface SceneStageProps {
   sceneWidth: number;
   sceneHeight: number;
   placements: DomainPlacementView[];
+  // Keyed by placement id: variant and direct labels paint from different
+  // sources and never share an entry.
   paints: Map<string, StagePaint>;
   // CSS px per native device px.
   cssScale: number;
   paperCss: string;
   selectedId: string | null;
   editingId: string | null;
+  tool: "select" | "text";
+  onAddText: (x: number, y: number) => void;
+  onMeasureLabel?: (id: string, width: number, height: number) => void;
+  onPlacementPreview?: (preview: StagePlacementPreview) => void;
   onSelect: (id: string | null) => void;
   onBeginEdit: (id: string) => void;
   onCommitText: (id: string, text: string) => Promise<boolean>;
@@ -37,6 +53,10 @@ export interface SceneStageProps {
   // Resolves true once the move persists; false leaves the saved position
   // (conflict or failure) so the stage can release its pending preview.
   onCommitMove: (id: string, x: number, y: number) => Promise<boolean>;
+  // Resize releases persist the label's own font size and wrap width together
+  // with the anchored position in one revisioned save; the same handoff
+  // rules as moves apply.
+  onCommitResize: (id: string, fontSize: number, width: number, x: number, y: number) => Promise<boolean>;
   onNudge: (id: string, dx: number, dy: number) => void;
   onDeleteKey: (id: string) => void;
   onRenderError: (message: string) => void;
@@ -44,9 +64,68 @@ export interface SceneStageProps {
 }
 
 export function SceneStage(props: SceneStageProps): React.JSX.Element {
-  const { sceneWidth, sceneHeight, placements, paints, cssScale } = props;
+  const { sceneWidth, sceneHeight, placements, paints, cssScale, onMeasureLabel, onPlacementPreview } = props;
   const framesRef = React.useRef(new Map<string, HTMLDivElement>());
   const dragStartRef = React.useRef<{ id: string; x: number; y: number } | null>(null);
+  const resizeStartRef = React.useRef<{
+    id: string;
+    width: number;
+    fontSize: number;
+    boxWidth: number;
+    boxHeight: number;
+    x: number;
+    y: number;
+    // Cumulative resize translation in screen px from the latest OnResize
+    // drag; the release commits the anchored position from this, never from
+    // an end-event payload shape.
+    lastDrag: readonly [number, number] | null;
+    // Which corner handle drives the gesture ([-1,-1] is northwest); the
+    // opposite ink corner stays fixed.
+    lastDirection: readonly [number, number] | null;
+    // Position and renderer frame bounds the gesture started from, in native
+    // device px, when a committed paint for them was recorded. The release
+    // corrects the position against the repaint's measured bounds, so the
+    // opposite corner anchors against real geometry instead of a stretched
+    // rectangle. Null when no committed paint was recorded: the release
+    // commits the drag translation as-is.
+    anchorBaseX: number;
+    anchorBaseY: number;
+    anchorInk: { x: number; y: number; width: number; height: number } | null;
+  } | null>(null);
+  // Latest reported renderer frame bounds per label, with the paint inputs
+  // that produced them. Resize releases match the repaint of the released
+  // size against this before committing, so one revisioned save carries the
+  // position corrected against measured geometry.
+  const inkByIdRef = React.useRef(
+    new Map<
+      string,
+      {
+        text: string;
+        sizePx: number;
+        width: number;
+        ink: { x: number; y: number; width: number; height: number } | null;
+      }
+    >(),
+  );
+  // A release whose save waits for the repaint of the released size. The
+  // pending preview already shows the released values; the write fires once
+  // the measured bounds land (or the fallback after a paint failure or a
+  // bounded wait), exactly once per release.
+  const awaitingResizeRef = React.useRef<{
+    id: string;
+    text: string;
+    fontSize: number;
+    width: number;
+    fallbackX: number;
+    fallbackY: number;
+    anchorBaseX: number;
+    anchorBaseY: number;
+    anchorInk: { x: number; y: number; width: number; height: number };
+    lastDirection: readonly [number, number];
+    timeoutId: number;
+  } | null>(null);
+  const commitResizeRef = React.useRef(props.onCommitResize);
+  commitResizeRef.current = props.onCommitResize;
   const moveableRef = React.useRef<Moveable | null>(null);
   const [, setMoveableTick] = React.useState(0);
 
@@ -55,18 +134,51 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
   // coordinates. Per useOptimistic, the preview reconciles once the
   // authoritative props catch up and rolls back on rejection.
   const [pendingMove, setPendingMove] = React.useState<{ id: string; x: number; y: number } | null>(null);
+  // Pending resize preview: the released font size, wrap width and anchored
+  // position repaint through the real renderer while the save is queued, with
+  // the same reconcile-or-roll-back handoff as moves.
+  const [pendingResize, setPendingResize] = React.useState<{
+    id: string;
+    fontSize: number;
+    width: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const pendingResizeRef = React.useRef(pendingResize);
+  pendingResizeRef.current = pendingResize;
 
   const displayed = React.useMemo(() => {
-    if (!pendingMove) return placements;
-    let moved = false;
-    const next = placements.map((placement) => {
-      if (placement.id !== pendingMove.id) return placement;
-      if (placement.x === pendingMove.x && placement.y === pendingMove.y) return placement;
-      moved = true;
-      return { ...placement, x: pendingMove.x, y: pendingMove.y };
-    });
-    return moved ? next : placements;
-  }, [placements, pendingMove]);
+    let next = placements;
+    if (pendingMove) {
+      let moved = false;
+      next = next.map((placement) => {
+        if (placement.id !== pendingMove.id) return placement;
+        if (placement.x === pendingMove.x && placement.y === pendingMove.y) return placement;
+        moved = true;
+        return { ...placement, x: pendingMove.x, y: pendingMove.y };
+      });
+      if (!moved) next = placements;
+    }
+    if (pendingResize) {
+      const preview = pendingResize;
+      let resized = false;
+      next = next.map((placement) => {
+        if (placement.id !== preview.id || placement.textStyleId !== null) return placement;
+        if (
+          placement.fontSize === preview.fontSize &&
+          placement.width === preview.width &&
+          placement.x === preview.x &&
+          placement.y === preview.y
+        ) {
+          return placement;
+        }
+        resized = true;
+        return { ...placement, fontSize: preview.fontSize, width: preview.width, x: preview.x, y: preview.y };
+      });
+      if (!resized) next = pendingMove ? next : placements;
+    }
+    return next;
+  }, [placements, pendingMove, pendingResize]);
 
   // The handoff clears only after the saved coordinates render (or the
   // pending label leaves the scene), never when the async command merely
@@ -81,10 +193,157 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
     }
   }, [placements, pendingMove]);
 
+  // Resize handoff mirrors the move handoff against the label's own size,
+  // wrap width and anchored position.
+  React.useLayoutEffect(() => {
+    if (!pendingResize) return;
+    const canonical = placements.find((placement) => placement.id === pendingResize.id);
+    // A reference switch supersedes the direct-font gesture, including its
+    // deferred save; variant geometry must come only from its saved style.
+    if (!canonical || canonical.textStyleId !== null) {
+      const awaiting = awaitingResizeRef.current;
+      if (awaiting?.id === pendingResize.id) {
+        window.clearTimeout(awaiting.timeoutId);
+        awaitingResizeRef.current = null;
+      }
+      setPendingResize(null);
+      return;
+    }
+    if (
+      canonical.fontSize === pendingResize.fontSize &&
+      canonical.width === pendingResize.width &&
+      canonical.x === pendingResize.x &&
+      canonical.y === pendingResize.y
+    ) {
+      setPendingResize(null);
+    }
+  }, [placements, pendingResize]);
+
   const ordered = React.useMemo(
     () => [...displayed].sort((left, right) => left.order - right.order || (left.id < right.id ? -1 : 1)),
     [displayed],
   );
+
+  // Fires one awaited resize release with the given position, then hands the
+  // preview to the usual reconcile-or-roll-back path. Exactly-once per
+  // release: the first fire clears the waiter, so late paints, errors and
+  // the bounded wait cannot write twice.
+  const fireResizeCommit = React.useCallback(
+    (release: { id: string; fontSize: number; width: number }, x: number, y: number): void => {
+      const awaiting = awaitingResizeRef.current;
+      if (awaiting) {
+        window.clearTimeout(awaiting.timeoutId);
+        awaitingResizeRef.current = null;
+      }
+      setPendingResize({ id: release.id, fontSize: release.fontSize, width: release.width, x, y });
+      onPlacementPreview?.({ id: release.id, fontSize: release.fontSize, width: release.width, x, y });
+      void commitResizeRef.current(release.id, release.fontSize, release.width, x, y).then(
+        (ok) => {
+          if (!ok) {
+            setPendingResize((current) =>
+              current !== null &&
+              current.id === release.id &&
+              current.fontSize === release.fontSize &&
+              current.width === release.width &&
+              current.x === x &&
+              current.y === y
+                ? null
+                : current,
+            );
+          }
+        },
+        () => {
+          setPendingResize((current) =>
+            current !== null &&
+            current.id === release.id &&
+            current.fontSize === release.fontSize &&
+            current.width === release.width &&
+            current.x === x &&
+            current.y === y
+              ? null
+              : current,
+          );
+        },
+      );
+    },
+    [onPlacementPreview],
+  );
+
+  // Best-effort flush of an awaited release: corrected against measured
+  // bounds when they already match, otherwise the drag translation. Used
+  // when a new gesture starts on the same label, when a paint fails, and on
+  // unmount, so a release never stalls without a save.
+  const flushAwaitingResize = React.useCallback((): void => {
+    const awaiting = awaitingResizeRef.current;
+    if (!awaiting) return;
+    const recorded = inkByIdRef.current.get(awaiting.id);
+    if (
+      recorded &&
+      recorded.ink &&
+      recorded.text === awaiting.text &&
+      recorded.sizePx === awaiting.fontSize &&
+      recorded.width === awaiting.width
+    ) {
+      const corrected = correctedResizePosition(
+        awaiting.anchorBaseX,
+        awaiting.anchorBaseY,
+        awaiting.anchorInk,
+        awaiting.lastDirection,
+        recorded.ink,
+      );
+      fireResizeCommit(awaiting, corrected.x, corrected.y);
+      return;
+    }
+    fireResizeCommit(awaiting, awaiting.fallbackX, awaiting.fallbackY);
+  }, [fireResizeCommit]);
+
+  // A failing paint cannot produce the bounds a release waits for; commit
+  // whatever the waiter has instead of stalling the save.
+  const onRenderError = React.useCallback(
+    (message: string) => {
+      flushAwaitingResize();
+      props.onRenderError(message);
+    },
+    [flushAwaitingResize, props],
+  );
+
+  // Every committed label paint reports its measured frame bounds. A release
+  // waiting for exactly these paint inputs commits its position corrected so
+  // the opposite ink corner lands where the gesture started it; an inkless
+  // paint for the awaited inputs commits the drag translation, since no
+  // later repaint of the same inputs can measure more.
+  const onFrameGeometry = React.useCallback(
+    (
+      placementId: string,
+      box: { x: number; y: number; width: number; height: number } | null,
+      sizePx: number,
+      width: number,
+      text: string,
+    ): void => {
+      inkByIdRef.current.set(placementId, { text, sizePx, width, ink: box });
+      if (box) onMeasureLabel?.(placementId, box.width, box.height);
+      const awaiting = awaitingResizeRef.current;
+      if (!awaiting || awaiting.id !== placementId) return;
+      if (awaiting.text !== text || awaiting.fontSize !== sizePx || awaiting.width !== width) return;
+      if (!box) {
+        fireResizeCommit(awaiting, awaiting.fallbackX, awaiting.fallbackY);
+        return;
+      }
+      const corrected = correctedResizePosition(
+        awaiting.anchorBaseX,
+        awaiting.anchorBaseY,
+        awaiting.anchorInk,
+        awaiting.lastDirection,
+        box,
+      );
+      fireResizeCommit(awaiting, corrected.x, corrected.y);
+    },
+    [fireResizeCommit, onMeasureLabel],
+  );
+
+  // A release waiting for its repaint must not die with the stage: commit
+  // best-effort on unmount.
+  React.useEffect(() => () => flushAwaitingResize(), [flushAwaitingResize]);
 
   // Inline ref callbacks detach/attach on every render, so only bump the
   // Moveable target when membership actually changes; otherwise parent and
@@ -99,8 +358,14 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
     setMoveableTick((tick) => tick + 1);
   }, []);
 
-  const selected = selectedIdSelected(props.selectedId, displayed);
-  const moveableTarget = !props.editingId && selected ? (framesRef.current.get(selected.id) ?? null) : null;
+  const selected = selectedIdSelected(
+    props.selectedId,
+    displayed.filter((placement) => placement.visible !== false),
+  );
+  const selectedIsDirect = selected !== null && selected.textStyleId === null;
+  const canonicalSelected = selectedIdSelected(props.selectedId, placements);
+  const moveableTarget =
+    props.tool === "select" && !props.editingId && selected ? (framesRef.current.get(selected.id) ?? null) : null;
   const selectedX = selected?.x;
   const selectedY = selected?.y;
 
@@ -115,69 +380,133 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
   // hit target, not just a stale picture.
   React.useLayoutEffect(() => {
     if (moveableTarget) moveableRef.current?.updateRect();
-  }, [moveableTarget, selectedX, selectedY, cssScale]);
+  }, [moveableTarget, selectedX, selectedY, canonicalSelected?.fontSize, canonicalSelected?.width, cssScale]);
 
   return (
+    // Positioning wrapper for the Moveable control layer. The paper below
+    // clips label paint to the device aperture; the controls render as a
+    // sibling of that clipping context so handles stay hittable past the
+    // paper edges. No overflow is removed anywhere to achieve this.
     <div
-      data-scene-stage
-      role="application"
-      aria-label={`Scene canvas, ${sceneWidth} by ${sceneHeight} pixels`}
-      onPointerDown={(event) => {
-        // Clicking empty paper clears the selection; label containers stop
-        // this by selecting first (their handler runs before this bubbles).
-        if (event.target === event.currentTarget) props.onSelect(null);
-      }}
       style={{
         position: "relative",
         width: Math.max(1, sceneWidth * cssScale),
         height: Math.max(1, sceneHeight * cssScale),
-        backgroundColor: props.paperCss,
-        overflow: "hidden",
       }}
     >
-      {ordered.map((placement) => {
-        const paint = paints.get(placement.textStyleId);
-        if (!paint) return null;
-        const labelWidth = Math.max(1, sceneWidth - placement.x);
-        const labelHeight = Math.max(1, sceneHeight - placement.y);
-        const clipped = placement.x < 0 || placement.y < 0
-          || placement.x >= sceneWidth || placement.y >= sceneHeight;
-        return (
-          <EditableLabel
-            key={placement.id}
-            placement={placement}
-            fontId={paint.fontId}
-            settings={paint.settings}
-            ready={paint.ready}
-            labelWidth={labelWidth}
-            labelHeight={labelHeight}
-            cssScale={cssScale}
-            palette={paint.palette}
-            selected={props.selectedId === placement.id}
-            editing={props.editingId === placement.id}
-            clipped={clipped}
-            onSelect={props.onSelect}
-            onBeginEdit={props.onBeginEdit}
-            onCommitText={props.onCommitText}
-            onCancelEdit={props.onCancelEdit}
-            onRenderError={props.onRenderError}
-            onRenderOk={props.onRenderOk}
-            onFrameElement={onFrameElement}
-            onNudge={props.onNudge}
-            onDeleteKey={props.onDeleteKey}
+      <div
+        data-scene-stage
+        role="application"
+        aria-label={`Scene canvas, ${sceneWidth} by ${sceneHeight} pixels`}
+        onPointerDown={(event) => {
+          // Clicking empty paper clears the selection; label containers stop
+          // this by selecting first (their handler runs before this bubbles).
+          if (event.target === event.currentTarget) props.onSelect(null);
+        }}
+        style={{
+          position: "relative",
+          width: Math.max(1, sceneWidth * cssScale),
+          height: Math.max(1, sceneHeight * cssScale),
+          backgroundColor: props.paperCss,
+          overflow: "hidden",
+        }}
+      >
+        {ordered
+          .filter((placement) => placement.visible !== false)
+          .map((placement) => {
+            const paint = paints.get(placement.id);
+            if (!paint) return null;
+            // Variant labels wrap at the scene's right/bottom edges; direct
+            // labels wrap at their own saved width, live-previewed while a
+            // resize gesture or release save is pending.
+            const preview = placement.textStyleId === null && pendingResize?.id === placement.id ? pendingResize : null;
+            const settings = preview ? { ...paint.settings, sizePx: preview.fontSize } : paint.settings;
+            const labelWidth =
+              placement.textStyleId !== null
+                ? Math.max(1, sceneWidth - placement.x)
+                : Math.max(1, preview?.width ?? placement.width ?? 1);
+            const labelHeight = Math.max(1, sceneHeight - placement.y);
+            const clipped =
+              placement.x < 0 || placement.y < 0 || placement.x >= sceneWidth || placement.y >= sceneHeight;
+            return (
+              <EditableLabel
+                key={placement.id}
+                placement={placement}
+                fontId={paint.fontId}
+                settings={settings}
+                ready={paint.ready}
+                labelWidth={labelWidth}
+                labelHeight={labelHeight}
+                cssScale={cssScale}
+                palette={paint.palette}
+                selected={props.selectedId === placement.id}
+                editing={props.editingId === placement.id}
+                resizing={preview !== null}
+                clipped={clipped}
+                onSelect={props.onSelect}
+                onBeginEdit={props.onBeginEdit}
+                onCommitText={props.onCommitText}
+                onCancelEdit={props.onCancelEdit}
+                onRenderError={onRenderError}
+                onFrameGeometry={onFrameGeometry}
+                onRenderOk={props.onRenderOk}
+                onFrameElement={onFrameElement}
+                onNudge={props.onNudge}
+                onDeleteKey={props.onDeleteKey}
+              />
+            );
+          })}
+        {props.tool === "text" && (
+          <div
+            data-scene-text-placement
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: Math.max(0, ...placements.map((placement) => placement.order)) + 1,
+              cursor: "crosshair",
+            }}
+            onPointerDown={(event) => {
+              if (event.button !== 0 || !event.isPrimary) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const bounds = event.currentTarget.getBoundingClientRect();
+              props.onAddText(
+                Math.max(0, Math.min(sceneWidth - 1, Math.round((event.clientX - bounds.left) / cssScale))),
+                Math.max(0, Math.min(sceneHeight - 1, Math.round((event.clientY - bounds.top) / cssScale))),
+              );
+            }}
           />
-        );
-      })}
+        )}
+      </div>
       {moveableTarget && (
         <Moveable
           ref={moveableRef}
           target={moveableTarget}
           draggable
+          // The selection outline is a move target too; only the corner
+          // controls resize. Moveable's edgeDraggable keeps both gestures
+          // on the same position/release path as dragging the label body.
+          edgeDraggable
+          linePadding={4}
           throttleDrag={1}
+          resizable={selectedIsDirect}
+          edge={false}
+          throttleResize={1}
+          // Proportional resize: width and height scale together, so pointer
+          // motion along either axis resizes the label instead of snapping
+          // back. Only direct labels expose resize handles; the variant
+          // outline below never resizes, so this is inert for variants.
+          keepRatio
+          // Direct labels resize from the corners only, so no edge handle
+          // ever covers the middle of a one-line label and steals its
+          // selection click. Variant-backed labels render no resize handles
+          // at all; the grey control color is the only visible outline.
+          renderDirections={selectedIsDirect ? ["nw", "ne", "sw", "se"] : undefined}
+          className={selectedIsDirect ? undefined : "scene-moveable-variant"}
           origin={false}
           useResizeObserver
           padding={{ left: 4, top: 4, right: 4, bottom: 4 }}
-          onDragStart={(event) => {
+          onDragStart={() => {
             // A drag started while a save is pending begins from the
             // visible position, never a stale pre-save capture.
             const current = displayed.find((placement) => placement.id === props.selectedId);
@@ -194,6 +523,14 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
             // store commits once on release, rounded to the device grid.
             const container = (event.target as HTMLElement).parentElement;
             if (container) container.style.transform = event.transform;
+            const start = dragStartRef.current;
+            if (start) {
+              onPlacementPreview?.({
+                id: start.id,
+                x: start.x + Math.round((event.translate[0] ?? 0) / cssScale),
+                y: start.y + Math.round((event.translate[1] ?? 0) / cssScale),
+              });
+            }
           }}
           onDragEnd={(event) => {
             const start = dragStartRef.current;
@@ -236,18 +573,222 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
                 // the preview, and only while it still describes this drop.
                 if (!ok) {
                   setPendingMove((current) =>
-                    current !== null && current.id === pending.id
-                    && current.x === pending.x && current.y === pending.y ? null : current,
+                    current !== null && current.id === pending.id && current.x === pending.x && current.y === pending.y
+                      ? null
+                      : current,
                   );
                 }
               },
               () => {
                 setPendingMove((current) =>
-                  current !== null && current.id === pending.id
-                  && current.x === pending.x && current.y === pending.y ? null : current,
+                  current !== null && current.id === pending.id && current.x === pending.x && current.y === pending.y
+                    ? null
+                    : current,
                 );
               },
             );
+          }}
+          onResizeStart={(event) => {
+            // Resize gestures start from the visible size: a queued resize
+            // save still rendering counts as the base, never the stale props.
+            // A release still waiting for its repaint commits first, so the
+            // new gesture bases on the saved values, never a stale preview.
+            const current = displayed.find((placement) => placement.id === props.selectedId);
+            const paint = current ? paints.get(current.id) : undefined;
+            const box = (event.target as HTMLElement).getBoundingClientRect();
+            if (!current || current.textStyleId !== null || !paint || box.width <= 0 || box.height <= 0) {
+              resizeStartRef.current = null;
+              return false;
+            }
+            if (awaitingResizeRef.current?.id === current.id) flushAwaitingResize();
+            const preview =
+              pendingResizeRef.current !== null && pendingResizeRef.current.id === current.id
+                ? pendingResizeRef.current
+                : null;
+            const width = preview?.width ?? current.width ?? Math.max(1, sceneWidth - current.x);
+            const fontSize = preview?.fontSize ?? paint.settings.sizePx;
+            const baseX = preview?.x ?? current.x;
+            const baseY = preview?.y ?? current.y;
+            // The anchor snapshots the committed renderer frame the gesture
+            // starts from. The release corrects the position against the
+            // repaint's measured bounds, so the opposite ink corner holds.
+            const recorded = inkByIdRef.current.get(current.id);
+            const anchorInk =
+              recorded &&
+              recorded.ink &&
+              recorded.text === current.text &&
+              recorded.sizePx === fontSize &&
+              recorded.width === width
+                ? recorded.ink
+                : null;
+            resizeStartRef.current = {
+              id: current.id,
+              width,
+              fontSize,
+              boxWidth: box.width,
+              boxHeight: box.height,
+              x: baseX,
+              y: baseY,
+              lastDrag: null,
+              lastDirection: null,
+              anchorBaseX: baseX,
+              anchorBaseY: baseY,
+              anchorInk,
+            };
+            return undefined;
+          }}
+          onResize={(event) => {
+            // Pin the target onto the pointer synchronously, the documented
+            // Resizable pattern: the React repaint below lands a frame later
+            // at the same size, so Moveable never re-anchors the gesture to
+            // a lagging target and the events stay monotonic. The target is
+            // the tight renderer ink frame, so the accompanying drag
+            // translation keeps the opposite ink corner fixed while the
+            // dragged corner follows the pointer; mirroring it onto the
+            // label container (exactly like move drags do) keeps the pixels
+            // under the pointer for every corner. The delivered paint is
+            // always the real renderer output, never this transient frame
+            // size. keepRatio scales both axes together, so the width ratio
+            // below also carries pure-vertical pointer motion; ratios cancel
+            // cssScale, so only the width delta and the drag translation
+            // convert back to native pixels.
+            const start = resizeStartRef.current;
+            if (!start || start.id !== props.selectedId) return;
+            const frame = event.target as HTMLElement;
+            frame.style.width = `${event.width}px`;
+            frame.style.height = `${event.height}px`;
+            const container = frame.parentElement;
+            if (container) container.style.transform = event.drag.transform;
+            const translate = event.drag.translate as unknown as readonly [number, number];
+            start.lastDrag = [translate[0] ?? 0, translate[1] ?? 0];
+            const direction = event.direction as unknown as readonly [number, number];
+            start.lastDirection = [direction[0] ?? 0, direction[1] ?? 0];
+            // Moveable clamps extreme inward drags at zero or negative sizes;
+            // pin to a positive pixel so the gesture commits the domain
+            // minimum instead of being silently swallowed.
+            const span = Math.max(event.width, 1) / start.boxWidth;
+            if (!Number.isFinite(span) || span <= 0) return;
+            const fontSize = Math.min(512, Math.max(1, Math.round(start.fontSize * span)));
+            const width = Math.min(
+              4096,
+              Math.max(1, Math.round(start.width + (event.width - start.boxWidth) / cssScale)),
+            );
+            onPlacementPreview?.({
+              id: start.id,
+              fontSize,
+              width,
+              x: start.x + Math.round((translate[0] ?? 0) / cssScale),
+              y: start.y + Math.round((translate[1] ?? 0) / cssScale),
+            });
+            setPendingResize((current) =>
+              current !== null &&
+              current.id === start.id &&
+              current.fontSize === fontSize &&
+              current.width === width &&
+              current.x === start.x &&
+              current.y === start.y
+                ? current
+                : { id: start.id, fontSize, width, x: start.x, y: start.y },
+            );
+          }}
+          onResizeEnd={(event) => {
+            // Release the synchronous gesture size and translation: the frame
+            // renders the last real paint again until the committed repaint
+            // lands, so no gesture sizing can freeze past the release in any
+            // outcome. The fallback position commits from the cumulative drag
+            // translation rounded to the native grid; the frame's screen
+            // offset is pinned onto the container in the same frame the
+            // transform clears, exactly like move releases. The single
+            // revisioned save waits for the repaint of the released size and
+            // corrects the position against its measured frame bounds, so
+            // the opposite ink corner anchors against real renderer geometry
+            // rather than a stretched rectangle.
+            const frame = event.target as HTMLElement;
+            const container = frame.parentElement;
+            // Single ownership seam for the frame's size after any
+            // imperative resize mutation: the latest renderer-owned bounds
+            // reported for the placement. Blank-clearing never restores
+            // React's values (React only writes on virtual-style change),
+            // so every release outcome restores the known bounds instead.
+            const restoreFrameSize = (target: HTMLElement, placementId: string | null): void => {
+              const latest = placementId ? (inkByIdRef.current.get(placementId)?.ink ?? null) : null;
+              if (latest) {
+                target.style.width = `${Math.max(1, latest.width * cssScale)}px`;
+                target.style.height = `${Math.max(1, latest.height * cssScale)}px`;
+              } else {
+                target.style.width = "";
+                target.style.height = "";
+              }
+            };
+            const start = resizeStartRef.current;
+            resizeStartRef.current = null;
+            const preview = pendingResizeRef.current;
+            if (!start || !preview || start.id !== props.selectedId || preview.id !== start.id || !event.isDrag) {
+              restoreFrameSize(frame, start?.id ?? props.selectedId);
+              if (container) container.style.transform = "";
+              return;
+            }
+            const drag = start.lastDrag ?? ([0, 0] as const);
+            const release = {
+              id: preview.id,
+              fontSize: preview.fontSize,
+              width: preview.width,
+              text: displayed.find((placement) => placement.id === preview.id)?.text ?? "",
+            };
+            const fallback = {
+              ...release,
+              x: start.x + Math.round(drag[0] / cssScale),
+              y: start.y + Math.round(drag[1] / cssScale),
+            };
+            if (container) {
+              container.style.left = `${fallback.x * cssScale}px`;
+              container.style.top = `${fallback.y * cssScale}px`;
+              container.style.transform = "";
+            }
+            // Yield the transient drag size to the latest renderer frame:
+            // the reported bounds are what React last rendered (and what
+            // stays visible until the awaited repaint lands), whether or
+            // not a mid-gesture repaint already measured the released size.
+            restoreFrameSize(frame, release.id);
+            setPendingResize(fallback);
+            if (!start.anchorInk || !start.lastDirection) {
+              fireResizeCommit(release, fallback.x, fallback.y);
+              return;
+            }
+            awaitingResizeRef.current = {
+              ...release,
+              fallbackX: fallback.x,
+              fallbackY: fallback.y,
+              anchorBaseX: start.anchorBaseX,
+              anchorBaseY: start.anchorBaseY,
+              anchorInk: start.anchorInk,
+              lastDirection: start.lastDirection,
+              timeoutId: window.setTimeout(() => {
+                const awaiting = awaitingResizeRef.current;
+                if (awaiting && awaiting.id === release.id) {
+                  fireResizeCommit(release, awaiting.fallbackX, awaiting.fallbackY);
+                }
+              }, 8000),
+            };
+            // A mid-gesture repaint may already have measured the released
+            // size (the gesture paused at its end); commit corrected at once
+            // instead of waiting for a repaint that already landed.
+            const recorded = inkByIdRef.current.get(release.id);
+            if (
+              recorded?.ink &&
+              recorded.text === release.text &&
+              recorded.sizePx === release.fontSize &&
+              recorded.width === release.width
+            ) {
+              const corrected = correctedResizePosition(
+                start.anchorBaseX,
+                start.anchorBaseY,
+                start.anchorInk,
+                start.lastDirection,
+                recorded.ink,
+              );
+              fireResizeCommit(release, corrected.x, corrected.y);
+            }
           }}
         />
       )}
@@ -258,4 +799,25 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
 function selectedIdSelected(selectedId: string | null, placements: DomainPlacementView[]): DomainPlacementView | null {
   if (!selectedId) return null;
   return placements.find((placement) => placement.id === selectedId) ?? null;
+}
+
+// Opposite-corner anchor in native device px: the fixed corner is opposite
+// the dragged handle (a westward drag fixes the east side), so the released
+// position places the repaint's measured far corner onto the gesture-start
+// far corner. Integer rounding is the only error this introduces.
+function correctedResizePosition(
+  anchorBaseX: number,
+  anchorBaseY: number,
+  anchorInk: { x: number; y: number; width: number; height: number },
+  direction: readonly [number, number],
+  ink: { x: number; y: number; width: number; height: number },
+): { x: number; y: number } {
+  const farX = direction[0] < 0 ? ink.x + ink.width : ink.x;
+  const farY = direction[1] < 0 ? ink.y + ink.height : ink.y;
+  const anchorFarX = direction[0] < 0 ? anchorInk.x + anchorInk.width : anchorInk.x;
+  const anchorFarY = direction[1] < 0 ? anchorInk.y + anchorInk.height : anchorInk.y;
+  return {
+    x: Math.round(anchorBaseX + anchorFarX - farX),
+    y: Math.round(anchorBaseY + anchorFarY - farY),
+  };
 }

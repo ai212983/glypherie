@@ -5,6 +5,7 @@
 // diagnostics.layout.editing geometry. Missing geometry disables editing
 // with a visible notice instead of approximating glyph positions.
 import * as React from "react";
+import { TooltipHint } from "../../../components/TooltipHint.js";
 import { FontCanvas, type FontCanvasDiagnostics } from "../../renderer/FontCanvas.js";
 import type { RenderEditing } from "../../renderer/client.js";
 import type { VariantSettings } from "../../variants/model.js";
@@ -43,6 +44,7 @@ export interface EditableLabelProps {
   palette: RGBA[];
   selected: boolean;
   editing: boolean;
+  resizing?: boolean;
   clipped: boolean;
   onSelect: (id: string) => void;
   onBeginEdit: (id: string) => void;
@@ -52,6 +54,17 @@ export interface EditableLabelProps {
   onCancelEdit: () => void;
   onRenderError: (message: string) => void;
   onRenderOk: () => void;
+  // Every committed paint reports the frame bounds it renders (tight ink, or
+  // the renderer text extent when nothing painted) in native device px, with
+  // the paint inputs that produced it. Resize anchoring consumes this to
+  // place the committed position against real renderer geometry.
+  onFrameGeometry?: (
+    placementId: string,
+    box: { x: number; y: number; width: number; height: number } | null,
+    sizePx: number,
+    width: number,
+    text: string,
+  ) => void;
   onFrameElement: (id: string, element: HTMLDivElement | null) => void;
   onNudge: (id: string, dx: number, dy: number) => void;
   onDeleteKey: (id: string) => void;
@@ -137,13 +150,12 @@ function geometryBox(editing: RenderEditing): InkBox {
 }
 
 export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
-  const {
-    placement, fontId, settings, ready, labelWidth, labelHeight, cssScale,
-    selected, editing, clipped,
-  } = props;
+  const { placement, fontId, settings, ready, labelWidth, labelHeight, cssScale, selected, editing, clipped } = props;
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const frameRef = React.useRef<HTMLDivElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const selectNewTextRef = React.useRef(editing);
+  const editStartPointRef = React.useRef<{ x: number; y: number } | null>(null);
   const [draft, setDraft] = React.useState<string | null>(null);
   const [paint, setPaint] = React.useState<{ geometry: RenderEditing; key: string } | null>(null);
   const [paintError, setPaintError] = React.useState("");
@@ -165,16 +177,19 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
   const settledRef = React.useRef(false);
   const displayText = editing && draft !== null ? draft : placement.text;
 
-  // Every input that changes the WASM layout. The render scheduler drops
-  // superseded paints, so a committed paint always matches the latest
-  // request; a paint whose key differs from this one predates the current
-  // draft, style or frame and must not place the caret or hit-test.
-  const renderKey = React.useMemo(() => JSON.stringify({
-    text: displayText,
-    font: fontId,
-    settings,
-    frame: [labelWidth, labelHeight],
-  }), [displayText, fontId, settings, labelWidth, labelHeight]);
+  // Every input that changes the WASM layout. A progressive resize paint
+  // can precede the latest requested size; a paint whose key differs from
+  // this one must not place the caret or hit-test the current draft.
+  const renderKey = React.useMemo(
+    () =>
+      JSON.stringify({
+        text: displayText,
+        font: fontId,
+        settings,
+        frame: [labelWidth, labelHeight],
+      }),
+    [displayText, fontId, settings, labelWidth, labelHeight],
+  );
   const renderKeyRef = React.useRef(renderKey);
 
   editingRef.current = editing;
@@ -191,6 +206,18 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
     return current && current.key === renderKeyRef.current ? current.geometry : null;
   }, []);
 
+  const pointInLabel = React.useCallback(
+    (clientX: number, clientY: number): { x: number; y: number } | null => {
+      const box = containerRef.current?.getBoundingClientRect();
+      if (!box || box.width <= 0 || box.height <= 0) return null;
+      return {
+        x: (clientX - box.left) * (labelWidth / box.width),
+        y: (clientY - box.top) * (labelHeight / box.height),
+      };
+    },
+    [labelHeight, labelWidth],
+  );
+
   const setSelectionState = React.useCallback((next: SelectionState | null) => {
     selectionRef.current = next;
     setSelection(next);
@@ -204,9 +231,12 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
       setDraft(placement.text);
       setSelectionState(null);
       setPaintError("");
-    } else if (!editing && draft !== null) {
-      setDraft(null);
-      setSelectionState(null);
+    } else if (!editing) {
+      editStartPointRef.current = null;
+      if (draft !== null) {
+        setDraft(null);
+        setSelectionState(null);
+      }
     }
   }, [editing, draft, placement.text, setSelectionState]);
 
@@ -229,64 +259,90 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
   // back, so native arrows, word jumps, select-all and native undo just
   // work. Skipped when nothing moved, which breaks the programmatic
   // write/select-event loop.
-  const mirrorTextarea = React.useCallback((textarea: HTMLTextAreaElement) => {
-    const value = textarea.value;
-    const start = clampOffset(value, textarea.selectionStart);
-    const end = clampOffset(value, textarea.selectionEnd);
-    const direction = textarea.selectionDirection === "backward" ? "backward" : "forward";
-    const tracked = selectionRef.current;
-    const fresh = currentGeometry();
-    let next: SelectionState;
-    if (fresh) {
-      next = {
-        ...selectionFromNative(
-          fresh,
-          start,
-          end,
-          direction,
-          tracked ? { anchor: tracked.anchor.line, focus: tracked.focus.line } : undefined,
-        ),
-        xGoal: 0,
-        xGoalActive: false,
-      };
-    } else if (tracked) {
-      const backward = direction === "backward";
-      next = {
-        anchor: { offset: backward ? end : start, line: tracked.anchor.line },
-        focus: { offset: backward ? start : end, line: tracked.focus.line },
-        xGoal: 0,
-        xGoalActive: false,
-      };
-    } else {
-      return;
-    }
-    const current = selectionRef.current;
-    if (current
-      && current.anchor.offset === next.anchor.offset && current.anchor.line === next.anchor.line
-      && current.focus.offset === next.focus.offset && current.focus.line === next.focus.line) {
-      return;
-    }
-    selectionRef.current = next;
-    setSelection(next);
-  }, [currentGeometry]);
+  const mirrorTextarea = React.useCallback(
+    (textarea: HTMLTextAreaElement) => {
+      const value = textarea.value;
+      const start = clampOffset(value, textarea.selectionStart);
+      const end = clampOffset(value, textarea.selectionEnd);
+      const direction = textarea.selectionDirection === "backward" ? "backward" : "forward";
+      const tracked = selectionRef.current;
+      const fresh = currentGeometry();
+      let next: SelectionState;
+      if (fresh) {
+        next = {
+          ...selectionFromNative(
+            fresh,
+            start,
+            end,
+            direction,
+            tracked ? { anchor: tracked.anchor.line, focus: tracked.focus.line } : undefined,
+          ),
+          xGoal: 0,
+          xGoalActive: false,
+        };
+      } else if (tracked) {
+        const backward = direction === "backward";
+        next = {
+          anchor: { offset: backward ? end : start, line: tracked.anchor.line },
+          focus: { offset: backward ? start : end, line: tracked.focus.line },
+          xGoal: 0,
+          xGoalActive: false,
+        };
+      } else {
+        return;
+      }
+      const current = selectionRef.current;
+      if (
+        current &&
+        current.anchor.offset === next.anchor.offset &&
+        current.anchor.line === next.anchor.line &&
+        current.focus.offset === next.focus.offset &&
+        current.focus.line === next.focus.line
+      ) {
+        return;
+      }
+      selectionRef.current = next;
+      setSelection(next);
+    },
+    [currentGeometry],
+  );
 
   // Layout timing: the draft (and its textarea) initializes in a passive
   // effect one commit after editing starts, so focusing must wait for the
   // textarea to exist and must beat the browser's blur-to-body. A passive
   // focus here would either hit a stale ref or lose the race. A fresh paint
   // adopts the native selection (the source of truth, never reset here);
-  // only a missing selection seeds a collapsed caret at the text end.
+  // only a missing selection seeds the caret. Newly placed text starts selected
+  // so typing replaces its placeholder. Pointer entry seeds from its native
+  // hit point; keyboard entry starts at the end.
   React.useLayoutEffect(() => {
     if (!editing || draft === null) return;
     const textarea = textareaRef.current;
     if (textarea && document.activeElement !== textarea) textarea.focus({ preventScroll: true });
+    if (textarea && selectNewTextRef.current) {
+      // Select the placeholder before the renderer is ready, so immediate
+      // typing replaces it even while the first paint is still pending.
+      const initial: SelectionState = {
+        anchor: { offset: 0, line: 0 },
+        focus: { offset: textarea.value.length, line: 0 },
+        xGoal: 0,
+        xGoalActive: false,
+      };
+      selectNewTextRef.current = false;
+      selectionRef.current = initial;
+      setSelection(initial);
+      writeSelection(textarea, initial);
+    }
     const fresh = currentGeometry();
     if (!fresh) return;
     if (!selectionRef.current) {
       const lines = visualLines(fresh);
       const last = lines[lines.length - 1];
-      const offset = last ? last.end : 0;
-      const line = last ? last.index : 0;
+      const point = editStartPointRef.current;
+      const { offset, line } = point
+        ? offsetAtPoint(fresh, point.x, point.y)
+        : { offset: last?.end ?? 0, line: last?.index ?? 0 };
+      editStartPointRef.current = null;
       const seeded: SelectionState = {
         anchor: { offset, line },
         focus: { offset, line },
@@ -310,79 +366,107 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
     return container?.querySelector("canvas") ?? null;
   }, []);
 
-  const canvasProps = React.useMemo(() => ({
-    className: "block [image-rendering:pixelated]",
-  }), []);
+  const canvasProps = React.useMemo(
+    () => ({
+      className: "block [image-rendering:pixelated]",
+    }),
+    [],
+  );
 
   // Stable across renders: an inline ref callback would detach and reattach
   // on every render, and each detach would notify the parent again.
   // onFrameElement is a stable parent callback, so this identity only turns
   // over when the placement itself changes.
   const onFrameElement = props.onFrameElement;
-  const frameRefCallback = React.useCallback((element: HTMLDivElement | null) => {
-    frameRef.current = element;
-    onFrameElement(placement.id, element);
-  }, [placement.id, onFrameElement]);
+  const frameRefCallback = React.useCallback(
+    (element: HTMLDivElement | null) => {
+      frameRef.current = element;
+      onFrameElement(placement.id, element);
+    },
+    [placement.id, onFrameElement],
+  );
 
-  const viewportProps = React.useMemo(() => ({
-    "data-scene-label": placement.id,
-    role: "img",
-    "aria-label": displayText,
-  }), [placement.id, displayText]);
+  const viewportProps = React.useMemo(
+    () => ({
+      "data-scene-label": placement.id,
+      role: "img",
+      "aria-label": displayText,
+    }),
+    [placement.id, displayText],
+  );
 
-  const handlePaint = React.useCallback((diagnostics: FontCanvasDiagnostics) => {
-    const editingGeometry = diagnostics.layout?.editing ?? null;
-    if (editingGeometry) {
-      setPaint({ geometry: editingGeometry, key: renderKeyRef.current });
-      setPaintError("");
-      props.onRenderOk();
-    } else {
+  const handlePaint = React.useCallback(
+    (diagnostics: FontCanvasDiagnostics) => {
+      const editingGeometry = diagnostics.layout?.editing ?? null;
+      if (editingGeometry) {
+        setPaint({ geometry: editingGeometry, key: renderKey });
+        setPaintError("");
+        props.onRenderOk();
+      } else {
+        setPaint(null);
+        // Honest absence: fixture and synthetic renderers omit editing, and the
+        // real path always reports it. Never approximate with browser metrics.
+        props.onRenderError(
+          `Label "${diagnostics.missing > 0 ? "…" : placement.text}" has no editing geometry in this preview.`,
+        );
+      }
+      const shown = Math.min(labelHeight, Math.max(1, diagnostics.fullHeight));
+      const ink = measureInk(findCanvas(), labelWidth, shown);
+      setInkBox(ink);
+      // Report the same frame the render below draws, so anchoring consumes
+      // measured renderer bounds instead of an assumed rectangle.
+      props.onFrameGeometry?.(
+        placement.id,
+        ink ?? (editingGeometry ? geometryBox(editingGeometry) : null),
+        settings.sizePx,
+        labelWidth,
+        displayText,
+      );
+      // Seeding and line re-resolution run in the layout effect above, which
+      // observes the new paint: the native selection is never reset here.
+    },
+    [findCanvas, labelHeight, labelWidth, displayText, placement.text, props, settings.sizePx, renderKey],
+  );
+
+  const handleError = React.useCallback(
+    (message: string) => {
+      // A failed paint blanks the canvas (clearOnError), so the committed
+      // geometry goes with it; the draft text is kept for recovery on input.
       setPaint(null);
-      // Honest absence: fixture and synthetic renderers omit editing, and the
-      // real path always reports it. Never approximate with browser metrics.
-      props.onRenderError(`Label "${diagnostics.missing > 0 ? "…" : placement.text}" has no editing geometry in this preview.`);
-    }
-    const shown = Math.min(labelHeight, Math.max(1, diagnostics.fullHeight));
-    setInkBox(measureInk(findCanvas(), labelWidth, shown));
-    // Seeding and line re-resolution run in the layout effect above, which
-    // observes the new paint: the native selection is never reset here.
-  }, [findCanvas, labelHeight, labelWidth, placement.text, props]);
+      setInkBox(null);
+      setPaintError(message);
+      props.onRenderError(`Label "${placement.text}": ${message}`);
+    },
+    [placement.text, props],
+  );
 
-  const handleError = React.useCallback((message: string) => {
-    // A failed paint blanks the canvas (clearOnError), so the committed
-    // geometry goes with it; the draft text is kept for recovery on input.
-    setPaint(null);
-    setInkBox(null);
-    setPaintError(message);
-    props.onRenderError(`Label "${placement.text}": ${message}`);
-  }, [placement.text, props]);
-
-  const applySelection = React.useCallback((next: SelectionState) => {
-    setSelectionState({ ...next, xGoalActive: false });
-    setSelectionTick((tick) => tick + 1);
-    const textarea = textareaRef.current;
-    if (textarea) writeSelection(textarea, next);
-  }, [setSelectionState, writeSelection]);
+  const applySelection = React.useCallback(
+    (next: SelectionState) => {
+      setSelectionState({ ...next, xGoalActive: false });
+      setSelectionTick((tick) => tick + 1);
+      const textarea = textareaRef.current;
+      if (textarea) writeSelection(textarea, next);
+    },
+    [setSelectionState, writeSelection],
+  );
 
   // Pointer hit testing against renderer caret stops, in native device px.
   // Stale geometry (input not yet repainted) refuses the hit so the caret
   // cannot land on a previous layout's stops.
-  const hitTest = React.useCallback((clientX: number, clientY: number): CaretPosition | null => {
-    const container = containerRef.current;
-    const geometry = currentGeometry();
-    if (!container || !geometry) return null;
-    const box = container.getBoundingClientRect();
-    if (box.width <= 0 || box.height <= 0) return null;
-    const px = (clientX - box.left) * (labelWidth / box.width);
-    const py = (clientY - box.top) * (labelHeight / box.height);
-    return offsetAtPoint(geometry, px, py);
-  }, [currentGeometry, labelHeight, labelWidth]);
+  const hitTest = React.useCallback(
+    (clientX: number, clientY: number): CaretPosition | null => {
+      const geometry = currentGeometry();
+      const point = pointInLabel(clientX, clientY);
+      return geometry && point ? offsetAtPoint(geometry, point.x, point.y) : null;
+    },
+    [currentGeometry, pointInLabel],
+  );
 
   // Non-editing selection lives on the tight frame below; the full-aperture
   // container only captures pointer drags for WASM caret placement while
   // editing (it is click-through otherwise, so stacked labels and empty
   // paper resolve by stacking order).
-  const onFramePointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+  const onFramePointerDown = React.useCallback(() => {
     if (editing) return;
     props.onSelect(placement.id);
     // The drag engine suppresses the mousedown default, so a click would
@@ -392,65 +476,86 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
     frameRef.current?.focus({ preventScroll: true });
   }, [editing, placement.id, props]);
 
-  const onFrameDoubleClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    // Suppress the browser's default word-select-and-focus pass, which
-    // would otherwise move focus to the nearest focusable ancestor after
-    // the capture textarea already took it.
-    event.preventDefault();
-    if (editing) return;
-    if (paintRef.current) props.onBeginEdit(placement.id);
-    else props.onRenderError(`Label "${placement.text}" has no editing geometry in this preview.`);
-  }, [editing, placement.id, placement.text, props]);
+  const onFrameDoubleClick = React.useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      // Suppress the browser's default word-select-and-focus pass, which
+      // would otherwise move focus to the nearest focusable ancestor after
+      // the capture textarea already took it.
+      event.preventDefault();
+      if (editing) return;
+      if (paintRef.current) {
+        // Keep the native point through draft/textarea mounting, then resolve
+        // against fresh renderer stops before setting the native selection.
+        editStartPointRef.current = pointInLabel(event.clientX, event.clientY);
+        props.onBeginEdit(placement.id);
+      } else props.onRenderError(`Label "${placement.text}" has no editing geometry in this preview.`);
+    },
+    [editing, placement.id, placement.text, pointInLabel, props],
+  );
 
-  const onPointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!editing) return;
-    if (event.button !== 0) return;
-    event.preventDefault();
-    const hit = hitTest(event.clientX, event.clientY);
-    const geometry = currentGeometry();
-    if (hit && geometry) {
-      applySelection({ anchor: hit, focus: hit, xGoal: caretXOnLine(geometry, hit.offset, hit.line), xGoalActive: false });
-    }
-    dragRef.current = true;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    textareaRef.current?.focus();
-  }, [applySelection, currentGeometry, editing, hitTest]);
+  const onPointerDown = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!editing) return;
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const hit = hitTest(event.clientX, event.clientY);
+      const geometry = currentGeometry();
+      if (hit && geometry) {
+        applySelection({
+          anchor: hit,
+          focus: hit,
+          xGoal: caretXOnLine(geometry, hit.offset, hit.line),
+          xGoalActive: false,
+        });
+      }
+      dragRef.current = true;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      textareaRef.current?.focus();
+    },
+    [applySelection, currentGeometry, editing, hitTest],
+  );
 
-  const onPointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!editing || !dragRef.current) return;
-    const hit = hitTest(event.clientX, event.clientY);
-    const current = selectionRef.current;
-    const geometry = currentGeometry();
-    if (hit && current && geometry) {
-      // The anchor stays fixed while the focus follows the pointer either
-      // way; the ordered write in applySelection keeps backward drags as one
-      // real native range so typing replaces it.
-      const next: SelectionState = {
-        anchor: current.anchor,
-        focus: hit,
-        xGoal: caretXOnLine(geometry, hit.offset, hit.line),
-        xGoalActive: false,
-      };
-      applySelection(next);
-    }
-  }, [applySelection, currentGeometry, editing, hitTest]);
+  const onPointerMove = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!editing || !dragRef.current) return;
+      const hit = hitTest(event.clientX, event.clientY);
+      const current = selectionRef.current;
+      const geometry = currentGeometry();
+      if (hit && current && geometry) {
+        // The anchor stays fixed while the focus follows the pointer either
+        // way; the ordered write in applySelection keeps backward drags as one
+        // real native range so typing replaces it.
+        const next: SelectionState = {
+          anchor: current.anchor,
+          focus: hit,
+          xGoal: caretXOnLine(geometry, hit.offset, hit.line),
+          xGoalActive: false,
+        };
+        applySelection(next);
+      }
+    },
+    [applySelection, currentGeometry, editing, hitTest],
+  );
 
   const endPointerDrag = React.useCallback(() => {
     dragRef.current = false;
   }, []);
 
-  const commitDraft = React.useCallback(async (refocus: boolean) => {
-    const text = draft;
-    if (text === null || settledRef.current) return;
-    settledRef.current = true;
-    const ok = await props.onCommitText(placement.id, text);
-    // A conflict or failure keeps the draft open for recovery, so disarm the
-    // guard and let the next gesture settle the edit instead.
-    if (!ok) settledRef.current = false;
-    // A conflict keeps the draft open for recovery; only a completed edit
-    // returns focus to the frame.
-    if (ok && refocus && !editingRef.current) frameRef.current?.focus();
-  }, [draft, placement.id, props]);
+  const commitDraft = React.useCallback(
+    async (refocus: boolean) => {
+      const text = draft;
+      if (text === null || settledRef.current) return;
+      settledRef.current = true;
+      const ok = await props.onCommitText(placement.id, text);
+      // A conflict or failure keeps the draft open for recovery, so disarm the
+      // guard and let the next gesture settle the edit instead.
+      if (!ok) settledRef.current = false;
+      // A conflict keeps the draft open for recovery; only a completed edit
+      // returns focus to the frame.
+      if (ok && refocus && !editingRef.current) frameRef.current?.focus();
+    },
+    [draft, placement.id, props],
+  );
 
   const cancelDraft = React.useCallback(() => {
     if (settledRef.current) return;
@@ -462,122 +567,161 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
   // 12px capture box, not the wrapped WASM layout). Arrows, word jumps,
   // select-all and native edit undo stay with the browser; onSelect mirrors
   // them into the overlay.
-  const onTextareaKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // IME owns every key while composing; Enter confirms the composition
-    // natively and must not commit, Escape cancels it natively.
-    if (event.nativeEvent.isComposing || composingRef.current) return;
-    const textarea = event.currentTarget;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      cancelDraft();
-      frameRef.current?.focus();
-      return;
-    }
-    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      void commitDraft(true);
-      return;
-    }
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown" && event.key !== "Home" && event.key !== "End") return;
-    const geometry = currentGeometry();
-    if (!geometry) return;
-    const text = textarea.value;
-    // The true focus end: selectionStart for backward selections, so moves
-    // from a backward caret extend the side the user sees.
-    const backward = textarea.selectionDirection === "backward";
-    const tracked = selectionRef.current;
-    const anchor: CaretPosition = {
-      offset: clampOffset(text, backward ? textarea.selectionEnd : textarea.selectionStart),
-      line: 0,
-    };
-    anchor.line = resolveLineAffinity(geometry, anchor.offset, tracked?.anchor.line ?? 0);
-    const focus: CaretPosition = {
-      offset: clampOffset(text, backward ? textarea.selectionStart : textarea.selectionEnd),
-      line: 0,
-    };
-    focus.line = resolveLineAffinity(geometry, focus.offset, tracked?.focus.line ?? 0);
-    const extend = event.shiftKey;
-    const current = selectionRef.current;
-    const commitKeySelection = (next: SelectionState): void => {
-      setSelectionState(next);
-      setSelectionTick((tick) => tick + 1);
-      writeSelection(textarea, next);
-    };
-    if ((event.key === "ArrowUp" || event.key === "ArrowDown") && !event.altKey && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault();
-      const direction = event.key === "ArrowDown" ? 1 : -1;
-      const goal = current?.xGoalActive ? current.xGoal : caretXOnLine(geometry, focus.offset, focus.line);
-      const moved = moveVertically(geometry, focus, goal, direction as 1 | -1);
-      if (!moved) return;
-      commitKeySelection(extend && current
-        ? { anchor: current.anchor, focus: { offset: moved.offset, line: moved.line }, xGoal: goal, xGoalActive: true }
-        : { anchor: { offset: moved.offset, line: moved.line }, focus: { offset: moved.offset, line: moved.line }, xGoal: goal, xGoalActive: true });
-      return;
-    }
-    if ((event.key === "Home" || event.key === "End") && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      event.preventDefault();
-      const range = lineRange(geometry, focus.line);
-      const edge = event.key === "Home" ? range.start : range.end;
-      commitKeySelection(extend && current
-        ? { anchor: current.anchor, focus: { offset: edge, line: focus.line }, xGoal: 0, xGoalActive: false }
-        : { anchor: { offset: edge, line: focus.line }, focus: { offset: edge, line: focus.line }, xGoal: 0, xGoalActive: false });
-    }
-  }, [cancelDraft, commitDraft, currentGeometry, setSelectionState, writeSelection]);
+  const onTextareaKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // IME owns every key while composing; Enter confirms the composition
+      // natively and must not commit, Escape cancels it natively.
+      if (event.nativeEvent.isComposing || composingRef.current) return;
+      const textarea = event.currentTarget;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancelDraft();
+        frameRef.current?.focus();
+        return;
+      }
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        void commitDraft(true);
+        return;
+      }
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown" && event.key !== "Home" && event.key !== "End") return;
+      const geometry = currentGeometry();
+      if (!geometry) return;
+      const text = textarea.value;
+      // The true focus end: selectionStart for backward selections, so moves
+      // from a backward caret extend the side the user sees.
+      const backward = textarea.selectionDirection === "backward";
+      const tracked = selectionRef.current;
+      const anchor: CaretPosition = {
+        offset: clampOffset(text, backward ? textarea.selectionEnd : textarea.selectionStart),
+        line: 0,
+      };
+      anchor.line = resolveLineAffinity(geometry, anchor.offset, tracked?.anchor.line ?? 0);
+      const focus: CaretPosition = {
+        offset: clampOffset(text, backward ? textarea.selectionStart : textarea.selectionEnd),
+        line: 0,
+      };
+      focus.line = resolveLineAffinity(geometry, focus.offset, tracked?.focus.line ?? 0);
+      const extend = event.shiftKey;
+      const current = selectionRef.current;
+      const commitKeySelection = (next: SelectionState): void => {
+        setSelectionState(next);
+        setSelectionTick((tick) => tick + 1);
+        writeSelection(textarea, next);
+      };
+      if ((event.key === "ArrowUp" || event.key === "ArrowDown") && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        const goal = current?.xGoalActive ? current.xGoal : caretXOnLine(geometry, focus.offset, focus.line);
+        const moved = moveVertically(geometry, focus, goal, direction as 1 | -1);
+        if (!moved) return;
+        commitKeySelection(
+          extend && current
+            ? {
+                anchor: current.anchor,
+                focus: { offset: moved.offset, line: moved.line },
+                xGoal: goal,
+                xGoalActive: true,
+              }
+            : {
+                anchor: { offset: moved.offset, line: moved.line },
+                focus: { offset: moved.offset, line: moved.line },
+                xGoal: goal,
+                xGoalActive: true,
+              },
+        );
+        return;
+      }
+      if ((event.key === "Home" || event.key === "End") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        const range = lineRange(geometry, focus.line);
+        const edge = event.key === "Home" ? range.start : range.end;
+        commitKeySelection(
+          extend && current
+            ? { anchor: current.anchor, focus: { offset: edge, line: focus.line }, xGoal: 0, xGoalActive: false }
+            : {
+                anchor: { offset: edge, line: focus.line },
+                focus: { offset: edge, line: focus.line },
+                xGoal: 0,
+                xGoalActive: false,
+              },
+        );
+      }
+    },
+    [cancelDraft, commitDraft, currentGeometry, setSelectionState, writeSelection],
+  );
 
-  const onTextareaChange = React.useCallback((event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setDraft(event.target.value);
-    // The browser owns the native selection through typing (surrogate pairs
-    // stay safe: every offset is a UTF-16 index into the same string the
-    // stops describe); mirror it and drop the sticky goal column. Fresh
-    // lines resolve once the repaint commits; the stale overlay hides until
-    // then.
-    mirrorTextarea(event.target);
-  }, [mirrorTextarea]);
+  const onTextareaChange = React.useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setDraft(event.target.value);
+      // The browser owns the native selection through typing (surrogate pairs
+      // stay safe: every offset is a UTF-16 index into the same string the
+      // stops describe); mirror it and drop the sticky goal column. Fresh
+      // lines resolve once the repaint commits; the stale overlay hides until
+      // then.
+      mirrorTextarea(event.target);
+    },
+    [mirrorTextarea],
+  );
 
-  const onTextareaSelect = React.useCallback((event: React.SyntheticEvent<HTMLTextAreaElement>) => {
-    if (programmaticRef.current) return;
-    mirrorTextarea(event.currentTarget);
-  }, [mirrorTextarea]);
+  const onTextareaSelect = React.useCallback(
+    (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
+      if (programmaticRef.current) return;
+      mirrorTextarea(event.currentTarget);
+    },
+    [mirrorTextarea],
+  );
 
-  const onTextareaBlur = React.useCallback((event: React.FocusEvent<HTMLTextAreaElement>) => {
-    // A clear commit gesture: leaving the field persists the draft through
-    // the revisioned store instead of discarding typed text. The settled arm
-    // ignores the blur that a commit/cancel focus move or unmount fires.
-    if (settledRef.current) return;
-    // A blur that ends an IME composition must not commit half the
-    // composition; the committed text arrives through change events and the
-    // next explicit gesture settles the edit.
-    if (composingRef.current) return;
-    // Focus moving to the explicit discard control skips the commit: the
-    // reload adopts the saved revision and the unmount drops the draft, so
-    // committing first would only resurrect it behind a conflict.
-    if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.closest("[data-screen-reload]")) return;
-    if (draft !== null && draft !== placement.text) void commitDraft(false);
-    else if (draft !== null) {
-      settledRef.current = true;
-      void props.onCommitText(placement.id, draft);
-    }
-  }, [commitDraft, draft, placement.id, placement.text, props]);
+  const onTextareaBlur = React.useCallback(
+    (event: React.FocusEvent<HTMLTextAreaElement>) => {
+      // A clear commit gesture: leaving the field persists the draft through
+      // the revisioned store instead of discarding typed text. The settled arm
+      // ignores the blur that a commit/cancel focus move or unmount fires.
+      if (settledRef.current) return;
+      // A blur that ends an IME composition must not commit half the
+      // composition; the committed text arrives through change events and the
+      // next explicit gesture settles the edit.
+      if (composingRef.current) return;
+      // Focus moving to the explicit discard control skips the commit: the
+      // reload adopts the saved revision and the unmount drops the draft, so
+      // committing first would only resurrect it behind a conflict.
+      if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.closest("[data-screen-reload]")) return;
+      if (draft !== null && draft !== placement.text) void commitDraft(false);
+      else if (draft !== null) {
+        settledRef.current = true;
+        void props.onCommitText(placement.id, draft);
+      }
+    },
+    [commitDraft, draft, placement.id, placement.text, props],
+  );
 
-  const onFrameKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      props.onBeginEdit(placement.id);
-      return;
-    }
-    if (event.key === "Delete" || event.key === "Backspace") {
-      event.preventDefault();
-      props.onDeleteKey(placement.id);
-      return;
-    }
-    const step = event.shiftKey ? 10 : 1;
-    if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowDown") {
-      event.preventDefault();
-      const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
-      const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
-      props.onNudge(placement.id, dx, dy);
-    }
-  }, [placement.id, props]);
+  const onFrameKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        props.onBeginEdit(placement.id);
+        return;
+      }
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        props.onDeleteKey(placement.id);
+        return;
+      }
+      const step = event.shiftKey ? 10 : 1;
+      if (
+        event.key === "ArrowLeft" ||
+        event.key === "ArrowRight" ||
+        event.key === "ArrowUp" ||
+        event.key === "ArrowDown"
+      ) {
+        event.preventDefault();
+        const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
+        const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
+        props.onNudge(placement.id, dx, dy);
+      }
+    },
+    [placement.id, props],
+  );
 
   const frameBox: InkBox | null = inkBox ?? (committed ? geometryBox(committed) : null);
   const overlaySelection = selection ?? null;
@@ -599,7 +743,8 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
     ? { offset: overlaySelection.focus.offset, line: overlaySelection.focus.line }
     : null;
   const focusX = focusCaret && geometry ? caretXOnLine(geometry, focusCaret.offset, focusCaret.line) : 0;
-  const focusLine = focusCaret && geometry ? visualLines(geometry).find((entry) => entry.index === focusCaret.line) : undefined;
+  const focusLine =
+    focusCaret && geometry ? visualLines(geometry).find((entry) => entry.index === focusCaret.line) : undefined;
 
   return (
     <div
@@ -645,6 +790,7 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
         ready={ready}
         clearOnError
         debounceMs={0}
+        progressiveResize={props.resizing && !editing}
         palette={props.palette}
         viewportProps={viewportProps}
         canvasProps={canvasProps}
@@ -669,21 +815,26 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
         onFocus={() => props.onSelect(placement.id)}
         onPointerDown={onFramePointerDown}
         onDoubleClick={onFrameDoubleClick}
-        style={frameBox ? {
-          position: "absolute",
-          left: frameBox.x * cssScale,
-          top: frameBox.y * cssScale,
-          width: Math.max(1, frameBox.width * cssScale),
-          height: Math.max(1, frameBox.height * cssScale),
-          outline: "none",
-          pointerEvents: editing ? "none" : "auto",
-          cursor: selected && !editing ? "move" : "default",
-        } : {
-          position: "absolute",
-          inset: 0,
-          outline: "none",
-          pointerEvents: "none",
-        }}
+        style={
+          frameBox
+            ? {
+                position: "absolute",
+                left: frameBox.x * cssScale,
+                top: frameBox.y * cssScale,
+                width: Math.max(1, frameBox.width * cssScale),
+                height: Math.max(1, frameBox.height * cssScale),
+                outline: "none",
+                pointerEvents: editing ? "none" : "auto",
+                cursor: editing ? "text" : "move",
+                touchAction: "none",
+              }
+            : {
+                position: "absolute",
+                inset: 0,
+                outline: "none",
+                pointerEvents: "none",
+              }
+        }
       />
       {clipped && (
         <span
@@ -704,28 +855,33 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
         </span>
       )}
       {(paintError || (!committed && selected)) && (
-        <span
-          data-scene-label-unavailable={placement.id}
-          role={paintError ? "alert" : "status"}
-          style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
-            fontSize: 10,
-            lineHeight: 1.4,
-            padding: "0 4px",
-            background: "var(--color-card)",
-            color: "var(--color-soft)",
-            border: "1px solid var(--color-line)",
-            pointerEvents: "none",
-            maxWidth: "100%",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
+        <TooltipHint
+          content={paintError ? `Preview failed; text kept: ${paintError}` : "No editing geometry in this preview."}
         >
-          {paintError ? `Preview failed; text kept: ${paintError}` : "No editing geometry in this preview."}
-        </span>
+          <span
+            data-scene-label-unavailable={placement.id}
+            role={paintError ? "alert" : "status"}
+            tabIndex={0}
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              fontSize: 10,
+              lineHeight: 1.4,
+              padding: "0 4px",
+              background: "var(--color-card)",
+              color: "var(--color-soft)",
+              border: "1px solid var(--color-line)",
+              pointerEvents: "auto",
+              maxWidth: "100%",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {paintError ? `Preview failed; text kept: ${paintError}` : "No editing geometry in this preview."}
+          </span>
+        </TooltipHint>
       )}
       {/* Caret and selection overlay drawn only from renderer stops. */}
       {editing && geometry && overlaySelection && (
@@ -753,7 +909,7 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
                 top: caret.y * cssScale,
                 width: 2,
                 height: caret.height * cssScale,
-                background: "var(--color-brand)",
+                background: "#000",
               }}
             />
           )}
@@ -781,8 +937,12 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
           onKeyDown={onTextareaKeyDown}
           onSelect={onTextareaSelect}
           onBlur={onTextareaBlur}
-          onCompositionStart={() => { composingRef.current = true; }}
-          onCompositionEnd={() => { composingRef.current = false; }}
+          onCompositionStart={() => {
+            composingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            composingRef.current = false;
+          }}
           style={{
             position: "absolute",
             left: Math.max(0, focusX * cssScale - 2),

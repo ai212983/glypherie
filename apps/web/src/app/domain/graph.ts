@@ -95,10 +95,12 @@ const kerningPreferenceObjectSchema = z
       minimumDistanceEm: z.number().optional(),
       maxXExtremaOverlapEm: z.number().optional(),
     }),
-    hu_hersch: z.strictObject({
-      apertureDepthFactor: z.number().optional(),
-      globalDepthFactor: z.number().optional(),
-    }).optional(),
+    hu_hersch: z
+      .strictObject({
+        apertureDepthFactor: z.number().optional(),
+        globalDepthFactor: z.number().optional(),
+      })
+      .optional(),
     fontforge: z.strictObject({}).optional(),
   })
   .refine(
@@ -176,7 +178,18 @@ const TextStyle = defineNode("TextStyle", {
 });
 
 const Label = defineNode("Label", {
-  schema: z.object({ text: z.string().max(LABEL_TEXT_MAX_LENGTH) }),
+  // A label carries exactly one reference: either a styledAs edge to a saved
+  // text style, or direct font fields (no style edge). Direct fields are the
+  // label's own size and wrap width in native device px plus an optional
+  // wght-axis override (null means the selected font's default); historical
+  // rows carry neither and read back null, like the pre-device Scene rows.
+  schema: z.object({
+    text: z.string().max(LABEL_TEXT_MAX_LENGTH),
+    fontId: z.string().min(1).max(128).nullish(),
+    fontSize: z.number().int().min(FONT_SIZE_MIN).max(FONT_SIZE_MAX).nullish(),
+    width: z.number().int().min(SCENE_DIMENSION_MIN).max(SCENE_DIMENSION_MAX).nullish(),
+    fontWeight: z.number().min(1).max(1000).nullish(),
+  }),
 });
 
 const Scene = defineNode("Scene", {
@@ -216,7 +229,12 @@ const usesVariant = defineEdge("usesVariant", { from: [TextStyle], to: [FontVari
 const usesProfile = defineEdge("usesProfile", { from: [TextStyle], to: [RenderingProfile] });
 const styledAs = defineEdge("styledAs", { from: [Label], to: [TextStyle] });
 const places = defineEdge("places", {
-  schema: z.object({ x: z.number().int(), y: z.number().int(), order: z.number().int() }),
+  schema: z.object({
+    x: z.number().int(),
+    y: z.number().int(),
+    order: z.number().int(),
+    visible: z.boolean().optional(),
+  }),
   from: [Scene],
   to: [Label],
 });

@@ -22,6 +22,7 @@ import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts"
 import { getVariant, listVariants, updateVariant } from "../../src/app/variants/repository.ts";
 import { defaultVariantSettings } from "../../src/app/variants/model.ts";
 import type { FontMetadata } from "../../src/app/fonts/storage.ts";
+import { defaultKerningState } from "../../src/app/kerning/model.ts";
 
 Dexie.dependencies.indexedDB = globalThis.indexedDB;
 Dexie.dependencies.IDBKeyRange = globalThis.IDBKeyRange;
@@ -47,8 +48,7 @@ function metadata(): FontMetadata {
 const fontBytes = (seed = 0): ArrayBuffer =>
   Uint8Array.from({ length: 64 }, (_, i) => (i * 7 + seed) % 251).buffer as ArrayBuffer;
 
-const sha256 = (bytes: ArrayBuffer): string =>
-  createHash("sha256").update(Buffer.from(bytes)).digest("hex");
+const sha256 = (bytes: ArrayBuffer): string => createHash("sha256").update(Buffer.from(bytes)).digest("hex");
 
 async function seedLegacy(): Promise<{ fontId: string; bytes: ArrayBuffer }> {
   const bytes = fontBytes(7);
@@ -123,6 +123,24 @@ test("import preserves every legacy row and reruns as a byte-identical no-op", a
   assert.deepEqual(await readBinary(getBackend().db, fontId), before);
   assert.deepEqual(await getVariant("variant-1"), variant);
   assert.deepEqual(await listVariants(), [variant]);
+});
+
+test("import discards retired kerning parameters instead of preserving their behavior", async () => {
+  await seedLegacy();
+  const snapshot = await readLegacySnapshot();
+  const kerning = {
+    ...defaultKerningState(),
+    method: "hu_hersch" as const,
+    hu_hersch: { strength: 0 },
+    fontforge: { strength: 0.35 },
+  };
+  snapshot.variants[0]!.settings.kerning = kerning as never;
+  await importLegacySnapshot(getBackend(), snapshot);
+  const variant = await getVariant("variant-1");
+  assert.ok(variant);
+  assert.deepEqual(variant.settings.kerning, { ...defaultKerningState(), method: "hu_hersch" });
+  assert.equal(variant.settings.sizePx, 20);
+  assert.equal(variant.sampleText, "Hello");
 });
 
 test("a failed import writes no marker and leaves no readable partial state", async () => {
@@ -253,7 +271,10 @@ test("a completed import never reapplies legacy changes over newer domain edits"
   // The domain edit survives and the late legacy row never materializes.
   assert.equal((await getVariant("variant-1"))?.name, "Edited after import");
   assert.equal(await getVariant("variant-2"), undefined);
-  assert.deepEqual((await listVariants()).map((variant) => variant.id), ["variant-1"]);
+  assert.deepEqual(
+    (await listVariants()).map((variant) => variant.id),
+    ["variant-1"],
+  );
 });
 
 test("migration surfaces storage failures and retries instead of importing nothing", async () => {

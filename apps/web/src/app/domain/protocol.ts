@@ -18,16 +18,21 @@ export const DOMAIN_OWNER_LEASE = "glypherie-domain-owner-v1";
 
 /**
  * Tab/worker wire version. Bump when the handshake or response shape changes
- * incompatibly; the handshake then forces old/new pairs to fail with an
- * explicit reload/close-tabs error instead of misbehaving. Baked at build
- * time from VITE_DOMAIN_PROTOCOL (tests build two generations to prove the
- * mismatch path); the default keeps every existing deployment on version 2.
+ * incompatibly or a newly required command is added; the handshake then
+ * forces old/new pairs to fail with an explicit reload/close-tabs error
+ * instead of misbehaving. Baked at build time from VITE_DOMAIN_PROTOCOL
+ * (tests build two generations to prove the mismatch path); the default is
+ * the current generation, fenced at the incompatible-schema fresh-start
+ * reset so pre-reset owners cannot serve retained parameters.
  */
 function configuredProtocolVersion(): number {
-  const fromEnv = (import.meta as unknown as { env?: Record<string, string | undefined> })
-    .env?.VITE_DOMAIN_PROTOCOL;
+  const fromEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_DOMAIN_PROTOCOL;
   const parsed = fromEnv === undefined || fromEnv === "" ? NaN : Number(fromEnv);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 2;
+  // Generation 9: palette updates are owner-held semantic edits, not client
+  // snapshots. A pre-9 owner would persist a semantic edit as an empty
+  // no-name/no-curve write, and a pre-9 tab would keep overwriting levels
+  // across tabs, so mixed pairs must fail the handshake instead.
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 9;
 }
 
 export const DOMAIN_PROTOCOL_VERSION = configuredProtocolVersion();
@@ -41,6 +46,5 @@ export interface OwnerStamp {
 export function isOwnerStamp(value: unknown): value is OwnerStamp {
   if (typeof value !== "object" || value === null) return false;
   const { epoch, seq } = value as { epoch?: unknown; seq?: unknown };
-  return typeof epoch === "string" && epoch !== ""
-    && typeof seq === "number" && Number.isInteger(seq) && seq > 0;
+  return typeof epoch === "string" && epoch !== "" && typeof seq === "number" && Number.isInteger(seq) && seq > 0;
 }

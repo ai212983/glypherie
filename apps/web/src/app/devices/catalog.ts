@@ -80,8 +80,11 @@ function checkPpi(value: unknown): number {
 }
 
 function checkBox(value: unknown, name: string): readonly [number, number, number, number] {
-  if (!Array.isArray(value) || value.length !== 4
-    || value.some((entry) => typeof entry !== "number" || !Number.isFinite(entry))) {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 4 ||
+    value.some((entry) => typeof entry !== "number" || !Number.isFinite(entry))
+  ) {
     fail(`${name} must be four finite numbers [x, y, w, h]`);
   }
   const [x, y, w, h] = value as [number, number, number, number];
@@ -92,7 +95,13 @@ function checkBox(value: unknown, name: string): readonly [number, number, numbe
 function checkShell(value: unknown): DeviceShellRef {
   if (!isRecord(value)) fail("device shell must be an object");
   const src = value.src;
-  if (typeof src !== "string" || src.startsWith("/") || src.includes("..") || !src.startsWith("shells/") || !src.endsWith(".svg")) {
+  if (
+    typeof src !== "string" ||
+    src.startsWith("/") ||
+    src.includes("..") ||
+    !src.startsWith("shells/") ||
+    !src.endsWith(".svg")
+  ) {
     fail(`shell src ${JSON.stringify(src)} must be a relative shells/*.svg asset path`);
   }
   const viewBox = checkBox(value.viewBox, "shell viewBox");
@@ -175,7 +184,7 @@ export function deviceLayout(device: DeviceDefinition, cssScale: number): Device
   const scale = Number(cssScale);
   if (!Number.isFinite(scale) || scale <= 0) fail("cssScale must be a positive number");
   const [, , vw, vh] = device.shell.viewBox;
-  const [sx, sy, sw, sh] = device.shell.screenRect;
+  const [sx, sy, sw] = device.shell.screenRect;
   const unit = (device.widthPx * scale) / sw;
   return {
     svgWidth: vw * unit,

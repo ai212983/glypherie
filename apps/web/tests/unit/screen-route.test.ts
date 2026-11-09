@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  legacyScreenPath,
-  parseRoute,
-  resolveRoute,
-  screenPath,
-} from "../../src/app/navigation/router.ts";
+import { legacyScreenPath, parseRoute, resolveRoute, screenPath } from "../../src/app/navigation/router.ts";
 
 const IDS = ["aaa", "bbb"];
 
@@ -38,12 +33,13 @@ test("screen links drop snapshot state and keep foreign params", () => {
 });
 
 test("legacy scene routes canonicalize directly to the Screen route", () => {
+  // Scene selection no longer exists: legacy links open the implicit default
+  // and normalize to /screen/ without scene selection. Saved scene ids and
+  // snapshot state are dropped; foreign params and the hosting prefix survive.
   assert.equal(legacyScreenPath(null, ""), "/screen/");
   assert.equal(legacyScreenPath(null, "v=1&font=aaa&utm=keep"), "/screen/?utm=keep");
-  assert.equal(legacyScreenPath("abc", ""), "/screen/?scene=abc");
-  assert.equal(legacyScreenPath("abc", "utm=keep"), "/screen/?scene=abc&utm=keep");
-  assert.equal(
-    legacyScreenPath("abc", "v=1&font=aaa&utm=keep"),
-    "/screen/?scene=abc&utm=keep",
-  );
+  assert.equal(legacyScreenPath("abc", ""), "/screen/");
+  assert.equal(legacyScreenPath("abc", "utm=keep"), "/screen/?utm=keep");
+  assert.equal(legacyScreenPath("abc", "v=1&font=aaa&utm=keep"), "/screen/?utm=keep");
+  assert.equal(legacyScreenPath("abc", "scene=abc&utm=keep"), "/screen/?utm=keep");
 });

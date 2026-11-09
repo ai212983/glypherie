@@ -32,6 +32,7 @@ npm run dev             # Vite dev server (default port 8903; --port overrides)
 npm run build           # Vite production build into out/web/
 npm run preview         # Serve out/web/ on port 8904
 npm run typecheck       # Strict tsc over the app, scripts, and tests
+npm run lint            # Oxlint over the app, scripts, and tests
 npm test                # Node --test over tests/unit, tests/browser, tests/build
 npm run storybook       # Component explorer (default port 6006; --port overrides)
 npm run build-storybook # Static component explorer into out/storybook/

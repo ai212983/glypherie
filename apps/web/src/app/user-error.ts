@@ -10,18 +10,30 @@ export function userError(error: unknown, fallback: string): string {
   const code = error && typeof error === "object" && "code" in error ? error.code : undefined;
   const message = error instanceof Error ? error.message : "";
   switch (code) {
-    case "blocked": return "Storage is blocked. Close other Glypherie tabs and reload.";
-    case "quota-exceeded": return message.includes("variant")
-      ? "Browser storage is full. Remove a variant to free space."
-      : "Browser storage is full. Remove an imported font to free space.";
-    case "unavailable": return "Browser storage is unavailable.";
-    case "conflict": return "Another tab changed this variant.";
-    case "not-found": return "Variant not found.";
-    case "font-not-found": return "Font not found in this library.";
+    case "blocked":
+      return "Storage is blocked. Close other Glypherie tabs and reload.";
+    // Version skew is not proof that other tabs are open (a retained worker
+    // scope or stale cached bytes cause it alone), so this never names tabs.
+    case "stale-owner":
+      return "The background library and this page are different app versions. Apply the pending update and reload; if none is offered, fully quit and reopen the browser.";
+    case "quota-exceeded":
+      return message.includes("variant")
+        ? "Browser storage is full. Remove a variant to free space."
+        : "Browser storage is full. Remove an imported font to free space.";
+    case "unavailable":
+      return "Browser storage is unavailable.";
+    case "conflict":
+      return "Another tab changed this variant.";
+    case "not-found":
+      return "Variant not found.";
+    case "font-not-found":
+      return "Font not found in this library.";
     case "invalid-input":
       if (message.includes("names must be non-empty")) return "Enter a variant name.";
-      if (message.includes("names must stay within")) return `Use a name of ${VARIANT_NAME_MAX_LENGTH} characters or fewer.`;
+      if (message.includes("names must stay within"))
+        return `Use a name of ${VARIANT_NAME_MAX_LENGTH} characters or fewer.`;
       return fallback;
-    default: return fallback;
+    default:
+      return fallback;
   }
 }

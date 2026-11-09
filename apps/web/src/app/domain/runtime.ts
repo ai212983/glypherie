@@ -11,21 +11,40 @@
 
 import type { DomainBackend } from "./backend.ts";
 import { adoptOwnerWrite, broadcastOwnerWrite } from "./events.ts";
-import {
-  DOMAIN_PROTOCOL_VERSION,
-  DOMAIN_WORKER_NAME,
-  isOwnerStamp,
-} from "./protocol.ts";
+import { DOMAIN_PROTOCOL_VERSION, DOMAIN_WORKER_NAME, isOwnerStamp } from "./protocol.ts";
 
 export type DomainMethod =
-  | "saveFont" | "getFont" | "listFonts" | "updateFontMetadata" | "removeFont"
-  | "getSeedMarker" | "setSeedMarker"
-  | "createVariant" | "getVariant" | "listVariants" | "updateVariant" | "deleteVariant"
-  | "listPalettes" | "createPalette" | "updatePalette" | "deletePalette"
-  | "listTextStyles" | "listOutputProfiles" | "listScenes" | "getScene"
-  | "createScene" | "updateScene" | "deleteScene"
-  | "addSceneLabel" | "updateSceneLabel" | "removeSceneLabel" | "restoreSceneSnapshot"
-  | "resolveTextStyle" | "resolveTextStyles"
+  | "saveFont"
+  | "getFont"
+  | "listFonts"
+  | "updateFontMetadata"
+  | "removeFont"
+  | "getSeedMarker"
+  | "setSeedMarker"
+  | "createVariant"
+  | "getVariant"
+  | "listVariants"
+  | "updateVariant"
+  | "deleteVariant"
+  | "listPalettes"
+  | "createPalette"
+  | "updatePalette"
+  | "deletePalette"
+  | "listTextStyles"
+  | "listOutputProfiles"
+  | "listScenes"
+  | "getScene"
+  | "createScene"
+  | "ensureDefaultScene"
+  | "updateScene"
+  | "deleteScene"
+  | "addSceneLabel"
+  | "updateSceneLabel"
+  | "removeSceneLabel"
+  | "reorderSceneLabels"
+  | "restoreSceneSnapshot"
+  | "resolveTextStyle"
+  | "resolveTextStyles"
   | "importLegacySnapshot";
 
 /** Writes bump the domain version; reads never do (or subscribers loop). */
@@ -41,11 +60,13 @@ export const MUTATING_METHODS: ReadonlySet<DomainMethod> = new Set([
   "updatePalette",
   "deletePalette",
   "createScene",
+  "ensureDefaultScene",
   "updateScene",
   "deleteScene",
   "addSceneLabel",
   "updateSceneLabel",
   "removeSceneLabel",
+  "reorderSceneLabels",
   "restoreSceneSnapshot",
   "importLegacySnapshot",
 ]);
@@ -74,19 +95,39 @@ const OWNER_IMPORT_TIMEOUT_MS = 180_000;
  */
 const STARTUP_FAILURE_WINDOW_MS = 60_000;
 const STARTUP_RETRY_TIMEOUT_MS = 8_000;
+/**
+ * Pause before a fresh handshake after a version-skew rejection: the old
+ * scope needs a moment to terminate once our port drops, and the service
+ * worker needs a moment to notice the update check.
+ */
+const STALE_RECOVERY_PAUSE_MS = 1_500;
+const STALE_RECOVERY_TIMEOUT_MS = 4_000;
+/** Fresh handshakes attempted after the first stale-owner rejection. */
+const STALE_RECOVERY_ATTEMPTS = 2;
 
 let handshakeTimeoutMs = OWNER_HANDSHAKE_TIMEOUT_MS;
 let callTimeoutMs = OWNER_CALL_TIMEOUT_MS;
 let importTimeoutMs = OWNER_IMPORT_TIMEOUT_MS;
 let startupRetryTimeoutMs = STARTUP_RETRY_TIMEOUT_MS;
+let staleRecoveryPauseMs = STALE_RECOVERY_PAUSE_MS;
+let staleRecoveryTimeoutMs = STALE_RECOVERY_TIMEOUT_MS;
 let lastStartupFailureAt = 0;
 
 /** Test seam: shorten deadlines for lifecycle tests. */
-export function setTransportTimeoutsForTests(next: { handshakeMs?: number; callMs?: number; importMs?: number; startupRetryMs?: number }): void {
+export function setTransportTimeoutsForTests(next: {
+  handshakeMs?: number;
+  callMs?: number;
+  importMs?: number;
+  startupRetryMs?: number;
+  recoveryPauseMs?: number;
+  recoveryTimeoutMs?: number;
+}): void {
   if (next.handshakeMs !== undefined) handshakeTimeoutMs = next.handshakeMs;
   if (next.callMs !== undefined) callTimeoutMs = next.callMs;
   if (next.importMs !== undefined) importTimeoutMs = next.importMs;
   if (next.startupRetryMs !== undefined) startupRetryTimeoutMs = next.startupRetryMs;
+  if (next.recoveryPauseMs !== undefined) staleRecoveryPauseMs = next.recoveryPauseMs;
+  if (next.recoveryTimeoutMs !== undefined) staleRecoveryTimeoutMs = next.recoveryTimeoutMs;
 }
 
 let transport: DomainTransport | null = null;
@@ -96,26 +137,50 @@ let ownerPort: MessagePort | null = null;
 /** Owner generation: bumped on every (re)connect so late responses from a
  * dead transport can never settle a new transport's calls. */
 let generation = 0;
-let pending = new Map<number, {
-  generation: number;
-  resolve: (value: unknown) => void;
-  reject: (error: unknown) => void;
-  timer: ReturnType<typeof setTimeout>;
-}>();
+let pending = new Map<
+  number,
+  {
+    generation: number;
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }
+>();
 let nextCallId = 1;
 
 export function isNodeContext(): boolean {
   return typeof window === "undefined";
 }
 
+/** Version-skew discriminator carried on a stale-owner rejection. Owner
+ * generations that predate the worker diagnostics answer without them. */
+export interface StaleOwnerDetail {
+  tabProtocol: number;
+  ownerProtocol?: number;
+  ownerEpoch?: string;
+}
+
 function wrapError(error: unknown): Error {
   if (error instanceof Error) return error;
-  const failure = error as { code?: unknown; message?: unknown };
+  const failure = error as { code?: unknown; message?: unknown; protocol?: unknown; epoch?: unknown };
   const code = typeof failure?.code === "string" ? failure.code : "unavailable";
   const message = typeof failure?.message === "string" ? failure.message : String(error);
   const wrapped = new Error(message);
   (wrapped as { code?: unknown }).code = code;
+  // Preserve the owner-generation discriminator through the worker boundary;
+  // unrelated errors never carry these fields, so nothing else changes.
+  if (Number.isInteger(failure?.protocol)) (wrapped as { protocol?: unknown }).protocol = failure.protocol;
+  if (typeof failure?.epoch === "string" && failure.epoch !== "")
+    (wrapped as { epoch?: unknown }).epoch = failure.epoch;
   return wrapped;
+}
+
+/** Last version-skew observation, for diagnostics and update affordances. */
+let lastStaleDetail: StaleOwnerDetail | null = null;
+
+/** Test seam: read the last stale-owner observation. */
+export function getDomainOwnerDiagnostics(): StaleOwnerDetail | null {
+  return lastStaleDetail;
 }
 
 function errorWithCode(code: string, message: string): Error {
@@ -139,7 +204,10 @@ export function resetDomainTransportForTests(): void {
   callTimeoutMs = OWNER_CALL_TIMEOUT_MS;
   importTimeoutMs = OWNER_IMPORT_TIMEOUT_MS;
   startupRetryTimeoutMs = STARTUP_RETRY_TIMEOUT_MS;
+  staleRecoveryPauseMs = STALE_RECOVERY_PAUSE_MS;
+  staleRecoveryTimeoutMs = STALE_RECOVERY_TIMEOUT_MS;
   lastStartupFailureAt = 0;
+  lastStaleDetail = null;
   nextCallId = 1;
 }
 
@@ -173,10 +241,10 @@ function noteStartupFailure(error: unknown, ownerGeneration: number): void {
  * the transport in Node, where ErrorEvent does not exist). */
 function startupErrorMessage(event: unknown): string {
   if (
-    typeof ErrorEvent !== "undefined"
-    && event instanceof ErrorEvent
-    && typeof event.message === "string"
-    && event.message !== ""
+    typeof ErrorEvent !== "undefined" &&
+    event instanceof ErrorEvent &&
+    typeof event.message === "string" &&
+    event.message !== ""
   ) {
     return event.message;
   }
@@ -188,13 +256,15 @@ function startupErrorMessage(event: unknown): string {
  * and retries. Mutations are never retried automatically: a rejected mutation
  * may still have committed, so the caller decides (CAS guards make a manual
  * retry safe to surface). */
-function failOwner(error: unknown, ownerGeneration: number): void {
+function failOwner(error: unknown, ownerGeneration: number, preserveInitializing = false): void {
   if (ownerGeneration !== generation) return;
   const failure = error instanceof Error ? error : new Error(String(error));
   teardownOwner();
   generation += 1;
   transport = null;
-  initializing = null;
+  // A handshake retry loop fails each attempt internally but stays one
+  // logical initialization; only a terminal failure releases new callers.
+  if (!preserveInitializing) initializing = null;
   for (const entry of pending.values()) {
     clearTimeout(entry.timer);
     entry.reject(failure);
@@ -202,11 +272,15 @@ function failOwner(error: unknown, ownerGeneration: number): void {
   pending = new Map();
 }
 
-function settlePending(id: number, generationAtSend: number, settle: (entry: {
-  resolve: (value: unknown) => void;
-  reject: (error: unknown) => void;
-  timer: ReturnType<typeof setTimeout>;
-}) => void): void {
+function settlePending(
+  id: number,
+  generationAtSend: number,
+  settle: (entry: {
+    resolve: (value: unknown) => void;
+    reject: (error: unknown) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }) => void,
+): void {
   const entry = pending.get(id);
   // A response from a dead generation never settles the new transport.
   if (!entry || entry.generation !== generationAtSend) return;
@@ -265,17 +339,14 @@ function rejectAfterTimeout(id: number, timeoutMs: number, method: string): Retu
     // A hung owner is suspect as a whole: fail the transport so every
     // pending call rejects cleanly and the next call reconnects. The mutation
     // itself is not retried: its commit outcome is unknown to this tab.
-    failOwner(errorWithCode(
-      "unavailable",
-      `The domain owner did not answer "${method}" in time. Retry the action.`,
-    ), entry.generation);
+    failOwner(
+      errorWithCode("unavailable", `The domain owner did not answer "${method}" in time. Retry the action.`),
+      entry.generation,
+    );
   }, timeoutMs);
 }
 
-function ownerTransport(
-  send: (message: unknown) => void,
-  ownerGeneration: number,
-): DomainTransport {
+function ownerTransport(send: (message: unknown) => void, ownerGeneration: number): DomainTransport {
   return {
     call(method: DomainMethod, params: unknown[]): Promise<unknown> {
       if (ownerGeneration !== generation) {
@@ -297,25 +368,86 @@ function ownerTransport(
 }
 
 /**
+ * Read the owner-generation discriminator off a version-skew rejection.
+ * Generations that predate the worker diagnostics carry neither field.
+ */
+function ownerSignalOf(error: unknown): { ownerProtocol?: number; ownerEpoch?: string } {
+  const signal = error as { protocol?: unknown; epoch?: unknown };
+  return {
+    ...(Number.isInteger(signal?.protocol) ? { ownerProtocol: signal.protocol as number } : {}),
+    ...(typeof signal?.epoch === "string" && signal.epoch !== "" ? { ownerEpoch: signal.epoch } : {}),
+  };
+}
+
+function isStaleOwner(error: unknown): boolean {
+  return error instanceof Error && (error as { code?: unknown }).code === "stale-owner";
+}
+
+/** Shared recovery copy for the stale-owner rejection; import it through the domain/scenes service seam instead of duplicating it. */
+export const STALE_OWNER_RECOVERY_MESSAGE =
+  "The background library and this page are different app versions. Apply the pending app update and reload; " +
+  "if no update is offered, fully quit and reopen the browser, then reload.";
+
+/**
+ * Honest version-skew rejection. A mismatched owner is an older (or newer)
+ * app generation still running in this browser — a retained worker scope or
+ * stale cached worker bytes — not proof that other tabs are open, so the
+ * copy never asserts that. The wire versions stay in the detail record and
+ * the console, never in the product message.
+ */
+function staleOwnerError(detail: StaleOwnerDetail): Error {
+  lastStaleDetail = detail;
+  console.warn("Domain owner version skew; attempting recovery.", detail);
+  const error = errorWithCode("stale-owner", STALE_OWNER_RECOVERY_MESSAGE);
+  (error as { protocol?: unknown }).protocol = detail.ownerProtocol;
+  (error as { epoch?: unknown }).epoch = detail.ownerEpoch;
+  (error as { detail?: unknown }).detail = detail;
+  return error;
+}
+
+/**
  * Map a handshake rejection from a pre-protocol owner (it answers the
  * version probe with unknown-method): the live owner belongs to an older app
- * generation, so closing the other tabs and retrying is the recovery — the
- * same remedy as a refused single-owner lease.
+ * generation, so recovering onto a fresh owner is the remedy — the same
+ * remedy as a refused single-owner lease, but without blaming other tabs.
  */
 function mapHandshakeError(error: unknown): Error {
-  // Only the pre-protocol unknown-method answer maps here: a timeout on the
-  // handshake itself is a dead owner, not a stale one, and keeps its
-  // unavailable code so the UI reports plainly instead of naming tabs.
+  // Only version-skew answers map here: a timeout on the handshake itself is
+  // a dead owner, not a stale one, and keeps its unavailable code so the UI
+  // reports plainly instead of naming tabs.
   if (
-    error instanceof Error
-    && (error as { code?: unknown }).code === "unavailable"
-    && error.message.includes('"__protocol"')
-    && error.message.includes("Unknown domain method")
+    error instanceof Error &&
+    (error as { code?: unknown }).code === "unavailable" &&
+    error.message.includes('"__protocol"') &&
+    error.message.includes("Unknown domain method")
   ) {
-    return errorWithCode(
-      "blocked",
-      "This tab needs a fresh domain owner. Close other Glypherie tabs, then reload to retry.",
-    );
+    return staleOwnerError({ tabProtocol: DOMAIN_PROTOCOL_VERSION });
+  }
+  if (
+    error instanceof Error &&
+    (error as { code?: unknown }).code === "blocked" &&
+    error.message.includes("needs a fresh domain owner")
+  ) {
+    const signal = ownerSignalOf(error);
+    return staleOwnerError({ tabProtocol: DOMAIN_PROTOCOL_VERSION, ...signal });
+  }
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+/**
+ * Map a rejected call for a command the live owner never implemented. The
+ * owner answers unknown commands with an unavailable unknown-method error;
+ * when the rejected name is the command just sent, the owner belongs to an
+ * older app generation (for example a pre-reorder worker) — never the raw
+ * method internals.
+ */
+function mapUnknownMethodError(method: DomainMethod, error: unknown): Error {
+  if (
+    error instanceof Error &&
+    (error as { code?: unknown }).code === "unavailable" &&
+    error.message.includes(`Unknown domain method "${method}"`)
+  ) {
+    return staleOwnerError({ tabProtocol: DOMAIN_PROTOCOL_VERSION });
   }
   return error instanceof Error ? error : new Error(String(error));
 }
@@ -360,10 +492,14 @@ function createOwner(): { transport: DomainTransport; generation: number } {
       const port = shared.port;
       ownerPort = port;
       port.onmessage = handle;
-      port.onmessageerror = (event) => failOwner(event instanceof Error ? event : new Error("Domain channel failed."), ownerGeneration);
+      port.onmessageerror = (event) =>
+        failOwner(event instanceof Error ? event : new Error("Domain channel failed."), ownerGeneration);
       shared.onerror = (event) => noteStartupFailure(new Error(startupErrorMessage(event)), ownerGeneration);
       port.start();
-      return { transport: ownerTransport((message) => port.postMessage(message), ownerGeneration), generation: ownerGeneration };
+      return {
+        transport: ownerTransport((message) => port.postMessage(message), ownerGeneration),
+        generation: ownerGeneration,
+      };
     }
   } catch (error) {
     throw constructionError(error);
@@ -373,10 +509,63 @@ function createOwner(): { transport: DomainTransport; generation: number } {
   active.onmessage = handle;
   active.onerror = (event) => noteStartupFailure(new Error(`Domain worker failed: ${event.message}`), ownerGeneration);
   active.onmessageerror = () => failOwner(new Error("Domain channel failed."), ownerGeneration);
-  return { transport: ownerTransport((message) => active.postMessage(message), ownerGeneration), generation: ownerGeneration };
+  return {
+    transport: ownerTransport((message) => active.postMessage(message), ownerGeneration),
+    generation: ownerGeneration,
+  };
 }
 
-async function startBrowserDomain(): Promise<DomainTransport> {
+/** Same-tab notice when a version-skewed owner blocks boot. The shell
+ * listens and turns it into an update check; the prompt-update policy
+ * (explicit Update, never auto-apply) is unchanged. */
+export const DOMAIN_OWNER_STALE_EVENT = "glypherie:domain-owner-stale";
+
+function announceStaleOwner(): void {
+  try {
+    if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(new CustomEvent(DOMAIN_OWNER_STALE_EVENT));
+    }
+  } catch {
+    // Best-effort notice only; the rejection below still surfaces.
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Bounded service-worker update check after a version-skew rejection. The old
+ * scope keeps serving until the shell's explicit Update is applied and tabs
+ * reload, so this never writes precache entries itself: a refetch cannot
+ * change the running SharedWorker, and pretending otherwise would mask the
+ * skew. The check has its own deadline so update work cannot strand the
+ * transport; a late completion changes nothing.
+ */
+async function checkForStaleOwnerUpdate(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      (async (): Promise<void> => {
+        try {
+          const registration =
+            typeof navigator !== "undefined" ? await navigator.serviceWorker?.getRegistration() : undefined;
+          await registration?.update();
+        } catch {
+          // Offline or uncontrolled: the next handshake reports honestly, and
+          // the shell's own update check covers this path too.
+        }
+      })().catch(() => undefined),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, staleRecoveryTimeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+async function attemptHandshake(): Promise<DomainTransport> {
   const { transport: candidate, generation: candidateGeneration } = createOwner();
   const handshakeId = nextCallId++;
   // A recent startup failure means this construction likely joins the same
@@ -393,7 +582,9 @@ async function startBrowserDomain(): Promise<DomainTransport> {
       pending.set(handshakeId, { generation: candidateGeneration, resolve, reject, timer });
       try {
         if (!ownerPort && !(owner instanceof Worker)) throw new Error("Domain owner has no channel.");
-        const send = ownerPort ? (message: unknown): void => ownerPort?.postMessage(message) : (message: unknown): void => (owner as Worker).postMessage(message);
+        const send = ownerPort
+          ? (message: unknown): void => ownerPort?.postMessage(message)
+          : (message: unknown): void => (owner as Worker).postMessage(message);
         send({ id: handshakeId, method: "__protocol", params: [DOMAIN_PROTOCOL_VERSION] });
       } catch (error) {
         settlePending(handshakeId, candidateGeneration, (entry) => entry.reject(constructionError(error)));
@@ -401,15 +592,44 @@ async function startBrowserDomain(): Promise<DomainTransport> {
     });
     // An answered handshake proves the scope is healthy: clear any startup
     // latch so later attempts get the full cold-boot budget again.
-    if (candidateGeneration !== generation) throw errorWithCode("unavailable", "The domain connection has closed. Retry the action.");
+    if (candidateGeneration !== generation)
+      throw errorWithCode("unavailable", "The domain connection has closed. Retry the action.");
     lastStartupFailureAt = 0;
     return candidate;
   } catch (error) {
     // A failed handshake owns nothing usable: drop it so the next call
-    // reconnects from scratch (for example after the owning tab closes).
+    // reconnects from scratch (for example after the owning tab closes). The
+    // retry loop below preserves the shared initialization across attempts.
     const mapped = mapHandshakeError(error);
-    failOwner(mapped, candidateGeneration);
+    failOwner(mapped, candidateGeneration, true);
     throw mapped;
+  }
+}
+
+/**
+ * Browser handshake with bounded version-skew recovery. The first stale
+ * rejection drops our port (so a retained scope can terminate), unpoisons
+ * stale cached worker bytes, and retries with a fresh scope; a retry that
+ * rejoins the same owner epoch stops immediately instead of spinning, and
+ * only a successful handshake returns a transport. Dead owners (timeouts,
+ * startup failures) never enter this path: they throw on the first attempt.
+ */
+async function startBrowserDomain(): Promise<DomainTransport> {
+  let remaining = STALE_RECOVERY_ATTEMPTS;
+  let lastEpoch: string | undefined;
+  for (;;) {
+    try {
+      return await attemptHandshake();
+    } catch (error) {
+      if (!isStaleOwner(error) || remaining <= 0) throw error;
+      const signal = ownerSignalOf(error);
+      if (signal.ownerEpoch !== undefined && signal.ownerEpoch === lastEpoch) throw error;
+      lastEpoch = signal.ownerEpoch ?? lastEpoch;
+      remaining -= 1;
+      announceStaleOwner();
+      await checkForStaleOwnerUpdate();
+      await delay(staleRecoveryPauseMs);
+    }
   }
 }
 
@@ -426,7 +646,8 @@ export async function initBrowserDomain(): Promise<DomainTransport> {
   if (isNodeContext()) throw new Error("initBrowserDomain() needs a browser window; use node-backend in Node.");
   const attempt = startBrowserDomain().then(
     (ready) => {
-      if (initializing !== attempt) throw errorWithCode("unavailable", "The domain connection has closed. Retry the action.");
+      if (initializing !== attempt)
+        throw errorWithCode("unavailable", "The domain connection has closed. Retry the action.");
       transport = ready;
       initializing = null;
       return ready;
@@ -457,7 +678,13 @@ export function isBrowserTransport(): boolean {
  */
 export async function callDomain(method: DomainMethod, params: unknown[]): Promise<unknown> {
   const active = transport ?? (!isNodeContext() ? await initBrowserDomain() : null);
-  if (active) return active.call(method, params);
+  if (active) {
+    try {
+      return await active.call(method, params);
+    } catch (error) {
+      throw mapUnknownMethodError(method, error);
+    }
+  }
   const [{ ensureNodeBackend }, commands, { importLegacySnapshot }] = await Promise.all([
     import("./node-backend.ts"),
     import("./commands.ts"),
@@ -475,9 +702,11 @@ export async function callDomain(method: DomainMethod, params: unknown[]): Promi
   try {
     const result = await target(await ensureNodeBackend(), ...params);
     if (MUTATING_METHODS.has(method)) {
-      const skippedImport = method === "importLegacySnapshot"
-        && typeof result === "object" && result !== null
-        && (result as { skipped?: unknown }).skipped === true;
+      const skippedImport =
+        method === "importLegacySnapshot" &&
+        typeof result === "object" &&
+        result !== null &&
+        (result as { skipped?: unknown }).skipped === true;
       if (!skippedImport) {
         const { notifyDomainWrite } = await import("./events.ts");
         notifyDomainWrite();

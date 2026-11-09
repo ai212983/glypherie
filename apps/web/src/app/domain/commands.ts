@@ -8,10 +8,7 @@
 // are plain structured-cloneable in/out so the browser worker can expose this
 // surface over postMessage without serializing store callbacks.
 
-import {
-  MONOCHROME,
-  type PalettePreset,
-} from "../palettes/model.ts";
+import { MONOCHROME, type PaletteEdit, type PalettePreset } from "../palettes/model.ts";
 import {
   currentPreviewSettings,
   defaultVariantSettings,
@@ -23,10 +20,16 @@ import {
 import { cloneKerning } from "../kerning/model.ts";
 import { sql } from "drizzle-orm";
 import { PREVIEW_MONO_RASTER, TEXT_DEFAULT } from "../renderer/render-spec.ts";
-import { linearCurve, type GrayCurve } from "../features/grayscale/response-curve.ts";
+import {
+  editCurveLevel,
+  linearCurve,
+  pinCurveLevel,
+  resizeCurve,
+  unpinCurveLevel,
+  type GrayCurve,
+} from "../features/grayscale/response-curve.ts";
 import type { FontMetadata, FontSource, StoredFont } from "../fonts/storage.ts";
 import {
-  binaryLength,
   deleteBinary,
   kvGet,
   kvPut,
@@ -54,10 +57,7 @@ import {
   resolveOutputProfileIn,
   writePrefsIn,
 } from "./variant-plan.ts";
-import type {
-  DomainOutputProfileView,
-  DomainTextStyleView,
-} from "./types.ts";
+import type { DomainOutputProfileView, DomainTextStyleView } from "./types.ts";
 
 import { DomainError } from "./errors.ts";
 
@@ -110,8 +110,7 @@ function checkFontInput(input: SaveFontInput): { bytes: Uint8Array } {
   // Type-guard first: converting before the check allocates
   // attacker-sized buffers for numeric input and throws raw RangeErrors for
   // negative lengths instead of the domain's invalid-input failure.
-  const raw: unknown =
-    input !== null && typeof input === "object" ? (input as { bytes?: unknown }).bytes : undefined;
+  const raw: unknown = input !== null && typeof input === "object" ? (input as { bytes?: unknown }).bytes : undefined;
   if (!(raw instanceof ArrayBuffer) && !(raw instanceof Uint8Array)) {
     throw new DomainError("invalid-input", "Stored fonts need byte content.");
   }
@@ -178,7 +177,13 @@ export async function saveFont(backend: DomainBackend, input: SaveFontInput): Pr
       return { ...existing, source: "uploaded" as FontSource };
     }
     const created = await tx.nodes.Font.create(
-      { name: input.name, fileName: input.fileName, metadata: input.metadata as never, source: input.source, addedAt: now() },
+      {
+        name: input.name,
+        fileName: input.fileName,
+        metadata: input.metadata as never,
+        source: input.source,
+        addedAt: now(),
+      },
       { id },
     );
     return {
@@ -199,7 +204,11 @@ export async function getFont(backend: DomainBackend, id: string): Promise<Store
 }
 
 export async function listFonts(backend: DomainBackend): Promise<StoredFont[]> {
-  const rows = await backend.store.query().from("Font", "f").select((ctx) => ctx.f).execute();
+  const rows = await backend.store
+    .query()
+    .from("Font", "f")
+    .select((ctx) => ctx.f)
+    .execute();
   const nodes = [...rows]
     .map((row) => ({
       id: String(row.id),
@@ -215,11 +224,7 @@ export async function listFonts(backend: DomainBackend): Promise<StoredFont[]> {
   return fonts;
 }
 
-export async function updateFontMetadata(
-  backend: DomainBackend,
-  id: string,
-  metadata: FontMetadata,
-): Promise<void> {
+export async function updateFontMetadata(backend: DomainBackend, id: string, metadata: FontMetadata): Promise<void> {
   await backend.store.transaction(async (tx) => {
     const existing = await tx.nodes.Font.getById(id as never).catch(() => undefined);
     if (!existing) return;
@@ -227,10 +232,7 @@ export async function updateFontMetadata(
   });
 }
 
-async function sceneNamesPlacing(
-  store: Store,
-  labelIds: readonly string[],
-): Promise<string[]> {
+async function sceneNamesPlacing(store: Store, labelIds: readonly string[]): Promise<string[]> {
   const names = new Set<string>();
   for (const labelId of labelIds) {
     const label = await store.nodes.Label.getById(labelId as never).catch(() => undefined);
@@ -265,7 +267,10 @@ export async function removeFont(backend: DomainBackend, id: string): Promise<vo
         }
         const labels = await tx.edges.styledAs.findTo(style);
         if (labels.length > 0) {
-          const scenes = await sceneNamesPlacing(tx as unknown as Store, labels.map((edge) => String(edge.fromId)));
+          const scenes = await sceneNamesPlacing(
+            tx as unknown as Store,
+            labels.map((edge) => String(edge.fromId)),
+          );
           throw new DomainError(
             "referenced",
             `Refusing to remove a font whose text styles are used by labels${scenes.length > 0 ? ` in ${scenes.join(", ")}` : ""}.`,
@@ -291,6 +296,23 @@ export async function removeFont(backend: DomainBackend, id: string): Promise<vo
         await tx.edges.variantOf.delete(variantEdge.id);
         await tx.nodes.FontVariant.hardDelete(variant.id);
       }
+    }
+    // Direct labels reference the font with no text style in between; a font
+    // backing one is as pinned as a font behind a saved variant.
+    const labelRows = await tx
+      .query()
+      .from("Label", "l")
+      .select((ctx) => ctx.l)
+      .execute();
+    const directLabelIds = labelRows
+      .filter((row) => (row as unknown as Record<string, unknown>).fontId === id)
+      .map((row) => String(row.id));
+    if (directLabelIds.length > 0) {
+      const scenes = await sceneNamesPlacing(tx as unknown as Store, directLabelIds);
+      throw new DomainError(
+        "referenced",
+        `Refusing to remove a font used by direct labels${scenes.length > 0 ? ` in ${scenes.join(", ")}` : ""}.`,
+      );
     }
     await tx.nodes.Font.hardDelete(font.id);
     removals.binaries.push(id);
@@ -322,12 +344,19 @@ function resolveCreationSettings(input: VariantInput, fontId: string, metadata: 
   try {
     validateVariantSettings(settings, metadata);
   } catch (error) {
-    throw new DomainError("invalid-settings", error instanceof Error ? error.message : "Invalid variant settings.", { cause: error });
+    throw new DomainError("invalid-settings", error instanceof Error ? error.message : "Invalid variant settings.", {
+      cause: error,
+    });
   }
   try {
-    validateVariantSampleText(input.sampleText ?? TEXT_DEFAULT, input.inheritSampleText ?? input.sampleText === undefined);
+    validateVariantSampleText(
+      input.sampleText ?? TEXT_DEFAULT,
+      input.inheritSampleText ?? input.sampleText === undefined,
+    );
   } catch (error) {
-    throw new DomainError("invalid-input", error instanceof Error ? error.message : "Invalid variant input.", { cause: error });
+    throw new DomainError("invalid-input", error instanceof Error ? error.message : "Invalid variant input.", {
+      cause: error,
+    });
   }
   return settings;
 }
@@ -347,8 +376,9 @@ async function publishCreationPrefs(
   input: VariantInput,
   settings: VariantSettings,
 ): Promise<void> {
-  const output = await outputProfileByLegacyId(txStore, settings.paletteId ?? MONOCHROME.id)
-    ?? await resolveOutputProfileIn(txStore, undefined);
+  const output =
+    (await outputProfileByLegacyId(txStore, settings.paletteId ?? MONOCHROME.id)) ??
+    (await resolveOutputProfileIn(txStore, undefined));
   await writePrefsIn(txAux, styleId, {
     sampleText: input.sampleText ?? TEXT_DEFAULT,
     inheritSampleText: input.inheritSampleText ?? input.sampleText === undefined,
@@ -391,8 +421,13 @@ async function insertVariantGraph(
   return String(styleNode.id);
 }
 
-export async function createVariant(backend: DomainBackend, fontId: string, input: VariantInput = {}): Promise<FontVariant> {
-  if (!input || typeof input !== "object" || Array.isArray(input)) failInvalid("Variant creation needs an input object.");
+export async function createVariant(
+  backend: DomainBackend,
+  fontId: string,
+  input: VariantInput = {},
+): Promise<FontVariant> {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    failInvalid("Variant creation needs an input object.");
   if (input.name !== undefined) checkVariantName(input.name);
   return withAtomicDomain(backend, async (txStore, txAux) => {
     const font = await txStore.nodes.Font.getById(fontId as never).catch(() => undefined);
@@ -401,7 +436,8 @@ export async function createVariant(backend: DomainBackend, fontId: string, inpu
     const settings = resolveCreationSettings(input, fontId, metadata);
     const name = await resolveCreationName(txStore, font, input);
     const createdId = await txStore.transaction(async (txNodes) =>
-      insertVariantGraph(txNodes as unknown as Store, font, name, settings, now()));
+      insertVariantGraph(txNodes as unknown as Store, font, name, settings, now()),
+    );
     await publishCreationPrefs(txStore, txAux, createdId, input, settings);
     // Assembled inside the same transaction: the return view shares the
     // snapshot with the writes it reports.
@@ -449,12 +485,18 @@ export async function deleteVariant(backend: DomainBackend, id: string, expected
   await backend.store.transaction(async (tx) => {
     const style = await tx.nodes.TextStyle.getById(id as never).catch(() => undefined);
     if (!style) throw new DomainError("not-found", `Variant "${id}" does not exist.`);
-    if (expectedRevision !== undefined && Number((style as unknown as Record<string, unknown>).revision) !== expectedRevision) {
+    if (
+      expectedRevision !== undefined &&
+      Number((style as unknown as Record<string, unknown>).revision) !== expectedRevision
+    ) {
       throw new DomainError("conflict", `Variant "${id}" changed underneath this delete.`);
     }
     const labels = await tx.edges.styledAs.findTo(style);
     if (labels.length > 0) {
-      const scenes = await sceneNamesPlacing(tx as unknown as Store, labels.map((edge) => String(edge.fromId)));
+      const scenes = await sceneNamesPlacing(
+        tx as unknown as Store,
+        labels.map((edge) => String(edge.fromId)),
+      );
       throw new DomainError(
         "referenced",
         `Refusing to delete a variant used by labels${scenes.length > 0 ? ` in ${scenes.join(", ")}` : ""}.`,
@@ -493,7 +535,11 @@ export async function deleteVariant(backend: DomainBackend, id: string, expected
 // ---- Output profiles (numeric-identity facade over graph nodes) ----
 
 export async function listPalettes(backend: DomainBackend): Promise<PalettePreset[]> {
-  const rows = await backend.store.query().from("OutputProfile", "o").select((ctx) => ctx.o).execute();
+  const rows = await backend.store
+    .query()
+    .from("OutputProfile", "o")
+    .select((ctx) => ctx.o)
+    .execute();
   return [...rows]
     .map((row) => {
       const record = row as unknown as Record<string, unknown>;
@@ -501,6 +547,7 @@ export async function listPalettes(backend: DomainBackend): Promise<PalettePrese
         id: typeof record.legacyPaletteId === "number" ? record.legacyPaletteId : -1,
         name: String(record.name),
         curve: (record.curve as GrayCurve).map((level) => ({ ...level })),
+        revision: Number(record.revision),
       };
     })
     .filter((preset) => preset.id >= 0)
@@ -512,7 +559,11 @@ export async function createPalette(backend: DomainBackend): Promise<number> {
   // one atomic statement on the single-owner engine, so concurrent creators
   // serialize on the row lock and deleted IDs are never reissued. A
   // reservation whose graph write then fails leaves a gap, not a duplicate.
-  const before = await backend.store.query().from("OutputProfile", "o").select((ctx) => ctx.o).execute();
+  const before = await backend.store
+    .query()
+    .from("OutputProfile", "o")
+    .select((ctx) => ctx.o)
+    .execute();
   let max = -1;
   for (const row of before) {
     const legacyId = (row as unknown as Record<string, unknown>).legacyPaletteId;
@@ -521,7 +572,11 @@ export async function createPalette(backend: DomainBackend): Promise<number> {
   const id = await reserveLegacyPaletteId(backend.db, max + 1);
   const stamp = now();
   await backend.store.transaction(async (tx) => {
-    const live = await tx.query().from("OutputProfile", "o").select((ctx) => ctx.o).execute();
+    const live = await tx
+      .query()
+      .from("OutputProfile", "o")
+      .select((ctx) => ctx.o)
+      .execute();
     if (live.some((row) => (row as unknown as Record<string, unknown>).legacyPaletteId === id)) {
       throw new DomainError("conflict", `Palette ${id} was created concurrently; retry the addition.`);
     }
@@ -540,8 +595,13 @@ export async function createPalette(backend: DomainBackend): Promise<number> {
 // One gray level is valid when its value sits in the 8-bit range and its
 // slope is finite; curve shape (length, pinned ends) is checked separately.
 function isCurveLevelValid(level: GrayCurve[number]): boolean {
-  return Number.isFinite(level.value) && level.value >= 0 && level.value <= 255 &&
-    Number.isFinite(level.slope) && typeof level.pinned === "boolean";
+  return (
+    Number.isFinite(level.value) &&
+    level.value >= 0 &&
+    level.value <= 255 &&
+    Number.isFinite(level.slope) &&
+    typeof level.pinned === "boolean"
+  );
 }
 
 function checkPaletteName(name: string): void {
@@ -552,8 +612,7 @@ function checkPaletteName(name: string): void {
 
 function checkPaletteCurve(curve: GrayCurve): void {
   const valid: readonly number[] = [2, 4, 8, 16];
-  if (!valid.includes(curve.length) || !curve[0]?.pinned || !curve.at(-1)?.pinned ||
-    !curve.every(isCurveLevelValid)) {
+  if (!valid.includes(curve.length) || !curve[0]?.pinned || !curve.at(-1)?.pinned || !curve.every(isCurveLevelValid)) {
     throw new DomainError("invalid-settings", "Invalid palette preset.");
   }
 }
@@ -563,26 +622,131 @@ function checkPalettePreset(name: string, curve: GrayCurve): void {
   checkPaletteCurve(curve);
 }
 
-export async function updatePalette(
-  backend: DomainBackend,
+function checkPaletteEditDepth(depth: unknown, live: number, id: number): void {
+  if (!Number.isInteger(depth)) {
+    throw new DomainError("invalid-input", "Palette edits need an integer expected depth.");
+  }
+  if (depth !== live) {
+    throw new DomainError(
+      "conflict",
+      `Palette ${id} changed underneath this edit (expected depth ${depth as number}, live depth ${live}).`,
+    );
+  }
+}
+
+function checkPaletteEditIndex(index: unknown, depth: number): number {
+  if (!Number.isInteger(index) || (index as number) < 0 || (index as number) >= depth) {
+    throw new DomainError("invalid-input", `Palette level index ${String(index)} is outside 0..${depth - 1}.`);
+  }
+  return index as number;
+}
+
+function checkPaletteEditValue(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > 255) {
+    throw new DomainError("invalid-input", `Palette level values must be numbers within 0..255, got ${String(value)}.`);
+  }
+  return value;
+}
+
+function checkResizeCount(count: unknown): number {
+  if (![2, 4, 8, 16].includes(count as number)) {
+    throw new DomainError("invalid-input", `Palette depths must be one of 2, 4, 8 or 16 levels, got ${String(count)}.`);
+  }
+  return count as number;
+}
+
+export type { PaletteEdit };
+
+function checkPaletteReplaceRevision(expected: unknown, revision: number, id: number): void {
+  if (!Number.isInteger(expected)) {
+    throw new DomainError("invalid-input", "Palette replacement needs an integer expected revision.");
+  }
+  if (revision !== expected) {
+    throw new DomainError(
+      "conflict",
+      `Palette "${id}" changed underneath this edit (expected revision ${expected as number}).`,
+    );
+  }
+}
+
+function checkPaletteReplaceCurve(curve: unknown): GrayCurve {
+  if (!Array.isArray(curve)) {
+    throw new DomainError("invalid-input", "Palette replacement needs an array of curve levels.");
+  }
+  return (curve as GrayCurve).map((level) => ({ ...level }));
+}
+
+// Pure application of one semantic edit to the latest draft: boundary checks
+// first, then an existing curve operation. The owner transaction keeps the
+// latest-row read, this application, the preset validation and the revision
+// bump together.
+function applyPaletteEdit(
+  edit: PaletteEdit,
+  draft: { name: string; curve: GrayCurve },
   id: number,
-  change: { name?: string; curve?: GrayCurve },
-): Promise<void> {
+  revision: number,
+): { name: string; curve: GrayCurve } {
+  switch (edit.kind) {
+    case "rename":
+      checkPaletteName(edit.name);
+      return { ...draft, name: edit.name };
+    case "setLevel":
+      checkPaletteEditDepth(edit.depth, draft.curve.length, id);
+      return {
+        ...draft,
+        curve: editCurveLevel(
+          draft.curve,
+          checkPaletteEditIndex(edit.index, draft.curve.length),
+          checkPaletteEditValue(edit.value),
+        ),
+      };
+    case "pinLevel":
+      checkPaletteEditDepth(edit.depth, draft.curve.length, id);
+      return { ...draft, curve: pinCurveLevel(draft.curve, checkPaletteEditIndex(edit.index, draft.curve.length)) };
+    case "unpinLevel":
+      checkPaletteEditDepth(edit.depth, draft.curve.length, id);
+      return { ...draft, curve: unpinCurveLevel(draft.curve, checkPaletteEditIndex(edit.index, draft.curve.length)) };
+    case "resize":
+      return { ...draft, curve: resizeCurve(draft.curve, checkResizeCount(edit.count)) };
+    case "replace":
+      checkPaletteReplaceRevision(edit.expectedRevision, revision, id);
+      return { ...draft, curve: checkPaletteReplaceCurve(edit.curve) };
+    default:
+      throw new DomainError("invalid-input", `Unknown palette edit "${String((edit as { kind?: unknown }).kind)}".`);
+  }
+}
+
+export async function updatePalette(backend: DomainBackend, id: number, edit: PaletteEdit): Promise<void> {
   if (id === MONOCHROME.id) throw new DomainError("invalid-input", "Monochrome is read-only.");
+  if (!edit || typeof edit !== "object" || typeof (edit as { kind?: unknown }).kind !== "string") {
+    throw new DomainError("invalid-input", "Palette updates need a semantic edit.");
+  }
+  // One owner transaction reads the latest row, applies the pure edit, and
+  // persists: concurrent edits from any tab serialize here, so independent
+  // levels compose and stale depths fail visibly.
   await backend.store.transaction(async (tx) => {
-    const rows = await tx.query().from("OutputProfile", "o").select((ctx) => ctx.o).execute();
+    const rows = await tx
+      .query()
+      .from("OutputProfile", "o")
+      .select((ctx) => ctx.o)
+      .execute();
     const row = [...rows].find((candidate) => (candidate as unknown as Record<string, unknown>).legacyPaletteId === id);
     if (!row) throw new DomainError("not-found", "This palette was deleted. Select another preset.");
     const record = row as unknown as Record<string, unknown>;
-    const curve = change.curve ?? (record.curve as GrayCurve);
-    const next = {
-      name: change.name ?? String(record.name),
-      curve: curve.map((level) => ({ ...level })),
-      revision: Number(record.revision) + 1,
+    const revision = Number(record.revision);
+    const applied = applyPaletteEdit(
+      edit,
+      { name: String(record.name), curve: (record.curve as GrayCurve).map((level) => ({ ...level })) },
+      id,
+      revision,
+    );
+    checkPalettePreset(applied.name, applied.curve);
+    await tx.nodes.OutputProfile.update(row.id, {
+      name: applied.name,
+      curve: applied.curve.map((level) => ({ ...level })),
+      revision: revision + 1,
       updatedAt: now(),
-    };
-    checkPalettePreset(next.name, next.curve);
-    await tx.nodes.OutputProfile.update(row.id, next);
+    });
   });
 }
 
@@ -590,7 +754,11 @@ export async function updatePalette(
 // in the same transaction: a failed repoint rolls back the deletion.
 async function findPaletteAffectedStyles(txStore: Store, txAux: AuxDb, profileId: string): Promise<string[]> {
   const affected: string[] = [];
-  const styles = await txStore.query().from("TextStyle", "s").select((ctx) => ctx.s).execute();
+  const styles = await txStore
+    .query()
+    .from("TextStyle", "s")
+    .select((ctx) => ctx.s)
+    .execute();
   for (const style of styles) {
     const prefs = await readPrefsIn(txAux, String(style.id));
     if (prefs?.outputProfileId === profileId) affected.push(String(style.id));
@@ -613,7 +781,11 @@ export async function deletePalette(backend: DomainBackend, id: number): Promise
   if (id === MONOCHROME.id) throw new DomainError("invalid-input", "Monochrome is read-only.");
   const stamp = now();
   await withAtomicDomain(backend, async (txStore, txAux) => {
-    const rows = await txStore.query().from("OutputProfile", "o").select((ctx) => ctx.o).execute();
+    const rows = await txStore
+      .query()
+      .from("OutputProfile", "o")
+      .select((ctx) => ctx.o)
+      .execute();
     const row = [...rows].find((candidate) => (candidate as unknown as Record<string, unknown>).legacyPaletteId === id);
     if (!row) throw new DomainError("not-found", "This palette was deleted. Select another preset.");
     const scenes = await txStore.edges.defaultOutput.findTo(row);
@@ -651,18 +823,24 @@ export {
   listScenes,
   getScene,
   createScene,
+  ensureDefaultScene,
   updateScene,
   deleteScene,
   addSceneLabel,
   updateSceneLabel,
   removeSceneLabel,
+  reorderSceneLabels,
   restoreSceneSnapshot,
 } from "./scene-commands.ts";
 
 // ---- Text styles and output profiles ----
 
 export async function listTextStyles(backend: DomainBackend): Promise<DomainTextStyleView[]> {
-  const rows = await backend.store.query().from("TextStyle", "s").select((ctx) => ctx.s).execute();
+  const rows = await backend.store
+    .query()
+    .from("TextStyle", "s")
+    .select((ctx) => ctx.s)
+    .execute();
   const views: DomainTextStyleView[] = [];
   for (const row of rows) {
     const record = row as unknown as Record<string, unknown>;
@@ -687,7 +865,11 @@ export async function listTextStyles(backend: DomainBackend): Promise<DomainText
 }
 
 export async function listOutputProfiles(backend: DomainBackend): Promise<DomainOutputProfileView[]> {
-  const rows = await backend.store.query().from("OutputProfile", "o").select((ctx) => ctx.o).execute();
+  const rows = await backend.store
+    .query()
+    .from("OutputProfile", "o")
+    .select((ctx) => ctx.o)
+    .execute();
   return [...rows]
     .map((row) => {
       const record = row as unknown as Record<string, unknown>;

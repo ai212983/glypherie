@@ -1,0 +1,4 @@
+/* Screen owns its available viewport; only its three panel viewports scroll. */
+.app-shell:has([data-screen-page]) { height: 100dvh; overflow: hidden; }
+.app-shell__page:has([data-screen-page]) { min-height: 0; overflow: hidden; }
+.app-shell__page:has([data-screen-page]) > .flex { height: 100%; min-height: 0; }

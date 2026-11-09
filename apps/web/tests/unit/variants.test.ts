@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 import test, { after, beforeEach } from "node:test";
 import { createPalette, listPalettes, updatePalette } from "../../src/app/palettes/repository.ts";
 import { MONOCHROME } from "../../src/app/palettes/model.ts";
-import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
 import Dexie from "dexie";
 import { fontDatabase } from "../../src/app/database.ts";
 import { kvPut } from "../../src/app/domain/backend.ts";
@@ -42,8 +41,7 @@ import {
 Dexie.dependencies.indexedDB = globalThis.indexedDB;
 Dexie.dependencies.IDBKeyRange = globalThis.IDBKeyRange;
 
-const sha256 = (bytes: ArrayBuffer): string =>
-  createHash("sha256").update(Buffer.from(bytes)).digest("hex");
+const sha256 = (bytes: ArrayBuffer): string => createHash("sha256").update(Buffer.from(bytes)).digest("hex");
 const fontBytes = (seed = 0): ArrayBuffer =>
   Uint8Array.from({ length: 64 }, (_, i) => (i * 7 + seed) % 251).buffer as ArrayBuffer;
 
@@ -59,13 +57,16 @@ function metadataWithAxes(axes: AxisMetadata[]): FontMetadata {
 }
 
 async function saveFixture(seed = 0, meta: FontMetadata = metadata()): Promise<StoredFont> {
-  return saveFont({ bytes: fontBytes(seed), fileName: "fixture.ttf", name: "Fixture", metadata: meta, source: "uploaded" });
+  return saveFont({
+    bytes: fontBytes(seed),
+    fileName: "fixture.ttf",
+    name: "Fixture",
+    metadata: meta,
+    source: "uploaded",
+  });
 }
 
-async function assertRejectsCode(
-  operation: Promise<unknown>,
-  code: VariantStorageError["code"],
-): Promise<void> {
+async function assertRejectsCode(operation: Promise<unknown>, code: VariantStorageError["code"]): Promise<void> {
   await assert.rejects(
     operation,
     (error) => error instanceof VariantStorageError && error.code === code,
@@ -88,56 +89,131 @@ after(async () => {
 test("saved kerning methods retain controls across updates without aliases or variant leakage", async () => {
   const font = await saveFixture();
   const kerning = editKerning(selectKerningMethod(false, "typefacet"), {
-    method: "typefacet", settings: { normalDistanceEm: 0.2, intrusionToleranceEm: 0.05, minimumDistanceEm: 0.025, maxXExtremaOverlapEm: 0.125 },
+    method: "typefacet",
+    settings: {
+      normalDistanceEm: 0.2,
+      intrusionToleranceEm: 0.05,
+      minimumDistanceEm: 0.025,
+      maxXExtremaOverlapEm: 0.125,
+    },
   });
   const variant = await createVariant(font.id, { settings: { ...defaultVariantSettings(font), kerning } });
   kerning.typefacet.normalDistanceEm = 0.4;
   assert.equal(normalizeKerning((await getVariant(variant.id))!.settings.kerning).typefacet.normalDistanceEm, 0.2);
   const source = selectKerningMethod(variant.settings.kerning, "source");
-  const saved = await updateVariant(variant.id, { settings: { ...variant.settings, kerning: source } }, variant.revision);
+  const saved = await updateVariant(
+    variant.id,
+    { settings: { ...variant.settings, kerning: source } },
+    variant.revision,
+  );
   const reloaded = (await getVariant(variant.id))!;
   assert.deepEqual(reloaded.settings.kerning, saved.settings.kerning);
   assert.deepEqual(normalizeKerning(reloaded.settings.kerning), {
     ...normalizeKerning(true),
-    method: "source", source: { enabled: false }, typefacet: { normalDistanceEm: 0.2, intrusionToleranceEm: 0.05, minimumDistanceEm: 0.025, maxXExtremaOverlapEm: 0.125 },
+    method: "source",
+    source: { enabled: false },
+    typefacet: {
+      normalDistanceEm: 0.2,
+      intrusionToleranceEm: 0.05,
+      minimumDistanceEm: 0.025,
+      maxXExtremaOverlapEm: 0.125,
+    },
   });
   source.source.enabled = true;
   assert.equal(normalizeKerning((await getVariant(variant.id))!.settings.kerning).source.enabled, false);
   assert.equal((await createVariant(font.id)).settings.kerning, true, "another variant starts with current defaults");
-  await assertRejectsCode(updateVariant(saved.id, {
-    settings: { ...saved.settings, kerning: { ...source, typefacet: { ...source.typefacet, normalDistanceEm: 3 } } },
-  }, saved.revision), "invalid-settings");
+  await assertRejectsCode(
+    updateVariant(
+      saved.id,
+      {
+        settings: {
+          ...saved.settings,
+          kerning: { ...source, typefacet: { ...source.typefacet, normalDistanceEm: 3 } },
+        },
+      },
+      saved.revision,
+    ),
+    "invalid-settings",
+  );
 });
 
 test("saved Hu/Hersch depths default, strength is rejected, inactive settings survive", async () => {
   const font = await saveFixture();
-  const legacy = await createVariant(font.id, { settings: { ...defaultVariantSettings(font), kerning: {
-    ...normalizeKerning(true), method: "hu_hersch", hu_hersch: {},
-  } } });
-  assert.deepEqual(normalizeKerning(legacy.settings.kerning).hu_hersch, { apertureDepthFactor: 0.21, globalDepthFactor: 0.25 });
+  const legacy = await createVariant(font.id, {
+    settings: {
+      ...defaultVariantSettings(font),
+      kerning: {
+        ...normalizeKerning(true),
+        method: "hu_hersch",
+        hu_hersch: {},
+      },
+    },
+  });
+  assert.deepEqual(normalizeKerning(legacy.settings.kerning).hu_hersch, {
+    apertureDepthFactor: 0.21,
+    globalDepthFactor: 0.25,
+  });
   for (const strength of [0, 0.35, 1, null, "0.35"]) {
-    await assertRejectsCode(createVariant(font.id, { settings: { ...defaultVariantSettings(font), kerning: {
-      ...normalizeKerning(true), method: "hu_hersch", hu_hersch: { strength } as never,
-    } } }), "invalid-settings");
+    await assertRejectsCode(
+      createVariant(font.id, {
+        settings: {
+          ...defaultVariantSettings(font),
+          kerning: {
+            ...normalizeKerning(true),
+            method: "hu_hersch",
+            hu_hersch: { strength } as never,
+          },
+        },
+      }),
+      "invalid-settings",
+    );
   }
-  await assertRejectsCode(createVariant(font.id, { settings: { ...defaultVariantSettings(font), kerning: {
-    ...normalizeKerning(true), method: "fontforge", fontforge: { strength: 0 } as never,
-  } } }), "invalid-settings");
-  const edited = editKerning(legacy.settings.kerning, { method: "hu_hersch",
-    settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 } });
+  await assertRejectsCode(
+    createVariant(font.id, {
+      settings: {
+        ...defaultVariantSettings(font),
+        kerning: {
+          ...normalizeKerning(true),
+          method: "fontforge",
+          fontforge: { strength: 0 } as never,
+        },
+      },
+    }),
+    "invalid-settings",
+  );
+  const edited = editKerning(legacy.settings.kerning, {
+    method: "hu_hersch",
+    settings: { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 },
+  });
   const saved = await updateVariant(legacy.id, { settings: { ...legacy.settings, kerning: edited } }, legacy.revision);
   edited.hu_hersch.apertureDepthFactor = 0.8;
-  assert.deepEqual(normalizeKerning((await getVariant(saved.id))!.settings.kerning).hu_hersch,
-    { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 });
+  assert.deepEqual(normalizeKerning((await getVariant(saved.id))!.settings.kerning).hu_hersch, {
+    apertureDepthFactor: 0.35,
+    globalDepthFactor: 0.4,
+  });
   const source = selectKerningMethod(saved.settings.kerning, "source");
   const inactive = await updateVariant(saved.id, { settings: { ...saved.settings, kerning: source } }, saved.revision);
-  assert.deepEqual(normalizeKerning((await getVariant(inactive.id))!.settings.kerning).hu_hersch,
-    { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 });
-  assert.deepEqual(selectKerningMethod(inactive.settings.kerning, "hu_hersch").hu_hersch,
-    { apertureDepthFactor: 0.35, globalDepthFactor: 0.4 });
-  await assertRejectsCode(updateVariant(inactive.id, {
-    settings: { ...inactive.settings, kerning: { ...source, hu_hersch: { apertureDepthFactor: 1.1, globalDepthFactor: 0.25 } } },
-  }, inactive.revision), "invalid-settings");
+  assert.deepEqual(normalizeKerning((await getVariant(inactive.id))!.settings.kerning).hu_hersch, {
+    apertureDepthFactor: 0.35,
+    globalDepthFactor: 0.4,
+  });
+  assert.deepEqual(selectKerningMethod(inactive.settings.kerning, "hu_hersch").hu_hersch, {
+    apertureDepthFactor: 0.35,
+    globalDepthFactor: 0.4,
+  });
+  await assertRejectsCode(
+    updateVariant(
+      inactive.id,
+      {
+        settings: {
+          ...inactive.settings,
+          kerning: { ...source, hu_hersch: { apertureDepthFactor: 1.1, globalDepthFactor: 0.25 } },
+        },
+      },
+      inactive.revision,
+    ),
+    "invalid-settings",
+  );
 });
 
 test("imported fonts start with no variants; Add creates a default saved variant", async () => {
@@ -171,7 +247,10 @@ test("imported fonts start with no variants; Add creates a default saved variant
 
   assert.deepEqual(await getVariant(variant.id), variant);
   assert.equal(await getVariant("00000000-0000-0000-0000-000000000000"), undefined);
-  assert.deepEqual((await listVariants(font.id)).map((entry) => entry.id), [variant.id]);
+  assert.deepEqual(
+    (await listVariants(font.id)).map((entry) => entry.id),
+    [variant.id],
+  );
 });
 
 test("sample text inheritance persists while explicit and historical text remain independent", async () => {
@@ -193,7 +272,10 @@ test("sample text inheritance persists while explicit and historical text remain
   assert.equal(renamed.sampleText, TEXT_DEFAULT);
 
   await assertRejectsCode(createVariant(font.id, { inheritSampleText: "yes" as never }), "invalid-input");
-  await assertRejectsCode(updateVariant(reset.id, { inheritSampleText: "yes" as never }, reset.revision), "invalid-input");
+  await assertRejectsCode(
+    updateVariant(reset.id, { inheritSampleText: "yes" as never }, reset.revision),
+    "invalid-input",
+  );
 });
 
 test("default settings carry hidden axes and static fonts yield axes={}", () => {
@@ -234,15 +316,22 @@ test("retired Mono renderer and coverage choices migrate to the current preview 
     assert.equal(loaded?.settings.renderer, "candidate");
     assert.equal(loaded?.settings.letterSpacingPx, 2, "saved extra tracking survives the pipeline migration");
   }
-  const variant = await createVariant(font.id, { settings: { ...base, rasterization: "coverage", stemFitting: "upstream_mono" } });
+  const variant = await createVariant(font.id, {
+    settings: { ...base, rasterization: "coverage", stemFitting: "upstream_mono" },
+  });
   assert.equal((await getVariant(variant.id))?.settings.rasterization, "free_type_mono");
   assert.equal((await getVariant(variant.id))?.settings.stemFitting, "upstream_mono");
 });
 
 test("undefined grayscale output falls back to Monochrome without changing font inputs", async () => {
   const font = await saveFixture();
-  const settings = { ...defaultVariantSettings(font), profile: "gray_3bit" as const,
-    rasterization: undefined, renderer: "reference" as const, letterSpacingPx: 2 };
+  const settings = {
+    ...defaultVariantSettings(font),
+    profile: "gray_3bit" as const,
+    rasterization: undefined,
+    renderer: "reference" as const,
+    letterSpacingPx: 2,
+  };
   const variant = await createVariant(font.id, { settings });
   const loaded = await getVariant(variant.id);
   assert.equal(loaded?.settings.renderer, "candidate");
@@ -278,11 +367,7 @@ test("two variants of one font stay independent", async () => {
   const font = await saveFixture();
   const a = await createVariant(font.id);
   const b = await createVariant(font.id);
-  const moved = await updateVariant(
-    a.id,
-    { settings: { ...a.settings, axes: { wght: 700 }, sizePx: 24 } },
-    a.revision,
-  );
+  const moved = await updateVariant(a.id, { settings: { ...a.settings, axes: { wght: 700 }, sizePx: 24 } }, a.revision);
   assert.equal(moved.revision, 2);
   assert.deepEqual(moved.settings.axes, { wght: 700 });
   assert.deepEqual((await getVariant(b.id))?.settings.axes, { wght: 400 });
@@ -302,22 +387,23 @@ test("stored settings are copies, not aliases of the caller's objects", async ()
 });
 
 test("fonts with disjoint tags and different ranges of one tag work", async () => {
-  const narrow = await saveFixture(21, metadataWithAxes([
-    { tag: "wght", name: "Weight", min: 200, default: 500, max: 700, hidden: false },
-  ]));
-  const wide = await saveFixture(22, metadataWithAxes([
-    { tag: "wdth", name: "Width", min: 50, default: 100, max: 200, hidden: false },
-    { tag: "opsz", name: null, min: 8, default: 14, max: 144, hidden: true },
-  ]));
+  const narrow = await saveFixture(
+    21,
+    metadataWithAxes([{ tag: "wght", name: "Weight", min: 200, default: 500, max: 700, hidden: false }]),
+  );
+  const wide = await saveFixture(
+    22,
+    metadataWithAxes([
+      { tag: "wdth", name: "Width", min: 50, default: 100, max: 200, hidden: false },
+      { tag: "opsz", name: null, min: 8, default: 14, max: 144, hidden: true },
+    ]),
+  );
   const narrowVariant = await createVariant(narrow.id);
   const wideVariant = await createVariant(wide.id);
   assert.deepEqual(narrowVariant.settings.axes, { wght: 500 });
   assert.deepEqual(wideVariant.settings.axes, { wdth: 100, opsz: 14 });
 
-  await assertRejectsCode(
-    createVariant(wide.id, { settings: narrowVariant.settings }),
-    "invalid-settings",
-  );
+  await assertRejectsCode(createVariant(wide.id, { settings: narrowVariant.settings }), "invalid-settings");
   await assertRejectsCode(
     createVariant(narrow.id, {
       settings: { ...narrowVariant.settings, axes: { wght: 800 } },
@@ -343,10 +429,7 @@ test("saved settings reject unknown, missing, NaN, and out-of-range axes", async
     { wght: 901 },
   ];
   for (const axes of badAxes) {
-    await assertRejectsCode(
-      createVariant(font.id, { settings: { ...base, axes } }),
-      "invalid-settings",
-    );
+    await assertRejectsCode(createVariant(font.id, { settings: { ...base, axes } }), "invalid-settings");
   }
   assert.deepEqual(await listVariants(font.id), []);
 
@@ -381,10 +464,7 @@ test("saved settings validate numeric bounds and enum values", async () => {
     { ...base, renderer: "baseline" },
   ];
   for (const settings of bad) {
-    await assertRejectsCode(
-      createVariant(font.id, { settings: settings as never }),
-      "invalid-settings",
-    );
+    await assertRejectsCode(createVariant(font.id, { settings: settings as never }), "invalid-settings");
   }
   validateVariantSettings({ ...base, rasterization: undefined, sizePx: 1, letterSpacingPx: -2 }, metadata());
   validateVariantSettings({ ...base, rasterization: undefined, sizePx: 512, letterSpacingPx: 4 }, metadata());
@@ -409,7 +489,7 @@ test("nonzero extra tracking round-trips for 1-bit and 3-bit, zero stays the def
 
 test("tracking edits survive palette and fitting changes", async () => {
   const paletteId = await createPalette();
-  await updatePalette(paletteId, { curve: () => linearCurve(8) });
+  await updatePalette(paletteId, { kind: "resize", count: 8 });
   const font = await saveFixture();
   const base = defaultVariantSettings(font);
   const created = await createVariant(font.id, { settings: { ...base, letterSpacingPx: 3 } });
@@ -447,7 +527,9 @@ test("legacy scan settings validate but Mono previews use the fixed policy", asy
   const stored = await createVariant(font.id, { settings: legacy as never });
   assert.deepEqual(stored.settings.monoRaster, { dropout: "smart", includeStubs: true, fontInstructions: true });
   assert.deepEqual((await getVariant(stored.id))?.settings.monoRaster, {
-    dropout: "smart", includeStubs: true, fontInstructions: true,
+    dropout: "smart",
+    includeStubs: true,
+    fontInstructions: true,
   });
 });
 
@@ -551,7 +633,7 @@ test("parent and identity stay immutable through updates", async () => {
   assert.equal(updated.id, created.id);
   assert.equal(updated.fontId, font.id);
   assert.equal(updated.name, "Renamed");
-  assert.deepEqual((await listVariants("0".repeat(64))), []);
+  assert.deepEqual(await listVariants("0".repeat(64)), []);
 });
 
 test("deleting a variant removes only that variant", async () => {
@@ -560,7 +642,10 @@ test("deleting a variant removes only that variant", async () => {
   const b = await createVariant(font.id);
   await deleteVariant(a.id);
   assert.equal(await getVariant(a.id), undefined);
-  assert.deepEqual((await listVariants(font.id)).map((entry) => entry.id), [b.id]);
+  assert.deepEqual(
+    (await listVariants(font.id)).map((entry) => entry.id),
+    [b.id],
+  );
 
   await assertRejectsCode(deleteVariant(a.id), "not-found");
   await assertRejectsCode(deleteVariant(b.id, b.revision + 1), "conflict");
@@ -582,17 +667,17 @@ test("removing a font deletes its variants atomically and keeps others", async (
     assert.equal(await getVariant(variant.id), undefined);
   }
   assert.deepEqual(await getVariant(kept.id), kept);
-  assert.deepEqual((await listFonts()).map((font) => font.id), [second.id]);
+  assert.deepEqual(
+    (await listFonts()).map((font) => font.id),
+    [second.id],
+  );
 });
 
 test("a stale update cannot resurrect a deleted variant", async () => {
   const font = await saveFixture();
   const created = await createVariant(font.id);
   await deleteVariant(created.id);
-  await assertRejectsCode(
-    updateVariant(created.id, { name: "Ghost" }, created.revision),
-    "not-found",
-  );
+  await assertRejectsCode(updateVariant(created.id, { name: "Ghost" }, created.revision), "not-found");
   assert.equal(await getVariant(created.id), undefined);
   assert.deepEqual(await listVariants(font.id), []);
 });
@@ -602,10 +687,7 @@ test("a stale update after removeFont cascade cannot resurrect the variant", asy
   const created = await createVariant(font.id);
   await removeFont(font.id);
   assert.equal(await getFont(font.id), undefined);
-  await assertRejectsCode(
-    updateVariant(created.id, { name: "Ghost" }, created.revision),
-    "not-found",
-  );
+  await assertRejectsCode(updateVariant(created.id, { name: "Ghost" }, created.revision), "not-found");
   assert.equal(await getVariant(created.id), undefined);
   assert.deepEqual(await listVariants(font.id), []);
   assert.deepEqual(await listVariants(), []);
@@ -649,7 +731,10 @@ test("legacy v1 font rows import with bytes and seed marker retained, variants e
   assert.deepEqual(await listPalettes(), [MONOCHROME]);
 
   const fonts = await listFonts();
-  assert.deepEqual(fonts.map((font) => font.id), [id]);
+  assert.deepEqual(
+    fonts.map((font) => font.id),
+    [id],
+  );
   assert.deepEqual(Buffer.from(fonts[0]?.bytes ?? new ArrayBuffer(0)), Buffer.from(bytes));
   assert.equal(await callDomain("getSeedMarker", []), "legacy-marker");
   assert.deepEqual(await listVariants(), []);

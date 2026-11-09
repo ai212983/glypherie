@@ -13,7 +13,12 @@ import { getFont, saveFont, type FontMetadata } from "../../src/app/fonts/storag
 import { createPalette, deletePalette, listPalettes, updatePalette } from "../../src/app/palettes/repository.ts";
 import { MONOCHROME, resolvePalette } from "../../src/app/palettes/model.ts";
 import { PREVIEW_MONO_RASTER } from "../../src/app/renderer/render-spec.ts";
-import { curveLevels, editCurveLevel, linearCurve, pinCurveLevel } from "../../src/app/features/grayscale/response-curve.ts";
+import {
+  curveLevels,
+  editCurveLevel,
+  linearCurve,
+  pinCurveLevel,
+} from "../../src/app/features/grayscale/response-curve.ts";
 import { paletteProfile, presetColors } from "../../src/app/palettes/render.ts";
 import { toRenderSpec } from "../../src/app/renderer/render-spec.ts";
 import { defaultVariantSettings, VariantStorageError } from "../../src/app/variants/model.ts";
@@ -57,10 +62,18 @@ test("palette names, depth, fractional curves, slopes and handles survive reopen
   assert.deepEqual(await listPalettes(), [MONOCHROME]);
   const id = await createPalette();
   const curve = pinCurveLevel(editCurveLevel(linearCurve(16), 5, 171), 7);
-  await updatePalette(id, { name: "Paper", curve: () => curve });
+  await updatePalette(id, { kind: "rename", name: "Paper" });
+  // Whole-curve setup carries the revision just read: creation is revision 1,
+  // the rename is revision 2, so the replacement lands as revision 3.
+  const renamed = (await listPalettes()).find((row) => row.id === id);
+  assert.ok(renamed);
+  await updatePalette(id, { kind: "replace", curve, expectedRevision: renamed.revision });
   await configureDomain(await createDomainBackend({ dataDir }));
-  assert.deepEqual((await listPalettes()).find((row) => row.id === id), { id, name: "Paper", curve });
-  await assert.rejects(updatePalette(0, { name: "Changed" }), /read-only/);
+  assert.deepEqual(
+    (await listPalettes()).find((row) => row.id === id),
+    { id, name: "Paper", curve, revision: renamed.revision + 1 },
+  );
+  await assert.rejects(updatePalette(0, { kind: "rename", name: "Changed" }), /read-only/);
   await assert.rejects(deletePalette(0), /read-only/);
 });
 
@@ -69,14 +82,20 @@ test("deleted palette IDs are never reused", async () => {
   assert.equal(await createPalette(), 2);
   await deletePalette(1);
   assert.equal(await createPalette(), 3, "a deleted ID stays retired instead of being reissued");
-  assert.deepEqual((await listPalettes()).map((preset) => preset.id), [0, 2, 3]);
+  assert.deepEqual(
+    (await listPalettes()).map((preset) => preset.id),
+    [0, 2, 3],
+  );
 });
 
 test("concurrent creations after a delete stay unique and above the live max", async () => {
   assert.equal(await createPalette(), 1);
   await deletePalette(1);
   const ids = await Promise.all([createPalette(), createPalette(), createPalette(), createPalette()]);
-  assert.deepEqual([...ids].sort((a, b) => a - b), [2, 3, 4, 5]);
+  assert.deepEqual(
+    [...ids].sort((a, b) => a - b),
+    [2, 3, 4, 5],
+  );
 });
 
 test("the identity sequence survives reopening the store", async (t) => {
@@ -93,7 +112,10 @@ test("the identity sequence survives reopening the store", async (t) => {
   await deletePalette(1);
   await configureDomain(await createDomainBackend({ dataDir }));
   assert.equal(await createPalette(), 2, "reopening must not reset the sequence to the live max");
-  assert.deepEqual((await listPalettes()).map((preset) => preset.id), [0, 2]);
+  assert.deepEqual(
+    (await listPalettes()).map((preset) => preset.id),
+    [0, 2],
+  );
 });
 
 test("import keeps every legacy ID and allocates above the highest one", async () => {
@@ -101,7 +123,10 @@ test("import keeps every legacy ID and allocates above the highest one", async (
   await fontDatabase.palettes.put({ id: 7, name: "Legacy Seven", curve: linearCurve(16) });
   const result = await importLegacySnapshot(getBackend(), await readLegacySnapshot());
   assert.equal(result.skipped, false);
-  assert.deepEqual((await listPalettes()).map((preset) => preset.id), [0, 5, 7]);
+  assert.deepEqual(
+    (await listPalettes()).map((preset) => preset.id),
+    [0, 5, 7],
+  );
   assert.equal((await listPalettes()).find((preset) => preset.id === 7)?.name, "Legacy Seven");
   assert.equal(await createPalette(), 8, "creation continues above the imported range");
   await deletePalette(8);
@@ -112,35 +137,55 @@ test("concurrent creations have stable unique IDs and curve edits compose", asyn
   const ids = await Promise.all([createPalette(), createPalette()]);
   assert.equal(new Set(ids).size, 2);
   await Promise.all([
-    updatePalette(ids[0]!, { curve: (curve) => editCurveLevel(curve, 1, 140) }),
-    updatePalette(ids[0]!, { curve: (curve) => editCurveLevel(curve, 2, 70) }),
+    updatePalette(ids[0]!, { kind: "setLevel", index: 1, value: 140, depth: 4 }),
+    updatePalette(ids[0]!, { kind: "setLevel", index: 2, value: 70, depth: 4 }),
   ]);
   const row = (await listPalettes()).find((row) => row.id === ids[0])!;
   assert.deepEqual(curveLevels(row.curve), [255, 140, 70, 0]);
   await deletePalette(row.id);
-  await assert.rejects(updatePalette(row.id, { name: "Resurrect" }), /deleted/);
+  await assert.rejects(updatePalette(row.id, { kind: "rename", name: "Resurrect" }), /deleted/);
   assert.equal(resolvePalette(await listPalettes(), row.id).id, 0);
 });
 
 test("only 1–4-bit palettes persist and render with their exact defined entries", async () => {
   const id = await createPalette();
   for (const count of [2, 4, 8, 16]) {
-    await updatePalette(id, { curve: () => linearCurve(count) });
+    const live = (await listPalettes()).find((row) => row.id === id);
+    assert.ok(live);
+    await updatePalette(id, { kind: "replace", curve: linearCurve(count), expectedRevision: live.revision });
     const preset = (await listPalettes()).find((row) => row.id === id)!;
     const palette = presetColors(preset, "black-white", false);
-    const spec = toRenderSpec({ text: "A", sizePx: 16, axes: {}, profile: paletteProfile(preset),
-      rasterization: count === 2 ? "free_type_mono" : "coverage", width: 100, height: 100, palette });
+    const spec = toRenderSpec({
+      text: "A",
+      sizePx: 16,
+      axes: {},
+      profile: paletteProfile(preset),
+      rasterization: count === 2 ? "free_type_mono" : "coverage",
+      width: 100,
+      height: 100,
+      palette,
+    });
     assert.equal(spec.output_bits, Math.log2(count));
-    assert.deepEqual(spec.palette?.map((entry) => entry[0]), curveLevels(preset.curve));
+    assert.deepEqual(
+      spec.palette?.map((entry) => entry[0]),
+      curveLevels(preset.curve),
+    );
     assert.equal(spec.pipeline?.rasterization, count === 2 ? "free_type_mono_terminals" : "coverage");
   }
-  for (const count of [3, 32, 256]) await assert.rejects(updatePalette(id, { curve: () => linearCurve(count) }), /Invalid/);
+  for (const count of [3, 32, 256]) {
+    const live = (await listPalettes()).find((row) => row.id === id);
+    assert.ok(live);
+    await assert.rejects(
+      updatePalette(id, { kind: "replace", curve: linearCurve(count), expectedRevision: live.revision }),
+      /Invalid/,
+    );
+  }
 });
 
 test("deleting a preset falls back referencing variants to Monochrome with a revision bump", async () => {
   const font = await saveFixtureFont();
   const id = await createPalette();
-  await updatePalette(id, { curve: () => linearCurve(4) });
+  await updatePalette(id, { kind: "resize", count: 4 });
   const base = defaultVariantSettings(font);
   const variant = await createVariant(font.id, {
     settings: { ...base, paletteId: id, profile: "gray_2bit", rasterization: "coverage" },
@@ -184,11 +229,15 @@ test("reads normalize unknown palette references to Monochrome", async () => {
   const font = await saveFixtureFont();
   const variant = await createVariant(font.id);
   // Point the style preference at a profile that does not exist.
-  await kvPut(getBackend().db, `preview:${variant.id}`, JSON.stringify({
-    sampleText: variant.sampleText,
-    inheritSampleText: variant.inheritSampleText,
-    outputProfileId: "missing-profile",
-  }));
+  await kvPut(
+    getBackend().db,
+    `preview:${variant.id}`,
+    JSON.stringify({
+      sampleText: variant.sampleText,
+      inheritSampleText: variant.inheritSampleText,
+      outputProfileId: "missing-profile",
+    }),
+  );
   const loaded = await getVariant(variant.id);
   assert.equal(loaded?.settings.paletteId, 0);
   assert.equal(loaded?.settings.profile, "mono_1bit");
@@ -197,13 +246,13 @@ test("reads normalize unknown palette references to Monochrome", async () => {
 test("variant writes normalize a stale profile to the preset live depth", async () => {
   const font = await saveFixtureFont();
   const id = await createPalette();
-  await updatePalette(id, { curve: () => linearCurve(4) });
+  await updatePalette(id, { kind: "resize", count: 4 });
   const base = defaultVariantSettings(font);
   const variant = await createVariant(font.id, { settings: { ...base, paletteId: id } });
   assert.equal(variant.settings.profile, "gray_2bit");
 
   // Another tab edits the palette depth; the variant row keeps its revision.
-  await updatePalette(id, { curve: () => linearCurve(16) });
+  await updatePalette(id, { kind: "resize", count: 16 });
   const clean = await getVariant(variant.id);
   assert.equal(clean?.revision, variant.revision);
   assert.equal(clean?.settings.profile, "gray_4bit");
@@ -221,14 +270,15 @@ test("variant writes normalize a stale profile to the preset live depth", async 
 test("font settings keep a stable palette ID and follow the preset's live depth", async () => {
   const font = await saveFixtureFont();
   const id = await createPalette();
-  await updatePalette(id, { name: "Deep", curve: () => linearCurve(16) });
+  await updatePalette(id, { kind: "rename", name: "Deep" });
+  await updatePalette(id, { kind: "resize", count: 16 });
   const base = defaultVariantSettings(font);
   const variant = await createVariant(font.id, { settings: { ...base, paletteId: id } });
   assert.equal(variant.settings.profile, "gray_4bit");
   assert.equal((await getVariant(variant.id))?.settings.paletteId, id);
   assert.equal((await getVariant(variant.id))?.settings.profile, "gray_4bit");
 
-  await updatePalette(id, { curve: () => linearCurve(4) });
+  await updatePalette(id, { kind: "resize", count: 4 });
   assert.equal((await getVariant(variant.id))?.settings.paletteId, id);
   assert.equal((await getVariant(variant.id))?.settings.profile, "gray_2bit");
 });
@@ -236,7 +286,10 @@ test("font settings keep a stable palette ID and follow the preset's live depth"
 test("importing a legacy library without custom palettes still starts custom IDs at 1", async () => {
   const result = await importLegacySnapshot(getBackend(), await readLegacySnapshot());
   assert.equal(result.skipped, false);
-  assert.deepEqual((await listPalettes()).map((preset) => preset.id), [0]);
+  assert.deepEqual(
+    (await listPalettes()).map((preset) => preset.id),
+    [0],
+  );
   assert.equal(await createPalette(), 1, "an import holding only Monochrome must not consume ID 1");
 });
 

@@ -85,6 +85,7 @@ export type VariantStorageErrorCode =
   | "invalid-settings"
   | "invalid-input"
   | "blocked"
+  | "stale-owner"
   | "quota-exceeded"
   | "referenced"
   | "unavailable";
@@ -147,8 +148,11 @@ export function validateVariantSettings(settings: VariantSettings, metadata: Fon
     fail(`letterSpacingPx must sit within ${VARIANT_SPACING_MIN}..${VARIANT_SPACING_MAX}`);
   }
   if (!(PROFILES as readonly string[]).includes(typed.profile)) fail("profile must be a known output profile");
-  if (typed.paletteId !== undefined && (!Number.isInteger(typed.paletteId) || typed.paletteId < 0)) fail("paletteId must identify a palette");
-  try { validateKerningPreference(typed.kerning); } catch (error) {
+  if (typed.paletteId !== undefined && (!Number.isInteger(typed.paletteId) || typed.paletteId < 0))
+    fail("paletteId must identify a palette");
+  try {
+    validateKerningPreference(typed.kerning);
+  } catch (error) {
     fail(error instanceof Error ? error.message : "kerning must carry valid method settings");
   }
   if (!(STEM_FITTINGS as readonly string[]).includes(typed.stemFitting)) {

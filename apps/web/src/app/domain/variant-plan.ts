@@ -1,9 +1,7 @@
 // Validated mutation plans and snapshot views share one transaction across
 // graph nodes and preferences.
 
-import {
-  MONOCHROME,
-} from "../palettes/model.ts";
+import { MONOCHROME, profileForCurve } from "../palettes/model.ts";
 import {
   currentPreviewSettings,
   validateVariantName,
@@ -16,13 +14,7 @@ import { cloneKerning } from "../kerning/model.ts";
 import { PREVIEW_MONO_RASTER, TEXT_DEFAULT } from "../renderer/render-spec.ts";
 import type { FontMetadata } from "../fonts/storage.ts";
 import type { GrayCurve } from "../features/grayscale/response-curve.ts";
-import {
-  kvGet,
-  kvPut,
-  MONOCHROME_OUTPUT_ID,
-  type AuxDb,
-  type DomainBackend,
-} from "./backend.ts";
+import { kvGet, kvPut, MONOCHROME_OUTPUT_ID, type AuxDb, type DomainBackend } from "./backend.ts";
 import { withAtomicDomain } from "./atomic.ts";
 import { DomainError } from "./errors.ts";
 
@@ -56,9 +48,17 @@ export async function readPrefsIn(aux: AuxDb, textStyleId: string): Promise<Prev
   if (raw === undefined) return undefined;
   try {
     const parsed = JSON.parse(raw) as Partial<PreviewPreferences>;
-    if (typeof parsed.sampleText !== "string" || typeof parsed.inheritSampleText !== "boolean" ||
-      typeof parsed.outputProfileId !== "string") return undefined;
-    return { sampleText: parsed.sampleText, inheritSampleText: parsed.inheritSampleText, outputProfileId: parsed.outputProfileId };
+    if (
+      typeof parsed.sampleText !== "string" ||
+      typeof parsed.inheritSampleText !== "boolean" ||
+      typeof parsed.outputProfileId !== "string"
+    )
+      return undefined;
+    return {
+      sampleText: parsed.sampleText,
+      inheritSampleText: parsed.inheritSampleText,
+      outputProfileId: parsed.outputProfileId,
+    };
   } catch {
     return undefined;
   }
@@ -70,25 +70,29 @@ export async function writePrefsIn(aux: AuxDb, textStyleId: string, prefs: Previ
   try {
     await kvPut(aux, previewKey(textStyleId), JSON.stringify(prefs));
   } catch (error) {
-    throw new DomainError("unavailable", `Preferences for variant "${textStyleId}" did not persist; retry the edit.`, { cause: error });
+    throw new DomainError("unavailable", `Preferences for variant "${textStyleId}" did not persist; retry the edit.`, {
+      cause: error,
+    });
   }
 }
 
-// Curve length derives the output profile; shared with palettes/render.ts
-// (paletteProfile maps the same lengths).
+// Curve length derives the output profile; owned by palettes/model.ts.
 export function curveProfile(curve: GrayCurve): VariantSettings["profile"] {
-  return curve.length === 2
-    ? "mono_1bit"
-    : curve.length === 4
-      ? "gray_2bit"
-      : curve.length === 16
-        ? "gray_4bit"
-        : "gray_3bit";
+  return profileForCurve(curve);
 }
 
-async function outputProfileById(store: Store, id: string): Promise<{
-  id: string; name: string; curve: GrayCurve; legacyPaletteId?: number;
-} | undefined> {
+async function outputProfileById(
+  store: Store,
+  id: string,
+): Promise<
+  | {
+      id: string;
+      name: string;
+      curve: GrayCurve;
+      legacyPaletteId?: number;
+    }
+  | undefined
+> {
   const node = await store.nodes.OutputProfile.getById(id as never).catch(() => undefined);
   if (!node) return undefined;
   const record = node as unknown as Record<string, unknown>;
@@ -111,10 +115,23 @@ export async function resolveOutputProfileIn(
   return fallback;
 }
 
-export async function outputProfileByLegacyId(store: Store, legacyId: number): Promise<{
-  id: string; name: string; curve: GrayCurve; legacyPaletteId?: number;
-} | undefined> {
-  const rows = await store.query().from("OutputProfile", "o").select((ctx) => ctx.o).execute();
+export async function outputProfileByLegacyId(
+  store: Store,
+  legacyId: number,
+): Promise<
+  | {
+      id: string;
+      name: string;
+      curve: GrayCurve;
+      legacyPaletteId?: number;
+    }
+  | undefined
+> {
+  const rows = await store
+    .query()
+    .from("OutputProfile", "o")
+    .select((ctx) => ctx.o)
+    .execute();
   for (const row of rows) {
     const record = row as unknown as Record<string, unknown>;
     if (record.legacyPaletteId === legacyId) {
@@ -133,7 +150,9 @@ export function checkVariantName(name: string): void {
   try {
     validateVariantName(name);
   } catch (error) {
-    throw new DomainError("invalid-input", error instanceof Error ? error.message : "Invalid variant name.", { cause: error });
+    throw new DomainError("invalid-input", error instanceof Error ? error.message : "Invalid variant name.", {
+      cause: error,
+    });
   }
 }
 
@@ -207,26 +226,29 @@ async function resolveUpdateSettings(
   try {
     validateVariantSettings(settings, fontNode.metadata as FontMetadata);
   } catch (error) {
-    throw new DomainError("invalid-settings", error instanceof Error ? error.message : "Invalid variant settings.", { cause: error });
+    throw new DomainError("invalid-settings", error instanceof Error ? error.message : "Invalid variant settings.", {
+      cause: error,
+    });
   }
-  const output = await outputProfileByLegacyId(txStore, settings.paletteId ?? MONOCHROME.id)
-    ?? await resolveOutputProfileIn(txStore, undefined);
+  const output =
+    (await outputProfileByLegacyId(txStore, settings.paletteId ?? MONOCHROME.id)) ??
+    (await resolveOutputProfileIn(txStore, undefined));
   return { outputProfileId: output.id };
 }
 
 // Pure merge of sample keys over the single preference read: validation only,
 // no storage access, so persistence reuses the same base without re-reading.
-function resolveUpdateSample(
-  base: PreviewPreferences,
-  changes: VariantUpdateInput,
-): PrefsUpdate["sample"] {
+function resolveUpdateSample(base: PreviewPreferences, changes: VariantUpdateInput): PrefsUpdate["sample"] {
   if (changes.sampleText === undefined && changes.inheritSampleText === undefined) return undefined;
   const sampleText = changes.sampleText ?? base.sampleText;
-  const inheritSampleText = changes.inheritSampleText ?? (changes.sampleText !== undefined ? false : base.inheritSampleText);
+  const inheritSampleText =
+    changes.inheritSampleText ?? (changes.sampleText !== undefined ? false : base.inheritSampleText);
   try {
     validateVariantSampleText(sampleText, inheritSampleText);
   } catch (error) {
-    throw new DomainError("invalid-input", error instanceof Error ? error.message : "Invalid sample text.", { cause: error });
+    throw new DomainError("invalid-input", error instanceof Error ? error.message : "Invalid sample text.", {
+      cause: error,
+    });
   }
   return { sampleText, inheritSampleText };
 }
@@ -241,7 +263,13 @@ async function resolveGraphUpdate(
   if (settings !== undefined) {
     const profile = await txStore.nodes.RenderingProfile.getById(target.profileId as never).catch(() => undefined);
     if (!profile) throw new DomainError("unavailable", `Variant "${id}" links to a missing rendering profile.`);
-    return { kind: "settings", name, settings, variantRevision: target.variant.revision, profileRevision: profile.revision };
+    return {
+      kind: "settings",
+      name,
+      settings,
+      variantRevision: target.variant.revision,
+      profileRevision: profile.revision,
+    };
   }
   if (name !== target.style.name) {
     const profile = await txStore.nodes.RenderingProfile.getById(target.profileId as never).catch(() => undefined);
@@ -259,8 +287,8 @@ async function planPrefsUpdate(
   changes: VariantUpdateInput,
   outputProfileId: string | undefined,
 ): Promise<{ base: PreviewPreferences; sample: PrefsUpdate["sample"] } | undefined> {
-  if (outputProfileId === undefined &&
-    changes.sampleText === undefined && changes.inheritSampleText === undefined) return undefined;
+  if (outputProfileId === undefined && changes.sampleText === undefined && changes.inheritSampleText === undefined)
+    return undefined;
   const base = (await readPrefsIn(txAux, id)) ?? defaultPrefs(MONOCHROME_OUTPUT_ID);
   return { base, sample: resolveUpdateSample(base, changes) };
 }
@@ -275,14 +303,18 @@ export async function loadValidatedVariantUpdate(
   const target = await loadUpdateTarget(txStore, id);
   const name = changes.name ?? target.style.name;
   const settings = changes.settings;
-  const outputProfileId = settings !== undefined
-    ? (await resolveUpdateSettings(txStore, id, target.variant, settings)).outputProfileId
-    : undefined;
+  const outputProfileId =
+    settings !== undefined
+      ? (await resolveUpdateSettings(txStore, id, target.variant, settings)).outputProfileId
+      : undefined;
   const prefsUpdate = await planPrefsUpdate(txAux, id, changes, outputProfileId);
   // CAS stays after validation, matching the old plan-then-nested-check
   // order: bad settings or sample text report before a stale revision does.
   if (target.style.revision !== expectedRevision) {
-    throw new DomainError("conflict", `Variant "${id}" changed underneath this edit (expected revision ${expectedRevision}).`);
+    throw new DomainError(
+      "conflict",
+      `Variant "${id}" changed underneath this edit (expected revision ${expectedRevision}).`,
+    );
   }
   const graph = await resolveGraphUpdate(txStore, id, target, name, settings);
   return {
@@ -291,9 +323,8 @@ export async function loadValidatedVariantUpdate(
     profileId: target.profileId,
     expectedRevision,
     graph,
-    prefs: prefsUpdate === undefined
-      ? undefined
-      : { base: prefsUpdate.base, outputProfileId, sample: prefsUpdate.sample },
+    prefs:
+      prefsUpdate === undefined ? undefined : { base: prefsUpdate.base, outputProfileId, sample: prefsUpdate.sample },
   };
 }
 
@@ -437,7 +468,11 @@ export function getVariantView(backend: DomainBackend, styleId: string): Promise
 
 export function listVariantViews(backend: DomainBackend, fontId?: string): Promise<FontVariant[]> {
   return withAtomicDomain(backend, async (txStore, txAux) => {
-    const rows = await txStore.query().from("TextStyle", "s").select((ctx) => ctx.s).execute();
+    const rows = await txStore
+      .query()
+      .from("TextStyle", "s")
+      .select((ctx) => ctx.s)
+      .execute();
     const styles = [...rows]
       .map((row) => {
         const record = row as unknown as Record<string, unknown>;

@@ -87,11 +87,7 @@ function unknownFontNotice(): string {
   return "Font not found in this library.";
 }
 
-export function resolveRoute(
-  hash: string,
-  outerSearch: string | URLSearchParams,
-  knownIds: readonly string[],
-): Route {
+export function resolveRoute(hash: string, outerSearch: string | URLSearchParams, knownIds: readonly string[]): Route {
   const known = new Set(knownIds);
   const parsed = parseRoute(hash ?? "");
   if (parsed?.name === "variant") {
@@ -147,7 +143,21 @@ export function resolveRoute(
 // builders drop them when leaving a font route so stale settings do not
 // leak into the library URL; every other param (e.g. role, utm) is kept.
 export const OWNED_PARAMS: readonly string[] = [
-  "v", "font", "profile", "palette", "zoom", "exact", "stem", "diagonals", "raster", "dropout", "stubs", "scanfont", "model", "kerning", "families",
+  "v",
+  "font",
+  "profile",
+  "palette",
+  "zoom",
+  "exact",
+  "stem",
+  "diagonals",
+  "raster",
+  "dropout",
+  "stubs",
+  "scanfont",
+  "model",
+  "kerning",
+  "families",
 ];
 
 /** Canonical detail path for one font; settings ride the snapshot query once edited. */
@@ -164,11 +174,7 @@ export function variantPath(font: string, variant: string): string {
  * Canonical variant path keeping foreign params (e.g. utm) while dropping
  * snapshot state and the renderer role, which the saved variant owns.
  */
-export function variantPathKeeping(
-  font: string,
-  variant: string,
-  baseSearch: string | URLSearchParams,
-): string {
+export function variantPathKeeping(font: string, variant: string, baseSearch: string | URLSearchParams): string {
   const base = outerParams(baseSearch ?? "");
   const dropped = new Set([...OWNED_PARAMS, "role"]);
   const result = new URLSearchParams();
@@ -185,16 +191,17 @@ export function screenPath(baseSearch: string | URLSearchParams): string {
 }
 
 /**
- * Legacy scene links canonicalize directly to the unified Screen route:
- * /scenes/ becomes /screen/, /scene/<id>/ becomes /screen/?scene=<id>.
- * Foreign params survive while snapshot state is dropped; the hosting prefix
- * rides along through screenPath.
+ * Legacy scene links canonicalize directly to the unified Screen route: both
+ * /scenes/ and /scene/<id>/ become /screen/ without scene selection. Scene
+ * selection no longer exists: every Screen route opens the same implicit
+ * default composition. Foreign params survive while snapshot state is
+ * dropped; the hosting prefix rides along through screenPath.
  */
-export function legacyScreenPath(scene: string | null, baseSearch: string | URLSearchParams): string {
-  if (scene === null) return screenPath(baseSearch);
+export function legacyScreenPath(_scene: string | null, baseSearch: string | URLSearchParams): string {
+  // Both the path id and a carried ?scene= selection are dropped: every
+  // legacy link opens the implicit default composition.
   const base = outerParams(baseSearch);
   const next = new URLSearchParams();
-  next.set("scene", scene);
   for (const [key, value] of base.entries()) {
     if (key !== "scene") next.append(key, value);
   }

@@ -28,7 +28,10 @@ import type { VariantSettings } from "../variants/model.ts";
 export const PLAYDATE_EXPORT_MAX_SCALARS = 1024;
 export const PLAYDATE_EXPORT_MIN_CODEPOINT = 0x20;
 export const PLAYDATE_EXPORT_MAX_CODEPOINT = 0x3ffff;
-const CONTROL_RANGES: readonly CodepointRange[] = [{ start: 0x00, end: 0x1f }, { start: 0x7f, end: 0x9f }];
+const CONTROL_RANGES: readonly CodepointRange[] = [
+  { start: 0x00, end: 0x1f },
+  { start: 0x7f, end: 0x9f },
+];
 // Export window with the surrogate span excluded so the range validator
 // (shared with coverage.ts) accepts every window edge.
 const EXPORT_WINDOW_RANGES: readonly CodepointRange[] = [
@@ -59,9 +62,7 @@ export function splitExportWindow(requested: readonly CodepointRange[]): {
 export function coverageToCharacters(coverage: CharacterCoverage): string {
   const { supported, unsupported } = splitExportWindow(resolveCoverage(coverage));
   if (unsupported.length > 0) {
-    throw new CoverageError(
-      `Coverage holds ${coverageCount(unsupported)} scalars outside the Playdate export subset.`,
-    );
+    throw new CoverageError(`Coverage holds ${coverageCount(unsupported)} scalars outside the Playdate export subset.`);
   }
   const scalars = expandRanges(supported, PLAYDATE_EXPORT_MAX_SCALARS);
   if (scalars.length === 0) {
@@ -80,16 +81,44 @@ export function playdateRequestForSettings(
   if (settings.profile !== "mono_1bit") throw new Error("Select Monochrome output to export for Playdate.");
   const characters = coverageToCharacters(coverage);
   const spec = toRenderSpec({
-    text: "", width: 1, height: 1, sizePx: settings.sizePx, axes: settings.axes,
-    profile: settings.profile, rasterization: "free_type_mono", stemFitting: settings.stemFitting,
+    text: "",
+    width: 1,
+    height: 1,
+    sizePx: settings.sizePx,
+    axes: settings.axes,
+    profile: settings.profile,
+    rasterization: "free_type_mono",
+    stemFitting: settings.stemFitting,
     diagonalFitting: settings.diagonalFitting,
-    letterSpacingPx: settings.letterSpacingPx, kerning: settings.kerning,
+    letterSpacingPx: settings.letterSpacingPx,
+    kerning: settings.kerning,
   });
-  const { size_px, axes, hinting, output_bits, mono_threshold, gray_gamma, missing_glyphs,
-    kerning, metric_rounding, mono_raster } = spec;
+  const {
+    size_px,
+    axes,
+    hinting,
+    output_bits,
+    mono_threshold,
+    gray_gamma,
+    missing_glyphs,
+    kerning,
+    metric_rounding,
+    mono_raster,
+  } = spec;
   return {
-    config: { size_px, axes, hinting, output_bits, mono_threshold, gray_gamma, missing_glyphs,
-      kerning, metric_rounding, mono_raster, characters },
+    config: {
+      size_px,
+      axes,
+      hinting,
+      output_bits,
+      mono_threshold,
+      gray_gamma,
+      missing_glyphs,
+      kerning,
+      metric_rounding,
+      mono_raster,
+      characters,
+    },
     pipeline: spec.pipeline!,
     letter_spacing_px: spec.letter_spacing_px,
     ...(spec.kerning_method ? { kerning_method: spec.kerning_method } : {}),
@@ -98,7 +127,11 @@ export function playdateRequestForSettings(
 
 // Portable download filename; the slug keeps letters, digits, _ and -.
 export function playdateFileName(name: string, sizePx: number): string {
-  const stem = name.replace(/[^\p{L}\p{N}_-]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "font";
+  const stem =
+    name
+      .replace(/[^\p{L}\p{N}_-]+/gu, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80) || "font";
   return `${stem}-${sizePx}px.fnt`;
 }
 
@@ -145,6 +178,9 @@ export interface FontExportInput {
   outputProfileId: string;
   coverage: CharacterCoverage;
   format: "playdate";
+  // Direct-font labels resolved by the caller (the domain has no saved style
+  // for them); appended after the resolved styles in the same archive.
+  extraSnapshots?: FontExportStyleSnapshot[];
 }
 
 export interface FontExportMissing {
@@ -191,11 +227,12 @@ export async function exportTextStylesToZip(
   onProgress?: (progress: FontExportProgress) => void,
 ): Promise<FontExportResult> {
   if (input.format !== "playdate") throw new Error(`Unsupported font export format '${input.format}'.`);
-  if (input.textStyleIds.length === 0) {
+  const extras = input.extraSnapshots ?? [];
+  if (input.textStyleIds.length === 0 && extras.length === 0) {
     throw new Error("Font export needs at least one text style.");
   }
   const requested = resolveCoverage(input.coverage);
-  const snapshots = await services.resolveTextStyles(input.textStyleIds, input.outputProfileId);
+  const snapshots = [...(await services.resolveTextStyles(input.textStyleIds, input.outputProfileId)), ...extras];
   const entries: { name: string; bytes: Uint8Array }[] = [];
   const missing: FontExportMissing[] = [];
   const failures: FontExportFailure[] = [];
@@ -214,18 +251,13 @@ export async function exportTextStylesToZip(
       }
       const window = splitExportWindow(covered);
       if (window.unsupported.length > 0) {
-        throw new Error(
-          `holds ${coverageCount(window.unsupported)} characters outside the Playdate export subset.`,
-        );
+        throw new Error(`holds ${coverageCount(window.unsupported)} characters outside the Playdate export subset.`);
       }
       const scalars = expandRanges(window.supported, PLAYDATE_EXPORT_MAX_SCALARS);
       if (scalars.length === 0) {
         throw new Error("covers no exportable characters for Playdate output.");
       }
-      const request = playdateRequestForSettings(
-        snapshot.settings,
-        { presetIds: [], extraRanges: window.supported },
-      );
+      const request = playdateRequestForSettings(snapshot.settings, { presetIds: [], extraRanges: window.supported });
       const buffer = await services.exportPlaydate(snapshot.fontId, request);
       entries.push({
         name: playdateFileName(snapshot.name, snapshot.settings.sizePx),

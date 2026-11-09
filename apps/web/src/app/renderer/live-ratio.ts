@@ -7,12 +7,11 @@
 // mirroring the render canvas subscription. Pure except for the thin React
 // wrapper at the bottom; units stay explicit numbers.
 import * as React from "react";
+import { sanitizeDevicePixelRatio } from "./display-scaling.ts";
 
-// Sanitize a raw devicePixelRatio reading: non-finite and non-positive values
-// never reach layout math.
+// Live devicePixelRatio reading; sanitized through the shared display owner.
 export function liveRatioOf(value: unknown): number {
-  const ratio = Number(value);
-  return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+  return sanitizeDevicePixelRatio(value);
 }
 
 export interface RatioMediaQuery {

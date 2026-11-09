@@ -88,7 +88,11 @@ export function devicePhase(cssCoordinate: number, devicePixelRatio: number): nu
 // The caller reserves a one-device-pixel end gutter (right/bottom) for
 // this shift, plus the separate CSS-layout alignment allowance. Pure: callers measure the *untransformed* layout origin
 // once and set the transform from it without re-rendering (no feedback loop).
-export function snapTranslation(rectLeft: number, rectTop: number, devicePixelRatio: number): { dx: number; dy: number } {
+export function snapTranslation(
+  rectLeft: number,
+  rectTop: number,
+  devicePixelRatio: number,
+): { dx: number; dy: number } {
   const ratio = Number(devicePixelRatio);
   if (!Number.isFinite(ratio) || ratio <= 0) return { dx: 0, dy: 0 };
   const snap = (css: number): number => {
@@ -97,6 +101,13 @@ export function snapTranslation(rectLeft: number, rectTop: number, devicePixelRa
     return (1 - phase) / ratio;
   };
   return { dx: snap(rectLeft), dy: snap(rectTop) };
+}
+
+// Raw devicePixelRatio readings outside the positive finite range never
+// reach layout math; withheld or malformed values fall back to 1.
+export function sanitizeDevicePixelRatio(value: unknown): number {
+  const ratio = Number(value);
+  return Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
 }
 
 // CSS px per device pixel for Pixel 1:1 mode: one device image pixel covers

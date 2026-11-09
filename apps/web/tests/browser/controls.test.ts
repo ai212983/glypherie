@@ -25,93 +25,94 @@ async function openVariantByName(page: Page, name: string): Promise<void> {
   const index = names.findIndex((entry) => entry === name);
   assert.ok(index >= 0, `catalog has ${name}`);
   await openNewVariant(page, ids[index]!);
-  await page.waitForFunction(
-    (expected) => document.querySelector(".family h2")?.textContent === expected,
-    name,
-  );
+  await page.waitForFunction((expected) => document.querySelector(".family h2")?.textContent === expected, name);
   await page.waitForFunction(canvasRendered);
 }
 
-test("shared font size control supports presets, custom sizes and persistence across views", { skip: !browserAvailable }, async (t) => {
-  const output = await buildApp(t);
-  const url = await servePrefix(t, output);
-  const browser = await launch(t);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await bootLibrary(page, url);
-  const id = (await cardIds(page))[0]!;
-  const input = page.getByRole("spinbutton", { name: "Size", exact: true });
-  const slider = page.getByRole("slider", { name: "Size", exact: true });
-  const stops = [8, 10, 12, 16, 24, 32, 48];
-  assert.deepEqual(await page.locator("[data-size-stop]").allTextContents(), stops.map(String));
-  await slider.focus();
-  await slider.press("Home");
-  for (const size of stops) {
-    assert.equal(await input.inputValue(), String(size));
-    assert.equal(await slider.getAttribute("aria-valuetext"), `${size} pixels`);
+test(
+  "shared font size control supports presets, custom sizes and persistence across views",
+  { skip: !browserAvailable },
+  async (t) => {
+    const output = await buildApp(t);
+    const url = await servePrefix(t, output);
+    const browser = await launch(t);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await bootLibrary(page, url);
+    const id = (await cardIds(page))[0]!;
+    const input = page.getByRole("spinbutton", { name: "Size", exact: true });
+    const slider = page.getByRole("slider", { name: "Size", exact: true });
+    const stops = [8, 10, 12, 16, 24, 32, 48, 64, 96, 128];
+    assert.deepEqual(await page.locator("[data-size-stop]").allTextContents(), stops.map(String));
+    await slider.focus();
+    await slider.press("Home");
+    for (const size of stops) {
+      assert.equal(await input.inputValue(), String(size));
+      assert.equal(await slider.getAttribute("aria-valuetext"), `${size} pixels`);
+      await slider.press("ArrowRight");
+    }
+    await input.fill("20.5");
+    await input.blur();
+    assert.equal(await page.locator('[data-size-stop][aria-pressed="true"]').count(), 0);
+    assert.equal(await slider.getAttribute("aria-valuetext"), "20.5 pixels");
+    await slider.focus();
     await slider.press("ArrowRight");
-  }
-  await input.fill("20.5");
-  await input.blur();
-  assert.equal(await page.locator('[data-size-stop][aria-pressed="true"]').count(), 0);
-  assert.equal(await slider.getAttribute("aria-valuetext"), "20.5 pixels");
-  await slider.focus();
-  await slider.press("ArrowRight");
-  assert.equal(await input.inputValue(), "24");
-  await input.fill("20.5");
-  await slider.focus();
-  await slider.press("ArrowLeft");
-  assert.equal(await input.inputValue(), "16");
-  // Drag to the far end through the actual pointer interaction.
-  const track = await page.locator('[data-slot="slider-track"]').boundingBox();
-  assert.ok(track);
-  await slider.hover();
-  await page.mouse.down();
-  await page.mouse.move(track.x + track.width, track.y + track.height / 2, { steps: 10 });
-  await page.mouse.up();
-  assert.equal(await input.inputValue(), "48");
-  await input.fill("");
-  assert.equal(await input.inputValue(), "", "clearing the input allows replacement without changing the size");
-  await input.blur();
-  assert.equal(await input.inputValue(), "48");
-  await input.fill("999");
-  await input.blur();
-  assert.equal(await input.inputValue(), "512");
-  await input.fill("0");
-  await input.blur();
-  assert.equal(await input.inputValue(), "1");
-  await input.fill("20.5");
-  await input.blur();
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await input.waitFor();
-  assert.equal(await input.inputValue(), "20.5");
-  await page.waitForFunction((fontId) => {
-    const source = document.querySelector(`[data-source-preview="${fontId}"]`);
-    const zoom = Number(document.querySelector("[data-preview-zoom]")?.getAttribute("data-value"));
-    return source && parseFloat(getComputedStyle(source).fontSize) === 20.5 * zoom;
-  }, id);
+    assert.equal(await input.inputValue(), "24");
+    await input.fill("20.5");
+    await slider.focus();
+    await slider.press("ArrowLeft");
+    assert.equal(await input.inputValue(), "16");
+    // Drag to the far end through the actual pointer interaction.
+    const track = await page.locator('[data-slot="slider-track"]').boundingBox();
+    assert.ok(track);
+    await slider.hover();
+    await page.mouse.down();
+    await page.mouse.move(track.x + track.width, track.y + track.height / 2, { steps: 10 });
+    await page.mouse.up();
+    assert.equal(await input.inputValue(), "128");
+    await input.fill("");
+    assert.equal(await input.inputValue(), "", "clearing the input allows replacement without changing the size");
+    await input.blur();
+    assert.equal(await input.inputValue(), "128");
+    await input.fill("999");
+    await input.blur();
+    assert.equal(await input.inputValue(), "128");
+    await input.fill("0");
+    await input.blur();
+    assert.equal(await input.inputValue(), "1");
+    await input.fill("20.5");
+    await input.blur();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await input.waitFor();
+    assert.equal(await input.inputValue(), "20.5");
+    await page.waitForFunction((fontId) => {
+      const source = document.querySelector(`[data-source-preview="${fontId}"]`);
+      const zoom = Number(document.querySelector("[data-preview-zoom]")?.getAttribute("data-value"));
+      return source && parseFloat(getComputedStyle(source).fontSize) === 20.5 * zoom;
+    }, id);
 
-  await openNewVariant(page, id);
-  await page.waitForFunction(canvasRendered);
-  await input.fill("18.5");
-  await input.blur();
-  await page.waitForFunction(() => document.querySelector("[data-save-status]")?.textContent === "Saved");
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(canvasRendered);
-  assert.equal(await input.inputValue(), "18.5");
-  await slider.press("ArrowRight");
-  assert.equal(await input.inputValue(), "24");
+    await openNewVariant(page, id);
+    await page.waitForFunction(canvasRendered);
+    await input.fill("18.5");
+    await input.blur();
+    await page.waitForFunction(() => document.querySelector("[data-save-status]")?.textContent === "Saved");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(canvasRendered);
+    assert.equal(await input.inputValue(), "18.5");
+    await slider.press("ArrowRight");
+    assert.equal(await input.inputValue(), "24");
 
-  await bootDetail(page, `${url}#/font/${id}/`);
-  await input.fill("22.5");
-  await input.blur();
-  await page.waitForFunction(() => window.location.search.includes("22.5"));
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(canvasRendered);
-  assert.equal(await input.inputValue(), "22.5");
-  assert.deepEqual(errors, []);
-});
+    await bootDetail(page, `${url}#/font/${id}/`);
+    await input.fill("22.5");
+    await input.blur();
+    await page.waitForFunction(() => window.location.search.includes("22.5"));
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(canvasRendered);
+    assert.equal(await input.inputValue(), "22.5");
+    assert.deepEqual(errors, []);
+  },
+);
 
 test("index boots cleanly and the first variant renders through the worker", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
@@ -122,10 +123,12 @@ test("index boots cleanly and the first variant renders through the worker", { s
   const failed: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("response", (response) => {
-    const libraryRedirect = response.status() === 404
-      && response.request().resourceType() === "document"
-      && new URL(response.url()).pathname === "/preview/fonts/";
-    if (response.status() >= 400 && !libraryRedirect && !response.url().endsWith("favicon.ico")) failed.push(response.url());
+    const libraryRedirect =
+      response.status() === 404 &&
+      response.request().resourceType() === "document" &&
+      new URL(response.url()).pathname === "/preview/fonts/";
+    if (response.status() >= 400 && !libraryRedirect && !response.url().endsWith("favicon.ico"))
+      failed.push(response.url());
   });
   await bootLibrary(page, url);
   const names = await cardNames(page);
@@ -199,7 +202,10 @@ test("controls resolve to visible theme colors", { skip: !browserAvailable }, as
   assert.notEqual(styles.reset.color, styles.reset.background, "reset text contrasts its neutral fill");
   assert.notEqual(styles.remove.color, styles.panel.background, "delete icon contrasts with the specimen paper");
   const sizeBorder = channels(styles.size.border);
-  assert.ok(sizeBorder && !(sizeBorder.values[0] === 0 && sizeBorder.values[1] === 0 && sizeBorder.values[2] === 0), "text input shows a border");
+  assert.ok(
+    sizeBorder && !(sizeBorder.values[0] === 0 && sizeBorder.values[1] === 0 && sizeBorder.values[2] === 0),
+    "text input shows a border",
+  );
 });
 
 test("palette selection and keyboard focus are visible", { skip: !browserAvailable }, async (t) => {
@@ -219,13 +225,31 @@ test("palette selection and keyboard focus are visible", { skip: !browserAvailab
     const display = await fixedPalette.evaluate((element) => {
       const style = getComputedStyle(element);
       let opacity = 1;
-      for (let node: Element | null = element; node; node = node.parentElement) opacity *= Number(getComputedStyle(node).opacity);
-      return { opacity, border: style.borderWidth, shadow: style.boxShadow, background: style.backgroundColor,
+      for (let node: Element | null = element; node; node = node.parentElement)
+        opacity *= Number(getComputedStyle(node).opacity);
+      return {
+        opacity,
+        border: style.borderWidth,
+        shadow: style.boxShadow,
+        background: style.backgroundColor,
         tabIndex: (element as HTMLElement).tabIndex,
-        swatches: [...element.querySelectorAll(".palette-choice-swatches > span")].map((swatch) => getComputedStyle(swatch).backgroundColor) };
+        swatches: [...element.querySelectorAll(".palette-choice-swatches > span")].map(
+          (swatch) => getComputedStyle(swatch).backgroundColor,
+        ),
+      };
     });
-    assert.deepEqual(display, { opacity: 1, border: "0px", shadow: "none", background: "rgba(0, 0, 0, 0)",
-      tabIndex: -1, swatches: ["rgb(255, 255, 255)", "rgb(0, 0, 0)"] }, `${theme} fixed palette preserves swatches without control styling`);
+    assert.deepEqual(
+      display,
+      {
+        opacity: 1,
+        border: "0px",
+        shadow: "none",
+        background: "rgba(0, 0, 0, 0)",
+        tabIndex: -1,
+        swatches: ["rgb(255, 255, 255)", "rgb(0, 0, 0)"],
+      },
+      `${theme} fixed palette preserves swatches without control styling`,
+    );
   }
   const variantUrl = page.url();
   await createPalettePreset(page, url, { name: "Grayscale", bits: 2 });
@@ -246,8 +270,9 @@ test("palette selection and keyboard focus are visible", { skip: !browserAvailab
   await page.locator('.family h2[id^="heading-"]').click();
   for (let i = 0; i < 120; i += 1) {
     const focused = await page.evaluate(
-      () => document.activeElement?.getAttribute("role") === "combobox"
-        && document.activeElement.querySelector("[data-palette-name]")?.textContent === "Monochrome",
+      () =>
+        document.activeElement?.getAttribute("role") === "combobox" &&
+        document.activeElement.querySelector("[data-palette-name]")?.textContent === "Monochrome",
     );
     if (focused) break;
     await page.keyboard.press("Tab");
@@ -276,45 +301,43 @@ test("kerning toggles persist without listing source pairs", { skip: !browserAva
   assert.equal(await page.getByRole("switch", { name: "Kerning", exact: true }).isChecked(), false);
 });
 
-async function openVariantByNameFromLibrary(page: Page, name: string): Promise<void> {
-  await page.locator('[data-primary-nav="fonts"]').click();
-  await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
-  await openVariantByName(page, name);
-}
-
-test("palette preset persists in the variant across reloads, not in the URL", { skip: !browserAvailable }, async (t) => {
-  const output = await buildApp(t);
-  const url = await servePrefix(t, output);
-  const browser = await launch(t);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  await bootLibrary(page, url);
-  await openVariantByName(page, (await cardNames(page))[0]!);
-  assert.equal(await page.locator("#rasterization").count(), 0);
-  assert.equal(await page.getByRole("group", { name: "Palette", exact: true }).count(), 1);
-  const editorUrl = page.url();
-  await createPalettePreset(page, url, { name: "Output gray", bits: 3 });
-  await page.goto(editorUrl, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
-    timeout: 20000,
-  });
-  await selectPalettePreset(page, "Output gray");
-  await page.waitForFunction(
-    () => document.querySelector("[data-save-status]")?.textContent?.startsWith("Saved"),
-    null,
-    { timeout: 20000 },
-  );
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
-    timeout: 20000,
-  });
-  await page.waitForFunction(
-    () => document.querySelector("[data-output-palette] [data-palette-name]")?.textContent === "Output gray",
-    null,
-    { timeout: 20000 },
-  );
-  assert.equal(await page.locator("[data-output-palette] [data-palette-name]").textContent(), "Output gray");
-  assert.equal(await hashParam(page, "palette"), null, "saved palette reference lives in the database, not the URL");
-});
+test(
+  "palette preset persists in the variant across reloads, not in the URL",
+  { skip: !browserAvailable },
+  async (t) => {
+    const output = await buildApp(t);
+    const url = await servePrefix(t, output);
+    const browser = await launch(t);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await bootLibrary(page, url);
+    await openVariantByName(page, (await cardNames(page))[0]!);
+    assert.equal(await page.locator("#rasterization").count(), 0);
+    assert.equal(await page.getByRole("group", { name: "Palette", exact: true }).count(), 1);
+    const editorUrl = page.url();
+    await createPalettePreset(page, url, { name: "Output gray", bits: 3 });
+    await page.goto(editorUrl, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
+      timeout: 20000,
+    });
+    await selectPalettePreset(page, "Output gray");
+    await page.waitForFunction(
+      () => document.querySelector("[data-save-status]")?.textContent?.startsWith("Saved"),
+      null,
+      { timeout: 20000 },
+    );
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => document.querySelector("[data-variant-name]") !== null, null, {
+      timeout: 20000,
+    });
+    await page.waitForFunction(
+      () => document.querySelector("[data-output-palette] [data-palette-name]")?.textContent === "Output gray",
+      null,
+      { timeout: 20000 },
+    );
+    assert.equal(await page.locator("[data-output-palette] [data-palette-name]").textContent(), "Output gray");
+    assert.equal(await hashParam(page, "palette"), null, "saved palette reference lives in the database, not the URL");
+  },
+);
 
 test("font metadata shows kerning availability", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
@@ -342,10 +365,7 @@ test("preview font switching renders the newly selected font", { skip: !browserA
   const flexId = ids[names.findIndex((name) => name === flex)];
   await page.getByRole("combobox", { name: "Font", exact: true }).click();
   await page.getByRole("option", { name: flex, exact: true }).click();
-  await page.waitForFunction(
-    (expected) => document.querySelector(".family h2")?.textContent === expected,
-    flex,
-  );
+  await page.waitForFunction((expected) => document.querySelector(".family h2")?.textContent === expected, flex);
   await page.waitForFunction(canvasRendered);
   const after = await canvasPixels(page);
   assert.ok(after.ink > 100);
@@ -358,69 +378,81 @@ test("preview font switching renders the newly selected font", { skip: !browserA
   assert.equal(await hashPath(page), `/font/${flexId}/`);
 });
 
-test("specimen dropdown and fitting switches preserve edits, keyboard selection and profile state", { skip: !browserAvailable }, async (t) => {
-  const output = await buildApp(t);
-  const url = await servePrefix(t, output);
-  const browser = await launch(t);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await bootLibrary(page, url);
-  await openVariantByName(page, (await cardNames(page))[0]!);
+test(
+  "specimen dropdown and fitting switches preserve edits, keyboard selection and profile state",
+  { skip: !browserAvailable },
+  async (t) => {
+    const output = await buildApp(t);
+    const url = await servePrefix(t, output);
+    const browser = await launch(t);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await bootLibrary(page, url);
+    await openVariantByName(page, (await cardNames(page))[0]!);
 
-  const preset = page.getByRole("combobox", { name: "Preset", exact: true });
-  const text = page.locator("textarea[data-text]");
-  await preset.focus();
-  await preset.press("Space");
-  await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "option");
-  assert.equal(await page.getByRole("option", { name: "Custom", exact: true }).count(), 0);
-  await page.keyboard.press("End");
-  await page.waitForFunction(() => document.activeElement?.textContent === "Alphabet");
-  await page.keyboard.press("Enter");
-  assert.equal(await preset.evaluate((element) => element === document.activeElement), true);
-  assert.equal(await text.inputValue(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz\n0123456789");
-  await text.fill("My custom specimen");
-  assert.equal(await preset.textContent(), "Custom");
-  await preset.click();
-  assert.equal(await page.getByRole("option", { name: "Custom", exact: true }).count(), 0);
-  await page.getByRole("option", { name: "Pangram", exact: true }).click();
-  assert.equal(await preset.textContent(), "Pangram");
-  await text.fill("My custom specimen");
+    const preset = page.getByRole("combobox", { name: "Preset", exact: true });
+    const text = page.locator("textarea[data-text]");
+    await preset.focus();
+    await preset.press("Space");
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "option");
+    assert.equal(await page.getByRole("option", { name: "Custom", exact: true }).count(), 0);
+    await page.keyboard.press("End");
+    await page.waitForFunction(() => document.activeElement?.textContent === "Alphabet");
+    await page.keyboard.press("Enter");
+    assert.equal(await preset.evaluate((element) => element === document.activeElement), true);
+    assert.equal(await text.inputValue(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz\n0123456789");
+    await text.fill("My custom specimen");
+    assert.equal(await preset.textContent(), "Custom");
+    await preset.click();
+    assert.equal(await page.getByRole("option", { name: "Custom", exact: true }).count(), 0);
+    await page.getByRole("option", { name: "Pangram", exact: true }).click();
+    assert.equal(await preset.textContent(), "Pangram");
+    await text.fill("My custom specimen");
 
-  assert.equal(await page.getByRole("combobox", { name: "Fitting", exact: true }).count(), 0, "fitting uses switches, without a combobox");
-  const hints = page.getByRole("switch", { name: "Use font hints", exact: true });
-  const diagonals = page.getByRole("switch", { name: "Fit diagonal strokes", exact: true });
-  assert.equal(await hints.count(), 1, "the hinted mono font offers the hints switch");
-  assert.equal(await diagonals.count(), 1, "the mono font offers the diagonal switch");
-  assert.equal(await hints.isChecked(), true);
-  assert.equal(await diagonals.isChecked(), true, "diagonals default on for new previews");
-  await hints.focus();
-  await page.keyboard.press("Space");
-  await page.waitForFunction(() => document.querySelector("#use-font-hints")?.getAttribute("aria-checked") === "false");
-  assert.equal(await hints.isChecked(), false, "space toggles the hints switch");
-  await diagonals.click();
-  await page.waitForFunction(() => document.querySelector("#fit-diagonal-strokes")?.getAttribute("aria-checked") === "false");
-  assert.equal(await diagonals.isChecked(), false, "explicit off stays off");
-  const editorUrl = page.url();
-  await createPalettePreset(page, url, { name: "Fitting gray", bits: 3 });
-  await page.goto(editorUrl, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(canvasRendered, null, { timeout: 20000 });
-  await selectPalettePreset(page, "Fitting gray");
-  assert.equal(await hints.count(), 0, "grayscale fitting hides the hints switch");
-  assert.equal(await diagonals.count(), 0, "grayscale fitting hides the diagonal switch");
-  await selectPalettePreset(page, "Monochrome");
-  await hints.waitFor();
-  assert.equal(await hints.isChecked(), false, "Mono retains its hints choice across profile changes");
-  assert.equal(await diagonals.isChecked(), false, "Mono retains its diagonal choice across profile changes");
-  assert.equal(await page.locator("select:visible").count(), 0, "all app dropdowns use custom triggers");
-  await page.waitForFunction(() => document.querySelector("[data-save-status]")?.textContent === "Saved");
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForFunction(canvasRendered);
-  assert.equal(await page.getByRole("switch", { name: "Use font hints", exact: true }).isChecked(), false);
-  assert.equal(await page.getByRole("switch", { name: "Fit diagonal strokes", exact: true }).isChecked(), false);
-  assert.equal(await text.inputValue(), "My custom specimen");
-  assert.deepEqual(errors, []);
-});
+    assert.equal(
+      await page.getByRole("combobox", { name: "Fitting", exact: true }).count(),
+      0,
+      "fitting uses switches, without a combobox",
+    );
+    const hints = page.getByRole("switch", { name: "Use font hints", exact: true });
+    const diagonals = page.getByRole("switch", { name: "Fit diagonal strokes", exact: true });
+    assert.equal(await hints.count(), 1, "the hinted mono font offers the hints switch");
+    assert.equal(await diagonals.count(), 1, "the mono font offers the diagonal switch");
+    assert.equal(await hints.isChecked(), true);
+    assert.equal(await diagonals.isChecked(), true, "diagonals default on for new previews");
+    await hints.focus();
+    await page.keyboard.press("Space");
+    await page.waitForFunction(
+      () => document.querySelector("#use-font-hints")?.getAttribute("aria-checked") === "false",
+    );
+    assert.equal(await hints.isChecked(), false, "space toggles the hints switch");
+    await diagonals.click();
+    await page.waitForFunction(
+      () => document.querySelector("#fit-diagonal-strokes")?.getAttribute("aria-checked") === "false",
+    );
+    assert.equal(await diagonals.isChecked(), false, "explicit off stays off");
+    const editorUrl = page.url();
+    await createPalettePreset(page, url, { name: "Fitting gray", bits: 3 });
+    await page.goto(editorUrl, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(canvasRendered, null, { timeout: 20000 });
+    await selectPalettePreset(page, "Fitting gray");
+    assert.equal(await hints.count(), 0, "grayscale fitting hides the hints switch");
+    assert.equal(await diagonals.count(), 0, "grayscale fitting hides the diagonal switch");
+    await selectPalettePreset(page, "Monochrome");
+    await hints.waitFor();
+    assert.equal(await hints.isChecked(), false, "Mono retains its hints choice across profile changes");
+    assert.equal(await diagonals.isChecked(), false, "Mono retains its diagonal choice across profile changes");
+    assert.equal(await page.locator("select:visible").count(), 0, "all app dropdowns use custom triggers");
+    await page.waitForFunction(() => document.querySelector("[data-save-status]")?.textContent === "Saved");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForFunction(canvasRendered);
+    assert.equal(await page.getByRole("switch", { name: "Use font hints", exact: true }).isChecked(), false);
+    assert.equal(await page.getByRole("switch", { name: "Fit diagonal strokes", exact: true }).isChecked(), false);
+    assert.equal(await text.inputValue(), "My custom specimen");
+    assert.deepEqual(errors, []);
+  },
+);
 
 test("skip link focuses content without touching the route", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);

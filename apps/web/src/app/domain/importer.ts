@@ -23,11 +23,12 @@ import {
   type DomainBackend,
 } from "./backend.ts";
 import { DomainError } from "./commands.ts";
+import { IMPORT_MARKER_KEY } from "./storage-keys.ts";
 import { linearCurve } from "../features/grayscale/response-curve.ts";
 import { domainGraph } from "./graph.ts";
 import type { LegacySnapshot } from "../legacy-database.ts";
 
-export const IMPORT_MARKER_KEY = "import:legacy:v1";
+export { IMPORT_MARKER_KEY };
 export const SEED_MARKER_KEY = "seed:bundled-fonts";
 
 interface ImportMarker {
@@ -87,10 +88,7 @@ function tabId(): string {
   return `tab-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
 
-export async function importStatus(
-  backend: DomainBackend,
-  snapshot: LegacySnapshot,
-): Promise<{ imported: boolean }> {
+export async function importStatus(backend: DomainBackend, snapshot: LegacySnapshot): Promise<{ imported: boolean }> {
   // The snapshot stays in the signature for call-site compatibility, but the
   // answer keys off the completion marker alone: a completed import never
   // re-runs against a newer legacy snapshot.
@@ -105,11 +103,40 @@ interface NormalizedVariant {
   kerning: ReturnType<typeof cloneKerning>;
 }
 
+// The 2026-11-06 hard cut retired the `strength` blend: untouched legacy
+// snapshots may still carry it (any value, active or inactive block). Drop
+// those keys from a copy before current validation so the import neither
+// blocks boot nor resurrects the parameter. Presence-based: null/0 values
+// are discarded, never blended. The Dexie row itself is never mutated.
+type LegacyVariantSettings = LegacySnapshot["variants"][number]["settings"];
+
+function withoutRetiredKerningStrength(settings: LegacyVariantSettings): LegacyVariantSettings {
+  const kerning = (settings as { kerning?: unknown }).kerning;
+  if (typeof kerning !== "object" || kerning === null || Array.isArray(kerning)) return settings;
+  const blocks = kerning as Record<string, unknown>;
+  let changed = false;
+  const next: Record<string, unknown> = { ...blocks };
+  for (const block of ["hu_hersch", "fontforge"] as const) {
+    const value = next[block];
+    if (typeof value === "object" && value !== null && !Array.isArray(value) && "strength" in value) {
+      const cleaned = { ...(value as Record<string, unknown>) };
+      delete cleaned.strength;
+      next[block] = cleaned;
+      changed = true;
+    }
+  }
+  if (!changed) return settings;
+  // Only retired keys were removed, so the shape still conforms; current
+  // validation below enforces the rest.
+  return { ...settings, kerning: next } as unknown as LegacyVariantSettings;
+}
+
 function normalizeVariants(snapshot: LegacySnapshot): NormalizedVariant[] {
   return snapshot.variants.map((variant) => {
+    const cleaned = withoutRetiredKerningStrength(variant.settings);
     let settings;
     try {
-      settings = currentPreviewSettings(variant.settings);
+      settings = currentPreviewSettings(cleaned);
     } catch (error) {
       throw new DomainError(
         "invalid-settings",
@@ -140,17 +167,17 @@ async function digestFonts(snapshot: LegacySnapshot): Promise<Array<{ id: string
     const digest = await subtle.digest("SHA-256", bytes as BufferSource);
     const actual = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
     if (actual !== font.id) {
-      throw new DomainError("invalid-input", `Legacy font "${font.id}" bytes do not match their content id; refusing to import.`);
+      throw new DomainError(
+        "invalid-input",
+        `Legacy font "${font.id}" bytes do not match their content id; refusing to import.`,
+      );
     }
     digested.push({ id: font.id, bytes });
   }
   return digested;
 }
 
-export async function importLegacySnapshot(
-  backend: DomainBackend,
-  snapshot: LegacySnapshot,
-): Promise<ImportResult> {
+export async function importLegacySnapshot(backend: DomainBackend, snapshot: LegacySnapshot): Promise<ImportResult> {
   const fingerprint = fingerprintOf(snapshot);
   const marker = await readMarker(backend.db);
   // One-way migration: a complete marker means the import ran once. Later
@@ -158,7 +185,13 @@ export async function importLegacySnapshot(
   // reapply, so they cannot overwrite newer domain edits. A stale
   // in-progress marker from an older build simply retries.
   if (marker?.status === "complete") {
-    return { skipped: true, fonts: 0, variants: 0, palettes: 0, skippedVariantIds: [] };
+    return {
+      skipped: true,
+      fonts: 0,
+      variants: 0,
+      palettes: 0,
+      skippedVariantIds: [],
+    };
   }
   // Upfront validation: legacy rows must normalize under the current policy
   // and binaries must match their content ids before anything is written, so
@@ -201,13 +234,23 @@ export async function importLegacySnapshot(
         const existing = await txNodes.nodes.Font.getById(font.id as never).catch(() => undefined);
         if (!existing) {
           await txNodes.nodes.Font.create(
-            { name: font.name, fileName: font.fileName, metadata: font.metadata as never, source: font.source, addedAt: font.addedAt },
+            {
+              name: font.name,
+              fileName: font.fileName,
+              metadata: font.metadata as never,
+              source: font.source,
+              addedAt: font.addedAt,
+            },
             { id: font.id },
           );
         }
         fontIds.add(font.id);
       }
-      const existingProfiles = await txNodes.query().from("OutputProfile", "o").select((ctx) => ctx.o).execute();
+      const existingProfiles = await txNodes
+        .query()
+        .from("OutputProfile", "o")
+        .select((ctx) => ctx.o)
+        .execute();
       for (const row of existingProfiles) {
         const legacyId = (row as unknown as Record<string, unknown>).legacyPaletteId;
         if (typeof legacyId === "number") paletteMap.set(legacyId, String(row.id));
@@ -290,7 +333,12 @@ export async function importLegacySnapshot(
           updatedAt: variant.updatedAt,
         });
         const style = await txNodes.nodes.TextStyle.create(
-          { name: variant.name, revision: variant.revision, createdAt: variant.createdAt, updatedAt: variant.updatedAt },
+          {
+            name: variant.name,
+            revision: variant.revision,
+            createdAt: variant.createdAt,
+            updatedAt: variant.updatedAt,
+          },
           { id: variant.id },
         );
         await txNodes.edges.usesVariant.create(style, fontVariant, {});
@@ -312,25 +360,45 @@ export async function importLegacySnapshot(
     // later validation throw rolls back binaries and graph rows with them.
     for (const { variant, settings } of normalized) {
       const outputId = paletteByLegacy.get(settings.paletteId ?? MONOCHROME.id) ?? MONOCHROME_OUTPUT_ID;
-      await kvPut(tx, `preview:${variant.id}`, JSON.stringify({
-        sampleText: variant.sampleText,
-        inheritSampleText: variant.inheritSampleText ?? false,
-        outputProfileId: outputId,
-      }));
+      await kvPut(
+        tx,
+        `preview:${variant.id}`,
+        JSON.stringify({
+          sampleText: variant.sampleText,
+          inheritSampleText: variant.inheritSampleText ?? false,
+          outputProfileId: outputId,
+        }),
+      );
     }
     if (snapshot.seedMarker !== undefined) {
       await kvPut(tx, SEED_MARKER_KEY, snapshot.seedMarker);
     }
-    await kvPut(tx, IMPORT_MARKER_KEY, JSON.stringify({
-      status: "complete",
-      fingerprint,
-      tabId: tabId(),
-      startedAt: Date.now(),
-      finishedAt: Date.now(),
-    } satisfies ImportMarker));
+    await kvPut(
+      tx,
+      IMPORT_MARKER_KEY,
+      JSON.stringify({
+        status: "complete",
+        fingerprint,
+        tabId: tabId(),
+        startedAt: Date.now(),
+        finishedAt: Date.now(),
+      } satisfies ImportMarker),
+    );
   });
   if (racedComplete) {
-    return { skipped: true, fonts: 0, variants: 0, palettes: 0, skippedVariantIds: [] };
+    return {
+      skipped: true,
+      fonts: 0,
+      variants: 0,
+      palettes: 0,
+      skippedVariantIds: [],
+    };
   }
-  return { skipped: false, fonts: snapshot.fonts.length, variants: normalized.length, palettes: snapshot.palettes.length, skippedVariantIds: [] };
+  return {
+    skipped: false,
+    fonts: snapshot.fonts.length,
+    variants: normalized.length,
+    palettes: snapshot.palettes.length,
+    skippedVariantIds: [],
+  };
 }

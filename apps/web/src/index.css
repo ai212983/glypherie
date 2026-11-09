@@ -197,4 +197,11 @@
     color: transparent;
     background: transparent;
   }
+
+  .scene-moveable-variant {
+    --moveable-color: var(--color-soft);
+  }
+  .scene-moveable-variant .moveable-control.moveable-direction {
+    display: none;
+  }
 }

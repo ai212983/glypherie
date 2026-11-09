@@ -86,6 +86,7 @@ export type FontStorageErrorCode =
   | "seed-failed"
   | "quota-exceeded"
   | "blocked"
+  | "stale-owner"
   | "referenced"
   | "unavailable";
 
@@ -98,6 +99,8 @@ export class FontStorageError extends Error {
   }
 }
 
+// "stale-owner" passes through with its honest message: a version-skewed
+// domain owner is never recast as generic unavailability.
 const KNOWN_CODES: ReadonlySet<string> = new Set([
   "empty-bytes",
   "invalid-metadata",
@@ -106,6 +109,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set([
   "seed-failed",
   "quota-exceeded",
   "blocked",
+  "stale-owner",
   "referenced",
   "unavailable",
 ]);
@@ -193,13 +197,15 @@ export async function saveFont(input: SaveFontInput): Promise<StoredFont> {
   }
   validateFontMetadata(input.metadata);
   try {
-    return (await callDomain("saveFont", [{
-      bytes: input.bytes,
-      fileName: input.fileName,
-      name: input.name,
-      metadata: input.metadata,
-      source: input.source,
-    }])) as StoredFont;
+    return (await callDomain("saveFont", [
+      {
+        bytes: input.bytes,
+        fileName: input.fileName,
+        name: input.name,
+        metadata: input.metadata,
+        source: input.source,
+      },
+    ])) as StoredFont;
   } catch (error) {
     throw mapStorageError(error);
   }

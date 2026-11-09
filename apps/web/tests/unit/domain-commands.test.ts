@@ -7,12 +7,7 @@ import { closeDomainForTests, resetDomainForTests } from "../../src/app/domain/n
 import { getDomainVersion } from "../../src/app/domain/events.ts";
 import { addSceneLabel, createScene, listOutputProfiles } from "../../src/app/domain/service.ts";
 import { getFont, listFonts, removeFont, saveFont, type FontMetadata } from "../../src/app/fonts/storage.ts";
-import {
-  createPalette,
-  deletePalette,
-  listPalettes,
-  updatePalette,
-} from "../../src/app/palettes/repository.ts";
+import { createPalette, deletePalette, listPalettes } from "../../src/app/palettes/repository.ts";
 import {
   createVariant,
   deleteVariant,
@@ -42,7 +37,13 @@ const fontBytes = (seed = 0): ArrayBuffer =>
   Uint8Array.from({ length: 64 }, (_, i) => (i * 7 + seed) % 251).buffer as ArrayBuffer;
 
 async function saveFixture(seed = 0) {
-  return saveFont({ bytes: fontBytes(seed), fileName: "fixture.ttf", name: "Fixture", metadata: metadata(), source: "uploaded" });
+  return saveFont({
+    bytes: fontBytes(seed),
+    fileName: "fixture.ttf",
+    name: "Fixture",
+    metadata: metadata(),
+    source: "uploaded",
+  });
 }
 
 async function monoId(): Promise<string> {

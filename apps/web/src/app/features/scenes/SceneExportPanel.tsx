@@ -1,4 +1,4 @@
-// Scene ZIP export panel: bitmap fonts for ALL text styles with the
+// Scene ZIP export panel: bitmap fonts for the supplied text styles with the
 // scene's output profile and saved export coverage. Failures name the
 // style and abort the archive; missing ranges stay visible, never silently
 // truncated.
@@ -13,14 +13,23 @@ import {
   exportTextStylesToZip,
   FontExportError,
   type FontExportServices,
+  type FontExportStyleSnapshot,
 } from "../../domain/font-export";
 import type { DomainSceneView, DomainTextStyleView } from "./service";
 import { resolveTextStyles } from "./service";
 import { isConflict } from "./conflict";
 
-export function SceneExportPanel({ scene, textStyles, library }: {
+export function SceneExportPanel({
+  scene,
+  textStyles,
+  directFonts,
+  library,
+}: {
   scene: DomainSceneView;
   textStyles: DomainTextStyleView[];
+  // Direct-font labels resolved by the workspace with the same settings as
+  // the preview; exported alongside the text styles in one archive.
+  directFonts?: FontExportStyleSnapshot[];
   library: FontLibrary;
 }): React.JSX.Element {
   const { service } = useRenderer();
@@ -32,9 +41,10 @@ export function SceneExportPanel({ scene, textStyles, library }: {
   const readyRef = React.useRef<ReadonlySet<string>>(new Set());
   readyRef.current = library.loadedIds;
 
+  const extras = directFonts ?? [];
   const fontIds = React.useMemo(
-    () => [...new Set(textStyles.map((style) => style.fontId))],
-    [textStyles],
+    () => [...new Set([...textStyles.map((style) => style.fontId), ...extras.map((snapshot) => snapshot.fontId)])],
+    [textStyles, extras],
   );
   React.useEffect(() => {
     library.ensureLoaded(fontIds);
@@ -74,6 +84,7 @@ export function SceneExportPanel({ scene, textStyles, library }: {
           outputProfileId: scene.outputProfileId,
           coverage: scene.exportCoverage,
           format: "playdate",
+          extraSnapshots: extras,
         },
         services,
         ({ done, total, name }) => setProgress(`Exporting ${name} (${done + 1} of ${total})…`),
@@ -90,8 +101,9 @@ export function SceneExportPanel({ scene, textStyles, library }: {
       setProgress("");
       setCompleted(result.files);
       if (result.missing.length > 0) {
-        setMissingNote(result.missing.map((entry) =>
-          `${entry.name}: ${entry.ranges.map(formatCustomRange).join(", ")}`).join("; "));
+        setMissingNote(
+          result.missing.map((entry) => `${entry.name}: ${entry.ranges.map(formatCustomRange).join(", ")}`).join("; "),
+        );
       }
     } catch (failure) {
       setProgress("");
@@ -110,10 +122,14 @@ export function SceneExportPanel({ scene, textStyles, library }: {
   return (
     <section aria-label="Scene export" data-scene-export className="flex min-w-0 flex-col gap-2">
       <p className="m-0 text-xs text-soft">
-        Exports all {textStyles.length} text styles as Playdate bitmap fonts ({coverageScalars} characters) in one ZIP.
+        Exports all {textStyles.length + extras.length} text styles
+        {extras.length === 0 ? "" : ` (including ${extras.length} direct font${extras.length === 1 ? "" : "s"})`} as
+        Playdate bitmap fonts ({coverageScalars} characters) in one ZIP.
       </p>
       {loadingFonts.length > 0 && (
-        <p className="m-0 text-xs text-soft">Loading {loadingFonts.length} font{loadingFonts.length === 1 ? "" : "s"}…</p>
+        <p className="m-0 text-xs text-soft">
+          Loading {loadingFonts.length} font{loadingFonts.length === 1 ? "" : "s"}…
+        </p>
       )}
       {failedStyles.length > 0 && (
         <p role="alert" className="m-0 text-xs" data-scene-export-font-error>
@@ -121,21 +137,34 @@ export function SceneExportPanel({ scene, textStyles, library }: {
         </p>
       )}
       <div>
-        <Button data-scene-export-zip disabled={busy || !service || pendingFonts.length > 0 || textStyles.length === 0}
-          onClick={() => void download()}>
+        <Button
+          data-scene-export-zip
+          disabled={busy || !service || pendingFonts.length > 0 || textStyles.length + extras.length === 0}
+          onClick={() => void download()}
+        >
           <Download aria-hidden="true" className="size-3 shrink-0" />
           {busy ? "Exporting…" : "Export ZIP"}
         </Button>
       </div>
-      {progress && <p role="status" className="m-0 text-xs" data-scene-export-progress>{progress}</p>}
-      {error && <p role="alert" className="m-0 text-xs" data-scene-export-error>{error}</p>}
+      {progress && (
+        <p role="status" className="m-0 text-xs" data-scene-export-progress>
+          {progress}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="m-0 text-xs" data-scene-export-error>
+          {error}
+        </p>
+      )}
       {completed.length > 0 && (
         <div className="flex min-w-0 flex-col gap-1">
           <p role="status" className="m-0 text-xs" data-scene-export-success>
             Downloaded {completed.length} font{completed.length === 1 ? "" : "s"}: {completed.join(", ")}
           </p>
           {missingNote && (
-            <p className="m-0 text-xs text-soft" data-scene-export-missing>Missing from fonts: {missingNote}</p>
+            <p className="m-0 text-xs text-soft" data-scene-export-missing>
+              Missing from fonts: {missingNote}
+            </p>
           )}
         </div>
       )}

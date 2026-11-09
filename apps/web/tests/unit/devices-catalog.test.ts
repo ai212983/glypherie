@@ -31,18 +31,16 @@ test("shipped catalog carries the four required profiles plus Playdate and Picco
     [byId.get("xteink-x3")?.widthPx, byId.get("xteink-x3")?.heightPx, byId.get("xteink-x3")?.ppi],
     [528, 792, 259],
   );
-  assert.deepEqual(
-    [byId.get("inkplate-4-tempera")?.widthPx, byId.get("inkplate-4-tempera")?.heightPx],
-    [600, 600],
-  );
-  assert.ok((byId.get("inkplate-4-tempera")?.ppi ?? 0) > 223
-    && (byId.get("inkplate-4-tempera")?.ppi ?? 0) < 224);
+  assert.deepEqual([byId.get("inkplate-4-tempera")?.widthPx, byId.get("inkplate-4-tempera")?.heightPx], [600, 600]);
+  assert.ok((byId.get("inkplate-4-tempera")?.ppi ?? 0) > 223 && (byId.get("inkplate-4-tempera")?.ppi ?? 0) < 224);
   assert.deepEqual(
     [byId.get("waveshare-esp32-s3-rlcd-4-2")?.widthPx, byId.get("waveshare-esp32-s3-rlcd-4-2")?.heightPx],
     [400, 300],
   );
-  assert.ok((byId.get("waveshare-esp32-s3-rlcd-4-2")?.ppi ?? 0) > 119
-    && (byId.get("waveshare-esp32-s3-rlcd-4-2")?.ppi ?? 0) < 121);
+  assert.ok(
+    (byId.get("waveshare-esp32-s3-rlcd-4-2")?.ppi ?? 0) > 119 &&
+      (byId.get("waveshare-esp32-s3-rlcd-4-2")?.ppi ?? 0) < 121,
+  );
   assert.deepEqual(
     [byId.get("playdate")?.widthPx, byId.get("playdate")?.heightPx, byId.get("playdate")?.ppi],
     [400, 240, 173],
@@ -89,7 +87,10 @@ test("tempera shell follows the published 83x90 face with a square aperture", ()
   const [sx, sy, sw, sh] = tempera.shell.screenRect;
   assert.equal(sw, sh, "tempera aperture stays square");
   assert.equal(sw, 682, "tempera active side stays 68.2 mm nominal (600 px at 223.3 PPI)");
-  assert.ok(Math.abs(sw / 10 - (600 / tempera.ppi) * 25.4) < 0.1, "aperture size stays consistent with the nominal PPI");
+  assert.ok(
+    Math.abs(sw / 10 - (600 / tempera.ppi) * 25.4) < 0.1,
+    "aperture size stays consistent with the nominal PPI",
+  );
   assert.ok(Math.abs(sx - (vw - sw) / 2) < 1e-9, "tempera aperture stays centered horizontally");
   const top = sy - tempera.shell.viewBox[1];
   const chin = tempera.shell.viewBox[1] + vh - (sy + sh);
@@ -141,11 +142,11 @@ test("playdate profile matches Panic's screen, bezel, and offset documentation",
   // margins); the 28 px left offset is measured from the body, not the art.
   const bodyLeft = vx + 6;
   const bodyTop = vy + 10;
-  const [sx, sy, sw, sh] = pd.shell.screenRect;
-  const offsetPx = ((sx + sw / 2) - (bodyLeft + 760 / 2)) / sw * pd.widthPx;
+  const [sx, sy, sw] = pd.shell.screenRect;
+  const offsetPx = ((sx + sw / 2 - (bodyLeft + 760 / 2)) / sw) * pd.widthPx;
   assert.ok(Math.abs(offsetPx + 28) < 1, `playdate screen sits 28 px left of center (saw ${offsetPx})`);
   assert.ok(sx - bodyLeft >= 30 && sy - bodyTop >= 30, "playdate bezel keeps Panic's 3 mm minimum");
-  assert.ok(Math.abs(sw / 10 / (400 / pd.ppi * 25.4) - 1) < 0.01, "playdate aperture matches the 173 PPI size");
+  assert.ok(Math.abs(sw / 10 / ((400 / pd.ppi) * 25.4) - 1) < 0.01, "playdate aperture matches the 173 PPI size");
 });
 
 test("picco profile matches the nominal body and advertised density", () => {
@@ -204,13 +205,27 @@ test("malformed catalogs fail fast with a reason", () => {
   dup.devices.push(structuredClone(dup.devices[0]));
   assert.throws(() => loadDeviceCatalog(dup), /duplicate device/);
   for (const mutate of [
-    (entry: Record<string, unknown>) => { entry.id = "X4!"; },
-    (entry: Record<string, unknown>) => { entry.widthPx = 0; },
-    (entry: Record<string, unknown>) => { entry.heightPx = 5000; },
-    (entry: Record<string, unknown>) => { entry.ppi = 0; },
-    (entry: Record<string, unknown>) => { entry.ppi = Number.NaN; },
-    (entry: Record<string, unknown>) => { entry.ppiBasis = "measured"; },
-    (entry: Record<string, unknown>) => { entry.label = ""; },
+    (entry: Record<string, unknown>) => {
+      entry.id = "X4!";
+    },
+    (entry: Record<string, unknown>) => {
+      entry.widthPx = 0;
+    },
+    (entry: Record<string, unknown>) => {
+      entry.heightPx = 5000;
+    },
+    (entry: Record<string, unknown>) => {
+      entry.ppi = 0;
+    },
+    (entry: Record<string, unknown>) => {
+      entry.ppi = Number.NaN;
+    },
+    (entry: Record<string, unknown>) => {
+      entry.ppiBasis = "measured";
+    },
+    (entry: Record<string, unknown>) => {
+      entry.label = "";
+    },
   ]) {
     const single = structuredClone(base);
     mutate(single.devices[0]);
@@ -221,13 +236,27 @@ test("malformed catalogs fail fast with a reason", () => {
 test("malformed shells fail fast with a reason", () => {
   const base = { version: 1, devices: [JSON.parse(JSON.stringify(DEVICE_CATALOG.devices[0]))] };
   for (const mutate of [
-    (shell: Record<string, unknown>) => { shell.src = "/abs/shell.svg"; },
-    (shell: Record<string, unknown>) => { shell.src = "../shell.svg"; },
-    (shell: Record<string, unknown>) => { shell.src = "shells/shell.png"; },
-    (shell: Record<string, unknown>) => { shell.viewBox = [0, 0, 0, 10]; },
-    (shell: Record<string, unknown>) => { shell.screenRect = [-5, 0, 10, 10]; },
-    (shell: Record<string, unknown>) => { shell.screenRect = [0, 0, 690, 1140]; },
-    (shell: Record<string, unknown>) => { shell.screenRect = [60, 100, 570, 570]; },
+    (shell: Record<string, unknown>) => {
+      shell.src = "/abs/shell.svg";
+    },
+    (shell: Record<string, unknown>) => {
+      shell.src = "../shell.svg";
+    },
+    (shell: Record<string, unknown>) => {
+      shell.src = "shells/shell.png";
+    },
+    (shell: Record<string, unknown>) => {
+      shell.viewBox = [0, 0, 0, 10];
+    },
+    (shell: Record<string, unknown>) => {
+      shell.screenRect = [-5, 0, 10, 10];
+    },
+    (shell: Record<string, unknown>) => {
+      shell.screenRect = [0, 0, 690, 1140];
+    },
+    (shell: Record<string, unknown>) => {
+      shell.screenRect = [60, 100, 570, 570];
+    },
   ]) {
     const single = structuredClone(base);
     mutate(single.devices[0].shell);

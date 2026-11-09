@@ -11,7 +11,7 @@ const nonlinear: GrayCurve = [
   { value: 192, slope: 0, pinned: true },
   { value: 255, slope: 0, pinned: true },
 ];
-const preset: PalettePreset = { id: 7, name: "Test", curve: nonlinear };
+const preset: PalettePreset = { id: 7, name: "Test", curve: nonlinear, revision: 1 };
 
 test("scene labels share the editor paper/ink mapping with only level 0 transparent", () => {
   for (const appearance of ["black-white", "warm-paper", "cool-paper"] as const) {
@@ -34,5 +34,8 @@ test("inverse swaps the scene paper while level 0 stays transparent", () => {
   assert.equal(palette[0]![3], 0);
   assert.ok(palette.slice(1).every((entry) => entry[3] === 255));
   const opaqueInverse = presetColors(preset, "warm-paper", true);
-  assert.deepEqual(palette.map((entry) => entry.slice(0, 3)), opaqueInverse.map((entry) => entry.slice(0, 3)));
+  assert.deepEqual(
+    palette.map((entry) => entry.slice(0, 3)),
+    opaqueInverse.map((entry) => entry.slice(0, 3)),
+  );
 });

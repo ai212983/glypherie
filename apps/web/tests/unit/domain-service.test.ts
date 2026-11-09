@@ -19,7 +19,6 @@ import {
   updateSceneLabel,
 } from "../../src/app/domain/service.ts";
 import { createPalette, updatePalette } from "../../src/app/palettes/repository.ts";
-import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
 import { createVariant } from "../../src/app/variants/repository.ts";
 import { saveFont, type FontMetadata } from "../../src/app/fonts/storage.ts";
 
@@ -42,7 +41,13 @@ const fontBytes = (seed = 0): ArrayBuffer =>
   Uint8Array.from({ length: 64 }, (_, i) => (i * 7 + seed) % 251).buffer as ArrayBuffer;
 
 async function saveFixture(seed = 0) {
-  return saveFont({ bytes: fontBytes(seed), fileName: "fixture.ttf", name: "Fixture", metadata: metadata(), source: "uploaded" });
+  return saveFont({
+    bytes: fontBytes(seed),
+    fileName: "fixture.ttf",
+    name: "Fixture",
+    metadata: metadata(),
+    source: "uploaded",
+  });
 }
 
 async function monoId(): Promise<string> {
@@ -61,25 +66,33 @@ test("scene views carry placements with stable integer order", async () => {
   assert.deepEqual(created.placements, []);
   assert.deepEqual(created.exportCoverage, { presetIds: ["ascii"], extraRanges: [] });
 
-  const placed = await addSceneLabel(created.id, { text: "Hello", textStyleId: style.id, x: 16, y: 12 }, created.revision);
+  const placed = await addSceneLabel(
+    created.id,
+    { text: "Hello", textStyleId: style.id, x: 16, y: 12 },
+    created.revision,
+  );
   assert.equal(placed.revision, 2);
   assert.equal(placed.placements.length, 1);
   assert.equal(placed.placements[0]?.order, 0);
 
   const styles = await listTextStyles();
-  assert.deepEqual(styles.map((entry) => entry.id), [style.id]);
+  assert.deepEqual(
+    styles.map((entry) => entry.id),
+    [style.id],
+  );
   assert.equal(styles[0]?.fontId, font.id);
   assert.equal(styles[0]?.fontSize, 16);
 
-  const moved = await updateSceneLabel(
-    placed.id, placed.placements[0]!.id, { x: 20, order: 3 }, placed.revision,
-  );
+  const moved = await updateSceneLabel(placed.id, placed.placements[0]!.id, { x: 20, order: 3 }, placed.revision);
   assert.equal(moved.revision, 3);
   assert.equal(moved.placements[0]?.x, 20);
   assert.equal(moved.placements[0]?.order, 3);
 
   const second = await addSceneLabel(moved.id, { text: "World", textStyleId: style.id, x: 0, y: 0 }, moved.revision);
-  assert.deepEqual(second.placements.map((placement) => placement.order), [3, 4]);
+  assert.deepEqual(
+    second.placements.map((placement) => placement.order),
+    [3, 4],
+  );
 
   const cleaned = await removeSceneLabel(second.id, second.placements[0]!.id, second.revision);
   assert.equal(cleaned.placements.length, 1);
@@ -111,7 +124,13 @@ test("scene creation validates dimensions, coverage and output references", asyn
     /does not exist/,
   );
   await assert.rejects(
-    createScene({ name: "Bad", width: 10, height: 10, outputProfileId: outputId, exportCoverage: { presetIds: ["nope" as never], extraRanges: [] } }),
+    createScene({
+      name: "Bad",
+      width: 10,
+      height: 10,
+      outputProfileId: outputId,
+      exportCoverage: { presetIds: ["nope" as never], extraRanges: [] },
+    }),
     /Unknown coverage preset/,
   );
   const font = await saveFixture();
@@ -129,7 +148,22 @@ test("scene creation validates dimensions, coverage and output references", asyn
 
 test("single and batch resolvers agree and keep settings off the graph", async () => {
   const font = await saveFixture();
-  const first = await createVariant(font.id, { name: "First", settings: { sizePx: 24, axes: { wght: 700 }, letterSpacingPx: 1, profile: "mono_1bit", paletteId: 0, kerning: false, stemFitting: "upstream_mono", diagonalFitting: true, monoRaster: { dropout: "off", includeStubs: false, fontInstructions: false }, renderer: "candidate", rasterization: "free_type_mono" } });
+  const first = await createVariant(font.id, {
+    name: "First",
+    settings: {
+      sizePx: 24,
+      axes: { wght: 700 },
+      letterSpacingPx: 1,
+      profile: "mono_1bit",
+      paletteId: 0,
+      kerning: false,
+      stemFitting: "upstream_mono",
+      diagonalFitting: true,
+      monoRaster: { dropout: "off", includeStubs: false, fontInstructions: false },
+      renderer: "candidate",
+      rasterization: "free_type_mono",
+    },
+  });
   const second = await createVariant(font.id, { name: "Second" });
   const outputId = await monoId();
   const single = await resolveTextStyle(first.id, outputId);
@@ -156,7 +190,7 @@ test("batch resolve derives profile depth from the output curve", async () => {
   const font = await saveFixture();
   const style = await createVariant(font.id);
   const grayId = await createPalette();
-  await updatePalette(grayId, { curve: () => linearCurve(8) });
+  await updatePalette(grayId, { kind: "resize", count: 8 });
   const gray = (await listOutputProfiles()).find((profile) => profile.name === `Grayscale ${grayId}`);
   assert.ok(gray);
   const [resolved] = await resolveTextStyles([style.id], gray.id);
@@ -172,16 +206,17 @@ test("label grid accepts zero/negative points and empty text, rejects atomically
   const created = await createScene({ name: "Card", width: 400, height: 300, outputProfileId: outputId });
 
   // Zero and negative coordinates sit on the native pixel grid.
-  const placed = await addSceneLabel(
-    created.id, { text: "", textStyleId: first.id, x: 0, y: -12 }, created.revision,
-  );
+  const placed = await addSceneLabel(created.id, { text: "", textStyleId: first.id, x: 0, y: -12 }, created.revision);
   assert.equal(placed.placements[0]?.text, "");
   assert.equal(placed.placements[0]?.x, 0);
   assert.equal(placed.placements[0]?.y, -12);
 
   const placementId = placed.placements[0]!.id;
   const moved = await updateSceneLabel(
-    placed.id, placementId, { text: "Hi", textStyleId: second.id, x: -4, y: 0, order: -1 }, placed.revision,
+    placed.id,
+    placementId,
+    { text: "Hi", textStyleId: second.id, x: -4, y: 0, order: -1 },
+    placed.revision,
   );
   assert.equal(moved.revision, placed.revision + 1);
   assert.deepEqual(
@@ -200,26 +235,14 @@ test("label grid accepts zero/negative points and empty text, rejects atomically
     updateSceneLabel(moved.id, placementId, { textStyleId: "missing-style" }, moved.revision),
     /does not exist/,
   );
-  await assert.rejects(
-    updateSceneLabel(moved.id, placementId, { order: 1.5 }, moved.revision),
-    /stable integer/,
-  );
-  await assert.rejects(
-    updateSceneLabel(moved.id, placementId, { x: 1.5 }, moved.revision),
-    /pixel grid/,
-  );
+  await assert.rejects(updateSceneLabel(moved.id, placementId, { order: 1.5 }, moved.revision), /stable integer/);
+  await assert.rejects(updateSceneLabel(moved.id, placementId, { x: 1.5 }, moved.revision), /pixel grid/);
   await assert.rejects(
     updateSceneLabel(moved.id, "missing-placement", { x: 1 }, moved.revision),
     /does not exist in scene/,
   );
-  await assert.rejects(
-    updateSceneLabel(moved.id, placementId, { x: 1 }, moved.revision + 1),
-    /changed underneath/,
-  );
-  await assert.rejects(
-    removeSceneLabel(moved.id, placementId, moved.revision + 1),
-    /changed underneath/,
-  );
+  await assert.rejects(updateSceneLabel(moved.id, placementId, { x: 1 }, moved.revision + 1), /changed underneath/);
+  await assert.rejects(removeSceneLabel(moved.id, placementId, moved.revision + 1), /changed underneath/);
   assert.deepEqual(await getScene(moved.id), before);
 });
 
@@ -232,20 +255,17 @@ test("label placements reject foreign scenes and keep deterministic order", asyn
   const placed = await addSceneLabel(left.id, { text: "A", textStyleId: style.id, x: 0, y: 0 }, left.revision);
   const placementId = placed.placements[0]!.id;
 
-  await assert.rejects(
-    updateSceneLabel(right.id, placementId, { x: 2 }, right.revision),
-    /does not exist in scene/,
-  );
-  await assert.rejects(
-    removeSceneLabel(right.id, placementId, right.revision),
-    /does not exist in scene/,
-  );
+  await assert.rejects(updateSceneLabel(right.id, placementId, { x: 2 }, right.revision), /does not exist in scene/);
+  await assert.rejects(removeSceneLabel(right.id, placementId, right.revision), /does not exist in scene/);
 
   const second = await addSceneLabel(placed.id, { text: "B", textStyleId: style.id, x: 1, y: 1 }, placed.revision);
   const [firstPlacement, secondPlacement] = second.placements;
   // Equal orders fall back to placement id order, so the view stays stable.
   const tied = await updateSceneLabel(
-    second.id, secondPlacement!.id, { order: firstPlacement!.order }, second.revision,
+    second.id,
+    secondPlacement!.id,
+    { order: firstPlacement!.order },
+    second.revision,
   );
   assert.deepEqual(
     tied.placements.map((placement) => placement.id).sort(),
@@ -263,9 +283,7 @@ test("scene patches merge partial dimensions and reject without touching state",
   assert.deepEqual([narrowed.width, narrowed.height, narrowed.revision], [200, 300, 2]);
   const noop = await updateScene(narrowed.id, {}, narrowed.revision);
   assert.equal(noop.revision, 3);
-  const explicitUndefined = await updateScene(
-    noop.id, { name: undefined, width: undefined }, noop.revision,
-  );
+  const explicitUndefined = await updateScene(noop.id, { name: undefined, width: undefined }, noop.revision);
   assert.deepEqual([explicitUndefined.name, explicitUndefined.width, explicitUndefined.revision], ["Card", 200, 4]);
 
   const before = await getScene(explicitUndefined.id);

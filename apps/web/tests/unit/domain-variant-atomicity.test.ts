@@ -7,24 +7,10 @@
 import assert from "node:assert/strict";
 import test, { after, beforeEach } from "node:test";
 import { sql } from "drizzle-orm";
-import {
-  closeDomainForTests,
-  getBackend,
-  resetDomainForTests,
-} from "../../src/app/domain/node-backend.ts";
+import { closeDomainForTests, getBackend, resetDomainForTests } from "../../src/app/domain/node-backend.ts";
 import { saveFont, type FontMetadata } from "../../src/app/fonts/storage.ts";
-import {
-  createPalette,
-  deletePalette,
-  listPalettes,
-  updatePalette,
-} from "../../src/app/palettes/repository.ts";
-import {
-  createVariant,
-  getVariant,
-  listVariants,
-  updateVariant,
-} from "../../src/app/variants/repository.ts";
+import { createPalette, deletePalette, listPalettes, updatePalette } from "../../src/app/palettes/repository.ts";
+import { createVariant, getVariant, listVariants, updateVariant } from "../../src/app/variants/repository.ts";
 import { VariantStorageError } from "../../src/app/variants/model.ts";
 
 beforeEach(async () => {
@@ -81,11 +67,7 @@ test("updateVariant is atomic when preference writes fail", async () => {
   await rejectPreviewPrefs();
   try {
     await assert.rejects(
-      updateVariant(
-        before.id,
-        { settings: { ...before.settings, sizePx: 23 }, sampleText: "after" },
-        before.revision,
-      ),
+      updateVariant(before.id, { settings: { ...before.settings, sizePx: 23 }, sampleText: "after" }, before.revision),
       (error) => error instanceof VariantStorageError && error.code === "unavailable",
     );
     const kept = await getVariant(before.id);
@@ -193,7 +175,12 @@ test("creation wires an explicit name, settings, sample and palette", async () =
   const id = await createPalette();
   const created = await createVariant(font.id, {
     name: "Full",
-    settings: { ...((await createVariant(font.id, { name: "Template" })).settings), paletteId: id, profile: "gray_2bit", rasterization: "coverage" },
+    settings: {
+      ...(await createVariant(font.id, { name: "Template" })).settings,
+      paletteId: id,
+      profile: "gray_2bit",
+      rasterization: "coverage",
+    },
     sampleText: "hello",
     inheritSampleText: true,
   });
@@ -208,10 +195,16 @@ test("palette validation rejects bad presets without touching state", async () =
   const id = await createPalette();
   const before = (await listPalettes()).find((preset) => preset.id === id);
   assert.ok(before);
-  await assert.rejects(updatePalette(id, { name: "" }), /non-empty text/);
-  await assert.rejects(updatePalette(id, { name: "x".repeat(121) }), /non-empty text/);
+  await assert.rejects(updatePalette(id, { kind: "rename", name: "" }), /non-empty text/);
+  await assert.rejects(updatePalette(id, { kind: "rename", name: "x".repeat(121) }), /non-empty text/);
+  const live = (await listPalettes()).find((preset) => preset.id === id);
+  assert.ok(live);
   await assert.rejects(
-    updatePalette(id, { curve: () => [{ value: 0, slope: 1, pinned: true }] as never }),
+    updatePalette(id, {
+      kind: "replace",
+      curve: [{ value: 0, slope: 1, pinned: true }] as never,
+      expectedRevision: live.revision,
+    }),
     /Invalid palette preset/,
   );
   await assert.rejects(deletePalette(999999), /deleted/);

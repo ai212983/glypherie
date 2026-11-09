@@ -23,10 +23,7 @@ import {
   parseUrlSnapshot,
   previewVariantSettings,
 } from "./features/preview/state/snapshot-codec.js";
-import {
-  buildMetas,
-  metaForFont,
-} from "./features/preview/state/family-meta";
+import { buildMetas, metaForFont } from "./features/preview/state/family-meta";
 import { indexPath, palettesPath, resolveRoute, screenPath, variantPathKeeping } from "./navigation/router";
 import { useFontLibrary } from "./fonts/useFontLibrary";
 import { displayName } from "./fonts/metadata";
@@ -35,7 +32,11 @@ import { GrayscalePage } from "./features/grayscale/GrayscalePage";
 import { ScreenPage } from "./features/screen/ScreenPage";
 import { LandingPage } from "./features/landing/LandingPage";
 import { LibraryPage } from "./features/library/LibraryPage";
-import { readStoredLibraryPreferences, writeStoredLibraryPreferences, type LibraryPreferences } from "./features/library/preferences";
+import {
+  readStoredLibraryPreferences,
+  writeStoredLibraryPreferences,
+  type LibraryPreferences,
+} from "./features/library/preferences";
 import { FontPage } from "./features/preview/FontPage";
 import { VariantPage } from "./features/variants/VariantPage";
 import { NavLink } from "../components/NavLink";
@@ -49,19 +50,26 @@ type Page =
   | { name: "home" }
   | { name: "palettes" }
   // The unified Screen page also serves the legacy /scenes/ and
-  // /scene/<id>/ links: legacyScene carries the scene id from a legacy
-  // /scene/<id>/ URL until it canonicalizes to /screen/?scene=.
-  | { name: "screen"; legacyScene?: string | null }
+  // /scene/<id>/ links: they open the same default composition and the URL
+  // canonicalizes to /screen/ without scene selection.
+  | { name: "screen" }
   | { name: "index" }
   | { name: "preview"; font: string }
   | { name: "variant"; font: string; variant: string };
 
 export function App(): React.JSX.Element {
-  return <DisplayPreferencesProvider><AppContent /></DisplayPreferencesProvider>;
+  return (
+    <DisplayPreferencesProvider>
+      <AppContent />
+    </DisplayPreferencesProvider>
+  );
 }
 
 function AppContent(): React.JSX.Element {
-  const { zoom, canvas: { palette: indexPalette, inverse: indexInverse } } = useDisplayPreferences();
+  const {
+    zoom,
+    canvas: { palette: indexPalette, inverse: indexInverse },
+  } = useDisplayPreferences();
   const library = useFontLibrary();
   const [page, setPage] = React.useState<Page | null>(null);
   const [snapshot, setSnapshot] = React.useState<PreviewSnapshot | null>(null);
@@ -100,11 +108,14 @@ function AppContent(): React.JSX.Element {
     else scheduleSnapshotWrite(next, order);
   }, []);
 
-  const onPatch = React.useCallback((patch: Partial<PreviewSnapshot>, immediate = false) => {
-    const current = snapshotRef.current;
-    if (!current) return;
-    applySnapshot({ ...current, ...patch }, immediate);
-  }, [applySnapshot]);
+  const onPatch = React.useCallback(
+    (patch: Partial<PreviewSnapshot>, immediate = false) => {
+      const current = snapshotRef.current;
+      if (!current) return;
+      applySnapshot({ ...current, ...patch }, immediate);
+    },
+    [applySnapshot],
+  );
 
   const pushPath = React.useCallback((path: string): void => {
     // History carries identity; IndexedDB owns saved settings so Back cannot restore stale edits.
@@ -117,46 +128,62 @@ function AppContent(): React.JSX.Element {
     return inner || window.location.search;
   };
 
-  const openPreview = React.useCallback((id: string, knownFont?: StoredFont) => {
-    const list = fontsRef.current ?? [];
-    const target = knownFont ?? list.find((font) => font.id === id);
-    if (!target) return;
-    cancelSnapshotWrite();
-    const metas = buildMetas(list);
-    const base = snapshotRef.current ?? readInitialSnapshot(metas);
-    const next: PreviewSnapshot = { ...base, font: id };
-    if (!next.families[id]) {
-      const meta = metaForFont(target);
-      next.families = { ...next.families, [id]: defaultFamilySnapshot(meta) };
-    }
-    setSnapshot(next);
-    setPage({ name: "preview", font: id });
-    setNotice("");
-    setPreviewStatus("");
-    setDetailNotice("");
-    setSaveVariantError("");
-    pushPath(canonicalPathFor({ page: "font", font: id }, next, list.map((font) => font.id), migrationBase()));
-  }, [pushPath]);
+  const openPreview = React.useCallback(
+    (id: string, knownFont?: StoredFont) => {
+      const list = fontsRef.current ?? [];
+      const target = knownFont ?? list.find((font) => font.id === id);
+      if (!target) return;
+      cancelSnapshotWrite();
+      const metas = buildMetas(list);
+      const base = snapshotRef.current ?? readInitialSnapshot(metas);
+      const next: PreviewSnapshot = { ...base, font: id };
+      if (!next.families[id]) {
+        const meta = metaForFont(target);
+        next.families = { ...next.families, [id]: defaultFamilySnapshot(meta) };
+      }
+      setSnapshot(next);
+      setPage({ name: "preview", font: id });
+      setNotice("");
+      setPreviewStatus("");
+      setDetailNotice("");
+      setSaveVariantError("");
+      pushPath(
+        canonicalPathFor(
+          { page: "font", font: id },
+          next,
+          list.map((font) => font.id),
+          migrationBase(),
+        ),
+      );
+    },
+    [pushPath],
+  );
 
-  const openVariantId = React.useCallback((fontId: string, variantId: string) => {
-    cancelSnapshotWrite();
-    setPage({ name: "variant", font: fontId, variant: variantId });
-    setNotice("");
-    setPreviewStatus("");
-    setDetailNotice("");
-    setSaveVariantError("");
-    pushPath(variantPathKeeping(fontId, variantId, migrationBase()));
-  }, [pushPath]);
+  const openVariantId = React.useCallback(
+    (fontId: string, variantId: string) => {
+      cancelSnapshotWrite();
+      setPage({ name: "variant", font: fontId, variant: variantId });
+      setNotice("");
+      setPreviewStatus("");
+      setDetailNotice("");
+      setSaveVariantError("");
+      pushPath(variantPathKeeping(fontId, variantId, migrationBase()));
+    },
+    [pushPath],
+  );
 
-  const openIndex = React.useCallback((message = "") => {
-    cancelSnapshotWrite();
-    setPage({ name: "index" });
-    setNotice(message);
-    setPreviewStatus("");
-    setDetailNotice("");
-    setSaveVariantError("");
-    pushPath(indexPath(migrationBase()));
-  }, [pushPath]);
+  const openIndex = React.useCallback(
+    (message = "") => {
+      cancelSnapshotWrite();
+      setPage({ name: "index" });
+      setNotice(message);
+      setPreviewStatus("");
+      setDetailNotice("");
+      setSaveVariantError("");
+      pushPath(indexPath(migrationBase()));
+    },
+    [pushPath],
+  );
 
   const openPalettes = React.useCallback(() => {
     cancelSnapshotWrite();
@@ -193,15 +220,26 @@ function AppContent(): React.JSX.Element {
   React.useEffect(() => {
     if (pageRef.current === null) {
       const probe = resolveRoute(readRoutePath(), window.location.search, []);
-      if (probe.page === "palettes" || probe.page === "screen" || probe.page === "home"
-        || probe.page === "scenes" || probe.page === "scene") {
+      if (
+        probe.page === "palettes" ||
+        probe.page === "screen" ||
+        probe.page === "home" ||
+        probe.page === "scenes" ||
+        probe.page === "scene"
+      ) {
         const metas = buildMetas([]);
         const snap = readInitialSnapshot(metas);
-        setPage(probe.page === "home" ? { name: "home" }
-          : probe.page === "screen" ? { name: "screen" }
-          : probe.page === "scenes" ? { name: "screen" }
-          : probe.page === "scene" ? { name: "screen", legacyScene: probe.scene }
-          : { name: "palettes" });
+        setPage(
+          probe.page === "home"
+            ? { name: "home" }
+            : probe.page === "screen"
+              ? { name: "screen" }
+              : probe.page === "scenes"
+                ? { name: "screen" }
+                : probe.page === "scene"
+                  ? { name: "screen" }
+                  : { name: "palettes" },
+        );
         setNotice("");
         const inner = readRouteSearch();
         replaceCanonicalPath(probe, snap, [], inner || window.location.search);
@@ -212,7 +250,11 @@ function AppContent(): React.JSX.Element {
     if (pageRef.current !== null) return;
     const list = library.fonts;
     const metas = buildMetas(list);
-    const route = resolveRoute(readRoutePath(), window.location.search, list.map((font) => font.id));
+    const route = resolveRoute(
+      readRoutePath(),
+      window.location.search,
+      list.map((font) => font.id),
+    );
     if (route.page === "variant") {
       window.history.replaceState(null, "", variantPathKeeping(route.font, route.variant, migrationBase()));
       setPage({ name: "variant", font: route.font, variant: route.variant });
@@ -231,13 +273,24 @@ function AppContent(): React.JSX.Element {
       }
       setPage({ name: "preview", font: route.font });
       setNotice("");
-    } else if (route.page === "palettes" || route.page === "screen" || route.page === "home"
-      || route.page === "scenes" || route.page === "scene") {
-      setPage(route.page === "home" ? { name: "home" }
-        : route.page === "screen" ? { name: "screen" }
-        : route.page === "scenes" ? { name: "screen" }
-        : route.page === "scene" ? { name: "screen", legacyScene: route.scene }
-        : { name: "palettes" });
+    } else if (
+      route.page === "palettes" ||
+      route.page === "screen" ||
+      route.page === "home" ||
+      route.page === "scenes" ||
+      route.page === "scene"
+    ) {
+      setPage(
+        route.page === "home"
+          ? { name: "home" }
+          : route.page === "screen"
+            ? { name: "screen" }
+            : route.page === "scenes"
+              ? { name: "screen" }
+              : route.page === "scene"
+                ? { name: "screen" }
+                : { name: "palettes" },
+      );
       setNotice("");
     } else {
       setPage({ name: "index" });
@@ -260,7 +313,11 @@ function AppContent(): React.JSX.Element {
       const libraryPending = fontsRef.current === null;
       const list = fontsRef.current ?? [];
       const metas = buildMetas(list);
-      const route = resolveRoute(readRoutePath(), window.location.search, list.map((font) => font.id));
+      const route = resolveRoute(
+        readRoutePath(),
+        window.location.search,
+        list.map((font) => font.id),
+      );
       const inner = readRouteSearch();
       setRole(readRoleParam(inner || window.location.search));
       setPreviewStatus("");
@@ -268,16 +325,27 @@ function AppContent(): React.JSX.Element {
       setSaveVariantError("");
       const order = list.map((font) => font.id);
       const base = readRouteSearch() || window.location.search;
-      if (route.page === "palettes" || route.page === "screen" || route.page === "home"
-        || route.page === "scenes" || route.page === "scene") {
+      if (
+        route.page === "palettes" ||
+        route.page === "screen" ||
+        route.page === "home" ||
+        route.page === "scenes" ||
+        route.page === "scene"
+      ) {
         const current = snapshotRef.current ?? readInitialSnapshot(metas);
         replaceCanonicalPath(route, current, order, base);
         if (!snapshotRef.current) setSnapshot(current);
-        setPage(route.page === "home" ? { name: "home" }
-          : route.page === "screen" ? { name: "screen" }
-          : route.page === "scenes" ? { name: "screen" }
-          : route.page === "scene" ? { name: "screen", legacyScene: route.scene }
-          : { name: "palettes" });
+        setPage(
+          route.page === "home"
+            ? { name: "home" }
+            : route.page === "screen"
+              ? { name: "screen" }
+              : route.page === "scenes"
+                ? { name: "screen" }
+                : route.page === "scene"
+                  ? { name: "screen" }
+                  : { name: "palettes" },
+        );
         setNotice("");
       } else if (libraryPending) {
         return;
@@ -289,9 +357,11 @@ function AppContent(): React.JSX.Element {
         const search = readRouteSearch();
         const params = new URLSearchParams(search);
         if (params.get("v") === "1") {
-          let snap = parseUrlSnapshot(search, "", metas, {
-            font: route.font, profile: "mono_1bit",
-          }) ?? readInitialSnapshot(metas);
+          let snap =
+            parseUrlSnapshot(search, "", metas, {
+              font: route.font,
+              profile: "mono_1bit",
+            }) ?? readInitialSnapshot(metas);
           if (!metas.some((meta) => meta.id === snap.font)) snap = { ...snap, font: metas[0]?.id ?? "" };
           snap = { ...snap, font: route.font };
           replaceCanonicalPath({ page: "font", font: route.font }, snap, order, base);
@@ -337,7 +407,10 @@ function AppContent(): React.JSX.Element {
     const onHide = (): void => {
       const current = snapshotRef.current;
       if (current && hasPendingSnapshotWrite()) {
-        writeSnapshotNow(current, (fontsRef.current ?? []).map((font) => font.id));
+        writeSnapshotNow(
+          current,
+          (fontsRef.current ?? []).map((font) => font.id),
+        );
       }
     };
     window.addEventListener("pagehide", onHide);
@@ -399,10 +472,13 @@ function AppContent(): React.JSX.Element {
     })();
   };
 
-  const onAddVariant = React.useCallback(async (target: StoredFont): Promise<void> => {
-    const created = await createVariant(target.id);
-    openVariantId(created.fontId, created.id);
-  }, [openVariantId]);
+  const onAddVariant = React.useCallback(
+    async (target: StoredFont): Promise<void> => {
+      const created = await createVariant(target.id);
+      openVariantId(created.fontId, created.id);
+    },
+    [openVariantId],
+  );
 
   const onSaveAsVariant = React.useCallback((): void => {
     if (page?.name !== "preview" || !snapshot) return;
@@ -427,8 +503,10 @@ function AppContent(): React.JSX.Element {
     })();
   }, [library.fonts, openVariantId, page, role, savingVariant, snapshot]);
 
-  if (page?.name === "home"
-    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "home")) {
+  if (
+    page?.name === "home" ||
+    (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "home")
+  ) {
     return (
       <>
         <SkipLink />
@@ -438,20 +516,17 @@ function AppContent(): React.JSX.Element {
     );
   }
 
-  if (page?.name === "palettes"
-    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "palettes")) {
+  if (
+    page?.name === "palettes" ||
+    (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "palettes")
+  ) {
     return (
       <>
         <SkipLink />
         <PublicPageMetadata page="palettes" />
         <div className="flex flex-col lg:h-dvh lg:overflow-hidden">
           <div className="sticky top-0 z-40 shrink-0">
-            <SiteHeader
-              title="Glypherie"
-              titleAs="div"
-              variant="brand"
-              nav={primaryNav("palettes")}
-            />
+            <SiteHeader title="Glypherie" titleAs="div" variant="brand" nav={primaryNav("palettes")} />
           </div>
           <main id="main" className="w-full flex-1 lg:flex lg:min-h-0 lg:flex-col">
             <h1 className="sr-only">Palettes</h1>
@@ -463,45 +538,42 @@ function AppContent(): React.JSX.Element {
   }
 
   // The unified Screen page serves the canonical /screen/ route and the
-  // legacy /scenes/ and /scene/<id>/ links: a legacy scene id selects that
+  // legacy /scenes/ and /scene/<id>/ links: they open the default
   // composition, and the navigation effects canonicalize the URL directly to
-  // /screen/ (or /screen/?scene=), never from inside this render.
-  const legacyScenesRoute = page === null
-    && resolveRoute(readRoutePath(), window.location.search, []).page === "scenes";
-  const legacySceneRoute = page === null
-    ? resolveRoute(readRoutePath(), window.location.search, []).page === "scene"
-      ? resolveRoute(readRoutePath(), window.location.search, [])
-      : null
-    : null;
-  const legacySceneId = page?.name === "screen" ? (page.legacyScene ?? null)
-    : legacySceneRoute && legacySceneRoute.page === "scene" ? legacySceneRoute.scene
-    : null;
-  const screenRoute = page?.name === "screen" || legacyScenesRoute || legacySceneRoute !== null
-    || (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "screen");
+  // /screen/ without scene selection, never from inside this render.
+  const legacyScenesRoute =
+    page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "scenes";
+  const legacySceneRoute =
+    page === null
+      ? resolveRoute(readRoutePath(), window.location.search, []).page === "scene"
+        ? resolveRoute(readRoutePath(), window.location.search, [])
+        : null
+      : null;
+  const screenRoute =
+    page?.name === "screen" ||
+    legacyScenesRoute ||
+    legacySceneRoute !== null ||
+    (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "screen");
 
   if (screenRoute) {
     return (
       <>
         <SkipLink />
         {legacySceneRoute !== null ? (
-          <PageMetadata title="Screen — Glypherie" description="Edit saved compositions on device screens: labels, text styles, bitmap preview and Playdate font export." />
+          <PageMetadata
+            title="Screen — Glypherie"
+            description="Edit saved compositions on device screens: labels, text styles, bitmap preview and Playdate font export."
+          />
         ) : (
           <PublicPageMetadata page="screen" />
         )}
-        <div className="flex min-h-dvh flex-col">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
           <div className="sticky top-0 z-40 shrink-0">
-            <SiteHeader
-              title="Glypherie"
-              titleAs="div"
-              variant="brand"
-              nav={primaryNav("screen")}
-            />
+            <SiteHeader title="Glypherie" titleAs="div" variant="brand" nav={primaryNav("screen")} />
           </div>
-          <main id="main" className="mx-auto w-[min(100%-3rem,72rem)] flex-1 pb-16">
+          <main id="main" className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
             <h1 className="sr-only">Screen</h1>
-            <div className="pt-6">
-              <ScreenPage library={library} legacySceneId={legacySceneId} />
-            </div>
+            <ScreenPage library={library} />
           </main>
         </div>
       </>
@@ -511,7 +583,10 @@ function AppContent(): React.JSX.Element {
   if (library.fonts === null || page === null) {
     return (
       <>
-        <PageMetadata title={`${library.bootError ? "Couldn’t load font library" : "Loading font library"} — Glypherie`} description={PREVIEW_DESCRIPTION} />
+        <PageMetadata
+          title={`${library.bootError ? "Couldn’t load font library" : "Loading font library"} — Glypherie`}
+          description={PREVIEW_DESCRIPTION}
+        />
         <SiteHeader title="Glypherie" titleAs="div" variant="brand" nav={primaryNav("fonts")} />
         <main id="main" className="mx-auto my-12 w-[min(100%-3rem,1440px)] leading-[1.6]">
           <h1 className="sr-only">Font library</h1>
@@ -610,11 +685,7 @@ function AppContent(): React.JSX.Element {
           <section className="content-state my-12 leading-[1.6]" role="alert">
             <h2>Font not found</h2>
             <p>
-              <NavLink
-                href={indexPath(migrationBase())}
-                data-all-fonts
-                onNavigate={() => openIndex()}
-              >
+              <NavLink href={indexPath(migrationBase())} data-all-fonts onNavigate={() => openIndex()}>
                 All fonts
               </NavLink>{" "}
             </p>

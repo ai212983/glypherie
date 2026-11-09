@@ -1,13 +1,23 @@
 import { MAX_TEXT_LENGTH, TEXT_DEFAULT } from "../../renderer/render-spec.ts";
 
-import { isFontSize } from "../../../components/font-size.ts";
+import { FONT_SIZE_MIN } from "../../../components/font-size.ts";
 
 export type LibraryBaseSize = number;
 
 export const DEFAULT_LIBRARY_BASE_SIZE: LibraryBaseSize = 16;
 
+// Libraries stored before the 128px UI cap may hold larger sizes; keep
+// reading them so existing browser-local data survives. New entry clamps
+// at the UI cap.
+const STORED_LIBRARY_BASE_SIZE_MAX = 512;
+
 export function isLibraryBaseSize(value: unknown): value is LibraryBaseSize {
-  return isFontSize(value);
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= FONT_SIZE_MIN &&
+    value <= STORED_LIBRARY_BASE_SIZE_MAX
+  );
 }
 
 export interface LibraryPreferences {

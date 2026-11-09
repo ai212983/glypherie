@@ -33,13 +33,15 @@ export interface LegacyVariantSnapshot {
 export interface LegacySnapshot {
   fonts: LegacyFontSnapshot[];
   variants: LegacyVariantSnapshot[];
-  palettes: PalettePreset[];
+  // Legacy rows predate owner revisions; the importer assigns fresh ones.
+  palettes: Omit<PalettePreset, "revision">[];
   seedMarker?: string;
   variantCount: number;
 }
 
 function toFontSnapshot(row: FontRow): LegacyFontSnapshot {
-  const bytes = row.bytes instanceof ArrayBuffer ? row.bytes.slice(0) : new Uint8Array(row.bytes).buffer as ArrayBuffer;
+  const bytes =
+    row.bytes instanceof ArrayBuffer ? row.bytes.slice(0) : (new Uint8Array(row.bytes).buffer as ArrayBuffer);
   return {
     id: row.id,
     name: row.name,
@@ -52,43 +54,51 @@ function toFontSnapshot(row: FontRow): LegacyFontSnapshot {
 }
 
 export async function readLegacySnapshot(): Promise<LegacySnapshot> {
-  return fontDatabase.transaction("r", [fontDatabase.fonts, fontDatabase.meta, fontDatabase.variants, fontDatabase.palettes], async () => {
-    const [fontRows, metaRows, variantRows, paletteRows] = await Promise.all([
-      fontDatabase.fonts.toArray(),
-      fontDatabase.meta.toArray(),
-      fontDatabase.variants.toArray(),
-      fontDatabase.palettes.toArray(),
-    ]);
-    const seedMarker = (metaRows as MetaRow[]).find((row) => row.key === "bundled-fonts")?.value;
-    return {
-      fonts: (fontRows as FontRow[]).map(toFontSnapshot),
-      variants: (variantRows as VariantRow[]).map((row) => ({
-        id: row.id,
-        fontId: row.fontId,
-        name: row.name,
-        settings: { ...row.settings, axes: { ...row.settings.axes } },
-        sampleText: row.sampleText,
-        inheritSampleText: row.inheritSampleText,
-        revision: row.revision,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      })),
-      palettes: (paletteRows as PalettePreset[]).map((preset) => ({
-        id: preset.id,
-        name: preset.name,
-        curve: preset.curve.map((level) => ({ ...level })),
-      })),
-      seedMarker,
-      variantCount: (variantRows as VariantRow[]).length,
-    };
-  });
+  return fontDatabase.transaction(
+    "r",
+    [fontDatabase.fonts, fontDatabase.meta, fontDatabase.variants, fontDatabase.palettes],
+    async () => {
+      const [fontRows, metaRows, variantRows, paletteRows] = await Promise.all([
+        fontDatabase.fonts.toArray(),
+        fontDatabase.meta.toArray(),
+        fontDatabase.variants.toArray(),
+        fontDatabase.palettes.toArray(),
+      ]);
+      const seedMarker = (metaRows as MetaRow[]).find((row) => row.key === "bundled-fonts")?.value;
+      return {
+        fonts: (fontRows as FontRow[]).map(toFontSnapshot),
+        variants: (variantRows as VariantRow[]).map((row) => ({
+          id: row.id,
+          fontId: row.fontId,
+          name: row.name,
+          settings: { ...row.settings, axes: { ...row.settings.axes } },
+          sampleText: row.sampleText,
+          inheritSampleText: row.inheritSampleText,
+          revision: row.revision,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        })),
+        palettes: paletteRows.map((preset) => ({
+          id: preset.id,
+          name: preset.name,
+          curve: preset.curve.map((level) => ({ ...level })),
+        })),
+        seedMarker,
+        variantCount: (variantRows as VariantRow[]).length,
+      };
+    },
+  );
 }
 
 /** Legacy row counts without materializing binaries; for import preflight. */
 export async function legacyCounts(): Promise<{ fonts: number; variants: number; palettes: number }> {
-  return fontDatabase.transaction("r", [fontDatabase.fonts, fontDatabase.variants, fontDatabase.palettes], async () => ({
-    fonts: await fontDatabase.fonts.count(),
-    variants: await fontDatabase.variants.count(),
-    palettes: await fontDatabase.palettes.count(),
-  }));
+  return fontDatabase.transaction(
+    "r",
+    [fontDatabase.fonts, fontDatabase.variants, fontDatabase.palettes],
+    async () => ({
+      fonts: await fontDatabase.fonts.count(),
+      variants: await fontDatabase.variants.count(),
+      palettes: await fontDatabase.palettes.count(),
+    }),
+  );
 }

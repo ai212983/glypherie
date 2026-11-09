@@ -8,9 +8,10 @@ import { callDomain } from "./runtime.ts";
 import { getDomainVersion as getVersion, subscribeDomain as subscribe } from "./events.ts";
 import type {
   DomainOutputProfileView,
-  DomainPlacementView,
   DomainSceneView,
   DomainTextStyleView,
+  SceneLabelInput,
+  SceneLabelPatch,
   SceneSnapshotInput,
 } from "./types.ts";
 
@@ -19,8 +20,11 @@ export type {
   DomainPlacementView,
   DomainSceneView,
   DomainTextStyleView,
+  SceneLabelInput,
+  SceneLabelPatch,
   SceneSnapshotInput,
 } from "./types.ts";
+export { STALE_OWNER_RECOVERY_MESSAGE } from "./runtime.ts";
 
 export async function listTextStyles(): Promise<DomainTextStyleView[]> {
   return (await callDomain("listTextStyles", [])) as DomainTextStyleView[];
@@ -49,9 +53,26 @@ export async function createScene(input: {
   return (await callDomain("createScene", [input])) as DomainSceneView;
 }
 
+/**
+ * Resolve the one implicit default composition (stored marker, oldest saved
+ * scene, or a new scene from the given params), atomically. The params only
+ * take effect when no scene exists yet.
+ */
+export async function ensureDefaultScene(input: {
+  name: string;
+  width: number;
+  height: number;
+  deviceId?: string | null;
+  outputProfileId: string;
+}): Promise<DomainSceneView> {
+  return (await callDomain("ensureDefaultScene", [input])) as DomainSceneView;
+}
+
 export async function updateScene(
   id: string,
-  patch: Partial<Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "outputProfileId" | "exportCoverage">>,
+  patch: Partial<
+    Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "outputProfileId" | "exportCoverage">
+  >,
   expectedRevision: number,
 ): Promise<DomainSceneView> {
   return (await callDomain("updateScene", [id, patch, expectedRevision])) as DomainSceneView;
@@ -63,7 +84,7 @@ export async function deleteScene(id: string, expectedRevision: number): Promise
 
 export async function addSceneLabel(
   sceneId: string,
-  input: { text: string; textStyleId: string; x: number; y: number },
+  input: SceneLabelInput,
   expectedSceneRevision: number,
 ): Promise<DomainSceneView> {
   return (await callDomain("addSceneLabel", [sceneId, input, expectedSceneRevision])) as DomainSceneView;
@@ -72,10 +93,15 @@ export async function addSceneLabel(
 export async function updateSceneLabel(
   sceneId: string,
   placementId: string,
-  patch: { text?: string; textStyleId?: string; x?: number; y?: number; order?: number },
+  patch: SceneLabelPatch,
   expectedSceneRevision: number,
 ): Promise<DomainSceneView> {
-  return (await callDomain("updateSceneLabel", [sceneId, placementId, patch, expectedSceneRevision])) as DomainSceneView;
+  return (await callDomain("updateSceneLabel", [
+    sceneId,
+    placementId,
+    patch,
+    expectedSceneRevision,
+  ])) as DomainSceneView;
 }
 
 export async function removeSceneLabel(
@@ -84,6 +110,23 @@ export async function removeSceneLabel(
   expectedSceneRevision: number,
 ): Promise<DomainSceneView> {
   return (await callDomain("removeSceneLabel", [sceneId, placementId, expectedSceneRevision])) as DomainSceneView;
+}
+
+/**
+ * Atomic layer reorder: assigns dense orders 0..n-1 following the given
+ * bottom-to-top paint sequence in one revision-guarded transaction, without
+ * changing placement identity.
+ */
+export async function reorderSceneLabels(
+  sceneId: string,
+  orderedPlacementIds: string[],
+  expectedSceneRevision: number,
+): Promise<DomainSceneView> {
+  return (await callDomain("reorderSceneLabels", [
+    sceneId,
+    orderedPlacementIds,
+    expectedSceneRevision,
+  ])) as DomainSceneView;
 }
 
 /**

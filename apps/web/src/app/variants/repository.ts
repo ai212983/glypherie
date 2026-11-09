@@ -3,11 +3,7 @@
 // CAS codes); only the storage mechanics moved to domain commands.
 
 import { callDomain } from "../domain/runtime.ts";
-import {
-  VariantStorageError,
-  type FontVariant,
-  type VariantSettings,
-} from "./model.ts";
+import { VariantStorageError, type FontVariant, type VariantSettings } from "./model.ts";
 
 export { VariantStorageError };
 export type { VariantSettings };
@@ -26,6 +22,8 @@ export interface VariantChanges {
   inheritSampleText?: boolean;
 }
 
+// "stale-owner" passes through with its honest message: a version-skewed
+// domain owner is never recast as generic unavailability.
 const KNOWN_CODES: ReadonlySet<string> = new Set([
   "conflict",
   "not-found",
@@ -33,6 +31,7 @@ const KNOWN_CODES: ReadonlySet<string> = new Set([
   "invalid-settings",
   "invalid-input",
   "blocked",
+  "stale-owner",
   "quota-exceeded",
   "referenced",
   "unavailable",
@@ -43,11 +42,7 @@ function mapVariantError(error: unknown): VariantStorageError {
   const code = (error as { code?: unknown })?.code;
   const message = error instanceof Error ? error.message : String(error);
   if (typeof code === "string" && KNOWN_CODES.has(code)) {
-    return new VariantStorageError(
-      code as VariantStorageError["code"],
-      message,
-      { cause: error },
-    );
+    return new VariantStorageError(code as VariantStorageError["code"], message, { cause: error });
   }
   return new VariantStorageError("unavailable", "Browser variant storage is unavailable in this context.", {
     cause: error,

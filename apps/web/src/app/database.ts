@@ -35,7 +35,8 @@ class FontLibraryDatabase extends Dexie {
   fonts!: Table<FontRow, string>;
   meta!: Table<MetaRow, string>;
   variants!: Table<VariantRow, string>;
-  palettes!: Table<PalettePreset, number>;
+  // Legacy rows predate owner revisions; read shapes stay revision-free.
+  palettes!: Table<Omit<PalettePreset, "revision">, number>;
   constructor() {
     super("font-library");
     this.version(1).stores({ fonts: "id, addedAt, source", meta: "key" });
@@ -43,15 +44,22 @@ class FontLibraryDatabase extends Dexie {
     // The fontId index serves per-font variant queries; ordering is applied
     // deterministically (createdAt, id) at read time.
     this.version(2).stores({ fonts: "id, addedAt, source", meta: "key", variants: "id, fontId" });
-    this.version(3).stores({ palettes: "++id" }).upgrade(async (tx) => {
-      await tx.table("palettes").add(MONOCHROME);
-      // Historical output profiles do not identify a defined palette.
-      await tx.table("variants").toCollection().modify((row: VariantRow) => {
-        row.settings.paletteId = MONOCHROME.id;
-        row.settings.profile = "mono_1bit";
+    this.version(3)
+      .stores({ palettes: "++id" })
+      .upgrade(async (tx) => {
+        await tx.table("palettes").add(MONOCHROME);
+        // Historical output profiles do not identify a defined palette.
+        await tx
+          .table("variants")
+          .toCollection()
+          .modify((row: VariantRow) => {
+            row.settings.paletteId = MONOCHROME.id;
+            row.settings.profile = "mono_1bit";
+          });
       });
+    this.on("populate", async (tx) => {
+      await tx.table("palettes").add(MONOCHROME);
     });
-    this.on("populate", async (tx) => { await tx.table("palettes").add(MONOCHROME); });
   }
 }
 

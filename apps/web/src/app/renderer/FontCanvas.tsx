@@ -3,11 +3,7 @@ import * as React from "react";
 import type { KerningPreference } from "../kerning/model.js";
 import { LoaderCircle } from "lucide-react";
 import { useRenderer, type RendererService } from "./renderer-context.js";
-import {
-  RenderScheduler,
-  buildRequestKey,
-  type FontCanvasMode,
-} from "./render-scheduler.js";
+import { RenderScheduler, buildRequestKey, type FontCanvasMode } from "./render-scheduler.js";
 import {
   backingSize,
   cssSize,
@@ -66,6 +62,8 @@ export interface FontCanvasProps {
   ready: boolean;
   // Text-change debounce; other inputs render without waiting.
   debounceMs: number;
+  // Sample size/width changes at renderer throughput while resizing a label.
+  progressiveResize?: boolean;
   viewportProps?: React.HTMLAttributes<HTMLDivElement> & { [key: `data-${string}`]: string };
   canvasProps?: React.CanvasHTMLAttributes<HTMLCanvasElement> & { [key: `data-${string}`]: string };
   canvasFallback?: React.ReactNode;
@@ -289,6 +287,7 @@ interface RenderHookOptions {
   cssScale?: number;
   palette?: readonly RGBA[];
   debounceMs: number;
+  progressiveResize?: boolean;
   exposeFullHeight: boolean;
   clearOnError: boolean;
   debugIdentity?: (measuredWidth: number) => Record<string, unknown>;
@@ -320,9 +319,29 @@ function useFontRender(options: RenderHookOptions): {
   const outcomeRef = React.useRef(options);
 
   const {
-    service, session, available, enabled, fontId, text, sizePx, axes, profile, role,
-    spacing, kerning, stemFitting, diagonalFitting, monoRaster, rasterization, zoom, mode, nativeSize, cssScale,
-    palette, debounceMs,
+    service,
+    session,
+    available,
+    enabled,
+    fontId,
+    text,
+    sizePx,
+    axes,
+    profile,
+    role,
+    spacing,
+    kerning,
+    stemFitting,
+    diagonalFitting,
+    monoRaster,
+    rasterization,
+    zoom,
+    mode,
+    nativeSize,
+    cssScale,
+    palette,
+    debounceMs,
+    progressiveResize,
   } = options;
   const active = enabled && service !== null && available === true;
 
@@ -348,9 +367,13 @@ function useFontRender(options: RenderHookOptions): {
         const height = Math.min(4096, Math.max(1, Math.floor(Number(nativeSize.height) || 1)));
         const mag = deviceBackingScale(scale, ratio);
         return {
-          width, estimate: height, cap: height,
+          width,
+          estimate: height,
+          cap: height,
           keyExtra: { fixed: true, cssScale: scale, dpr: ratio, mag },
-          cssW: width * scale, mag, deviceScale: scale,
+          cssW: width * scale,
+          mag,
+          deviceScale: scale,
         };
       }
       const gutter = 1 + 1 / ratio;
@@ -390,12 +413,21 @@ function useFontRender(options: RenderHookOptions): {
     if (!service) return;
     const current = service;
     const base = {
-      text, sizePx, axes, profile, width: measured.width,
-      role, letterSpacingPx: spacing, kerning, stemFitting, diagonalFitting, monoRaster, rasterization,
+      text,
+      sizePx,
+      axes,
+      profile,
+      width: measured.width,
+      role,
+      letterSpacingPx: spacing,
+      kerning,
+      stemFitting,
+      diagonalFitting,
+      monoRaster,
+      rasterization,
       palette,
     };
-    const specForHeight = (height: number): RenderSpec =>
-      toRenderSpec({ ...base, height });
+    const specForHeight = (height: number): RenderSpec => toRenderSpec({ ...base, height });
     // Invalid colors never reach the scheduler: report through onError and
     // reset identity so a valid correction re-renders without remounting.
     let firstSpec: RenderSpec;
@@ -429,6 +461,17 @@ function useFontRender(options: RenderHookOptions): {
     const paintNativeWidth = measured.width;
     scheduler.request({
       key,
+      progressiveKey: progressiveResize
+        ? buildRequestKey({
+            session,
+            fontId,
+            mode,
+            zoom,
+            width: 0,
+            extra: measured.keyExtra,
+            spec: { ...firstSpec, width: 0, size_px: 0 },
+          })
+        : undefined,
       fontId,
       estimate: measured.estimate,
       cap: measured.cap,
@@ -444,14 +487,24 @@ function useFontRender(options: RenderHookOptions): {
         const native = nativeRef.current ?? document.createElement("canvas");
         nativeRef.current = native;
         if (paintMode === "exact" && paintDeviceScale !== null) {
-          paintDevice(display, native, data, shown, mag,
-            paintNativeWidth * paintDeviceScale, shown * paintDeviceScale, paintBackground);
+          paintDevice(
+            display,
+            native,
+            data,
+            shown,
+            mag,
+            paintNativeWidth * paintDeviceScale,
+            shown * paintDeviceScale,
+            paintBackground,
+          );
         } else if (paintMode === "exact") {
           paintExact(display, native, data, shown, mag, paintBackground);
         } else {
           paintNormal(display, native, data, shown, paintZoom, cssWidth, paintBackground);
         }
-        const outcome = outcomeRef.current;
+        // A progressive paint can precede the newest requested size. Its
+        // callback must describe the inputs that actually produced its pixels.
+        const outcome = progressiveResize ? options : outcomeRef.current;
         const identity = outcome.debugIdentity?.(measured.width);
         if (identity !== undefined) display.dataset.renderKey = JSON.stringify(identity);
         if (outcome.exposeFullHeight) display.dataset.fullHeight = String(fullHeight);
@@ -472,9 +525,30 @@ function useFontRender(options: RenderHookOptions): {
       },
     });
   }, [
-    service, session, available, active, measureTick,
-    fontId, text, sizePx, axes, profile, role, spacing, kerning, stemFitting, diagonalFitting, monoRaster, rasterization,
-    zoom, mode, nativeSize, cssScale, palette, debounceMs,
+    service,
+    session,
+    available,
+    active,
+    measureTick,
+    fontId,
+    text,
+    sizePx,
+    axes,
+    profile,
+    role,
+    spacing,
+    kerning,
+    stemFitting,
+    diagonalFitting,
+    monoRaster,
+    rasterization,
+    zoom,
+    mode,
+    nativeSize,
+    cssScale,
+    palette,
+    debounceMs,
+    progressiveResize,
   ]);
 
   React.useEffect(() => {
@@ -540,6 +614,7 @@ export function FontCanvas(props: FontCanvasProps): React.JSX.Element {
     cssScale: props.cssScale,
     palette: props.palette,
     debounceMs: props.debounceMs,
+    progressiveResize: props.progressiveResize,
     exposeFullHeight: props.exposeFullHeight ?? false,
     clearOnError: props.clearOnError ?? false,
     debugIdentity: props.debugIdentity,
@@ -550,14 +625,14 @@ export function FontCanvas(props: FontCanvasProps): React.JSX.Element {
   return (
     <div data-font-canvas className="min-w-0">
       {!props.compact && (
-      <div className="flex h-4 items-center justify-end" data-render-indicator-slot>
-        {showSpinner && (
-          <span role="status" data-render-spinner className="inline-flex text-muted-foreground">
-            <LoaderCircle aria-hidden="true" className="size-3 motion-safe:animate-spin" />
-            <span className="sr-only">Rendering preview</span>
-          </span>
-        )}
-      </div>
+        <div className="flex h-4 items-center justify-end" data-render-indicator-slot>
+          {showSpinner && (
+            <span role="status" data-render-spinner className="inline-flex text-muted-foreground">
+              <LoaderCircle aria-hidden="true" className="size-3 motion-safe:animate-spin" />
+              <span className="sr-only">Rendering preview</span>
+            </span>
+          )}
+        </div>
       )}
       <div ref={viewportRef} {...props.viewportProps} aria-busy={pending}>
         <canvas ref={canvasRef} {...props.canvasProps}>

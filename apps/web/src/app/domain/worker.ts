@@ -13,12 +13,7 @@ import { createDomainBackend, DOMAIN_DATA_DIR, type DomainBackend } from "./back
 import * as commands from "./commands.ts";
 import { importLegacySnapshot } from "./importer.ts";
 import { MUTATING_METHODS, type DomainMethod } from "./runtime.ts";
-import {
-  DOMAIN_CHANNEL,
-  DOMAIN_OWNER_LEASE,
-  DOMAIN_PROTOCOL_VERSION,
-  type OwnerStamp,
-} from "./protocol.ts";
+import { DOMAIN_CHANNEL, DOMAIN_OWNER_LEASE, DOMAIN_PROTOCOL_VERSION, type OwnerStamp } from "./protocol.ts";
 
 // PGlite resolves its engine files relative to its own module URL, which
 // Vite fingerprints into hashed assets (dev serves them from node_modules).
@@ -34,7 +29,8 @@ const OWNER_EPOCH: string = (() => {
     return "";
   }
 })();
-const ownerEpoch: string = OWNER_EPOCH !== "" ? OWNER_EPOCH : `epoch-${Date.now()}-${Math.floor(Math.random() * 2 ** 31)}`;
+const ownerEpoch: string =
+  OWNER_EPOCH !== "" ? OWNER_EPOCH : `epoch-${Date.now()}-${Math.floor(Math.random() * 2 ** 31)}`;
 
 let backend: DomainBackend | null = null;
 let initializing: Promise<DomainBackend> | null = null;
@@ -82,10 +78,19 @@ async function acquireOwnerLease(): Promise<void> {
     leaseAttempt = (async () => {
       let cancelled = false;
       try {
-        const locks = (globalThis as { navigator?: { locks?: {
-          request: (name: string, options: { mode: string },
-            callback: () => Promise<unknown>) => Promise<unknown>;
-        } } }).navigator?.locks;
+        const locks = (
+          globalThis as {
+            navigator?: {
+              locks?: {
+                request: (
+                  name: string,
+                  options: { mode: string },
+                  callback: () => Promise<unknown>,
+                ) => Promise<unknown>;
+              };
+            };
+          }
+        ).navigator?.locks;
         if (!locks || typeof locks.request !== "function") {
           throw Object.assign(
             new Error("Web Locks are unavailable in this context, so the domain owner cannot start safely."),
@@ -94,19 +99,15 @@ async function acquireOwnerLease(): Promise<void> {
         }
         let granted = false;
         let requestError: unknown = null;
-        const request = locks.request(
-          DOMAIN_OWNER_LEASE,
-          { mode: "exclusive" },
-          async () => {
-            // A cancelled attempt releases immediately if it is granted
-            // after its timeout, so it never blocks the next opener.
-            if (cancelled) return false;
-            granted = true;
-            // Pend for the worker's lifetime; death releases the lease.
-            await new Promise<void>(() => undefined);
-            return true;
-          },
-        );
+        const request = locks.request(DOMAIN_OWNER_LEASE, { mode: "exclusive" }, async () => {
+          // A cancelled attempt releases immediately if it is granted
+          // after its timeout, so it never blocks the next opener.
+          if (cancelled) return false;
+          granted = true;
+          // Pend for the worker's lifetime; death releases the lease.
+          await new Promise<void>(() => undefined);
+          return true;
+        });
         // Never let a torn-down worker surface a late rejection.
         request.then(undefined, () => undefined);
         const outcome = await Promise.race([
@@ -122,7 +123,9 @@ async function acquireOwnerLease(): Promise<void> {
         if (outcome === "settled") {
           if (requestError !== null) {
             throw Object.assign(
-              new Error(`The domain owner lock failed: ${requestError instanceof Error ? requestError.message : String(requestError)}`),
+              new Error(
+                `The domain owner lock failed: ${requestError instanceof Error ? requestError.message : String(requestError)}`,
+              ),
               { code: "unavailable" },
             );
           }
@@ -193,16 +196,17 @@ const methods: Record<DomainMethod, (backend: DomainBackend, ...args: never[]) =
   listScenes: commands.listScenes,
   getScene: commands.getScene,
   createScene: commands.createScene,
+  ensureDefaultScene: commands.ensureDefaultScene,
   updateScene: commands.updateScene,
   deleteScene: commands.deleteScene,
   addSceneLabel: commands.addSceneLabel,
   updateSceneLabel: commands.updateSceneLabel,
   removeSceneLabel: commands.removeSceneLabel,
+  reorderSceneLabels: commands.reorderSceneLabels,
   restoreSceneSnapshot: commands.restoreSceneSnapshot,
   resolveTextStyle: commands.resolveTextStyle,
   resolveTextStyles: commands.resolveTextStyles,
-  importLegacySnapshot: (active, ...args: never[]) =>
-    importLegacySnapshot(active, args[0] as never),
+  importLegacySnapshot: (active, ...args: never[]) => importLegacySnapshot(active, args[0] as never),
 };
 
 type Responder = (message: unknown) => void;
@@ -254,12 +258,17 @@ async function handleCall(data: unknown, respond: Responder): Promise<void> {
   if (call.method === "__protocol") {
     const tabProtocol = (call.params as unknown[])[0];
     if (tabProtocol !== DOMAIN_PROTOCOL_VERSION) {
+      // Discriminator for a stale owner: the tab reports which generation it
+      // rejected (and which scope answered) instead of blaming other tabs.
+      // Owner generations that predate these fields answer without them.
       respond({
         id: call.id,
         ok: false,
         error: {
           code: "blocked",
           message: "This tab needs a fresh domain owner. Close other Glypherie tabs, then reload to retry.",
+          protocol: DOMAIN_PROTOCOL_VERSION,
+          epoch: ownerEpoch,
         },
       });
       return;
@@ -283,7 +292,11 @@ async function handleCall(data: unknown, respond: Responder): Promise<void> {
   const method = call.method as DomainMethod;
   const target = methods[method];
   if (!target) {
-    respond({ id: call.id, ok: false, error: { code: "unavailable", message: `Unknown domain method "${call.method}".` } });
+    respond({
+      id: call.id,
+      ok: false,
+      error: { code: "unavailable", message: `Unknown domain method "${call.method}".` },
+    });
     return;
   }
   try {
@@ -291,9 +304,11 @@ async function handleCall(data: unknown, respond: Responder): Promise<void> {
     const result = await target(active, ...(call.params as never[]));
     // A skipped import changed nothing: report no write so tabs neither bump
     // versions nor rebroadcast.
-    const skippedImport = method === "importLegacySnapshot"
-      && typeof result === "object" && result !== null
-      && (result as { skipped?: unknown }).skipped === true;
+    const skippedImport =
+      method === "importLegacySnapshot" &&
+      typeof result === "object" &&
+      result !== null &&
+      (result as { skipped?: unknown }).skipped === true;
     const mutated = MUTATING_METHODS.has(method) && !skippedImport;
     let stamp: OwnerStamp | undefined;
     if (mutated) {
@@ -343,7 +358,9 @@ if ("onconnect" in self) {
           }
         });
       };
-      const forget = (): void => { ports.delete(port); };
+      const forget = (): void => {
+        ports.delete(port);
+      };
       port.addEventListener?.("close", forget);
       try {
         port.start();

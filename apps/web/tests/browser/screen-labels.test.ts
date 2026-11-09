@@ -1,3 +1,4 @@
+import { addScreenText } from "../helpers/screen-tools.ts";
 // Screen labels against the real WASM preview renderer: placing, dragging
 // and nudging labels on the native device grid, in-place editing with the
 // transparent textarea and renderer caret geometry, undo/redo and reload
@@ -37,32 +38,31 @@ async function ensureStyle(page: Parameters<typeof cardNames>[0], url: string): 
   await openNewVariant(page, ids[index]!);
 }
 
-async function createComposition(page: Parameters<typeof cardNames>[0], name: string): Promise<void> {
-  await page.locator("[data-screen-composition-create-name]").fill(name);
-  await page.locator("[data-screen-composition-create]").waitFor();
-  await page.waitForFunction(
-    () => !((document.querySelector("[data-screen-composition-create]") as HTMLButtonElement | null)?.disabled ?? true),
-  );
-  await page.locator("[data-screen-composition-create]").click();
-  await page.locator("[data-screen-workspace]").waitFor();
+async function createComposition(page: Parameters<typeof cardNames>[0], _name: string): Promise<void> {
+  // There is no list to create into: the Screen page opens the one implicit
+  // default automatically. The name stays at call sites as documentation of
+  // what each test then does with the default workspace.
+  await page.locator("[data-screen-workspace]").waitFor({ timeout: 20000 });
 }
 
 async function containerIds(page: Parameters<typeof cardNames>[0]): Promise<string[]> {
-  return page.locator("[data-scene-label-container]").evaluateAll((elements) =>
-    elements.map((element) => element.getAttribute("data-scene-label-container") ?? ""));
+  return page
+    .locator("[data-scene-label-container]")
+    .evaluateAll((elements) => elements.map((element) => element.getAttribute("data-scene-label-container") ?? ""));
 }
 
 async function addLabel(page: Parameters<typeof cardNames>[0], text: string): Promise<string> {
   const known = await containerIds(page);
-  await page.locator("[data-screen-new-text]").fill(text);
-  await page.locator("[data-screen-new-style]").click();
-  await page.getByRole("option").first().click();
-  await page.locator("[data-screen-add-label]").click();
-  await page.waitForFunction((knownIds) => [...document.querySelectorAll("[data-scene-label-container]")]
-    .some((element) => {
-      const id = element.getAttribute("data-scene-label-container");
-      return id !== null && !knownIds.includes(id);
-    }), known, { timeout: 20000 });
+  await addScreenText(page, text, { variant: true });
+  await page.waitForFunction(
+    (knownIds) =>
+      [...document.querySelectorAll("[data-scene-label-container]")].some((element) => {
+        const id = element.getAttribute("data-scene-label-container");
+        return id !== null && !knownIds.includes(id);
+      }),
+    known,
+    { timeout: 20000 },
+  );
   const id = (await containerIds(page)).find((value) => value !== "" && !known.includes(value));
   assert.ok(id);
   await waitPainted(page, id);
@@ -70,11 +70,15 @@ async function addLabel(page: Parameters<typeof cardNames>[0], text: string): Pr
 }
 
 async function waitPainted(page: Parameters<typeof cardNames>[0], id: string): Promise<void> {
-  await page.waitForFunction((placementId) => {
-    const viewport = document.querySelector(`[data-scene-label="${placementId}"]`);
-    const canvas = viewport?.querySelector("canvas");
-    return canvas instanceof HTMLCanvasElement && canvas.dataset.rendered === "true";
-  }, id, { timeout: 20000 });
+  await page.waitForFunction(
+    (placementId) => {
+      const viewport = document.querySelector(`[data-scene-label="${placementId}"]`);
+      const canvas = viewport?.querySelector("canvas");
+      return canvas instanceof HTMLCanvasElement && canvas.dataset.rendered === "true";
+    },
+    id,
+    { timeout: 20000 },
+  );
 }
 
 async function labelInk(page: Parameters<typeof cardNames>[0], id: string): Promise<number> {
@@ -117,6 +121,13 @@ async function inspectorX(page: Parameters<typeof cardNames>[0]): Promise<number
   return Number(await page.locator("[data-scene-inspector-x]").inputValue());
 }
 
+// Rendered stage-frame accessible name for the label: the Position panel no
+// longer repeats the text, so assertions read the frame (or the layers row)
+// with the placement id instead of the removed inspector paragraph.
+async function frameLabel(page: Parameters<typeof cardNames>[0], id: string): Promise<string | null> {
+  return page.locator(`[data-scene-label-frame="${id}"]`).getAttribute("aria-label");
+}
+
 async function selectLabel(page: Parameters<typeof cardNames>[0], id: string): Promise<void> {
   // Tight ink frame, not the full-aperture container: containers are
   // click-through so stacked labels resolve by stacking order.
@@ -127,12 +138,19 @@ async function selectLabel(page: Parameters<typeof cardNames>[0], id: string): P
 // Moveable's lines are the single visible selection outline and render from
 // its live drag geometry, so their union bounds are the honest control
 // position. Symmetric padding keeps the centers coincident with the frame.
-async function dragControlBounds(page: Parameters<typeof cardNames>[0]): Promise<{ x: number; y: number; width: number; height: number }> {
+async function dragControlBounds(
+  page: Parameters<typeof cardNames>[0],
+): Promise<{ x: number; y: number; width: number; height: number }> {
   return page.locator(".moveable-control-box > .moveable-line").evaluateAll((lines) => {
     const boxes = lines.map((line) => line.getBoundingClientRect());
     const x = Math.min(...boxes.map((box) => box.left));
     const y = Math.min(...boxes.map((box) => box.top));
-    return { x, y, width: Math.max(...boxes.map((box) => box.right)) - x, height: Math.max(...boxes.map((box) => box.bottom)) - y };
+    return {
+      x,
+      y,
+      width: Math.max(...boxes.map((box) => box.right)) - x,
+      height: Math.max(...boxes.map((box) => box.bottom)) - y,
+    };
   });
 }
 
@@ -155,9 +173,12 @@ async function assertAligned(page: Parameters<typeof cardNames>[0], id: string, 
 }
 
 async function settleFrames(page: Parameters<typeof cardNames>[0]): Promise<void> {
-  await page.evaluate(() => new Promise<void>((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  }));
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
 }
 
 test("labels drag on the device grid, nudge by keyboard and undo cleanly", { skip: !browserAvailable }, async (t) => {
@@ -194,7 +215,9 @@ test("labels drag on the device grid, nudge by keyboard and undo cleanly", { ski
     if (!(frame instanceof HTMLElement) || !frame.parentElement) throw new Error("Missing drag target");
     const expected = frame.getBoundingClientRect().left;
     const positions: number[] = [];
-    const sample = (): void => { positions.push(frame.getBoundingClientRect().left); };
+    const sample = (): void => {
+      positions.push(frame.getBoundingClientRect().left);
+    };
     const observer = new MutationObserver(sample);
     observer.observe(frame.parentElement, { attributes: true, attributeFilter: ["style"] });
     let request = requestAnimationFrame(function record() {
@@ -209,7 +232,7 @@ test("labels drag on the device grid, nudge by keyboard and undo cleanly", { ski
     };
   }, id);
   await page.evaluate(() => {
-    const selectors = ["[data-screen-device]", "[data-scene-inspector-edit]", "[data-scene-inspector-x]", "[data-screen-new-text]"];
+    const selectors = ["[data-screen-device]", "[data-scene-inspector-x]", '[data-screen-tool="text"]'];
     const disabled: string[] = [];
     const sample = (): void => {
       for (const selector of selectors) {
@@ -218,7 +241,9 @@ test("labels drag on the device grid, nudge by keyboard and undo cleanly", { ski
     };
     const observer = new MutationObserver(sample);
     observer.observe(document.querySelector("[data-screen-workspace]")!, {
-      subtree: true, attributes: true, attributeFilter: ["disabled", "aria-disabled"],
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled", "aria-disabled"],
     });
     (window as unknown as { disabledProbe: () => string[] }).disabledProbe = () => {
       observer.disconnect();
@@ -232,7 +257,8 @@ test("labels drag on the device grid, nudge by keyboard and undo cleanly", { ski
   await frame.click();
   await page.keyboard.press("ArrowRight");
   await page.waitForFunction(
-    (start) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value ?? "x") !== start,
+    (start) =>
+      Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value ?? "x") !== start,
     startX,
     { timeout: 20000 },
   );
@@ -243,13 +269,15 @@ test("labels drag on the device grid, nudge by keyboard and undo cleanly", { ski
     { timeout: 20000 },
   );
   const afterDrag = await inspectorX(page);
-  const disabled = await page.evaluate(() =>
-    (window as unknown as { disabledProbe: () => string[] }).disabledProbe());
+  const disabled = await page.evaluate(() => (window as unknown as { disabledProbe: () => string[] }).disabledProbe());
   assert.deepEqual(disabled, [], "saving a released drag must not flash unrelated controls disabled");
   const release = await page.evaluate(() =>
-    (window as unknown as { releaseProbe: () => { expected: number; positions: number[] } }).releaseProbe());
-  assert.ok(release.positions.every((x) => Math.abs(x - release.expected) < 2),
-    `label must stay at its released position while saving: expected=${release.expected}, observed=${JSON.stringify(release.positions)}`);
+    (window as unknown as { releaseProbe: () => { expected: number; positions: number[] } }).releaseProbe(),
+  );
+  assert.ok(
+    release.positions.every((x) => Math.abs(x - release.expected) < 2),
+    `label must stay at its released position while saving: expected=${release.expected}, observed=${JSON.stringify(release.positions)}`,
+  );
   assert.ok(Number.isInteger(afterDrag), `committed x stays integral, got ${afterDrag}`);
   assert.notEqual(afterDrag, startX);
   await settleFrames(page);
@@ -258,18 +286,21 @@ test("labels drag on the device grid, nudge by keyboard and undo cleanly", { ski
   // Regression proof for the reported split outline: after release the
   // Moveable control box stayed ~one drag behind the committed label.
   await assertAligned(page, id, "released rectangles must share a center");
-  assert.ok(Math.abs((frameAfter.x - frameBefore.x) - 60) < 4, "the frame tracks the pointer");
+  assert.ok(Math.abs(frameAfter.x - frameBefore.x - 60) < 4, "the frame tracks the pointer");
 
   // Exactly one visible selection outline: the label frame draws none of its
   // own, while Moveable renders its live geometry as lines.
-  const frameOutline = await page.locator(`[data-scene-label-frame="${id}"]`).evaluate((frame) =>
-    getComputedStyle(frame).outlineStyle);
+  const frameOutline = await page
+    .locator(`[data-scene-label-frame="${id}"]`)
+    .evaluate((frame) => getComputedStyle(frame).outlineStyle);
   assert.equal(frameOutline, "none", "the label frame draws no duplicate outline");
-  const visibleLines = await page.locator(".moveable-control-box > .moveable-line").evaluateAll((lines) =>
-    lines.filter((line) => {
-      const box = line.getBoundingClientRect();
-      return box.width > 0 && box.height > 0;
-    }).length);
+  const visibleLines = await page.locator(".moveable-control-box > .moveable-line").evaluateAll(
+    (lines) =>
+      lines.filter((line) => {
+        const box = line.getBoundingClientRect();
+        return box.width > 0 && box.height > 0;
+      }).length,
+  );
   assert.ok(visibleLines > 0, "Moveable draws the single selection outline");
 
   // A second drag from the committed position stays aligned through release.
@@ -290,7 +321,7 @@ test("labels drag on the device grid, nudge by keyboard and undo cleanly", { ski
   assert.notEqual(afterSecondDrag, afterDrag);
   const secondAfter = await frame.boundingBox();
   assert.ok(second && secondAfter);
-  assert.ok(Math.abs((secondAfter.x - second.x) + 30) < 4, "the frame tracks the second pointer drag");
+  assert.ok(Math.abs(secondAfter.x - second.x + 30) < 4, "the frame tracks the second pointer drag");
   await settleFrames(page);
   await assertAligned(page, id, "second release rectangles must share a center");
 
@@ -303,11 +334,19 @@ test("labels drag on the device grid, nudge by keyboard and undo cleanly", { ski
   assert.equal(focused, id, "clicking the frame focuses it for keyboard nudging");
   const afterSecond = afterSecondDrag;
   await page.keyboard.press("ArrowRight");
-  await page.waitForFunction((x) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value) === x, afterSecond + 1, { timeout: 20000 });
+  await page.waitForFunction(
+    (x) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value) === x,
+    afterSecond + 1,
+    { timeout: 20000 },
+  );
   await settleFrames(page);
   await assertAligned(page, id, "nudge rectangles must share a center");
   await page.keyboard.press("Shift+ArrowRight");
-  await page.waitForFunction((x) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value) === x, afterSecond + 11, { timeout: 20000 });
+  await page.waitForFunction(
+    (x) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value) === x,
+    afterSecond + 11,
+    { timeout: 20000 },
+  );
   await settleFrames(page);
   await assertAligned(page, id, "shift-nudge rectangles must share a center");
 
@@ -315,15 +354,27 @@ test("labels drag on the device grid, nudge by keyboard and undo cleanly", { ski
   await page.locator("[data-screen-undo]").click();
   await page.locator("[data-scene-inspector]").waitFor({ state: "detached" });
   await selectLabel(page, id);
-  await page.waitForFunction((x) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value) === x, afterSecond + 1, { timeout: 20000 });
+  await page.waitForFunction(
+    (x) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value) === x,
+    afterSecond + 1,
+    { timeout: 20000 },
+  );
   await page.locator("[data-screen-undo]").click();
   await page.locator("[data-scene-inspector]").waitFor({ state: "detached" });
   await selectLabel(page, id);
-  await page.waitForFunction((x) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value) === x, afterSecond, { timeout: 20000 });
+  await page.waitForFunction(
+    (x) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value) === x,
+    afterSecond,
+    { timeout: 20000 },
+  );
   await page.locator("[data-screen-redo]").click();
   await page.locator("[data-scene-inspector]").waitFor({ state: "detached" });
   await selectLabel(page, id);
-  await page.waitForFunction((x) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value) === x, afterSecond + 1, { timeout: 20000 });
+  await page.waitForFunction(
+    (x) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value) === x,
+    afterSecond + 1,
+    { timeout: 20000 },
+  );
   assert.equal(await inspectorX(page), afterSecond + 1);
 
   // Reload keeps the committed integer position and the typed text.
@@ -343,11 +394,14 @@ test("labels drag on the device grid, nudge by keyboard and undo cleanly", { ski
 async function beginEdit(page: Parameters<typeof cardNames>[0], id: string): Promise<void> {
   await page.locator(`[data-scene-label-frame="${id}"]`).click();
   await page.locator(`[data-scene-inspector="${id}"]`).waitFor();
-  await page.locator(`[data-scene-label-frame="${id}"]`).dblclick();
+  await page.locator(`[data-scene-label-frame="${id}"]`).press("Enter");
   await page.locator(`[data-scene-edit-text="${id}"]`).waitFor();
 }
 
-async function editSelection(page: Parameters<typeof cardNames>[0], id: string): Promise<{ start: number; end: number }> {
+async function editSelection(
+  page: Parameters<typeof cardNames>[0],
+  id: string,
+): Promise<{ start: number; end: number }> {
   return page.evaluate((placementId) => {
     const textarea = document.querySelector(`[data-scene-edit-text="${placementId}"]`);
     if (!(textarea instanceof HTMLTextAreaElement)) throw new Error("Edit textarea is missing.");
@@ -371,83 +425,87 @@ async function editValue(page: Parameters<typeof cardNames>[0], id: string): Pro
   }, id);
 }
 
-test("in-place editing types against WASM carets, selects by pointer and commits explicitly", { skip: !browserAvailable }, async (t) => {
-  const output = await buildApp(t);
-  const url = await servePrefix(t, output);
-  const browser = await launch(t);
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  t.after(() => page.close());
-  await bootLibrary(page, url);
-  await ensureStyle(page, url);
-  await openScreen(page, url);
-  await createComposition(page, "Edit");
-  const id = await addLabel(page, "Hi");
+test(
+  "in-place editing types against WASM carets, selects by pointer and commits explicitly",
+  { skip: !browserAvailable },
+  async (t) => {
+    const output = await buildApp(t);
+    const url = await servePrefix(t, output);
+    const browser = await launch(t);
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    t.after(() => page.close());
+    await bootLibrary(page, url);
+    await ensureStyle(page, url);
+    await openScreen(page, url);
+    await createComposition(page, "Edit");
+    const id = await addLabel(page, "Hi");
 
-  // Double-click opens the transparent capture textarea over the WASM paint;
-  // the visible caret comes from renderer stops, never browser metrics.
-  await beginEdit(page, id);
-  const textarea = page.locator(`[data-scene-edit-text="${id}"]`);
-  assert.equal(await textarea.evaluate((element) => getComputedStyle(element).color), "rgba(0, 0, 0, 0)");
-  assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.tagName), "TEXTAREA");
-  await page.locator(`[data-scene-edit-caret="${id}"]`).waitFor();
-  const caretBefore = await page.locator(`[data-scene-edit-caret="${id}"]`).boundingBox();
-  assert.ok(caretBefore && caretBefore.width <= 3, "the overlay caret is a thin mark, not a native caret");
+    // Keyboard entry opens the transparent capture textarea over the WASM paint;
+    // the visible caret comes from renderer stops, never browser metrics.
+    await beginEdit(page, id);
+    const textarea = page.locator(`[data-scene-edit-text="${id}"]`);
+    assert.equal(await textarea.evaluate((element) => getComputedStyle(element).color), "rgba(0, 0, 0, 0)");
+    assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.tagName), "TEXTAREA");
+    await page.locator(`[data-scene-edit-caret="${id}"]`).waitFor();
+    const caretBefore = await page.locator(`[data-scene-edit-caret="${id}"]`).boundingBox();
+    assert.ok(caretBefore && caretBefore.width <= 3, "the overlay caret is a thin mark, not a native caret");
 
-  // Typing repaints the committed bitmap through the real renderer.
-  const inkBefore = await labelInk(page, id);
-  await page.keyboard.type("!");
-  await waitInkChanged(page, id, inkBefore);
-  const inkAfter = await labelInk(page, id);
-  assert.ok(inkAfter > inkBefore, "typing changes the committed ink");
+    // Typing repaints the committed bitmap through the real renderer.
+    const inkBefore = await labelInk(page, id);
+    await page.keyboard.type("!");
+    await waitInkChanged(page, id, inkBefore);
+    const inkAfter = await labelInk(page, id);
+    assert.ok(inkAfter > inkBefore, "typing changes the committed ink");
 
-  // Pointer clicks hit-test renderer caret stops: the far left lands at the
-  // text start, the far right at its end.
-  const container = page.locator(`[data-scene-label-container="${id}"]`);
-  const box = await container.boundingBox();
-  assert.ok(box);
-  await page.mouse.click(box.x + 2, box.y + box.height / 2);
-  assert.deepEqual(await editSelection(page, id), { start: 0, end: 0 });
-  await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2);
-  assert.deepEqual(await editSelection(page, id), { start: 3, end: 3 });
+    // Pointer clicks hit-test renderer caret stops: the far left lands at the
+    // text start, the far right at its end.
+    const container = page.locator(`[data-scene-label-container="${id}"]`);
+    const box = await container.boundingBox();
+    assert.ok(box);
+    await page.mouse.click(box.x + 2, box.y + box.height / 2);
+    assert.deepEqual(await editSelection(page, id), { start: 0, end: 0 });
+    await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2);
+    assert.deepEqual(await editSelection(page, id), { start: 3, end: 3 });
 
-  // Dragging across the label extends the native textarea selection, which
-  // the overlay mirrors as renderer selection rects.
-  await page.mouse.move(box.x + 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 6 });
-  await page.mouse.up();
-  assert.deepEqual(await editSelection(page, id), { start: 0, end: 3 });
-  assert.ok(await page.locator(`[data-scene-edit-selection="${id}"]`).count() >= 1);
+    // Dragging across the label extends the native textarea selection, which
+    // the overlay mirrors as renderer selection rects.
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 6 });
+    await page.mouse.up();
+    assert.deepEqual(await editSelection(page, id), { start: 0, end: 3 });
+    assert.ok((await page.locator(`[data-scene-edit-selection="${id}"]`).count()) >= 1);
 
-  // Escape discards the draft; the saved text never changed.
-  await page.keyboard.press("Escape");
-  await page.waitForFunction(
-    (placementId) => document.querySelector(`[data-scene-edit-text="${placementId}"]`) === null,
-    id,
-  );
-  await page.locator(`[data-scene-label-frame="${id}"]`).click();
-  assert.equal(await page.locator("[data-scene-inspector-text]").textContent(), "Hi");
+    // Escape discards the draft; the saved text never changed.
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(
+      (placementId) => document.querySelector(`[data-scene-edit-text="${placementId}"]`) === null,
+      id,
+    );
+    await page.locator(`[data-scene-label-frame="${id}"]`).click();
+    assert.equal(await frameLabel(page, id), "Label Hi. Press Enter to edit.");
 
-  // Ctrl+Enter commits through the revisioned store; reload keeps it.
-  await beginEdit(page, id);
-  await page.keyboard.type("?");
-  await page.keyboard.press("ControlOrMeta+Enter");
-  await page.waitForFunction(
-    (placementId) => document.querySelector(`[data-scene-edit-text="${placementId}"]`) === null,
-    id,
-  );
-  await page.locator(`[data-scene-inspector="${id}"]`).waitFor();
-  assert.equal(await page.locator("[data-scene-inspector-text]").textContent(), "Hi?");
-  await page.reload({ waitUntil: "domcontentloaded" });
-  await screenReady(page);
-  await page.locator("[data-screen-workspace]").waitFor();
-  await waitPainted(page, id);
-  await page.locator(`[data-scene-label-frame="${id}"]`).click();
-  assert.equal(await page.locator("[data-scene-inspector-text]").textContent(), "Hi?");
-  assert.deepEqual(errors, []);
-});
+    // Ctrl+Enter commits through the revisioned store; reload keeps it.
+    await beginEdit(page, id);
+    await page.keyboard.type("?");
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await page.waitForFunction(
+      (placementId) => document.querySelector(`[data-scene-edit-text="${placementId}"]`) === null,
+      id,
+    );
+    await page.locator(`[data-scene-inspector="${id}"]`).waitFor();
+    assert.equal(await frameLabel(page, id), "Label Hi?. Press Enter to edit.");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await screenReady(page);
+    await page.locator("[data-screen-workspace]").waitFor();
+    await waitPainted(page, id);
+    await page.locator(`[data-scene-label-frame="${id}"]`).click();
+    assert.equal(await frameLabel(page, id), "Label Hi?. Press Enter to edit.");
+    assert.deepEqual(errors, []);
+  },
+);
 
 test("visual-line keys, blank drafts and scaled dragging behave", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
@@ -491,7 +549,7 @@ test("visual-line keys, blank drafts and scaled dragging behave", { skip: !brows
     id,
   );
   await page.locator(`[data-scene-inspector="${id}"]`).waitFor();
-  assert.equal(await page.locator("[data-scene-inspector-text]").textContent(), "AB\nCDE");
+  assert.equal(await frameLabel(page, id), "Label AB\nCDE. Press Enter to edit.");
 
   // A newline-only draft keeps renderer geometry: the caret stays visible
   // and typing recovers without an error badge.
@@ -506,7 +564,7 @@ test("visual-line keys, blank drafts and scaled dragging behave", { skip: !brows
     (placementId) => document.querySelector(`[data-scene-edit-text="${placementId}"]`) === null,
     id,
   );
-  assert.equal(await page.locator("[data-scene-inspector-text]").textContent(), "\nZ");
+  assert.equal(await frameLabel(page, id), "Label \nZ. Press Enter to edit.");
   // The committed text change resized the tight frame; the control geometry
   // follows it.
   await settleFrames(page);
@@ -516,14 +574,13 @@ test("visual-line keys, blank drafts and scaled dragging behave", { skip: !brows
   await page.locator("details[data-monitor-info] > summary").click();
   await page.locator('[data-screen-size] [role="slider"]').focus();
   await page.keyboard.press("End");
-  await page.waitForFunction(
-    () => document.querySelector("[data-screen-size-value]")?.textContent === "150%",
-  );
+  await page.waitForFunction(() => document.querySelector("[data-screen-size-value]")?.textContent === "150%");
   await page.locator(`[data-scene-label-frame="${id}"]`).click();
   // The preview scale change repositions every frame; the control follows.
   await settleFrames(page);
   await assertAligned(page, id, "scaled rectangles must share a center");
   const startX = await inspectorX(page);
+  const savedRevision = await page.locator("[data-screen-workspace]").getAttribute("data-screen-revision");
   const frame = page.locator(`[data-scene-label-frame="${id}"]`);
   const box = await frame.boundingBox();
   assert.ok(box);
@@ -536,7 +593,9 @@ test("visual-line keys, blank drafts and scaled dragging behave", { skip: !brows
     if (!(frame instanceof HTMLElement) || !frame.parentElement) throw new Error("Missing drag target");
     const expected = frame.getBoundingClientRect().left;
     const positions: number[] = [];
-    const sample = (): void => { positions.push(frame.getBoundingClientRect().left); };
+    const sample = (): void => {
+      positions.push(frame.getBoundingClientRect().left);
+    };
     const observer = new MutationObserver(sample);
     observer.observe(frame.parentElement, { attributes: true, attributeFilter: ["style"] });
     let request = requestAnimationFrame(function record() {
@@ -551,7 +610,7 @@ test("visual-line keys, blank drafts and scaled dragging behave", { skip: !brows
     };
   }, id);
   await page.evaluate(() => {
-    const selectors = ["[data-screen-device]", "[data-scene-inspector-edit]", "[data-scene-inspector-x]", "[data-screen-new-text]"];
+    const selectors = ["[data-screen-device]", "[data-scene-inspector-x]", '[data-screen-tool="text"]'];
     const disabled: string[] = [];
     const sample = (): void => {
       for (const selector of selectors) {
@@ -560,7 +619,9 @@ test("visual-line keys, blank drafts and scaled dragging behave", { skip: !brows
     };
     const observer = new MutationObserver(sample);
     observer.observe(document.querySelector("[data-screen-workspace]")!, {
-      subtree: true, attributes: true, attributeFilter: ["disabled", "aria-disabled"],
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled", "aria-disabled"],
     });
     (window as unknown as { scaledDisabledProbe: () => string[] }).scaledDisabledProbe = () => {
       observer.disconnect();
@@ -568,17 +629,27 @@ test("visual-line keys, blank drafts and scaled dragging behave", { skip: !brows
     };
   });
   await page.mouse.up();
+  // Live inspector values are previews; only the revision proves persistence.
   await page.waitForFunction(
-    (start) => Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value ?? "x") !== start,
+    (revision) => document.querySelector("[data-screen-workspace]")?.getAttribute("data-screen-revision") !== revision,
+    savedRevision,
+  );
+  await page.waitForFunction(
+    (start) =>
+      Number((document.querySelector("[data-scene-inspector-x]") as HTMLInputElement | null)?.value ?? "x") !== start,
     startX,
     { timeout: 20000 },
   );
   const scaledRelease = await page.evaluate(() =>
-    (window as unknown as { releaseProbe: () => { expected: number; positions: number[] } }).releaseProbe());
-  assert.ok(scaledRelease.positions.every((x) => Math.abs(x - scaledRelease.expected) < 2),
-    `scaled label must stay at its released position while saving: expected=${scaledRelease.expected}, observed=${JSON.stringify(scaledRelease.positions)}`);
+    (window as unknown as { releaseProbe: () => { expected: number; positions: number[] } }).releaseProbe(),
+  );
+  assert.ok(
+    scaledRelease.positions.every((x) => Math.abs(x - scaledRelease.expected) < 2),
+    `scaled label must stay at its released position while saving: expected=${scaledRelease.expected}, observed=${JSON.stringify(scaledRelease.positions)}`,
+  );
   const scaledDisabled = await page.evaluate(() =>
-    (window as unknown as { scaledDisabledProbe: () => string[] }).scaledDisabledProbe());
+    (window as unknown as { scaledDisabledProbe: () => string[] }).scaledDisabledProbe(),
+  );
   assert.deepEqual(scaledDisabled, [], "saving a scaled released drag must not flash unrelated controls disabled");
   const scaled = await inspectorX(page);
   assert.ok(Number.isInteger(scaled) && scaled !== startX);
@@ -590,7 +661,7 @@ test("visual-line keys, blank drafts and scaled dragging behave", { skip: !brows
   await waitPainted(page, id);
   await page.locator(`[data-scene-label-frame="${id}"]`).click();
   assert.equal(await inspectorX(page), scaled);
-  assert.equal(await page.locator("[data-scene-inspector-text]").textContent(), "\nZ");
+  assert.equal(await frameLabel(page, id), "Label \nZ. Press Enter to edit.");
   assert.deepEqual(errors, []);
 });
 
@@ -636,7 +707,7 @@ test("native arrows, shift and select-all mirror into the overlay", { skip: !bro
     id,
   );
   await page.locator(`[data-scene-label-frame="${id}"]`).click();
-  assert.equal(await page.locator("[data-scene-inspector-text]").textContent(), "Hi");
+  assert.equal(await frameLabel(page, id), "Label Hi. Press Enter to edit.");
   assert.deepEqual(errors, []);
 });
 
@@ -681,7 +752,7 @@ test("right-to-left drags keep a backward range that typing replaces", { skip: !
     id,
   );
   await page.locator(`[data-scene-label-frame="${id}"]`).click();
-  assert.equal(await page.locator("[data-scene-inspector-text]").textContent(), "Hi");
+  assert.equal(await frameLabel(page, id), "Label Hi. Press Enter to edit.");
   assert.deepEqual(errors, []);
 });
 
@@ -710,7 +781,7 @@ test("deleting a line break re-resolves the caret on the merged line", { skip: !
     id,
   );
   await page.locator(`[data-scene-inspector="${id}"]`).waitFor();
-  assert.equal(await page.locator("[data-scene-inspector-text]").textContent(), "AB\nCDE");
+  assert.equal(await frameLabel(page, id), "Label AB\nCDE. Press Enter to edit.");
 
   // Home lands on the second visual line start; Backspace merges the lines.
   await beginEdit(page, id);
@@ -732,7 +803,7 @@ test("deleting a line break re-resolves the caret on the merged line", { skip: !
     id,
   );
   await page.locator(`[data-scene-inspector="${id}"]`).waitFor();
-  assert.equal(await page.locator("[data-scene-inspector-text]").textContent(), "ABCDE");
+  assert.equal(await frameLabel(page, id), "Label ABCDE. Press Enter to edit.");
   assert.deepEqual(errors, []);
 });
 
@@ -784,5 +855,22 @@ test("stacked labels select by ink and empty paper deselects", { skip: !browserA
   // And the moved label still selects by its own ink.
   await page.locator(`[data-scene-label-frame="${second}"]`).click();
   await page.locator(`[data-scene-inspector="${second}"]`).waitFor();
+
+  // The right panel shows a Position section with X/Y inputs and no legacy
+  // label controls: no text paragraph, edit button or order/lifecycle icons.
+  const inspector = page.locator(`[data-scene-inspector="${second}"]`);
+  await inspector.getByRole("heading", { name: "Position" }).waitFor();
+  assert.equal(await inspector.locator("[data-scene-inspector-x]").inputValue(), "120");
+  assert.equal(await inspector.locator("[data-scene-inspector-y]").inputValue(), "8");
+  for (const selector of [
+    "[data-scene-inspector-text]",
+    "[data-scene-inspector-edit]",
+    "[data-scene-inspector-front]",
+    "[data-scene-inspector-back]",
+    "[data-scene-inspector-duplicate]",
+    "[data-scene-inspector-delete]",
+  ]) {
+    assert.equal(await inspector.locator(selector).count(), 0, `${selector} is gone from the Position panel`);
+  }
   assert.deepEqual(errors, []);
 });

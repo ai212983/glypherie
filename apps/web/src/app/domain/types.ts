@@ -21,11 +21,21 @@ export interface DomainOutputProfileView {
 export interface DomainPlacementView {
   id: string;
   labelId: string;
-  textStyleId: string;
+  // Exactly one reference is set: a saved variant style, or a direct font
+  // with its own size, wrap width and optional wght override (null means the
+  // selected font's default). Persisted rows predating direct labels always
+  // carry a style; rows predating the weight field read back null.
+  textStyleId: string | null;
+  fontId: string | null;
+  fontSize: number | null;
+  width: number | null;
+  fontWeight: number | null;
   text: string;
   x: number;
   y: number;
   order: number;
+  // Per-placement visibility; absent in older data means visible.
+  visible?: boolean;
 }
 
 // Undo/redo snapshot payload: full scene content without placement ids, so a
@@ -33,11 +43,42 @@ export interface DomainPlacementView {
 // which keeps duplicate identical labels stable across repeated cycles.
 export interface SceneSnapshotPlacement {
   text: string;
-  textStyleId: string;
+  textStyleId: string | null;
+  fontId: string | null;
+  fontSize: number | null;
+  width: number | null;
+  fontWeight: number | null;
   x: number;
   y: number;
   order: number;
+  // Per-placement visibility; absent in older data means visible.
+  visible?: boolean;
 }
+
+// Label creation and patch shapes: either a saved variant style or a direct
+// font reference with its own size, wrap width and optional wght override
+// (absent/null means the selected font's default), never both.
+export type SceneLabelInput = {
+  text: string;
+  x: number;
+  y: number;
+} & (
+  | { textStyleId: string; fontId?: never; fontSize?: never; width?: never; fontWeight?: never }
+  | { fontId: string; fontSize: number; width: number; fontWeight?: number | null; textStyleId?: never }
+);
+
+export type SceneLabelPatch = {
+  visible?: boolean;
+  text?: string;
+  x?: number;
+  y?: number;
+  order?: number;
+  textStyleId?: string;
+  fontId?: string;
+  fontSize?: number;
+  width?: number;
+  fontWeight?: number | null;
+};
 
 export interface SceneSnapshotInput {
   name: string;

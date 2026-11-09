@@ -11,11 +11,13 @@
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
 import { createPostgresBackend } from "@nicia-ai/typegraph/adapters/drizzle/postgres";
-import { createStore, createStoreWithSchema } from "@nicia-ai/typegraph";
-import { sql } from "drizzle-orm";
+import { createStore, createStoreWithSchema, MigrationError } from "@nicia-ai/typegraph";
+import { and, eq, sql } from "drizzle-orm";
+import { nodes } from "@nicia-ai/typegraph/adapters/drizzle/postgres";
 import { domainGraph, type DomainGraph } from "./graph.ts";
 import { linearCurve } from "../features/grayscale/response-curve.ts";
 import { MONOCHROME_ID } from "../palettes/model.ts";
+import { IMPORT_MARKER_KEY } from "./storage-keys.ts";
 
 export type DomainStore = ReturnType<typeof createStore<DomainGraph>>;
 
@@ -51,7 +53,7 @@ export interface DomainBackendOptions {
 export const DOMAIN_DATA_DIR = "idb://glypherie-domain-v1";
 export const MONOCHROME_OUTPUT_ID = "output-monochrome";
 
-async function ensureTables(db: PgliteDatabase): Promise<void> {
+async function ensureTables(db: AuxDb): Promise<void> {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS font_binaries (
       content_id TEXT PRIMARY KEY,
@@ -64,16 +66,38 @@ async function ensureTables(db: PgliteDatabase): Promise<void> {
     )`);
 }
 
+// Retired `strength` cleanup (2026-11-06 hard cut): earlier builds stored a
+// `strength` blend under kerning.hu_hersch/fontforge, which current admission
+// rejects. One atomic UPDATE per open strips both keys (Postgres `#-`, per
+// https://www.postgresql.org/docs/current/functions-json.html) and bumps row
+// and props revisions; only affected rows are touched, so reruns are no-ops.
+async function discardRetiredKerningStrength(db: PgliteDatabase, stamp: number): Promise<number> {
+  const cleaned = await db
+    .update(nodes)
+    .set({
+      props: sql`jsonb_set(jsonb_set((${nodes.props} #- '{kerning,hu_hersch,strength}') #- '{kerning,fontforge,strength}', '{revision}', to_jsonb(COALESCE((${nodes.props} ->> 'revision')::integer, 0) + 1), true), '{updatedAt}', to_jsonb(${stamp}::bigint), true)`,
+      version: sql`${nodes.version} + 1`,
+      updatedAt: new Date(stamp),
+    })
+    .where(
+      and(
+        eq(nodes.graphId, domainGraph.id),
+        eq(nodes.kind, "RenderingProfile"),
+        sql`(((${nodes.props} -> 'kerning' -> 'hu_hersch') ? 'strength') OR ((${nodes.props} -> 'kerning' -> 'fontforge') ? 'strength'))`,
+      ),
+    )
+    .returning({ id: nodes.id });
+  return cleaned.length;
+}
+
 async function ensureMonochromeSeed(backend: DomainBackend): Promise<void> {
-  const existing = await backend.store.nodes.OutputProfile.getById(
-    MONOCHROME_OUTPUT_ID as never,
-  ).catch(() => undefined);
+  const existing = await backend.store.nodes.OutputProfile.getById(MONOCHROME_OUTPUT_ID as never).catch(
+    () => undefined,
+  );
   if (existing) return;
   const now = Date.now();
   await backend.store.transaction(async (tx) => {
-    const seen = await tx.nodes.OutputProfile.getById(MONOCHROME_OUTPUT_ID as never).catch(
-      () => undefined,
-    );
+    const seen = await tx.nodes.OutputProfile.getById(MONOCHROME_OUTPUT_ID as never).catch(() => undefined);
     if (seen) return;
     await tx.nodes.OutputProfile.create(
       {
@@ -85,6 +109,84 @@ async function ensureMonochromeSeed(backend: DomainBackend): Promise<void> {
         updatedAt: now,
       },
       { id: MONOCHROME_OUTPUT_ID },
+    );
+  });
+}
+
+async function openProvisionedBackend(db: PgliteDatabase, client: PGlite): Promise<DomainBackend> {
+  await ensureTables(db);
+  // Schema provisioning runs here (not createStore alone): hard deletes and
+  // other contribution-gated writes refuse an uninitialized store. The gate
+  // is idempotent across reopens of the same data directory.
+  const [store] = await createStoreWithSchema(
+    domainGraph,
+    createPostgresBackend(db, { vector: false, fulltext: false }),
+  );
+  // Retained `strength` keys fail strict reads, so clean them before any
+  // consumer read.
+  const retiredCleaned = await discardRetiredKerningStrength(db, Date.now());
+  const backend: DomainBackend = {
+    store: store as DomainStore,
+    db,
+    flush: async () => {
+      // The filesystem flush is the durable boundary: it awaits the full
+      // IndexedDB sync, while PGlite.syncToFs under relaxed durability only
+      // schedules that sync and returns. A missing filesystem fails closed
+      // instead of acknowledging an unflushed write.
+      const fs = client.fs;
+      if (!fs) throw new Error("Domain store has no filesystem to flush; refusing to acknowledge the write.");
+      await fs.syncToFs();
+    },
+    close: async () => {
+      try {
+        await (store as unknown as { close?: () => Promise<void> }).close?.();
+      } finally {
+        await client.close();
+      }
+    },
+  };
+  // The cleanup is an acknowledged write: the fail-closed flush is the
+  // durable boundary before the backend is published.
+  if (retiredCleaned > 0) await backend.flush();
+  await ensureMonochromeSeed(backend);
+  return backend;
+}
+
+// Only a confirmed incompatible admission for this graph authorizes a fresh
+// start: the exported MigrationError carrying a structured breaking-change
+// reason for the current graph id. Message text, unrelated failures (storage,
+// quota, permissions) and other graphs never qualify, so compatible stores
+// are never discarded.
+function isIncompatibleSchemaError(error: unknown): boolean {
+  if (!(error instanceof MigrationError)) return false;
+  const { reason, graphId } = error.details;
+  return reason === "breaking-change" && graphId === domainGraph.id;
+}
+
+// Discard the incompatible database and re-seed defaults on the same handle:
+// transactional DROP SCHEMA removes graph rows, committed schema metadata and
+// stale auxiliaries (binaries, preferences, scenes, labels) together; the
+// auxiliary tables are recreated and the legacy import is marked complete in
+// the same transaction so old Dexie snapshots cannot repopulate the library.
+// The TypeGraph schema is reprovisioned afterwards on the root handle, never
+// on a transaction-bound store.
+async function resetIncompatibleDatabase(db: PgliteDatabase): Promise<void> {
+  await db.transaction(async (tx) => {
+    const aux = tx as unknown as AuxDb;
+    await aux.execute(sql`DROP SCHEMA public CASCADE`);
+    await aux.execute(sql`CREATE SCHEMA public`);
+    await ensureTables(aux);
+    const stamp = Date.now();
+    await kvPut(
+      aux,
+      IMPORT_MARKER_KEY,
+      JSON.stringify({
+        status: "complete",
+        fingerprint: "incompatible-schema-reset",
+        tabId: `reset-${stamp}`,
+        startedAt: stamp,
+        finishedAt: stamp,
+      }),
     );
   });
 }
@@ -104,39 +206,22 @@ export async function createDomainBackend(options: DomainBackendOptions = {}): P
   try {
     await client.waitReady;
     const db = drizzle({ client });
-    await ensureTables(db);
-    // Schema provisioning runs here (not createStore alone): hard deletes and
-    // other contribution-gated writes refuse an uninitialized store. The gate
-    // is idempotent across reopens of the same data directory.
-    const [store] = await createStoreWithSchema(
-      domainGraph,
-      createPostgresBackend(db, { vector: false, fulltext: false }),
-    );
-    const backend: DomainBackend = {
-      store: store as DomainStore,
-      db,
-      flush: async () => {
-        // The filesystem flush is the durable boundary: it awaits the full
-        // IndexedDB sync, while PGlite.syncToFs under relaxed durability only
-        // schedules that sync and returns. A missing filesystem fails closed
-        // instead of acknowledging an unflushed write.
-        const fs = client.fs;
-        if (!fs) throw new Error("Domain store has no filesystem to flush; refusing to acknowledge the write.");
-        await fs.syncToFs();
-      },
-      close: async () => {
-        try {
-          await (store as unknown as { close?: () => Promise<void> }).close?.();
-        } finally {
-          await client.close();
-        }
-      },
-    };
-    await ensureMonochromeSeed(backend);
-    return backend;
+    try {
+      return await openProvisionedBackend(db, client);
+    } catch (error) {
+      // A persisted schema the current admission rejects incompatibly has no
+      // migration path the user could run, so discard it once and open fresh
+      // on the same engine. Anything else propagates with data intact, and a
+      // second failure after the reset is never reset again.
+      if (!isIncompatibleSchemaError(error)) throw error;
+      await resetIncompatibleDatabase(db);
+      const backend = await openProvisionedBackend(db, client);
+      await backend.flush();
+      return backend;
+    }
   } catch (error) {
-    // A failed open (provisioning or seed) must not leak a live PGlite
-    // engine; the next attempt reopens from the same data directory.
+    // A failed open (provisioning, reset, or seed) must not leak a live
+    // PGlite engine; the next attempt reopens from the same data directory.
     await client.close().catch(() => undefined);
     throw error;
   }
@@ -202,9 +287,7 @@ export async function kvPut(db: AuxDb, key: string, value: string): Promise<void
 // ---- Font binaries (content-addressed; insert skips identical rows) ----
 
 export async function binaryLength(db: AuxDb, contentId: string): Promise<number | undefined> {
-  const result = await db.execute(
-    sql`SELECT length(bytes) AS n FROM font_binaries WHERE content_id = ${contentId}`,
-  );
+  const result = await db.execute(sql`SELECT length(bytes) AS n FROM font_binaries WHERE content_id = ${contentId}`);
   const row = (result.rows as Array<{ n: number | string }>)[0];
   return row === undefined ? undefined : Number(row.n);
 }
@@ -222,11 +305,7 @@ export async function readBinary(db: AuxDb, contentId: string): Promise<Uint8Arr
   return out;
 }
 
-export async function writeBinaryIfAbsent(
-  db: AuxDb,
-  contentId: string,
-  bytes: Uint8Array,
-): Promise<void> {
+export async function writeBinaryIfAbsent(db: AuxDb, contentId: string, bytes: Uint8Array): Promise<void> {
   const existing = await binaryLength(db, contentId);
   if (existing !== undefined) {
     if (existing !== bytes.byteLength) {

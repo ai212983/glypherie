@@ -8,6 +8,8 @@ export type {
   DomainOutputProfileView,
   DomainPlacementView,
   DomainSceneView,
+  SceneLabelInput,
+  SceneLabelPatch,
   SceneSnapshotInput,
 } from "../../domain/service.js";
 export {
@@ -16,14 +18,17 @@ export {
   listScenes,
   getScene,
   createScene,
+  ensureDefaultScene,
   updateScene,
   deleteScene,
   addSceneLabel,
   updateSceneLabel,
   removeSceneLabel,
+  reorderSceneLabels,
   restoreSceneSnapshot,
   resolveTextStyle,
   resolveTextStyles,
   subscribeDomain,
   getDomainVersion,
+  STALE_OWNER_RECOVERY_MESSAGE,
 } from "../../domain/service.js";
