@@ -17,12 +17,12 @@ import { ResponseCurve } from "./ResponseCurve";
 import { RasterPreview } from "./RasterPreview";
 import { BitDepthSelector } from "./BitDepthSelector";
 import { PaletteDepthLabel, paletteDepthLabel } from "./PaletteDepthLabel";
-import { curveLevels, linearCurve, type GrayCurve } from "./response-curve";
+import { curveLevels, linearCurve, type GrayCurve } from "../../domain/output-profiles/curve";
 
 const DEFAULT_TEXT = "The quick brown fox jumps over 0123456789";
 import { MONOCHROME } from "../../palettes/model";
 import { usePalettes } from "../../palettes/usePalettes";
-import { createPalette, updatePalette, deletePalette } from "../../palettes/repository";
+import { createPalette, listPalettes, updatePalette, deletePalette } from "../../palettes/repository";
 
 function grayColor(value: number): string {
   return `rgb(${value} ${value} ${value})`;
@@ -113,9 +113,18 @@ export function GrayscalePage({
       setNameDraft(null);
     }
   }, [ready, presets, presetId]);
+  // Same-view edits apply in user-intent order: each save runs only after the
+  // previous one responds, so a reset always observes the level edit it follows
+  // instead of racing it into a spurious revision conflict.
+  const saveQueue = React.useRef<Promise<void>>(Promise.resolve());
   const save = (operation: () => Promise<unknown>): void => {
     setSaveError("");
-    void operation().catch((error: unknown) => {
+    const run = saveQueue.current.then(operation, operation);
+    saveQueue.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    void run.catch((error: unknown) => {
       setSaveError("Couldn’t save palette changes. Try again.");
       if (error instanceof Error && /deleted/.test(error.message)) {
         setPresetId(0);
@@ -125,13 +134,20 @@ export function GrayscalePage({
     });
   };
   // Semantic edits resolve against the latest owner row: a rename preserves the
-  // live curve, and a replacement carries the revision this view rendered so a
-  // stale snapshot is rejected instead of overwriting another tab's levels.
+  // live curve, and a replacement carries the revision read when it sends (not
+  // when it renders) so only another tab's concurrent change can conflict.
   const renamePreset = (name: string): void => {
     if (active) save(() => updatePalette(active.id, { kind: "rename", name }));
   };
   const replacePresetCurve = (curve: GrayCurve): void => {
-    if (active) save(() => updatePalette(active.id, { kind: "replace", curve, expectedRevision: active.revision }));
+    if (!active) return;
+    const id = active.id;
+    save(async () => {
+      const live = await listPalettes();
+      const revision = live.find((preset) => preset.id === id)?.revision;
+      if (revision === undefined) throw new Error("This palette was deleted. Select another preset.");
+      await updatePalette(id, { kind: "replace", curve, expectedRevision: revision });
+    });
   };
   // The input renders a local draft so live-query commits never move the
   // caret; edits persist after a pause in typing, or immediately on blur.

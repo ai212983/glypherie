@@ -304,7 +304,10 @@ test("a new app beside a live pre-protocol owner names the update", { skip: !bro
     },
   ]);
   const browser = await launch(t);
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  // This fixture swaps a stand-in script without changing the deployment's
+  // precache revision. Keep it out of precache; real PWA redeploy recovery
+  // is exercised separately with the service worker enabled below.
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: "block" });
   t.after(() => context.close());
   const page = await context.newPage();
   const problems: string[] = [];

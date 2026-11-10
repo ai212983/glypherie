@@ -12,7 +12,7 @@
 import { createDomainBackend, DOMAIN_DATA_DIR, type DomainBackend } from "./backend.ts";
 import * as commands from "./commands.ts";
 import { importLegacySnapshot } from "./importer.ts";
-import { MUTATING_METHODS, type DomainMethod } from "./runtime.ts";
+import { isDomainMethod, MUTATING_METHODS, type DomainDispatch } from "./operations.ts";
 import { DOMAIN_CHANNEL, DOMAIN_OWNER_LEASE, DOMAIN_PROTOCOL_VERSION, type OwnerStamp } from "./protocol.ts";
 
 // PGlite resolves its engine files relative to its own module URL, which
@@ -174,7 +174,9 @@ async function ensureBackend(): Promise<DomainBackend> {
   return initializing;
 }
 
-const methods: Record<DomainMethod, (backend: DomainBackend, ...args: never[]) => Promise<unknown>> = {
+// Dispatch agrees with the operation specification by construction: each
+// handler's post-backend arguments and result must match its spec entry.
+const methods: DomainDispatch = {
   saveFont: commands.saveFont,
   getFont: commands.getFont,
   listFonts: commands.listFonts,
@@ -206,7 +208,7 @@ const methods: Record<DomainMethod, (backend: DomainBackend, ...args: never[]) =
   restoreSceneSnapshot: commands.restoreSceneSnapshot,
   resolveTextStyle: commands.resolveTextStyle,
   resolveTextStyles: commands.resolveTextStyles,
-  importLegacySnapshot: (active, ...args: never[]) => importLegacySnapshot(active, args[0] as never),
+  importLegacySnapshot,
 };
 
 type Responder = (message: unknown) => void;
@@ -214,6 +216,26 @@ type Responder = (message: unknown) => void;
 // Every connected SharedWorker port, for commit announcements. A failing or
 // closed port is dropped; one bad listener never breaks the write path.
 const ports = new Set<{ postMessage: (message: unknown) => void }>();
+
+// Durability gate for the read-after-write boundary: a mutation's response
+// already awaits its filesystem flush, but reads run concurrently with an
+// in-flight mutation and could present committed-but-not-yet-durable state,
+// which a reload in that window loses. Reads therefore wait for every counted
+// mutation received before them to finish flushing, and flushes chain so
+// overlapping syncs never interleave. Long boot imports never gate reads.
+let pendingWrites = 0;
+let writesFinished: Promise<void> = Promise.resolve();
+let finishWrites = (): void => undefined;
+let flushTail: Promise<void> = Promise.resolve();
+
+function chainFlush(work: () => Promise<void>): Promise<void> {
+  const next = flushTail.then(work, work);
+  flushTail = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
 
 let announceChannel: BroadcastChannel | null = null;
 
@@ -289,19 +311,41 @@ async function handleCall(data: unknown, respond: Responder): Promise<void> {
     }
     return;
   }
-  const method = call.method as DomainMethod;
-  const target = methods[method];
-  if (!target) {
+  // Method exposure is owned by the operation specification: non-RPC command
+  // exports and object-prototype names never reach dispatch. The handshake
+  // above stays the special path for version fencing.
+  if (!isDomainMethod(call.method)) {
     respond({
       id: call.id,
       ok: false,
-      error: { code: "unavailable", message: `Unknown domain method "${call.method}".` },
+      error: { code: "unavailable", message: `Unknown domain method "${String(call.method)}".` },
     });
     return;
   }
+  const method = call.method;
+  const target = methods[method];
+  // Counted synchronously at receipt so a later-received read always observes
+  // every mutation ahead of it, closing the lost-write window deterministically.
+  const countedWrite = MUTATING_METHODS.has(method) && method !== "importLegacySnapshot";
+  if (countedWrite) {
+    if (pendingWrites === 0) {
+      writesFinished = new Promise<void>((resolve) => {
+        finishWrites = resolve;
+      });
+    }
+    pendingWrites += 1;
+  }
   try {
+    if (!countedWrite) {
+      // Yield until writes settle; polling a resolved flush tail would starve
+      // the timer and filesystem callbacks those writes need to finish.
+      await writesFinished;
+    }
     const active = await ensureBackend();
-    const result = await target(active, ...(call.params as never[]));
+    // Wire arguments arrive untyped at this boundary; the per-method handler
+    // signature above still governs every typed caller of the same command.
+    const invoke = target as (backend: DomainBackend, ...args: unknown[]) => Promise<unknown>;
+    const result = await invoke(active, ...(call.params as unknown[]));
     // A skipped import changed nothing: report no write so tabs neither bump
     // versions nor rebroadcast.
     const skippedImport =
@@ -315,8 +359,10 @@ async function handleCall(data: unknown, respond: Responder): Promise<void> {
       // PGlite skips filesystem sync during explicit transactions, including
       // COMMIT, and under relaxed durability per-query results return before
       // the scheduled flush. This awaited filesystem flush is the durable
-      // boundary before stamp, announce and response.
-      await active.flush();
+      // boundary before stamp, announce and response; chained so concurrent
+      // mutations never interleave syncs and a failed sync never blocks the
+      // next write's persistence attempt.
+      await chainFlush(() => active.flush());
       writeSeq += 1;
       stamp = currentStamp();
       // Announce from the owner itself: followers adopt the commit even when
@@ -334,6 +380,8 @@ async function handleCall(data: unknown, respond: Responder): Promise<void> {
         message: failure instanceof Error ? failure.message : String(error),
       },
     });
+  } finally {
+    if (countedWrite && --pendingWrites === 0) finishWrites();
   }
 }
 
