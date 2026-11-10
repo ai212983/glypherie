@@ -10,7 +10,7 @@ import { AddVariantButton } from "./AddVariantButton";
 import { Button } from "../../../components/ui/button";
 import { Badge } from "../../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
-import type { FontLibrary } from "../../fonts/useFontLibrary";
+import type { RendererFontReadiness } from "../../fonts/renderer-readiness-core.ts";
 import type { CanvasPaletteId } from "./canvas-palettes";
 import type { LibraryBaseSize } from "./preferences";
 
@@ -21,7 +21,7 @@ interface FontCardProps {
   zoom: number;
   palette: CanvasPaletteId;
   inverse: boolean;
-  library: FontLibrary;
+  readiness: RendererFontReadiness;
   variants: FontVariant[] | undefined;
   onAddVariant: (font: StoredFont) => Promise<void>;
   onOpenVariant: (font: StoredFont, variant: FontVariant) => void;
@@ -38,13 +38,13 @@ export function FontCard({
   zoom,
   palette,
   inverse,
-  library,
+  readiness,
   variants,
   onAddVariant,
   onOpenVariant,
   onDeleteFont,
 }: FontCardProps): React.JSX.Element {
-  const load = library.loadStatus(font.id);
+  const load = readiness.loadStatus(font.id);
   return (
     <Card
       variant="plain"
@@ -96,7 +96,7 @@ export function FontCard({
         zoom={zoom}
         palette={palette}
         inverse={inverse}
-        loaded={library.loadedIds.has(font.id)}
+        loaded={readiness.loadedIds.has(font.id)}
         loadError={load.state === "error" ? load.error : ""}
         variants={variants}
         onOpenVariant={(variant) => onOpenVariant(font, variant)}

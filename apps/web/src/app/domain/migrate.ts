@@ -14,13 +14,7 @@ async function migrateInner(): Promise<{ imported: boolean }> {
   const counts = await legacyCounts();
   if (counts.fonts === 0 && counts.variants === 0 && counts.palettes === 0) return { imported: false };
   const snapshot = await readLegacySnapshot();
-  const result = (await callDomain("importLegacySnapshot", [snapshot])) as {
-    skipped: boolean;
-    fonts: number;
-    variants: number;
-    palettes: number;
-    skippedVariantIds: string[];
-  };
+  const result = await callDomain("importLegacySnapshot", [snapshot]);
   if (!result.skipped && result.skippedVariantIds.length > 0) {
     throw new Error(`Legacy import skipped ${result.skippedVariantIds.length} variants with missing fonts.`);
   }

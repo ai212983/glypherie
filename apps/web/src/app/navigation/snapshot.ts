@@ -14,7 +14,7 @@ import {
   type FamilyMeta,
   type GlobalDefaults,
   type PreviewSnapshot,
-} from "../features/preview/state/snapshot-codec.js";
+} from "../features/preview/state/snapshot-codec.ts";
 import {
   detailPath,
   indexPath,
@@ -25,12 +25,12 @@ import {
   parseRoute,
   screenPath,
   type Route,
-} from "./router.js";
+} from "./router.ts";
 
-import { readRoutePath, readRouteSearch } from "./location.js";
-export { readRouteSearch } from "./location.js";
+import { readRoutePath, readRouteSearch } from "./location.ts";
+export { readRouteSearch } from "./location.ts";
 
-export type { PreviewSnapshot, FamilySnapshot } from "../features/preview/state/snapshot-codec.js";
+export type { PreviewSnapshot, FamilySnapshot } from "../features/preview/state/snapshot-codec.ts";
 
 const EXACT_KEY = "font-preview.pixel-accurate";
 const SPACING_KEY = "font-preview.spacing";

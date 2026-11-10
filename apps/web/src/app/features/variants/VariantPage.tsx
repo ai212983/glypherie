@@ -4,7 +4,7 @@ import { Type } from "lucide-react";
 import type { StoredFont } from "../../fonts/storage.js";
 import type { FontVariant } from "../../variants/model.js";
 import { VariantStorageError } from "../../variants/repository.js";
-import type { FontLibrary } from "../../fonts/useFontLibrary";
+import type { RendererFontReadiness } from "../../fonts/renderer-readiness-core.ts";
 import { FontEditor } from "../preview/FontEditor";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -29,7 +29,7 @@ interface VariantPageProps {
   variantId: string;
   baseSize: LibraryBaseSize;
   rootSampleText: string;
-  library: FontLibrary;
+  readiness: RendererFontReadiness;
   onIndex: () => void;
   onOpenVariantId: (fontId: string, variantId: string) => void;
   onVariantDeleted: (name: string) => void;
@@ -39,17 +39,17 @@ interface VariantPageProps {
 interface VariantEditorProps {
   font: StoredFont;
   variant: FontVariant;
-  library: FontLibrary;
+  readiness: RendererFontReadiness;
   sidebar: React.ReactNode;
   rootSampleText: string;
 }
 
 // Keyed by variant ID so drafts and view state cannot leak between variants.
-function VariantEditor({ font, variant, library, sidebar, rootSampleText }: VariantEditorProps): React.JSX.Element {
+function VariantEditor({ font, variant, readiness, sidebar, rootSampleText }: VariantEditorProps): React.JSX.Element {
   const { draft, status, error, update, retry, reload } = useVariantDraft(variant);
   const [previewStatus, setPreviewStatus] = React.useState("");
-  const ready = library.rendererAvailable === true && library.loadedIds.has(font.id);
-  const fontLoadError = library.loadStatus(font.id).state === "error" ? library.loadStatus(font.id).error : "";
+  const ready = readiness.rendererAvailable === true && readiness.loadedIds.has(font.id);
+  const fontLoadError = readiness.loadStatus(font.id).state === "error" ? readiness.loadStatus(font.id).error : "";
   const conflict = error instanceof VariantStorageError && error.code === "conflict";
 
   const saveError = React.useMemo(() => (error ? userError(error, "Couldn’t save changes.") : ""), [error]);
@@ -148,7 +148,7 @@ function VariantRoute({
   variantId,
   baseSize,
   rootSampleText,
-  library,
+  readiness,
   onIndex,
   onOpenVariantId,
   onVariantDeleted,
@@ -159,8 +159,8 @@ function VariantRoute({
   const live = useLiveVariant(variantId);
 
   React.useEffect(() => {
-    if (font) library.ensureLoaded(font.id);
-  }, [font, library]);
+    if (font) readiness.ensureLoaded(font.id);
+  }, [font, readiness]);
 
   const base = readRouteSearch() || window.location.search;
   const indexHref = indexPath(base);
@@ -275,12 +275,12 @@ function VariantRoute({
             font={font}
             variant={saved}
             rootSampleText={rootSampleText}
-            library={library}
+            readiness={readiness}
             sidebar={
               <VariantList
                 font={font}
                 variantId={saved.id}
-                library={library}
+                readiness={readiness}
                 text={listText}
                 baseSize={baseSize}
                 onText={onListText}

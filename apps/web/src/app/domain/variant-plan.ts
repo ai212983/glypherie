@@ -13,7 +13,7 @@ import {
 import { cloneKerning } from "../kerning/model.ts";
 import { PREVIEW_MONO_RASTER, TEXT_DEFAULT } from "../renderer/render-spec.ts";
 import type { FontMetadata } from "../fonts/storage.ts";
-import type { GrayCurve } from "../features/grayscale/response-curve.ts";
+import type { GrayCurve } from "./output-profiles/curve.ts";
 import { kvGet, kvPut, MONOCHROME_OUTPUT_ID, type AuxDb, type DomainBackend } from "./backend.ts";
 import { withAtomicDomain } from "./atomic.ts";
 import { DomainError } from "./errors.ts";

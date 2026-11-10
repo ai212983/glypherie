@@ -1,5 +1,6 @@
 import * as React from "react";
-import { curveLevels, curvePath, type GrayCurve } from "./response-curve";
+import { curveLevels, type GrayCurve } from "../../domain/output-profiles/curve";
+import { curvePath } from "./response-curve";
 
 const WIDTH = 760;
 const HEIGHT = 320;

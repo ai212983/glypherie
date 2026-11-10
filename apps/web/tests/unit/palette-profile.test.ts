@@ -6,7 +6,7 @@ import { profileForCurve, profileForCurveLength, type PalettePreset } from "../.
 import { paletteProfile } from "../../src/app/palettes/render.ts";
 import { curveProfile } from "../../src/app/domain/variant-plan.ts";
 import { directLabelProfile } from "../../src/app/features/screen/direct-label.ts";
-import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
+import { linearCurve } from "../../src/app/domain/output-profiles/curve.ts";
 import { MONOCHROME } from "../../src/app/palettes/model.ts";
 
 function preset(length: number): PalettePreset {

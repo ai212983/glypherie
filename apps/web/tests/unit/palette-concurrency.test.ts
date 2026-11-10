@@ -6,7 +6,7 @@ import test, { after, beforeEach } from "node:test";
 import { closeDomainForTests, resetDomainForTests } from "../../src/app/domain/node-backend.ts";
 import { createPalette, listPalettes, updatePalette } from "../../src/app/palettes/repository.ts";
 import { MONOCHROME } from "../../src/app/palettes/model.ts";
-import { curveLevels, linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
+import { curveLevels, linearCurve } from "../../src/app/domain/output-profiles/curve.ts";
 
 beforeEach(async () => {
   await resetDomainForTests();

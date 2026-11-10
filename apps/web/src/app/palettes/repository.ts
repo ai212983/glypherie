@@ -13,7 +13,7 @@ import { MONOCHROME_ID, type PaletteEdit, type PalettePreset } from "./model.ts"
 
 export async function listPalettes(): Promise<PalettePreset[]> {
   try {
-    return (await callDomain("listPalettes", [])) as PalettePreset[];
+    return await callDomain("listPalettes", []);
   } catch {
     throw new Error("Browser palette storage is unavailable in this context.");
   }
@@ -21,7 +21,7 @@ export async function listPalettes(): Promise<PalettePreset[]> {
 
 export async function createPalette(): Promise<number> {
   try {
-    return (await callDomain("createPalette", [])) as number;
+    return await callDomain("createPalette", []);
   } catch {
     throw new Error("Browser palette storage is unavailable in this context.");
   }

@@ -2,7 +2,7 @@
 // exact names; additive fields are allowed but stated views must stay stable.
 // Backed by the graph store (domain/graph.ts) through domain/service.ts.
 
-import type { GrayCurve } from "../features/grayscale/response-curve.ts";
+import type { GrayCurve } from "./output-profiles/curve.ts";
 import type { CharacterCoverage } from "./coverage.ts";
 
 export interface DomainTextStyleView {
@@ -85,6 +85,7 @@ export interface SceneSnapshotInput {
   width: number;
   height: number;
   deviceId: string | null;
+  rotation?: 0 | 90 | 180 | 270;
   outputProfileId: string;
   exportCoverage: CharacterCoverage;
   placements: SceneSnapshotPlacement[];
@@ -98,6 +99,8 @@ export interface DomainSceneView {
   // Selected catalog device; null means a custom screen with the scene's own
   // width/height. Rows written before this field read back as null.
   deviceId: string | null;
+  // Clockwise body orientation; older scenes default to zero.
+  rotation?: 0 | 90 | 180 | 270;
   revision: number;
   outputProfileId: string;
   exportCoverage: CharacterCoverage;

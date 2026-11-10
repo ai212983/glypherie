@@ -202,6 +202,7 @@ const Scene = defineNode("Scene", {
     // dimensions. The domain stores the opaque id only; catalog matching
     // lives in the screen UI.
     deviceId: z.string().min(1).max(80).nullish(),
+    rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
     exportCoverage: characterCoverageSchema,
     revision: revisionSchema,
     createdAt: timestampSchema,

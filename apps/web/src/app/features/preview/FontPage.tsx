@@ -11,7 +11,7 @@ import {
 } from "./state/snapshot-codec.js";
 import { presetForText } from "./presets";
 import { displayName } from "../../fonts/metadata";
-import type { FontLibrary } from "../../fonts/useFontLibrary";
+import type { RendererFontReadiness } from "../../fonts/renderer-readiness-core.ts";
 import { FontEditor } from "./FontEditor";
 import { Button } from "../../../components/ui/button";
 import { Label } from "../../../components/ui/label";
@@ -38,7 +38,8 @@ interface FontPageProps {
   role: RendererRole;
   previewStatus: string;
   notice: string;
-  library: FontLibrary;
+  readiness: RendererFontReadiness;
+  fonts: StoredFont[];
   onSnapshot: (next: PreviewSnapshot, immediate?: boolean) => void;
   onPatch: (patch: Partial<PreviewSnapshot>, immediate?: boolean) => void;
   onRole: (role: RendererRole) => void;
@@ -59,7 +60,8 @@ export function FontPage({
   role,
   previewStatus,
   notice,
-  library,
+  readiness,
+  fonts,
   onSnapshot,
   onPatch,
   onRole,
@@ -72,8 +74,8 @@ export function FontPage({
   saveVariantError,
 }: FontPageProps): React.JSX.Element {
   const family = snapshot.families[font.id];
-  const ready = library.rendererAvailable === true && library.loadedIds.has(font.id);
-  const fontLoadError = library.loadStatus(font.id).state === "error" ? library.loadStatus(font.id).error : "";
+  const ready = readiness.rendererAvailable === true && readiness.loadedIds.has(font.id);
+  const fontLoadError = readiness.loadStatus(font.id).state === "error" ? readiness.loadStatus(font.id).error : "";
   const base = readRouteSearch() || window.location.search;
   const indexHref = indexPath(base);
   if (!family)
@@ -94,7 +96,7 @@ export function FontPage({
   const settings: VariantSettings = previewVariantSettings(family, snapshot, role);
   const { axes: defaultAxes, ...defaultFields } = defaultFamilySnapshot(meta);
   const { axes, ...fields } = family;
-  const singleFont = (library.fonts?.length ?? 0) <= 1;
+  const singleFont = fonts.length <= 1;
   const resetDisabled =
     isDefaultKerning(snapshot.kerning) &&
     Object.entries(defaultFields).every(([key, value]) => fields[key as keyof typeof fields] === value) &&
@@ -162,7 +164,7 @@ export function FontPage({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(library.fonts ?? []).map((entry) => (
+                {fonts.map((entry) => (
                   <SelectItem key={entry.id} value={entry.id}>
                     {displayName(entry)}
                   </SelectItem>

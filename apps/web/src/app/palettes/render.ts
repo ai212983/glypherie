@@ -1,5 +1,5 @@
 import type { OutputProfile, RGBA } from "../renderer/renderer-types.ts";
-import { curveLevels } from "../features/grayscale/response-curve.ts";
+import { curveLevels } from "../domain/output-profiles/curve.ts";
 import { canvasPaletteById, type CanvasPaletteId } from "../features/library/canvas-palettes.ts";
 import { profileForCurve, type PalettePreset } from "./model.ts";
 

@@ -1,4 +1,4 @@
-import { curveLevels, type GrayCurve } from "../grayscale/response-curve.ts";
+import { curveLevels, type GrayCurve } from "../../domain/output-profiles/curve.ts";
 import { canvasPaletteById, libraryFrame, type CanvasPaletteId } from "../library/canvas-palettes.ts";
 import type { RGBA } from "../../renderer/renderer-types.ts";
 

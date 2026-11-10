@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Layers } from "lucide-react";
 import type { StoredFont } from "../../fonts/storage";
-import type { FontLibrary } from "../../fonts/useFontLibrary";
+import type { RendererFontReadiness } from "../../fonts/renderer-readiness-core.ts";
 import { useFontVariants } from "../../variants/useFontVariants";
 import { useDisplayPreferences } from "../../shell/DisplayPreferences";
 import { libraryFrame } from "../library/canvas-palettes";
@@ -15,7 +15,7 @@ import { Button } from "../../../components/ui/button";
 interface VariantListProps {
   font: StoredFont;
   variantId: string;
-  library: FontLibrary;
+  readiness: RendererFontReadiness;
   text: string;
   baseSize: LibraryBaseSize;
   onText: (text: string) => void;
@@ -27,7 +27,7 @@ interface VariantListProps {
 export function VariantList({
   font,
   variantId,
-  library,
+  readiness,
   text,
   baseSize,
   onText,
@@ -41,7 +41,7 @@ export function VariantList({
     canvas: { palette, inverse },
   } = useDisplayPreferences();
   const frame = libraryFrame(palette, inverse);
-  const load = library.loadStatus(font.id);
+  const load = readiness.loadStatus(font.id);
   return (
     <SpecimenListCard
       title={
@@ -89,7 +89,7 @@ export function VariantList({
               palette={palette}
               inverse={inverse}
               sampleText={text}
-              loaded={library.loadedIds.has(font.id)}
+              loaded={readiness.loadedIds.has(font.id)}
               loadError={load.state === "error" ? load.error : ""}
               onOpen={(next) => onOpen(font.id, next.id)}
               onDeleted={(removed) => {

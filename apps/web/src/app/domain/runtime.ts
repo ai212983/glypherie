@@ -11,65 +11,19 @@
 
 import type { DomainBackend } from "./backend.ts";
 import { adoptOwnerWrite, broadcastOwnerWrite } from "./events.ts";
+import {
+  isDomainMethod,
+  MUTATING_METHODS,
+  type DomainArgs,
+  type DomainMethod,
+  type DomainResult,
+} from "./operations.ts";
 import { DOMAIN_PROTOCOL_VERSION, DOMAIN_WORKER_NAME, isOwnerStamp } from "./protocol.ts";
 
-export type DomainMethod =
-  | "saveFont"
-  | "getFont"
-  | "listFonts"
-  | "updateFontMetadata"
-  | "removeFont"
-  | "getSeedMarker"
-  | "setSeedMarker"
-  | "createVariant"
-  | "getVariant"
-  | "listVariants"
-  | "updateVariant"
-  | "deleteVariant"
-  | "listPalettes"
-  | "createPalette"
-  | "updatePalette"
-  | "deletePalette"
-  | "listTextStyles"
-  | "listOutputProfiles"
-  | "listScenes"
-  | "getScene"
-  | "createScene"
-  | "ensureDefaultScene"
-  | "updateScene"
-  | "deleteScene"
-  | "addSceneLabel"
-  | "updateSceneLabel"
-  | "removeSceneLabel"
-  | "reorderSceneLabels"
-  | "restoreSceneSnapshot"
-  | "resolveTextStyle"
-  | "resolveTextStyles"
-  | "importLegacySnapshot";
-
-/** Writes bump the domain version; reads never do (or subscribers loop). */
-export const MUTATING_METHODS: ReadonlySet<DomainMethod> = new Set([
-  "saveFont",
-  "updateFontMetadata",
-  "removeFont",
-  "setSeedMarker",
-  "createVariant",
-  "updateVariant",
-  "deleteVariant",
-  "createPalette",
-  "updatePalette",
-  "deletePalette",
-  "createScene",
-  "ensureDefaultScene",
-  "updateScene",
-  "deleteScene",
-  "addSceneLabel",
-  "updateSceneLabel",
-  "removeSceneLabel",
-  "reorderSceneLabels",
-  "restoreSceneSnapshot",
-  "importLegacySnapshot",
-]);
+// Method names and the write classification derive from the single
+// transport-safe operation specification (operations.ts); re-exported here
+// so existing transport consumers keep importing from the transport module.
+export { MUTATING_METHODS, type DomainMethod } from "./operations.ts";
 
 export interface DomainTransport {
   call(method: DomainMethod, params: unknown[]): Promise<unknown>;
@@ -675,12 +629,14 @@ export function isBrowserTransport(): boolean {
 /**
  * Dispatch one domain call: worker proxy in the browser, direct backend in
  * Node/tests. Mutating calls adopt the owner's stamp; reads stay silent.
+ * Arguments and results are typed per method; the casts below sit only at
+ * the untyped wire seams (postMessage payloads, dynamic Node dispatch).
  */
-export async function callDomain(method: DomainMethod, params: unknown[]): Promise<unknown> {
+export async function callDomain<M extends DomainMethod>(method: M, params: DomainArgs<M>): Promise<DomainResult<M>> {
   const active = transport ?? (!isNodeContext() ? await initBrowserDomain() : null);
   if (active) {
     try {
-      return await active.call(method, params);
+      return (await active.call(method, params as unknown[])) as DomainResult<M>;
     } catch (error) {
       throw mapUnknownMethodError(method, error);
     }
@@ -697,22 +653,26 @@ export async function callDomain(method: DomainMethod, params: unknown[]): Promi
       ...args: unknown[]
     ) => Promise<unknown>,
   };
+  // Method exposure is owned by the operation specification, not by the
+  // command namespaces: non-RPC exports and object-prototype names reject
+  // here exactly like unknown methods.
+  if (!isDomainMethod(method)) throw new Error(`Unknown domain method "${method}".`);
   const target = table[method];
   if (typeof target !== "function") throw new Error(`Unknown domain method "${method}".`);
   try {
-    const result = await target(await ensureNodeBackend(), ...params);
+    const raw: unknown = await target(await ensureNodeBackend(), ...(params as unknown[]));
     if (MUTATING_METHODS.has(method)) {
       const skippedImport =
         method === "importLegacySnapshot" &&
-        typeof result === "object" &&
-        result !== null &&
-        (result as { skipped?: unknown }).skipped === true;
+        typeof raw === "object" &&
+        raw !== null &&
+        (raw as { skipped?: unknown }).skipped === true;
       if (!skippedImport) {
         const { notifyDomainWrite } = await import("./events.ts");
         notifyDomainWrite();
       }
     }
-    return result;
+    return raw as DomainResult<M>;
   } catch (error) {
     throw wrapError(error);
   }

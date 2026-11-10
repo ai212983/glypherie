@@ -15,7 +15,7 @@ import { createStore, createStoreWithSchema, MigrationError } from "@nicia-ai/ty
 import { and, eq, sql } from "drizzle-orm";
 import { nodes } from "@nicia-ai/typegraph/adapters/drizzle/postgres";
 import { domainGraph, type DomainGraph } from "./graph.ts";
-import { linearCurve } from "../features/grayscale/response-curve.ts";
+import { linearCurve } from "./output-profiles/curve.ts";
 import { MONOCHROME_ID } from "../palettes/model.ts";
 import { IMPORT_MARKER_KEY } from "./storage-keys.ts";
 

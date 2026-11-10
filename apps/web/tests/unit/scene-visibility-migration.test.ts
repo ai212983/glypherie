@@ -11,7 +11,7 @@ import { createDomainBackend, kvGet } from "../../src/app/domain/backend.ts";
 import { domainGraph } from "../../src/app/domain/graph.ts";
 import { getScene, updateSceneLabel } from "../../src/app/domain/scene-commands.ts";
 import { DEFAULT_CHARACTER_COVERAGE } from "../../src/app/domain/coverage.ts";
-import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
+import { linearCurve } from "../../src/app/domain/output-profiles/curve.ts";
 
 test("adding optional placement visibility preserves a populated pre-visibility database", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "glypherie-visibility-"));

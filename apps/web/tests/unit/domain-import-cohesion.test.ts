@@ -11,7 +11,7 @@ import { IMPORT_MARKER_KEY, importLegacySnapshot } from "../../src/app/domain/im
 import type { LegacySnapshot } from "../../src/app/legacy-database.ts";
 import { getVariant, listVariants } from "../../src/app/variants/repository.ts";
 import { getFont } from "../../src/app/fonts/storage.ts";
-import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
+import { linearCurve } from "../../src/app/domain/output-profiles/curve.ts";
 import { defaultVariantSettings } from "../../src/app/variants/model.ts";
 import type { FontMetadata } from "../../src/app/fonts/storage.ts";
 
