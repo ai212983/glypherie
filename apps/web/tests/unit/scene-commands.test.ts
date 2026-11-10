@@ -370,6 +370,7 @@ function snapshotOf(view: DomainSceneView): SceneSnapshotInput {
     width: view.width,
     height: view.height,
     deviceId: view.deviceId,
+    rotation: view.rotation,
     outputProfileId: view.outputProfileId,
     exportCoverage: view.exportCoverage,
     placements: view.placements.map((placement) => ({
@@ -386,6 +387,30 @@ function snapshotOf(view: DomainSceneView): SceneSnapshotInput {
     })),
   };
 }
+
+test("rotation persists with dimensions, restores with history, and rejects invalid angles atomically", async () => {
+  const created = await createScene(backend, {
+    name: "Rotated",
+    width: 400,
+    height: 300,
+    outputProfileId: await monoId(),
+  });
+  assert.equal(created.rotation, 0);
+  const rotated = await updateScene(backend, created.id, { width: 300, height: 400, rotation: 90 }, created.revision);
+  assert.equal((await getScene(backend, created.id))?.rotation, 90);
+  await assert.rejects(
+    updateScene(backend, created.id, { width: 123, rotation: 45 as 90 }, rotated.revision),
+    (error: unknown) => codeOf(error) === "invalid-input",
+  );
+  assert.deepEqual(await getScene(backend, created.id), rotated);
+  const restored = await restoreSceneSnapshot(backend, created.id, rotated.revision, snapshotOf(created));
+  assert.equal(restored.rotation, 0);
+  assert.deepEqual([restored.width, restored.height], [400, 300]);
+  const square = await updateScene(backend, created.id, { width: 600, height: 600, rotation: 270 }, restored.revision);
+  const legacy = snapshotOf(square);
+  delete legacy.rotation;
+  assert.equal((await restoreSceneSnapshot(backend, created.id, square.revision, legacy)).rotation, 0);
+});
 
 function contentOf(view: DomainSceneView): unknown {
   return {

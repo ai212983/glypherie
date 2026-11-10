@@ -27,6 +27,22 @@ test("an exact hint plus matching geometry resolves to that device", () => {
   assert.deepEqual([resolved.width, resolved.height], [400, 240]);
 });
 
+test("quarter turns retain the selected shell only with the oriented geometry", () => {
+  for (const rotation of [0, 90, 180, 270]) {
+    const width = rotation % 180 === 0 ? 400 : 240;
+    const height = rotation % 180 === 0 ? 240 : 400;
+    assert.equal(
+      resolveSceneScreen({ width, height, deviceId: "playdate-like", rotation }, catalog).device?.id,
+      "playdate-like",
+    );
+    assert.equal(
+      resolveSceneScreen({ width: width + 1, height, deviceId: "playdate-like", rotation }, catalog).device,
+      null,
+    );
+    assert.equal(resolveSceneScreen({ width, height, deviceId: null, rotation }, catalog).device, null);
+  }
+});
+
 test("a hint with mismatched geometry falls back to custom without resizing", () => {
   const resolved = resolveSceneScreen({ width: 400, height: 241, deviceId: "playdate-like" }, catalog);
   assert.equal(resolved.device, null);

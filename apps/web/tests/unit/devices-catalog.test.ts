@@ -196,6 +196,26 @@ test("screen and shell scale together from the aperture", () => {
   assert.throws(() => deviceLayout(device, Number.NaN), /positive/);
 });
 
+test("rotation carries an asymmetric aperture around the body without distortion", () => {
+  const fixture = {
+    ...DEVICE_CATALOG.devices[0]!,
+    widthPx: 40,
+    heightPx: 60,
+    shell: { src: "shells/fixture.svg", viewBox: [10, 20, 100, 120], screenRect: [20, 40, 40, 60] },
+  } as const;
+  const expected = [
+    [100, 120, 10, 20, 40, 60],
+    [120, 100, 40, 10, 60, 40],
+    [100, 120, 50, 40, 40, 60],
+    [120, 100, 20, 50, 60, 40],
+  ];
+  for (const [index, rotation] of [0, 90, 180, 270].entries()) {
+    const layout = deviceLayout(fixture, 1, rotation);
+    assert.deepEqual(Object.values(layout), expected[index]);
+  }
+  assert.throws(() => deviceLayout(fixture, 1, 45), /rotation/);
+});
+
 test("malformed catalogs fail fast with a reason", () => {
   const base = JSON.parse(JSON.stringify({ version: 1, devices: DEVICE_CATALOG.devices }));
   assert.throws(() => loadDeviceCatalog(null), /catalog object/);

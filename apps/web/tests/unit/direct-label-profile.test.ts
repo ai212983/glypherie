@@ -10,7 +10,7 @@ import {
   effectiveDirectWeight,
   type DirectExportPlacement,
 } from "../../src/app/features/screen/direct-label.ts";
-import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
+import { linearCurve } from "../../src/app/domain/output-profiles/curve.ts";
 import { PREVIEW_MONO_RASTER } from "../../src/app/renderer/render-spec.ts";
 import type { FontMetadata, StoredFont } from "../../src/app/fonts/storage.ts";
 

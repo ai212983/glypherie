@@ -67,9 +67,12 @@ async function addDirectLabel(
   text: string,
   fontName: string,
   waitForPaint = true,
+  // Native device spawn. The default (8, 8) edge spawn keeps boundary
+  // clipping coverage; tests exercising full handle geometry spawn interior.
+  position?: { x: number; y: number },
 ): Promise<string> {
   const known = await containerIds(page);
-  await addScreenText(page, text, { fontName });
+  await addScreenText(page, text, { fontName, ...(position ?? {}) });
   await page.waitForFunction(
     (knownIds) =>
       [...document.querySelectorAll("[data-scene-label-container]")].some((element) => {
@@ -731,7 +734,9 @@ test("each corner resizes with the opposite ink corner anchored", { skip: !brows
 
   let scale = 96 / 220;
   for (const [index, corner] of corners.entries()) {
-    const id = await addDirectLabel(page, `Corner${corner.dir}`, "Literata");
+    // Interior spawn keeps every corner handle clear of the clipped canvas
+    // edge through the full ±48px drag range below.
+    const id = await addDirectLabel(page, `Corner${corner.dir}`, "Literata", true, { x: 160, y: 200 });
     await selectLabel(page, id);
 
     // The default scene renders at a non-unit scale; pin it from the DOM so
@@ -741,8 +746,10 @@ test("each corner resizes with the opposite ink corner anchored", { skip: !brows
       assert.ok(Math.abs(scale - 96 / 220) < 1e-6, `cssScale is 96/220, got ${scale}`);
     }
 
-    // Every handle is hittable at the default (8, 8) edge spawn, including
-    // the west handles the paper edge used to clip.
+    // Corner handles resolve through real hit testing: the label spawns
+    // interior so deliberate aperture clipping (labels and handles clip at
+    // the device canvas edge) never covers the exercised handle. Boundary
+    // clipping itself stays covered by the edge-spawn tests.
     const grid = await handleHitGrid(page, corner.dir);
     assert.ok(grid.center, `${corner.dir} handle center resolves to the handle`);
     assert.equal(grid.hits, 9, `${corner.dir} handle is fully hittable, got ${grid.hits}/9`);

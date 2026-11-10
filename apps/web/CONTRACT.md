@@ -21,7 +21,9 @@ Paths below are relative to the repository root.
   with freely positioned labels, independent of the font library with no palette state in the URL. `/scenes/` and
   `/scene/<scene-id>/` are legacy aliases that render the same Screen page (a legacy scene link canonicalizes to
   `/screen/` without scene selection); saved scenes keep their width, height and versioned labels, gaining an optional
-  catalog device association that defaults to the first device for new compositions. An explicit custom choice (null
+  catalog device association that defaults to the first device for new compositions. Scene rotation is a clockwise
+  quarter turn (0, 90, 180 or 270 degrees), defaulting to zero for older scenes and snapshots; scene dimensions describe
+  the oriented canvas. An explicit custom choice (null
   device) always stays a custom screen with the scene's own dimensions, even when those dimensions match a catalog
   device. `/palettes/` shows the standalone palette lab, independent of the font library with no palette state in the
   URL. Palette presets (including the read-only Monochrome preset) live in the same browser-local domain store as output

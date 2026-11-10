@@ -14,47 +14,38 @@ import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Label } from "../../../components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../components/ui/select";
 import { TooltipHint } from "../../../components/TooltipHint";
-import { linearCurve, type GrayCurve } from "../grayscale/response-curve.js";
+import { linearCurve, type GrayCurve } from "../../domain/output-profiles/curve.js";
 import { useDisplayPreferences } from "../../shell/DisplayPreferences.js";
 import { profileBits } from "../../renderer/render-spec.js";
 import type { FontLibrary } from "../../fonts/useFontLibrary.js";
 import type { VariantSettings } from "../../variants/model.js";
 import { DEFAULT_CHARACTER_COVERAGE, type CharacterCoverage } from "../../domain/coverage.js";
 import { CoverageControl } from "../preview/CoverageControl.js";
-import { DEVICE_CATALOG } from "../../devices/catalog.js";
+import { DEVICE_CATALOG, deviceShownLayout } from "../../devices/catalog.js";
 import { DeviceShell } from "../../devices/DeviceShell.js";
+import { CanvasViewport } from "./CanvasViewport.js";
 import { referenceSizeCssScale } from "../../renderer/display-scaling.js";
 import { sceneLabelPalette, scenePaperCss } from "../scenes/scene-palette.js";
 import { SceneExportPanel } from "../scenes/SceneExportPanel.js";
-import { isConflict } from "../scenes/conflict.js";
-import { DIRECT_LABEL_DEFAULT_SIZE_PX, directExportSnapshots, directLabelSettings } from "./direct-label.js";
-import type {
-  DomainOutputProfileView,
-  DomainPlacementView,
-  DomainSceneView,
-  DomainTextStyleView,
-  SceneLabelPatch,
-} from "../scenes/service.js";
-import {
-  STALE_OWNER_RECOVERY_MESSAGE,
-  addSceneLabel,
-  getScene,
-  listOutputProfiles,
-  listTextStyles,
-  removeSceneLabel,
-  reorderSceneLabels,
-  resolveTextStyle,
-  restoreSceneSnapshot as restoreSceneDomain,
-  subscribeDomain,
-  updateScene,
-  updateSceneLabel,
-} from "../scenes/service.js";
+import { directExportSnapshots, directLabelSettings } from "./direct-label.js";
+import type { DomainPlacementView, DomainSceneView, SceneLabelPatch } from "../scenes/service.js";
+import { STALE_OWNER_RECOVERY_MESSAGE } from "../scenes/service.js";
+import { resolveTextStyle } from "../scenes/service.js";
 import { resolveSceneScreen } from "./device-resolution.js";
-import { SceneStage, type StagePaint, type StagePlacementPreview } from "./SceneStage.js";
+import { useSceneSession, useSceneSnapshot } from "./useSceneSession.ts";
+import { createSceneIntents } from "./scene-intents.ts";
+import { sceneServiceOps } from "./scene-service-ops.ts";
+import {
+  DEVICE_ZOOM_DEFAULT,
+  isDeviceBodyToggleDisabled,
+  isDeviceZoomPercent,
+  resolveDeviceBodyVisible,
+} from "./device-zoom.js";
+import { PIXEL_GRID_CELL_PX, SceneStage, type StagePaint, type StagePlacementPreview } from "./SceneStage.js";
 import { LabelInspector } from "./LabelInspector.js";
-import { SceneLayersPanel, sortLayersTopFirst } from "./SceneLayersPanel.js";
+import { SceneLayersPanel } from "./SceneLayersPanel.js";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../../../components/ui/resizable";
-import { useSceneHistory } from "./useSceneHistory.js";
+import { DeviceHeader } from "./DeviceHeader.js";
 
 export function SceneWorkspace({
   sceneId,
@@ -67,12 +58,22 @@ export function SceneWorkspace({
   sizePercent: number;
   pageControls?: React.ReactNode;
 }): React.JSX.Element {
-  const [saved, setSaved] = React.useState<DomainSceneView | null | undefined>(undefined);
-  const [styles, setStyles] = React.useState<DomainTextStyleView[] | null>(null);
-  const [profiles, setProfiles] = React.useState<DomainOutputProfileView[] | null>(null);
-  const [error, setError] = React.useState("");
-  const [conflict, setConflict] = React.useState(false);
-  const [pendingRemote, setPendingRemote] = React.useState<DomainSceneView | null>(null);
+  // The saved document and edit session own the accepted document, queue,
+  // history, adoption and conflict; the workspace reads their stable snapshot
+  // and submits meaningful edit intents through the scene-intents controller.
+  const session = useSceneSession(sceneId);
+  const snapshot = useSceneSnapshot(session);
+  const saved = snapshot.document;
+  const styles = snapshot.styles;
+  const profiles = snapshot.profiles;
+  const error = snapshot.error;
+  const conflict = snapshot.conflict;
+  const pendingRemote = snapshot.pendingRemote;
+  // saving gates unrelated controls for blocking mutations only; pending
+  // tracks every queued write (including background placement persistence)
+  // so undo/redo stay honestly disabled while a write is in flight.
+  const saving = snapshot.blocking;
+  const pending = snapshot.pending;
   const [previewStatus, setPreviewStatus] = React.useState("");
   const [renderError, setRenderError] = React.useState("");
   const [coverage, setCoverage] = React.useState<CharacterCoverage>(DEFAULT_CHARACTER_COVERAGE);
@@ -85,43 +86,67 @@ export function SceneWorkspace({
     );
   }, []);
   const [tool, setTool] = React.useState<"select" | "text">("select");
-  const addingTextRef = React.useRef(false);
   const newTextIdRef = React.useRef<string | null>(null);
   const lastTypographyRef = React.useRef<DomainPlacementView | null>(null);
   const [resolved, setResolved] = React.useState<Record<string, { fontId: string; settings: VariantSettings }>>({});
   const [resolveDone, setResolveDone] = React.useState(false);
-  // saving gates unrelated controls for blocking mutations only. pending
-  // tracks every queued write (including background placement persistence)
-  // so undo/redo stay honestly disabled while a write is in flight.
-  const [saving, setSaving] = React.useState(false);
-  const [pending, setPending] = React.useState(false);
   const [placementPreview, setPlacementPreview] = React.useState<StagePlacementPreview | null>(null);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
+  // View-only presentation preferences: zoom multiplies the display scale
+  // and the body preference survives temporary zoom changes. Neither writes
+  // the domain scene.
+  const [zoomPercent, setZoomPercent] = React.useState<number>(DEVICE_ZOOM_DEFAULT);
+  const [bodyPreference, setBodyPreference] = React.useState(true);
+  // View-only pixel-grid preference: the overlay shows only while zoom is
+  // above 100%, so the stored preference survives crossing the threshold
+  // and the grid returns when zooming back up. Never writes the domain scene.
+  const [gridPreference, setGridPreference] = React.useState(false);
   // Which surface owns the open draft: the stage canvas editor or the layers
   // list editor. Only the owning surface renders its editor, so the two can
   // never activate simultaneously; every guard keys off editingId alone.
   const [editingOrigin, setEditingOrigin] = React.useState<"stage" | "list" | null>(null);
-  const savedRef = React.useRef(saved);
+  // Synchronous mirror of the transient editing owner for DOM guards that
+  // cannot wait for the next render (selection handoff, keyboard shortcuts).
   const editingIdRef = React.useRef(editingId);
-  const conflictRef = React.useRef(conflict);
-  const sceneIdRef = React.useRef(sceneId);
-  const fetchSeqRef = React.useRef(0);
-  // Serial mutation queue: fast nudges and blur-save races enqueue against
-  // the latest saved base instead of issuing stale-revision commands.
-  // pendingRef tracks the depth synchronously so key repeats are never lost.
-  const queueRef = React.useRef<Promise<void>>(Promise.resolve());
-  const pendingRef = React.useRef(0);
-  const history = useSceneHistory();
   const {
     canvas: { palette: appearance, inverse },
   } = useDisplayPreferences();
 
-  React.useEffect(() => {
-    savedRef.current = saved;
-  });
   editingIdRef.current = editingId;
-  conflictRef.current = conflict;
+
+  // Explicit edit-owner transitions: opening, closing and coverage edits
+  // inform the session synchronously, so no passive effect window can accept
+  // a remote adoption before the open-draft flag arrives.
+  const coverageIsDirty = React.useCallback(
+    (document: DomainSceneView | null | undefined): boolean => {
+      if (!document) return false;
+      return JSON.stringify(coverage) !== JSON.stringify(document.exportCoverage);
+    },
+    [coverage],
+  );
+
+  const beginEditTransition = React.useCallback(
+    (id: string, origin: "stage" | "list"): void => {
+      session.setDraftState({ hasOpenDraft: true, hasUnresolvedChanges: coverageIsDirty(session.snapshot.document) });
+      setSelectedId(id);
+      setEditingId(id);
+      setEditingOrigin(origin);
+    },
+    [session, coverageIsDirty],
+  );
+
+  const endEditTransition = React.useCallback((): void => {
+    newTextIdRef.current = null;
+    session.setDraftState({
+      hasOpenDraft: false,
+      hasUnresolvedChanges: coverageIsDirty(session.snapshot.document),
+    });
+    setEditingId(null);
+    setEditingOrigin(null);
+  }, [session, coverageIsDirty]);
+
+  const intents = React.useMemo(() => createSceneIntents(session, sceneServiceOps), [session]);
 
   // Keep the last selected typography even after deselection or deletion.
   // Inspector reference changes also become the next text's defaults.
@@ -160,271 +185,79 @@ export function SceneWorkspace({
       setPlacementPreview(null);
   }, [saved, selectedId, placementPreview]);
 
-  const draftsClean = React.useCallback(
-    (base: DomainSceneView): boolean => {
-      if (JSON.stringify(coverage) !== JSON.stringify(base.exportCoverage)) return false;
-      // An open in-place draft must survive a remote update behind the banner.
-      if (editingIdRef.current !== null) return false;
-      return true;
-    },
-    [coverage],
-  );
-
-  const adopt = React.useCallback(
-    (scene: DomainSceneView, nextStyles: DomainTextStyleView[], nextProfiles: DomainOutputProfileView[]) => {
-      savedRef.current = scene;
-      setSaved(scene);
-      setStyles(nextStyles);
-      setProfiles(nextProfiles);
-      setCoverage(scene.exportCoverage);
-      newTextIdRef.current = null;
-      setSelectedId((current) =>
-        current && scene.placements.some((placement) => placement.id === current) ? current : null,
-      );
-      setEditingId(null);
-      setEditingOrigin(null);
-      setPendingRemote(null);
-      setConflict(false);
-      setError("");
-      // A remote adoption (or an explicit discard through force reload) drops
-      // stale local history: past snapshots predate the adopted revision.
-      history.reset();
-    },
-    [history],
-  );
-
-  const reload = React.useCallback(
-    async (options?: { force?: boolean }) => {
-      const seq = (fetchSeqRef.current += 1);
-      try {
-        const [scene, nextStyles, nextProfiles] = await Promise.all([
-          getScene(sceneId),
-          listTextStyles(),
-          listOutputProfiles(),
-        ]);
-        if (sceneIdRef.current !== sceneId) return;
-        const base = savedRef.current;
-        // A superseded force reload still adopts when its data is not older
-        // than the current base: an interleaved non-force fetch (a blur commit
-        // racing the reload click) must not silently drop the explicit discard.
-        const supersededForceFresh =
-          options?.force === true && (!base || (scene !== undefined && scene.revision >= base.revision));
-        if (fetchSeqRef.current !== seq && !supersededForceFresh) return;
-        setStyles(nextStyles);
-        setProfiles(nextProfiles);
-        if (!scene) {
-          savedRef.current = null;
-          setSaved(null);
-          setPendingRemote(null);
-          return;
-        }
-        if (options?.force || !base) {
-          adopt(scene, nextStyles, nextProfiles);
-          return;
-        }
-        if (scene.revision === base.revision) {
-          savedRef.current = scene;
-          setSaved(scene);
-          return;
-        }
-        if (scene.revision < base.revision) return;
-        if (draftsClean(base)) {
-          adopt(scene, nextStyles, nextProfiles);
-        } else {
-          setPendingRemote(scene);
-          setConflict(true);
-        }
-      } catch (failure) {
-        if (sceneIdRef.current !== sceneId || fetchSeqRef.current !== seq) return;
-        setError(failure instanceof Error ? failure.message : "Couldn’t load the composition.");
-      }
-    },
-    [sceneId, adopt, draftsClean],
-  );
-
-  const reloadRef = React.useRef(reload);
-  reloadRef.current = reload;
-
+  // The session is the single informed channel for draft state: unsaved
+  // coverage and the open in-place draft refuse remote adoption until they
+  // resolve. No competing boolean mirrors.
+  const coverageDirty =
+    saved === undefined || saved === null ? false : JSON.stringify(coverage) !== JSON.stringify(saved.exportCoverage);
   React.useEffect(() => {
-    sceneIdRef.current = sceneId;
-    savedRef.current = undefined;
-    setSaved(undefined);
-    setPendingRemote(null);
-    setConflict(false);
+    session.setDraftState({ hasOpenDraft: editingId !== null, hasUnresolvedChanges: coverageDirty });
+  }, [session, editingId, coverageDirty]);
+
+  // Adopted documents replace selection and editing ownership: keep a
+  // selection only when its placement survives the adopted revision, and
+  // resync the coverage draft to the adopted export coverage.
+  const adoptedAt = snapshot.adoptedAt;
+  React.useEffect(() => {
+    const document = session.snapshot.document;
+    if (document) setCoverage(document.exportCoverage);
+    newTextIdRef.current = null;
+    setSelectedId((current) =>
+      current && document?.placements.some((placement) => placement.id === current) ? current : null,
+    );
+    setEditingId(null);
+    setEditingOrigin(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, adoptedAt]);
+
+  // Route/scene presentation resets; the session owns the document reset,
+  // history drop and reload. Subscribing to the domain lives in the adapter.
+  React.useEffect(() => {
     setResolveDone(false);
     setResolved({});
     setSelectedId(null);
     setEditingId(null);
     setEditingOrigin(null);
-    history.reset();
-    void reloadRef.current({ force: true });
-    return subscribeDomain(() => {
-      void reloadRef.current();
-    });
+    newTextIdRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneId]);
 
-  // Single-flight executor: runs against the latest saved base and applies
-  // the result. Saving state is owned by the queue below, not by this step.
-  // A known failure stays rendered across retries (cleared only on success),
-  // so a repeated rejection reuses the same message without removing and
-  // reinserting the alert and shifting the stage.
-  const runCommands = React.useCallback(
-    async (run: (scene: DomainSceneView) => Promise<DomainSceneView>): Promise<DomainSceneView | null> => {
-      const base = savedRef.current;
-      if (!base) return null;
-      try {
-        const next = await run(base);
-        savedRef.current = next;
-        setSaved(next);
-        setSelectedId((current) =>
-          current && next.placements.some((placement) => placement.id === current) ? current : null,
-        );
-        setPendingRemote(null);
-        setConflict(false);
-        setError("");
-        return next;
-      } catch (failure) {
-        if (isConflict(failure)) {
-          setConflict(true);
-          void reloadRef.current();
-        } else {
-          setError(failure instanceof Error ? failure.message : "Couldn’t save the composition.");
-        }
-        return null;
-      }
-    },
-    [],
-  );
-
-  // Serial queue: every mutation waits for the previous one, so fast nudges
-  // and blur-save races issue against the fresh revision instead of racing
-  // on a stale one. The depth counter moves synchronously with the event, so
-  // rapid key repeats enqueue instead of being dropped. Background placement
-  // persistence serializes through the same queue and revision guards but
-  // leaves unrelated controls enabled while it catches up: the pending UI
-  // stays usable while the authoritative write completes
-  // (https://react.dev/reference/react/useOptimistic).
-  const runQueued = React.useCallback(
-    async (
-      run: (scene: DomainSceneView) => Promise<DomainSceneView>,
-      options?: { background?: boolean },
-    ): Promise<boolean> => {
-      pendingRef.current += 1;
-      setPending(true);
-      if (!options?.background) setSaving(true);
-      const task = queueRef.current.then(() => runCommands(run)).then((next) => next !== null);
-      queueRef.current = task.then(
-        () => undefined,
-        () => undefined,
-      );
-      try {
-        return await task;
-      } finally {
-        pendingRef.current -= 1;
-        if (pendingRef.current === 0) {
-          setPending(false);
-          setSaving(false);
-        }
-      }
-    },
-    [runCommands],
-  );
-
-  // Local edits checkpoint the pre-image seen when the queued operation
-  // executes. Only successful commands checkpoint; failed commands leave
-  // past and future intact.
-  const mutate = React.useCallback(
-    async (
-      run: (scene: DomainSceneView) => Promise<DomainSceneView>,
-      options?: { background?: boolean; checkpoint?: boolean },
-    ): Promise<boolean> => {
-      return runQueued(async (scene) => {
-        const before = scene;
-        const next = await run(scene);
-        if (next.revision !== before.revision && options?.checkpoint !== false) history.checkpoint(before);
-        return next;
-      }, options);
-    },
-    [history, runQueued],
-  );
-
-  // Undo/redo restore through one atomic revision-guarded domain command
-  // carrying an id-free content snapshot, so re-created placement ids from an
-  // earlier cycle never confuse the match. A rejection leaves the scene and
-  // both history stacks untouched.
-  const restoreSnapshot = React.useCallback(
-    async (target: DomainSceneView): Promise<boolean> => {
-      const base = savedRef.current;
-      if (!base || base.id !== target.id) return false;
-      return runQueued(async (scene) => {
-        const restored = await restoreSceneDomain(scene.id, scene.revision, {
-          name: target.name,
-          width: target.width,
-          height: target.height,
-          deviceId: target.deviceId,
-          outputProfileId: target.outputProfileId,
-          exportCoverage: target.exportCoverage,
-          placements: target.placements.map((placement) => ({
-            text: placement.text,
-            textStyleId: placement.textStyleId,
-            fontId: placement.fontId,
-            fontSize: placement.fontSize,
-            width: placement.width,
-            fontWeight: placement.fontWeight,
-            x: placement.x,
-            y: placement.y,
-            order: placement.order,
-            visible: placement.visible !== false,
-          })),
-        });
-        // Id-free restores may reuse a placement id for different content.
-        // Release selection and keyboard ownership before publishing it.
-        const focused = document.activeElement;
-        if (
-          focused instanceof HTMLElement &&
-          focused.hasAttribute("data-scene-label-frame") &&
-          focused.closest("[data-screen-workspace]")?.getAttribute("data-screen-workspace") === scene.id
-        ) {
-          focused.blur();
-        }
-        setSelectedId(null);
-        return restored;
-      });
-    },
-    [runQueued],
-  );
+  // Id-free restores may reuse a placement id for different content. On a
+  // successful restore only, release selection and keyboard ownership: a
+  // rejection or a blocked action leaves the current document, selection and
+  // any open draft intact instead of discarding them.
+  const releaseFrameFocus = React.useCallback((sceneId: string): void => {
+    const focused = document.activeElement;
+    if (
+      focused instanceof HTMLElement &&
+      focused.hasAttribute("data-scene-label-frame") &&
+      focused.closest("[data-screen-workspace]")?.getAttribute("data-screen-workspace") === sceneId
+    ) {
+      focused.blur();
+    }
+    setSelectedId(null);
+  }, []);
 
   // Undo/redo stay disabled while an in-place draft is open, while a
-  // conflict banner waits, or while a mutation is still queued: the stacks
-  // commit only after a successful restore.
+  // conflict banner waits, or while a mutation is still queued: the session
+  // moves the stacks only after a successful restore.
   const onUndo = React.useCallback(async (): Promise<void> => {
-    const base = savedRef.current;
-    if (!base || pendingRef.current > 0 || editingIdRef.current !== null || conflictRef.current) return;
-    const target = history.peekUndo(base.id);
-    if (!target) return;
-    setEditingId(null);
-    setEditingOrigin(null);
-    const ok = await restoreSnapshot(target);
-    if (ok) {
-      history.takeUndo(base.id);
-      history.stashForRedo(base);
-    }
-  }, [history, restoreSnapshot]);
+    const document = session.snapshot.document;
+    if (!document) return;
+    const ok = await intents.undo();
+    if (!ok) return;
+    endEditTransition();
+    releaseFrameFocus(document.id);
+  }, [intents, session, endEditTransition, releaseFrameFocus]);
 
   const onRedo = React.useCallback(async (): Promise<void> => {
-    const base = savedRef.current;
-    if (!base || pendingRef.current > 0 || editingIdRef.current !== null || conflictRef.current) return;
-    const target = history.peekRedo(base.id);
-    if (!target) return;
-    setEditingId(null);
-    setEditingOrigin(null);
-    const ok = await restoreSnapshot(target);
-    if (ok) {
-      history.takeRedo(base.id);
-      history.stashForUndo(base);
-    }
-  }, [history, restoreSnapshot]);
+    const document = session.snapshot.document;
+    if (!document) return;
+    const ok = await intents.redo();
+    if (!ok) return;
+    endEditTransition();
+    releaseFrameFocus(document.id);
+  }, [intents, session, endEditTransition, releaseFrameFocus]);
 
   // Undo/redo keyboard: never steal keys from text fields or an open draft
   // (the native textarea keeps its own edit history).
@@ -441,7 +274,8 @@ export function SceneWorkspace({
           target.isContentEditable)
       )
         return;
-      if (editingIdRef.current !== null || conflictRef.current || pendingRef.current > 0) return;
+      const state = session.snapshot;
+      if (state.draftOpen || state.conflict || state.pending) return;
       const key = event.key.toLowerCase();
       if (key === "z" && !event.shiftKey) {
         event.preventDefault();
@@ -453,7 +287,7 @@ export function SceneWorkspace({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onUndo, onRedo]);
+  }, [session, onUndo, onRedo]);
 
   // Direct-font labels resolve on the client and never enter the style batch.
   const styleIds = React.useMemo(
@@ -501,9 +335,9 @@ export function SceneWorkspace({
           },
         ),
       );
-      if (!live || sceneIdRef.current !== sceneId) return;
-      const base = savedRef.current;
-      if (!base || base.id !== sceneKey || base.outputProfileId !== profileId) return;
+      if (!live) return;
+      const base = session.snapshot.document;
+      if (!base || base.id !== sceneKey || base.id !== sceneId || base.outputProfileId !== profileId) return;
       const currentIds = new Set(
         base.placements.map((placement) => placement.textStyleId).filter((id): id is string => id !== null),
       );
@@ -543,7 +377,7 @@ export function SceneWorkspace({
     return () => {
       live = false;
     };
-  }, [saved, styleIds, styleNameById, sceneId, fontLoadStatus]);
+  }, [saved, styleIds, styleNameById, sceneId, fontLoadStatus, session]);
 
   const fontsById = React.useMemo(() => new Map((library.fonts ?? []).map((font) => [font.id, font])), [library.fonts]);
 
@@ -635,55 +469,24 @@ export function SceneWorkspace({
   // Position, size, wrap width and weight patches persist in the background
   // like drag releases; text, reference and order changes stay blocking.
   const commitLabelPatch = React.useCallback(
-    async (placementId: string, patch: SceneLabelPatch): Promise<boolean> => {
-      const background =
-        patch.text === undefined &&
-        patch.textStyleId === undefined &&
-        patch.fontId === undefined &&
-        patch.order === undefined &&
-        (patch.x !== undefined ||
-          patch.y !== undefined ||
-          patch.fontSize !== undefined ||
-          patch.width !== undefined ||
-          patch.fontWeight !== undefined);
-      return mutate(
-        (scene) => updateSceneLabel(scene.id, placementId, patch, scene.revision),
-        background ? { background: true } : undefined,
-      );
+    (placementId: string, patch: SceneLabelPatch): Promise<boolean> => {
+      return intents.patchLabel(placementId, patch);
     },
-    [mutate],
+    [intents],
   );
 
   // Blur-save and inspector edits enqueue too: each resolves against the
   // latest saved base when it executes, so concurrent edits cannot issue
-  // against the same stale revision.
+  // against the same stale revision. A rejection keeps the draft open for
+  // recovery instead of discarding it.
   const commitText = React.useCallback(
     async (placementId: string, text: string): Promise<boolean> => {
-      const ok = await mutate(
-        async (scene) => {
-          const placement = scene.placements.find((candidate) => candidate.id === placementId);
-          if (!placement) {
-            setEditingId(null);
-            return scene;
-          }
-          if (placement.text === text) {
-            setEditingId(null);
-            return scene;
-          }
-          return updateSceneLabel(scene.id, placementId, { text }, scene.revision);
-        },
-        // Initial typing completes the label's creation undo step.
-        { checkpoint: newTextIdRef.current !== placementId },
-      );
-      // A conflict keeps the draft open for recovery instead of discarding it.
-      if (ok) {
-        newTextIdRef.current = null;
-        setEditingId(null);
-        setEditingOrigin(null);
-      }
+      // Initial typing completes the label's creation undo step.
+      const ok = await intents.commitText(placementId, text, { isNewLabel: newTextIdRef.current === placementId });
+      if (ok) endEditTransition();
       return ok;
     },
-    [mutate],
+    [intents, endEditTransition],
   );
 
   // Returns the queued revisioned outcome so the stage holds its released
@@ -693,14 +496,7 @@ export function SceneWorkspace({
   // disables unrelated controls.
   const commitMove = React.useCallback(
     (placementId: string, x: number, y: number): Promise<boolean> => {
-      return mutate(
-        async (scene) => {
-          const placement = scene.placements.find((candidate) => candidate.id === placementId);
-          if (!placement || (placement.x === x && placement.y === y)) return scene;
-          return updateSceneLabel(scene.id, placementId, { x, y }, scene.revision);
-        },
-        { background: true },
-      ).then((ok) => {
+      return intents.commitMove(placementId, x, y).then((ok) => {
         if (!ok)
           setPlacementPreview((current) =>
             current?.id === placementId && current.x === x && current.y === y ? null : current,
@@ -708,7 +504,7 @@ export function SceneWorkspace({
         return ok;
       });
     },
-    [mutate],
+    [intents],
   );
 
   // Resize releases persist the label's own size and wrap width together with
@@ -717,17 +513,7 @@ export function SceneWorkspace({
   // No-op releases skip revision churn.
   const commitResize = React.useCallback(
     (placementId: string, fontSize: number, width: number, x: number, y: number): Promise<boolean> => {
-      return mutate(
-        async (scene) => {
-          const placement = scene.placements.find((candidate) => candidate.id === placementId);
-          if (!placement || placement.textStyleId !== null) return scene;
-          if (placement.fontSize === fontSize && placement.width === width && placement.x === x && placement.y === y) {
-            return scene;
-          }
-          return updateSceneLabel(scene.id, placementId, { fontSize, width, x, y }, scene.revision);
-        },
-        { background: true },
-      ).then((ok) => {
+      return intents.commitResize(placementId, fontSize, width, x, y).then((ok) => {
         if (!ok)
           setPlacementPreview((current) =>
             current?.id === placementId &&
@@ -741,21 +527,19 @@ export function SceneWorkspace({
         return ok;
       });
     },
-    [mutate],
+    [intents],
   );
 
   const deleteLabel = React.useCallback(
     async (placementId: string): Promise<void> => {
-      const ok = await mutate(async (scene) => {
-        if (!scene.placements.some((candidate) => candidate.id === placementId)) return scene;
-        return removeSceneLabel(scene.id, placementId, scene.revision);
-      });
+      const ok = await intents.deleteLabel(placementId);
       if (ok) {
         setSelectedId((current) => (current === placementId ? null : current));
-        setEditingId((current) => (current === placementId ? null : current));
+        if (editingIdRef.current === placementId) endEditTransition();
+        else setEditingId((current) => (current === placementId ? null : current));
       }
     },
-    [mutate],
+    [intents, endEditTransition],
   );
 
   // Relative moves compute from the latest saved base when the queued
@@ -763,16 +547,9 @@ export function SceneWorkspace({
   // one stale coordinate.
   const nudgeLabel = React.useCallback(
     (placementId: string, dx: number, dy: number): void => {
-      void mutate(
-        async (scene) => {
-          const placement = scene.placements.find((candidate) => candidate.id === placementId);
-          if (!placement) return scene;
-          return updateSceneLabel(scene.id, placementId, { x: placement.x + dx, y: placement.y + dy }, scene.revision);
-        },
-        { background: true },
-      );
+      intents.nudgeLabel(placementId, dx, dy);
     },
-    [mutate],
+    [intents],
   );
 
   const lastTypography = rememberedPlacement ?? lastTypographyRef.current;
@@ -784,76 +561,76 @@ export function SceneWorkspace({
 
   const addLabel = React.useCallback(
     async (x: number, y: number): Promise<void> => {
-      if (addingTextRef.current || editingIdRef.current !== null || conflictRef.current || !canAddText) return;
-      addingTextRef.current = true;
-      const ok = await mutate(async (scene) => {
-        const base = { text: "Text", x, y };
-        const next = addStyle
-          ? await addSceneLabel(scene.id, { ...base, textStyleId: addStyle.id }, scene.revision)
-          : await addSceneLabel(
-              scene.id,
-              {
-                ...base,
-                fontId: addFont!.id,
-                fontSize: DIRECT_LABEL_DEFAULT_SIZE_PX,
-                width: Math.max(1, scene.width - x),
-              },
-              scene.revision,
-            );
-        const added = next.placements.find(
-          (candidate) => !scene.placements.some((before) => before.id === candidate.id),
-        );
-        if (added) {
-          newTextIdRef.current = added.id;
-          setSelectedId(added.id);
-          setEditingId(added.id);
+      if (!canAddText) return;
+      const reference = addStyle
+        ? { kind: "style" as const, styleId: addStyle.id }
+        : addFont
+          ? { kind: "direct" as const, fontId: addFont.id }
+          : null;
+      // The session hands off only a write accepted by the current scene
+      // generation, before remote adoption can replace its open draft.
+      const addedId = await intents.addLabel({ x, y }, reference, {
+        onCreated: (id) => {
+          newTextIdRef.current = id;
+          session.setDraftState({
+            hasOpenDraft: true,
+            hasUnresolvedChanges: coverageIsDirty(session.snapshot.document),
+          });
+          setSelectedId(id);
+          setEditingId(id);
           setEditingOrigin("stage");
-        }
-        return next;
+        },
       });
-      addingTextRef.current = false;
-      if (ok) setTool("select");
+      if (addedId) setTool("select");
     },
-    [mutate, canAddText, addStyle, addFont],
+    [intents, canAddText, addStyle, addFont, session, coverageIsDirty],
   );
 
   const changeDevice = React.useCallback(
     (deviceId: string): void => {
-      const base = savedRef.current;
-      if (!base) return;
       if (deviceId === "custom") {
-        if (base.deviceId !== null) void mutate((scene) => updateScene(scene.id, { deviceId: null }, scene.revision));
+        intents.changeDevice({ deviceId: null });
         return;
       }
       const device = DEVICE_CATALOG.devices.find((entry) => entry.id === deviceId);
       if (!device) return;
-      // Device changes preserve native label coordinates; labels outside the
-      // new frame keep their positions and surface clipping instead of being
-      // rescaled or moved.
-      void mutate((scene) =>
-        updateScene(
-          scene.id,
-          {
-            deviceId: device.id,
-            width: device.widthPx,
-            height: device.heightPx,
-          },
-          scene.revision,
-        ),
-      );
+      intents.changeDevice({ deviceId: device.id, rotation: 0, width: device.widthPx, height: device.heightPx });
     },
-    [mutate],
+    [intents],
   );
 
   const saveCoverage = React.useCallback((): void => {
-    void mutate((scene) => updateScene(scene.id, { exportCoverage: coverage }, scene.revision));
-  }, [mutate, coverage]);
+    intents.saveCoverage(coverage);
+  }, [intents, coverage]);
+
+  const rotateDevice = React.useCallback((): void => {
+    intents.rotateDevice();
+  }, [intents]);
+
+  const changeZoom = React.useCallback((percent: number): void => {
+    if (isDeviceZoomPercent(percent)) setZoomPercent(percent);
+  }, []);
+
+  const toggleBody = React.useCallback((): void => {
+    setBodyPreference((current) => !current);
+  }, []);
+
+  const toggleGrid = React.useCallback((): void => {
+    setGridPreference((current) => !current);
+  }, []);
 
   const saveDimensions = React.useCallback(
     (width: number, height: number): void => {
-      void mutate((scene) => updateScene(scene.id, { width, height }, scene.revision));
+      intents.saveDimensions(width, height);
     },
-    [mutate],
+    [intents],
+  );
+
+  const changeOutputProfile = React.useCallback(
+    (outputProfileId: string): void => {
+      intents.changeOutputProfile(outputProfileId);
+    },
+    [intents],
   );
 
   const onSelect = React.useCallback((id: string | null): void => {
@@ -864,60 +641,24 @@ export function SceneWorkspace({
   // An open draft owns editing until it commits or cancels: a second surface
   // can never steal it, so the stage and layers editors never activate
   // together and neither silently discards the other's draft.
-  const reorderLayers = React.useCallback(
-    async (apply: (topFirst: DomainSceneView["placements"]) => string[] | null): Promise<boolean> => {
-      return mutate(async (scene) => {
-        // Resolve intents against the latest saved base when the queued
-        // operation executes: a reorder computed from a stale view must still
-        // land on the right neighbors after concurrent adds or removes.
-        const topFirst = sortLayersTopFirst(scene.placements);
-        const bottomToTop = apply(topFirst);
-        if (!bottomToTop) return scene;
-        // Skip revision churn when the sequence is already exact and dense.
-        const currentBottom = [...topFirst].reverse();
-        const dense = currentBottom.every((placement, index) => placement.order === index);
-        if (dense && currentBottom.map((placement) => placement.id).join("\0") === bottomToTop.join("\0")) {
-          return scene;
-        }
-        return reorderSceneLabels(scene.id, bottomToTop, scene.revision);
-      });
-    },
-    [mutate],
-  );
-
-  // Index moves within the displayed top-first order compute from the latest
-  // saved base when the queued operation executes, so a reorder from a stale
-  // view still lands on the right neighbors after concurrent adds or removes.
-  // Stale drag writes never issue while a draft edits or a conflict waits;
-  // the caller rolls its optimistic order back on rejection.
   const moveLayer = React.useCallback(
     (from: number, to: number): Promise<boolean> => {
-      if (from === to) return Promise.resolve(true);
-      if (editingIdRef.current !== null || conflictRef.current) return Promise.resolve(false);
-      return reorderLayers((topFirst) => {
-        if (from < 0 || from >= topFirst.length || to < 0 || to >= topFirst.length) return null;
-        const next = [...topFirst];
-        const moved = next.splice(from, 1)[0];
-        if (!moved) return null;
-        next.splice(to, 0, moved);
-        return [...next].reverse().map((placement) => placement.id);
-      });
+      return intents.moveLayer(from, to);
     },
-    [reorderLayers],
+    [intents],
   );
 
-  const onBeginEdit = React.useCallback((id: string, origin: "stage" | "list"): void => {
-    if (editingIdRef.current !== null) return;
-    setSelectedId(id);
-    setEditingId(id);
-    setEditingOrigin(origin);
-  }, []);
+  const onBeginEdit = React.useCallback(
+    (id: string, origin: "stage" | "list"): void => {
+      if (editingIdRef.current !== null) return;
+      beginEditTransition(id, origin);
+    },
+    [beginEditTransition],
+  );
 
   const onCancelEdit = React.useCallback((): void => {
-    newTextIdRef.current = null;
-    setEditingId(null);
-    setEditingOrigin(null);
-  }, []);
+    endEditTransition();
+  }, [endEditTransition]);
 
   const onBeginEditStage = React.useCallback((id: string): void => onBeginEdit(id, "stage"), [onBeginEdit]);
   const onBeginEditList = React.useCallback((id: string): void => onBeginEdit(id, "list"), [onBeginEdit]);
@@ -948,12 +689,7 @@ export function SceneWorkspace({
         <p role="alert" className="m-0 text-xs">
           Composition not found.
         </p>
-        <Button
-          variant="ghost"
-          size="sm"
-          data-screen-workspace-retry
-          onClick={() => void reloadRef.current({ force: true })}
-        >
+        <Button variant="ghost" size="sm" data-screen-workspace-retry onClick={() => void session.discardRemote()}>
           Retry
         </Button>
       </div>
@@ -966,9 +702,71 @@ export function SceneWorkspace({
   // that no longer matches the geometry (or names nothing the catalog
   // carries) also resolves to custom, keeping the exact saved dimensions
   // instead of adopting a lookalike device.
-  const deviceValue = device ? device.id : "custom";
-  const cssScale = ((device ? referenceSizeCssScale(device.ppi) : 1) * sizePercent) / 100;
+  // Zoom multiplies the presentation scale only: native dimensions,
+  // labels and export are unchanged.
+  const cssScale = ((device ? referenceSizeCssScale(device.ppi) : 1) * sizePercent * zoomPercent) / 10000;
+  const showBody = resolveDeviceBodyVisible({ hasDevice: device !== null, bodyPreference, zoomPercent });
+  const bodyToggleDisabled = isDeviceBodyToggleDisabled({ hasDevice: device !== null, zoomPercent });
+  const bodyToggleHint =
+    device === null
+      ? "Custom screens have no device body"
+      : zoomPercent !== DEVICE_ZOOM_DEFAULT
+        ? `Device body is hidden at ${zoomPercent}% zoom`
+        : showBody
+          ? "Hide the device body"
+          : "Show the device body";
+  // Enabled strictly above 100% zoom (by preset, not the effective CSS
+  // scale); the overlay hides at or below 100% while the preference stays.
+  const gridVisible = gridPreference && zoomPercent > 100;
+  const gridToggleDisabled = zoomPercent <= 100;
+  const gridToggleHint = gridToggleDisabled
+    ? `Grid needs zoom above 100% (currently ${zoomPercent}%)`
+    : gridVisible
+      ? `Hide the grid (${PIXEL_GRID_CELL_PX} px cells)`
+      : `Show the grid (${PIXEL_GRID_CELL_PX} px cells)`;
   const paper = scenePaperCss(appearance, inverse);
+  // Single-sourced body/aperture presentation for the shell and the centered
+  // viewport: the same layout drives DeviceShell and the ruler origin.
+  const rotation = saved.rotation ?? 0;
+  const bodyBox = device
+    ? deviceShownLayout(device, cssScale, rotation, showBody)
+    : {
+        svgWidth: Math.max(1, width * cssScale),
+        svgHeight: Math.max(1, height * cssScale),
+        screenX: 0,
+        screenY: 0,
+        screenWidth: Math.max(1, width * cssScale),
+        screenHeight: Math.max(1, height * cssScale),
+      };
+  // One stage element serves every frame so canvas props stay
+  // single-sourced across shell and bare-canvas swaps.
+  const stage = (
+    <SceneStage
+      sceneWidth={width}
+      sceneHeight={height}
+      placements={saved.placements}
+      paints={paints}
+      cssScale={cssScale}
+      paperCss={paper}
+      showGrid={gridVisible}
+      selectedId={selectedId}
+      editingId={stageEditingId}
+      onMeasureLabel={onMeasureLabel}
+      onPlacementPreview={setPlacementPreview}
+      tool={tool}
+      onAddText={(x, y) => void addLabel(x, y)}
+      onSelect={onSelect}
+      onBeginEdit={onBeginEditStage}
+      onCommitText={commitText}
+      onCancelEdit={onCancelEdit}
+      onCommitMove={commitMove}
+      onCommitResize={commitResize}
+      onNudge={nudgeLabel}
+      onDeleteKey={deleteLabel}
+      onRenderError={onRenderError}
+      onRenderOk={onRenderOk}
+    />
+  );
   const selected = saved.placements.find((placement) => placement.id === selectedId) ?? null;
   const inspected = selected && placementPreview?.id === selected.id ? { ...selected, ...placementPreview } : selected;
   const profileName = profiles?.find((profile) => profile.id === saved.outputProfileId)?.name ?? saved.outputProfileId;
@@ -1001,11 +799,44 @@ export function SceneWorkspace({
         </ResizablePanel>
         <ResizableHandle withHandle appearance="pane" aria-label="Resize layers panel" />
         <ResizablePanel id="scene-main" minSize={280}>
-          <div className="relative h-full min-h-0 min-w-0 overflow-hidden" data-screen-center-panel>
-            <ScrollArea className="h-full" viewportProps={{ "data-screen-stage-scroll": true }}>
-              <div className="flex w-max min-w-full justify-center px-4 pt-2 pb-20">
-                {device ? (
-                  <DeviceShell key={device.id} device={device} cssScale={cssScale}>
+          <div className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden" data-screen-center-panel>
+            <DeviceHeader
+              device={device}
+              width={width}
+              height={height}
+              rotation={saved.rotation ?? 0}
+              disabled={saving || pending || editingId !== null || conflict}
+              onDevice={changeDevice}
+              onRotate={rotateDevice}
+              zoomPercent={zoomPercent}
+              onZoom={changeZoom}
+              showBody={showBody}
+              bodyToggleDisabled={bodyToggleDisabled}
+              bodyToggleHint={bodyToggleHint}
+              onToggleBody={toggleBody}
+              gridVisible={gridVisible}
+              gridToggleDisabled={gridToggleDisabled}
+              gridToggleHint={gridToggleHint}
+              onToggleGrid={toggleGrid}
+            />
+            <CanvasViewport
+              bodyWidth={bodyBox.svgWidth}
+              bodyHeight={bodyBox.svgHeight}
+              apertureX={bodyBox.screenX}
+              apertureY={bodyBox.screenY}
+              apertureWidth={bodyBox.screenWidth}
+              apertureHeight={bodyBox.screenHeight}
+              cssScale={cssScale}
+              centerKey={`${device?.id ?? "custom"}|${saved.rotation ?? 0}|${width}x${height}`}
+              body={
+                device ? (
+                  <DeviceShell
+                    key={device.id}
+                    device={device}
+                    cssScale={cssScale}
+                    rotation={saved.rotation ?? 0}
+                    bodyVisible={showBody}
+                  >
                     {(layout) => (
                       <div
                         data-screen-aperture
@@ -1017,30 +848,7 @@ export function SceneWorkspace({
                           height: layout.screenHeight,
                         }}
                       >
-                        <SceneStage
-                          sceneWidth={width}
-                          sceneHeight={height}
-                          placements={saved.placements}
-                          paints={paints}
-                          cssScale={cssScale}
-                          paperCss={paper}
-                          selectedId={selectedId}
-                          editingId={stageEditingId}
-                          onMeasureLabel={onMeasureLabel}
-                          onPlacementPreview={setPlacementPreview}
-                          tool={tool}
-                          onAddText={(x, y) => void addLabel(x, y)}
-                          onSelect={onSelect}
-                          onBeginEdit={onBeginEditStage}
-                          onCommitText={commitText}
-                          onCancelEdit={onCancelEdit}
-                          onCommitMove={commitMove}
-                          onCommitResize={commitResize}
-                          onNudge={nudgeLabel}
-                          onDeleteKey={deleteLabel}
-                          onRenderError={onRenderError}
-                          onRenderOk={onRenderOk}
-                        />
+                        {stage}
                       </div>
                     )}
                   </DeviceShell>
@@ -1053,34 +861,11 @@ export function SceneWorkspace({
                       border: "1px solid var(--color-line)",
                     }}
                   >
-                    <SceneStage
-                      sceneWidth={width}
-                      sceneHeight={height}
-                      placements={saved.placements}
-                      paints={paints}
-                      cssScale={cssScale}
-                      paperCss={paper}
-                      selectedId={selectedId}
-                      editingId={stageEditingId}
-                      onMeasureLabel={onMeasureLabel}
-                      onPlacementPreview={setPlacementPreview}
-                      tool={tool}
-                      onAddText={(x, y) => void addLabel(x, y)}
-                      onSelect={onSelect}
-                      onBeginEdit={onBeginEditStage}
-                      onCommitText={commitText}
-                      onCancelEdit={onCancelEdit}
-                      onCommitMove={commitMove}
-                      onCommitResize={commitResize}
-                      onNudge={nudgeLabel}
-                      onDeleteKey={deleteLabel}
-                      onRenderError={onRenderError}
-                      onRenderOk={onRenderOk}
-                    />
+                    {stage}
                   </div>
-                )}
-              </div>
-            </ScrollArea>
+                )
+              }
+            />
             <div
               className="absolute bottom-4 left-1/2 z-10 flex w-fit -translate-x-1/2 gap-1 rounded-xl border border-line bg-card p-1.5 shadow-lg"
               role="toolbar"
@@ -1132,7 +917,7 @@ export function SceneWorkspace({
                 size="icon-xs"
                 data-screen-undo
                 aria-label="Undo"
-                disabled={!history.canUndo || saving || pending || editingId !== null || conflict}
+                disabled={!snapshot.canUndo || saving || pending || editingId !== null || conflict}
                 onClick={() => void onUndo()}
               >
                 <Undo2 aria-hidden="true" />
@@ -1145,7 +930,7 @@ export function SceneWorkspace({
                 size="icon-xs"
                 data-screen-redo
                 aria-label="Redo"
-                disabled={!history.canRedo || saving || pending || editingId !== null || conflict}
+                disabled={!snapshot.canRedo || saving || pending || editingId !== null || conflict}
                 onClick={() => void onRedo()}
               >
                 <Redo2 aria-hidden="true" />
@@ -1160,7 +945,7 @@ export function SceneWorkspace({
                 {pendingRemote ? ` Saved revision ${pendingRemote.revision} is waiting.` : ""}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" data-screen-reload onClick={() => void reloadRef.current({ force: true })}>
+                <Button size="sm" data-screen-reload onClick={() => void session.discardRemote()}>
                   Reload saved composition
                 </Button>
               </div>
@@ -1179,7 +964,7 @@ export function SceneWorkspace({
                   type="button"
                   data-screen-workspace-retry
                   className="cursor-pointer bg-transparent p-0 text-[.8rem] text-soft underline"
-                  onClick={() => void reloadRef.current({ force: true })}
+                  onClick={() => void session.discardRemote()}
                 >
                   Retry
                 </button>
@@ -1196,29 +981,6 @@ export function SceneWorkspace({
               {[previewStatus, renderError, directFontError].filter(Boolean).join(" ")}
             </p>
           )}
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex min-w-44 flex-col gap-1">
-              <Label htmlFor="workspace-device">Device</Label>
-              <Select value={deviceValue} disabled={saving} onValueChange={changeDevice}>
-                <SelectTrigger id="workspace-device" data-screen-device className="w-52">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DEVICE_CATALOG.devices.map((entry) => (
-                    <SelectItem key={entry.id} value={entry.id}>
-                      {entry.label}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="custom">{device ? "Custom…" : `Custom ${width} × ${height}`}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <p data-screen-device-meta className="m-0 text-xs text-soft">
-              {device
-                ? `${device.label} · ${width} × ${height} px · ${device.ppi} PPI`
-                : `Custom screen · ${width} × ${height} px · no catalog shell`}
-            </p>
-          </div>
           {pageControls}
           {selected && inspected && (
             <LabelInspector
@@ -1244,9 +1006,7 @@ export function SceneWorkspace({
                 <Select
                   value={saved.outputProfileId}
                   disabled={saving || !profiles}
-                  onValueChange={(outputProfileId) =>
-                    void mutate((scene) => updateScene(scene.id, { outputProfileId }, scene.revision))
-                  }
+                  onValueChange={(outputProfileId) => changeOutputProfile(outputProfileId)}
                 >
                   <SelectTrigger id="workspace-profile" data-screen-profile className="w-full">
                     <SelectValue />

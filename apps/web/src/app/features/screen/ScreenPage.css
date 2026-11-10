@@ -2,3 +2,21 @@
 .app-shell:has([data-screen-page]) { height: 100dvh; overflow: hidden; }
 .app-shell__page:has([data-screen-page]) { min-height: 0; overflow: hidden; }
 .app-shell__page:has([data-screen-page]) > .flex { height: 100%; min-height: 0; }
+
+.screen-device-header { background: var(--studio-surface); }
+.screen-device-option,
+.screen-device-parameter { border-color: var(--studio-border); background: var(--studio-inset); }
+.screen-device-parameter { color: var(--studio-muted); }
+/* Pixel-grid toggle pressed state: the grid itself is subtle, so the button
+   carries an accent wash while pressed. Scoped to the grid toggle only;
+   body and zoom controls keep their own appearance. */
+.screen-device-header [data-screen-grid-toggle][aria-pressed="true"] {
+  background: color-mix(in srgb, var(--studio-accent) 18%, var(--studio-inset));
+  border-color: var(--studio-accent);
+  color: var(--studio-accent);
+}
+.dark .screen-device-header { background: #1a1c20; border-color: rgb(73 71 63 / 30%); }
+.dark .screen-device-option,
+.dark .screen-device-parameter { background: #1e2024; border-color: rgb(73 71 63 / 30%); }
+.dark .screen-device-option { color: #e2e2e8; }
+.dark .screen-device-parameter { color: #949088; }

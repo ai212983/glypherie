@@ -14,6 +14,23 @@ export async function addScreenText(
   await page.locator('[data-screen-tool="text"]').click();
   const stage = page.locator("[data-scene-stage]");
   await showScreenCanvas(page);
+  // Center the requested native point in the canvas viewport, rather than
+  // clicking a clipped part of the canvas underneath a ruler or toolbar.
+  await stage.evaluate(
+    (canvas, native) => {
+      const viewport = canvas.closest<HTMLElement>("[data-screen-stage-scroll]");
+      if (!viewport) return;
+      const bounds = canvas.getBoundingClientRect();
+      const width = Number(canvas.getAttribute("aria-label")?.match(/Scene canvas, (\d+) by/)?.[1]);
+      const scale = bounds.width / width;
+      const visible = viewport.getBoundingClientRect();
+      const toolbar = document.querySelector("[data-screen-tools]")?.getBoundingClientRect();
+      const bottom = Math.min(visible.bottom, toolbar?.top ?? visible.bottom);
+      viewport.scrollLeft += bounds.left + native.x * scale - (visible.left + visible.width / 2);
+      viewport.scrollTop += bounds.top + native.y * scale - (visible.top + bottom) / 2;
+    },
+    { x: options.x ?? 8, y: options.y ?? 8 },
+  );
   const bounds = await stage.boundingBox();
   const label = await stage.getAttribute("aria-label");
   const width = Number(label?.match(/Scene canvas, (\d+) by/)?.[1]);

@@ -10,9 +10,13 @@ function ScrollArea({
   className,
   children,
   viewportProps,
+  viewportRef,
   type = "auto",
   ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & { viewportProps?: ViewportProps }) {
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+  viewportProps?: ViewportProps;
+  viewportRef?: React.Ref<HTMLDivElement>;
+}) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
@@ -22,6 +26,7 @@ function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         {...viewportProps}
+        ref={viewportRef}
         data-slot="scroll-area-viewport"
         className={cn(
           "size-full rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring",

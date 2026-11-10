@@ -13,6 +13,54 @@ import { domainGraph } from "../../src/app/domain/graph.ts";
 import { IMPORT_MARKER_KEY, importLegacySnapshot } from "../../src/app/domain/importer.ts";
 import { defaultKerningState } from "../../src/app/kerning/model.ts";
 
+test("adding scene rotation preserves scenes and unrelated data from the previous schema", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "glypherie-scene-rotation-"));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const dataDir = path.join(directory, "pgdata");
+  const legacyScene = defineNode("Scene", { schema: domainGraph.nodes.Scene.type.schema.omit({ rotation: true }) });
+  const legacyGraph = defineGraph({
+    id: domainGraph.id,
+    nodes: { ...domainGraph.nodes, Scene: { type: legacyScene } },
+    edges: domainGraph.edges,
+  });
+  const previous = new PGlite({ dataDir });
+  try {
+    const db = drizzle({ client: previous });
+    const [store] = await createStoreWithSchema(
+      legacyGraph,
+      createPostgresBackend(db, { vector: false, fulltext: false }),
+    );
+    await store.nodes.Scene.create(
+      {
+        name: "Kept scene",
+        width: 480,
+        height: 800,
+        deviceId: "xteink-x4",
+        exportCoverage: { presetIds: ["ascii"], extraRanges: [] },
+        revision: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      { id: "kept-scene" },
+    );
+    await previous.exec(
+      "CREATE TABLE app_kv (key TEXT PRIMARY KEY, value TEXT NOT NULL); INSERT INTO app_kv VALUES ('kept-setting', 'kept');",
+    );
+  } finally {
+    await previous.close();
+  }
+  const reopened = await createDomainBackend({ dataDir });
+  try {
+    const scene = await reopened.store.nodes.Scene.getById("kept-scene" as never);
+    assert.equal(scene?.name, "Kept scene");
+    assert.equal(scene?.width, 480);
+    assert.equal(await kvGet(reopened.db, "kept-setting"), "kept");
+    assert.equal(await kvGet(reopened.db, IMPORT_MARKER_KEY), undefined);
+  } finally {
+    await reopened.close();
+  }
+});
+
 test("an incompatible persisted schema resets the local library before opening it", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "glypherie-schema-reset-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));

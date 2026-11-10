@@ -14,6 +14,15 @@ import type { VariantSettings } from "../../variants/model.js";
 import type { RGBA } from "../../renderer/renderer-types.js";
 import type { DomainPlacementView } from "../scenes/service.js";
 import { EditableLabel } from "./EditableLabel.js";
+import {
+  AwaitedResizeCommit,
+  dragNativeDelta,
+  movePreviewClears,
+  previewSuperseded,
+  releasedPosition,
+  resizeEstimates,
+  resizePreviewClears,
+} from "./stage-gesture.ts";
 
 export interface StagePaint {
   fontId: string;
@@ -40,6 +49,8 @@ export interface SceneStageProps {
   // CSS px per native device px.
   cssScale: number;
   paperCss: string;
+  // View-only native-pixel grid overlay; hidden unless zoom is above 100%.
+  showGrid?: boolean;
   selectedId: string | null;
   editingId: string | null;
   tool: "select" | "text";
@@ -63,8 +74,32 @@ export interface SceneStageProps {
   onRenderOk: () => void;
 }
 
+// One gradient pair draws a canvas grid of 8 native device px cells at the
+// fractional pitch 8 * cssScale (never integer-rounded, so origin and pitch
+// stay exact at any zoom). A per-pixel pitch would alias into moire bands
+// where the effective scale drops below 1 CSS px per native px; the 8px
+// cell keeps one uniform readable spacing on every device. The line stays a
+// small fraction of the pitch, capped at 1 CSS px, so the mesh stays subtle.
+// https://www.w3.org/TR/css-images-3/#repeating-gradients
+export const PIXEL_GRID_CELL_PX = 8;
+function pixelGridOverlayStyle(cssScale: number): React.CSSProperties {
+  const pitch = (Number.isFinite(cssScale) && cssScale > 0 ? cssScale : 1) * PIXEL_GRID_CELL_PX;
+  const line = Math.min(1, pitch / 4);
+  const color = "rgb(71 85 105 / 0.45)";
+  return {
+    position: "absolute",
+    inset: 0,
+    // Never intercepts canvas gestures; the stage keeps hit-testing labels.
+    // https://www.w3.org/TR/css-ui-4/#pointer-events-control
+    pointerEvents: "none",
+    backgroundImage:
+      `repeating-linear-gradient(to right, ${color} 0, ${color} ${line}px, transparent ${line}px, transparent ${pitch}px), ` +
+      `repeating-linear-gradient(to bottom, ${color} 0, ${color} ${line}px, transparent ${line}px, transparent ${pitch}px)`,
+  };
+}
+
 export function SceneStage(props: SceneStageProps): React.JSX.Element {
-  const { sceneWidth, sceneHeight, placements, paints, cssScale, onMeasureLabel, onPlacementPreview } = props;
+  const { sceneWidth, sceneHeight, placements, paints, cssScale, showGrid, onMeasureLabel, onPlacementPreview } = props;
   const framesRef = React.useRef(new Map<string, HTMLDivElement>());
   const dragStartRef = React.useRef<{ id: string; x: number; y: number } | null>(null);
   const resizeStartRef = React.useRef<{
@@ -110,20 +145,21 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
   // A release whose save waits for the repaint of the released size. The
   // pending preview already shows the released values; the write fires once
   // the measured bounds land (or the fallback after a paint failure or a
-  // bounded wait), exactly once per release.
-  const awaitingResizeRef = React.useRef<{
-    id: string;
-    text: string;
-    fontSize: number;
-    width: number;
-    fallbackX: number;
-    fallbackY: number;
-    anchorBaseX: number;
-    anchorBaseY: number;
-    anchorInk: { x: number; y: number; width: number; height: number };
-    lastDirection: readonly [number, number];
-    timeoutId: number;
-  } | null>(null);
+  // bounded wait), exactly once per release. The interaction core owns the
+  // position math and the exactly-once outcome; the adapter owns the timer
+  // and performs the commit the core decides.
+  const resizeWaiter = React.useMemo(() => new AwaitedResizeCommit(), []);
+  const awaitingTimeoutRef = React.useRef<number | null>(null);
+  const clearAwaitingTimeout = React.useCallback((): void => {
+    if (awaitingTimeoutRef.current !== null) {
+      window.clearTimeout(awaitingTimeoutRef.current);
+      awaitingTimeoutRef.current = null;
+    }
+  }, []);
+  const clearAwaitingRelease = React.useCallback((): void => {
+    clearAwaitingTimeout();
+    resizeWaiter.cancel();
+  }, [clearAwaitingTimeout, resizeWaiter]);
   const commitResizeRef = React.useRef(props.onCommitResize);
   commitResizeRef.current = props.onCommitResize;
   const moveableRef = React.useRef<Moveable | null>(null);
@@ -187,8 +223,12 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
   // existing recovery UI.
   React.useLayoutEffect(() => {
     if (!pendingMove) return;
-    const canonical = placements.find((placement) => placement.id === pendingMove.id);
-    if (!canonical || (canonical.x === pendingMove.x && canonical.y === pendingMove.y)) {
+    if (
+      movePreviewClears(
+        placements.find((placement) => placement.id === pendingMove.id),
+        pendingMove,
+      )
+    ) {
       setPendingMove(null);
     }
   }, [placements, pendingMove]);
@@ -197,27 +237,18 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
   // wrap width and anchored position.
   React.useLayoutEffect(() => {
     if (!pendingResize) return;
-    const canonical = placements.find((placement) => placement.id === pendingResize.id);
+    const canonical = placements.find((placement) => placement.id === pendingResize.id) ?? null;
     // A reference switch supersedes the direct-font gesture, including its
     // deferred save; variant geometry must come only from its saved style.
-    if (!canonical || canonical.textStyleId !== null) {
-      const awaiting = awaitingResizeRef.current;
-      if (awaiting?.id === pendingResize.id) {
-        window.clearTimeout(awaiting.timeoutId);
-        awaitingResizeRef.current = null;
-      }
+    if (previewSuperseded(canonical, pendingResize.id)) {
+      if (resizeWaiter.peek()?.id === pendingResize.id) clearAwaitingRelease();
       setPendingResize(null);
       return;
     }
-    if (
-      canonical.fontSize === pendingResize.fontSize &&
-      canonical.width === pendingResize.width &&
-      canonical.x === pendingResize.x &&
-      canonical.y === pendingResize.y
-    ) {
+    if (canonical && resizePreviewClears(canonical, pendingResize)) {
       setPendingResize(null);
     }
-  }, [placements, pendingResize]);
+  }, [placements, pendingResize, resizeWaiter, clearAwaitingRelease]);
 
   const ordered = React.useMemo(
     () => [...displayed].sort((left, right) => left.order - right.order || (left.id < right.id ? -1 : 1)),
@@ -226,15 +257,11 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
 
   // Fires one awaited resize release with the given position, then hands the
   // preview to the usual reconcile-or-roll-back path. Exactly-once per
-  // release: the first fire clears the waiter, so late paints, errors and
+  // release: firing clears the waiter first, so late paints, errors and
   // the bounded wait cannot write twice.
   const fireResizeCommit = React.useCallback(
     (release: { id: string; fontSize: number; width: number }, x: number, y: number): void => {
-      const awaiting = awaitingResizeRef.current;
-      if (awaiting) {
-        window.clearTimeout(awaiting.timeoutId);
-        awaitingResizeRef.current = null;
-      }
+      clearAwaitingRelease();
       setPendingResize({ id: release.id, fontSize: release.fontSize, width: release.width, x, y });
       onPlacementPreview?.({ id: release.id, fontSize: release.fontSize, width: release.width, x, y });
       void commitResizeRef.current(release.id, release.fontSize, release.width, x, y).then(
@@ -266,7 +293,7 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
         },
       );
     },
-    [onPlacementPreview],
+    [clearAwaitingRelease, onPlacementPreview],
   );
 
   // Best-effort flush of an awaited release: corrected against measured
@@ -274,28 +301,11 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
   // when a new gesture starts on the same label, when a paint fails, and on
   // unmount, so a release never stalls without a save.
   const flushAwaitingResize = React.useCallback((): void => {
-    const awaiting = awaitingResizeRef.current;
+    const awaiting = resizeWaiter.peek();
     if (!awaiting) return;
-    const recorded = inkByIdRef.current.get(awaiting.id);
-    if (
-      recorded &&
-      recorded.ink &&
-      recorded.text === awaiting.text &&
-      recorded.sizePx === awaiting.fontSize &&
-      recorded.width === awaiting.width
-    ) {
-      const corrected = correctedResizePosition(
-        awaiting.anchorBaseX,
-        awaiting.anchorBaseY,
-        awaiting.anchorInk,
-        awaiting.lastDirection,
-        recorded.ink,
-      );
-      fireResizeCommit(awaiting, corrected.x, corrected.y);
-      return;
-    }
-    fireResizeCommit(awaiting, awaiting.fallbackX, awaiting.fallbackY);
-  }, [fireResizeCommit]);
+    const commit = resizeWaiter.flush(inkByIdRef.current.get(awaiting.id) ?? null);
+    if (commit) fireResizeCommit(commit.release, commit.x, commit.y);
+  }, [fireResizeCommit, resizeWaiter]);
 
   // A failing paint cannot produce the bounds a release waits for; commit
   // whatever the waiter has instead of stalling the save.
@@ -322,23 +332,16 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
     ): void => {
       inkByIdRef.current.set(placementId, { text, sizePx, width, ink: box });
       if (box) onMeasureLabel?.(placementId, box.width, box.height);
-      const awaiting = awaitingResizeRef.current;
+      // The core commits exactly once when the repaint of the awaited inputs
+      // lands; an inkless paint commits the drag translation, since no later
+      // repaint of the same inputs can measure more.
+      const awaiting = resizeWaiter.peek();
       if (!awaiting || awaiting.id !== placementId) return;
       if (awaiting.text !== text || awaiting.fontSize !== sizePx || awaiting.width !== width) return;
-      if (!box) {
-        fireResizeCommit(awaiting, awaiting.fallbackX, awaiting.fallbackY);
-        return;
-      }
-      const corrected = correctedResizePosition(
-        awaiting.anchorBaseX,
-        awaiting.anchorBaseY,
-        awaiting.anchorInk,
-        awaiting.lastDirection,
-        box,
-      );
-      fireResizeCommit(awaiting, corrected.x, corrected.y);
+      const commit = resizeWaiter.fulfill(box);
+      if (commit) fireResizeCommit(commit.release, commit.x, commit.y);
     },
-    [fireResizeCommit, onMeasureLabel],
+    [fireResizeCommit, onMeasureLabel, resizeWaiter],
   );
 
   // A release waiting for its repaint must not die with the stage: commit
@@ -383,15 +386,15 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
   }, [moveableTarget, selectedX, selectedY, canonicalSelected?.fontSize, canonicalSelected?.width, cssScale]);
 
   return (
-    // Positioning wrapper for the Moveable control layer. The paper below
-    // clips label paint to the device aperture; the controls render as a
-    // sibling of that clipping context so handles stay hittable past the
-    // paper edges. No overflow is removed anywhere to achieve this.
+    // Clip paint and Moveable controls at the same device-canvas boundary.
+    // overflow: clip also forbids focus/programmatic scrolling of the canvas:
+    // https://www.w3.org/TR/css-overflow-3/#valdef-overflow-clip
     <div
       style={{
         position: "relative",
         width: Math.max(1, sceneWidth * cssScale),
         height: Math.max(1, sceneHeight * cssScale),
+        overflow: "clip",
       }}
     >
       <div
@@ -408,7 +411,7 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
           width: Math.max(1, sceneWidth * cssScale),
           height: Math.max(1, sceneHeight * cssScale),
           backgroundColor: props.paperCss,
-          overflow: "hidden",
+          overflow: "clip",
         }}
       >
         {ordered
@@ -456,6 +459,14 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
               />
             );
           })}
+        {showGrid && (
+          // Native-pixel grid: anchored to the stage origin and clipped to
+          // the logical canvas by the stage's overflow, so it scrolls and
+          // zooms with the canvas and never covers the body, rulers or
+          // panels. Decorative only: hidden from assistive tech and focus,
+          // and the Moveable handles render above it outside this node.
+          <div data-scene-pixel-grid aria-hidden="true" style={pixelGridOverlayStyle(cssScale)} />
+        )}
         {props.tool === "text" && (
           <div
             data-scene-text-placement
@@ -525,10 +536,11 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
             if (container) container.style.transform = event.transform;
             const start = dragStartRef.current;
             if (start) {
+              const delta = dragNativeDelta([event.translate[0] ?? 0, event.translate[1] ?? 0], cssScale);
               onPlacementPreview?.({
                 id: start.id,
-                x: start.x + Math.round((event.translate[0] ?? 0) / cssScale),
-                y: start.y + Math.round((event.translate[1] ?? 0) / cssScale),
+                x: start.x + delta.dx,
+                y: start.y + delta.dy,
               });
             }
           }}
@@ -545,9 +557,7 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
             // OnDragEnd carries no totals; the last OnDrag holds the
             // cumulative pointer translation in screen px.
             const last = event.lastEvent as { translate?: readonly [number, number] } | undefined;
-            const translate = last?.translate ?? [0, 0];
-            const dx = Math.round(translate[0] / cssScale);
-            const dy = Math.round(translate[1] / cssScale);
+            const { dx, dy } = dragNativeDelta(last?.translate ?? [0, 0], cssScale);
             const container = frame.parentElement;
             if (dx === 0 && dy === 0) {
               frame.style.transform = "";
@@ -600,7 +610,7 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
               resizeStartRef.current = null;
               return false;
             }
-            if (awaitingResizeRef.current?.id === current.id) flushAwaitingResize();
+            if (resizeWaiter.peek()?.id === current.id) flushAwaitingResize();
             const preview =
               pendingResizeRef.current !== null && pendingResizeRef.current.id === current.id
                 ? pendingResizeRef.current
@@ -666,19 +676,20 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
             // Moveable clamps extreme inward drags at zero or negative sizes;
             // pin to a positive pixel so the gesture commits the domain
             // minimum instead of being silently swallowed.
-            const span = Math.max(event.width, 1) / start.boxWidth;
-            if (!Number.isFinite(span) || span <= 0) return;
-            const fontSize = Math.min(512, Math.max(1, Math.round(start.fontSize * span)));
-            const width = Math.min(
-              4096,
-              Math.max(1, Math.round(start.width + (event.width - start.boxWidth) / cssScale)),
+            const estimate = resizeEstimates(
+              { fontSize: start.fontSize, width: start.width, boxWidth: start.boxWidth, boxHeight: start.boxHeight },
+              event.width,
+              cssScale,
             );
+            if (!estimate) return;
+            const { fontSize, width } = estimate;
+            const dragDelta = dragNativeDelta([translate[0] ?? 0, translate[1] ?? 0], cssScale);
             onPlacementPreview?.({
               id: start.id,
               fontSize,
               width,
-              x: start.x + Math.round((translate[0] ?? 0) / cssScale),
-              y: start.y + Math.round((translate[1] ?? 0) / cssScale),
+              x: start.x + dragDelta.dx,
+              y: start.y + dragDelta.dy,
             });
             setPendingResize((current) =>
               current !== null &&
@@ -735,10 +746,11 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
               width: preview.width,
               text: displayed.find((placement) => placement.id === preview.id)?.text ?? "",
             };
+            const fallbackPosition = releasedPosition({ x: start.x, y: start.y }, drag, cssScale);
             const fallback = {
               ...release,
-              x: start.x + Math.round(drag[0] / cssScale),
-              y: start.y + Math.round(drag[1] / cssScale),
+              x: fallbackPosition.x,
+              y: fallbackPosition.y,
             };
             if (container) {
               container.style.left = `${fallback.x * cssScale}px`;
@@ -755,7 +767,7 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
               fireResizeCommit(release, fallback.x, fallback.y);
               return;
             }
-            awaitingResizeRef.current = {
+            resizeWaiter.arm({
               ...release,
               fallbackX: fallback.x,
               fallbackY: fallback.y,
@@ -763,13 +775,12 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
               anchorBaseY: start.anchorBaseY,
               anchorInk: start.anchorInk,
               lastDirection: start.lastDirection,
-              timeoutId: window.setTimeout(() => {
-                const awaiting = awaitingResizeRef.current;
-                if (awaiting && awaiting.id === release.id) {
-                  fireResizeCommit(release, awaiting.fallbackX, awaiting.fallbackY);
-                }
-              }, 8000),
-            };
+            });
+            awaitingTimeoutRef.current = window.setTimeout(() => {
+              awaitingTimeoutRef.current = null;
+              const commit = resizeWaiter.flush(null);
+              if (commit) fireResizeCommit(commit.release, commit.x, commit.y);
+            }, 8000);
             // A mid-gesture repaint may already have measured the released
             // size (the gesture paused at its end); commit corrected at once
             // instead of waiting for a repaint that already landed.
@@ -780,14 +791,8 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
               recorded.sizePx === release.fontSize &&
               recorded.width === release.width
             ) {
-              const corrected = correctedResizePosition(
-                start.anchorBaseX,
-                start.anchorBaseY,
-                start.anchorInk,
-                start.lastDirection,
-                recorded.ink,
-              );
-              fireResizeCommit(release, corrected.x, corrected.y);
+              const commit = resizeWaiter.fulfill(recorded.ink);
+              if (commit) fireResizeCommit(commit.release, commit.x, commit.y);
             }
           }}
         />
@@ -799,25 +804,4 @@ export function SceneStage(props: SceneStageProps): React.JSX.Element {
 function selectedIdSelected(selectedId: string | null, placements: DomainPlacementView[]): DomainPlacementView | null {
   if (!selectedId) return null;
   return placements.find((placement) => placement.id === selectedId) ?? null;
-}
-
-// Opposite-corner anchor in native device px: the fixed corner is opposite
-// the dragged handle (a westward drag fixes the east side), so the released
-// position places the repaint's measured far corner onto the gesture-start
-// far corner. Integer rounding is the only error this introduces.
-function correctedResizePosition(
-  anchorBaseX: number,
-  anchorBaseY: number,
-  anchorInk: { x: number; y: number; width: number; height: number },
-  direction: readonly [number, number],
-  ink: { x: number; y: number; width: number; height: number },
-): { x: number; y: number } {
-  const farX = direction[0] < 0 ? ink.x + ink.width : ink.x;
-  const farY = direction[1] < 0 ? ink.y + ink.height : ink.y;
-  const anchorFarX = direction[0] < 0 ? anchorInk.x + anchorInk.width : anchorInk.x;
-  const anchorFarY = direction[1] < 0 ? anchorInk.y + anchorInk.height : anchorInk.y;
-  return {
-    x: Math.round(anchorBaseX + anchorFarX - farX),
-    y: Math.round(anchorBaseY + anchorFarY - farY),
-  };
 }

@@ -19,6 +19,7 @@ import { ScrollArea } from "../../../components/ui/scroll-area";
 import { Textarea } from "../../../components/ui/textarea";
 import { TooltipHint } from "../../../components/TooltipHint";
 import type { DomainPlacementView } from "../scenes/service.js";
+import { sortLayersTopFirst } from "./scene-order.ts";
 
 // Row-wide drag with click fidelity: a small pointer travel lifts the row so
 // clicks, double-clicks and text selection never start a drag, while touch
@@ -33,14 +34,6 @@ const layerSensors = [
   }),
   KeyboardSensor,
 ];
-
-// Top-first visual order: the reverse of the stage paint order, so the
-// frontmost label (largest order, id tie-break) leads the list.
-export function sortLayersTopFirst(placements: readonly DomainPlacementView[]): DomainPlacementView[] {
-  return [...placements].sort(
-    (left, right) => right.order - left.order || (left.id < right.id ? 1 : left.id > right.id ? -1 : 0),
-  );
-}
 
 interface LayersPanelProps {
   placements: DomainPlacementView[];
