@@ -3,9 +3,8 @@ import path from "node:path";
 import type { TestContext } from "node:test";
 import type { Browser, BrowserContext, Page } from "playwright-core";
 
-// Chromium main-thread collection for the coverage producer. Every export
-// is a no-op unless GLYPHERIE_COVERAGE_DIR is set, so normal tests never
-// start collection, never patch close paths, and never touch the disk.
+// Collection and close wrappers are enabled by GLYPHERIE_COVERAGE_DIR. Build registrations are
+// retained independently.
 const coverageDir = process.env.GLYPHERIE_COVERAGE_DIR;
 
 interface CoverageBuild {
@@ -24,7 +23,8 @@ export function coverageEnabled(): boolean {
   return typeof coverageDir === "string" && coverageDir.length > 0;
 }
 
-/** Remember which temp build directory serves one test server origin. */
+// Register the on-disk build serving origin + prefix so script URLs can resolve to sourcemaps after
+// navigation.
 export function registerCoverageBuild(origin: string, root: string, prefix: string): void {
   builds.push({ origin, root, prefix });
 }
@@ -52,7 +52,6 @@ export async function flushAllTrackedPages(): Promise<void> {
   for (const page of [...trackedPages]) await flushPage(page);
 }
 
-/** Start collection on a fresh page, before any navigation can run. */
 async function watchPage(page: Page): Promise<void> {
   if (!coverageEnabled() || wrappedPages.has(page)) return;
   wrappedPages.add(page);
@@ -65,15 +64,12 @@ async function watchPage(page: Page): Promise<void> {
   try {
     await page.coverage.startJSCoverage({ resetOnNavigation: false });
   } catch (error) {
-    // Nothing to collect later; record and surface now so the test fails
-    // loudly instead of producing a silently partial report.
     flushedPages.add(page);
     await recordCollectionFailure(page.url(), error);
     throw error;
   }
 }
 
-/** Stop collection, resolve sourcemaps from the serving build, save raw V8. */
 async function flushPage(page: Page): Promise<void> {
   if (!coverageEnabled() || flushedPages.has(page)) return;
   flushedPages.add(page);
@@ -82,15 +78,13 @@ async function flushPage(page: Page): Promise<void> {
   try {
     entries = (await page.coverage.stopJSCoverage()) as typeof entries;
   } catch (error) {
-    // The close proceeds, but the recorded failure blocks publication.
     await recordCollectionFailure(page.url(), error);
     return;
   }
   if (entries.length === 0) return;
-  const origin = page.url().startsWith("http") ? new URL(page.url()).origin : "";
   const saved = [];
   for (const entry of entries) {
-    const scriptPath = buildFile(origin, entry.url);
+    const scriptPath = buildFile(entry.url);
     if (!scriptPath) continue;
     const { sourceMap, mapStatus } = await readSourceMap(scriptPath, entry.source);
     saved.push({
@@ -108,9 +102,9 @@ async function flushPage(page: Page): Promise<void> {
   await fs.writeFile(path.join(coverageDir!, name), JSON.stringify(saved));
 }
 
-function buildFile(origin: string, url: string): string | undefined {
+function buildFile(url: string): string | undefined {
   const build = builds.find((candidate) => url.startsWith(candidate.origin + candidate.prefix));
-  if (!build || !origin || !url.startsWith(origin)) return undefined;
+  if (!build) return undefined;
   const relative = decodeURIComponent(url.slice((build.origin + build.prefix).length).split("?")[0] ?? "");
   const file = path.resolve(build.root, relative);
   if (!file.startsWith(path.resolve(build.root) + path.sep)) return undefined;
@@ -146,12 +140,10 @@ async function readSourceMap(
   }
 }
 
-/** Flush every still-open page of a context (used before context close). */
 async function flushContextPages(context: BrowserContext): Promise<void> {
   for (const page of context.pages()) await flushPage(page);
 }
 
-/** Wrap page creation and close paths of one context. */
 export function trackContextCoverage(context: BrowserContext): void {
   if (!coverageEnabled() || wrappedPages.has(context)) return;
   wrappedPages.add(context);
@@ -168,11 +160,8 @@ export function trackContextCoverage(context: BrowserContext): void {
   };
 }
 
-/**
- * Track every page of a browser: collection starts at creation (before
- * navigation) and flushes before page, context, or browser close, so
- * explicit close and reload paths cannot lose data.
- */
+// Pages created through the wrapped newPage methods start collection before navigation. Page,
+// context and browser close wrappers flush them before teardown.
 export function trackBrowserCoverage(t: TestContext, browser: Browser): void {
   if (!coverageEnabled()) return;
   const originalNewPage = browser.newPage.bind(browser);
@@ -194,7 +183,7 @@ export function trackBrowserCoverage(t: TestContext, browser: Browser): void {
       try {
         await context.close();
       } catch {
-        // Already closed on the explicit path; data was flushed first.
+        // Data was flushed above; continue browser teardown if context cleanup fails.
       }
     }
     return originalClose();

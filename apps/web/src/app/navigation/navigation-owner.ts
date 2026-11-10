@@ -68,12 +68,8 @@ function removeFontFromSnapshot(
   return next;
 }
 
-// One cohesive navigation owner: location interpretation, canonicalization,
-// deferred snapshot writes and history changes live here with explicit
-// current page/preview/role/recovery notice plus open/patch intents.
-// Framework-free so the transition rules (pending-write cancellation,
-// latest-patch-wins, history while the catalog is pending) are directly
-// testable; the React adapter only binds browser events and subscribes.
+// Owns current route, deferred history navigation and debounced snapshot URL writes. useNavigation
+// binds browser events and subscriptions.
 export class NavigationOwner {
   private catalog: StoredFont[] | null = null;
   private pendingLocation: PendingLocation | null = null;
@@ -103,7 +99,7 @@ export class NavigationOwner {
     };
   };
 
-  // Cached identity while nothing changed, rebuilt only on emission.
+  // Keep snapshot identity stable between emissions for useSyncExternalStore.
   getSnapshot = (): NavigationSnapshot => this.cached;
 
   private emit(): void {
@@ -222,8 +218,6 @@ export class NavigationOwner {
     this.emit();
   }
 
-  // Meaningful preview-font-removal transition: drop the removed family and
-  // retarget to a remaining font, or to an empty selection when none remains.
   removePreviewFont(targetId: string): PreviewSnapshot | null {
     const current = this.state.snapshot;
     if (!current) return null;
@@ -243,8 +237,6 @@ export class NavigationOwner {
     if (this.state.page === null) {
       this.resolveBoot();
     } else if (this.pendingLocation && catalog !== null) {
-      // Still no catalog: the deferred request keeps waiting instead of
-      // resolving against an empty list.
       const pending = this.pendingLocation;
       this.pendingLocation = null;
       this.resolveHistoryLocation(pending);
@@ -399,8 +391,6 @@ export class NavigationOwner {
 
   private resolveBoot(): void {
     if (this.state.page !== null) return;
-    // Boot resolves chrome destinations immediately so non-font routes work
-    // while the library and renderer are still pending.
     const probe = resolveRoute(readRoutePath(), window.location.search, []);
     if (
       probe.page === "palettes" ||
@@ -428,6 +418,7 @@ export class NavigationOwner {
       this.emit();
     }
     if (this.catalog === null) return;
+    this.pendingLocation = null;
     if (this.state.page !== null) return;
     const list = this.catalog;
     const metas = buildMetas(list);

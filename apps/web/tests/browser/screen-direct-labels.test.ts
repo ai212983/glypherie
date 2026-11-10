@@ -1,11 +1,6 @@
 import { addScreenText } from "../helpers/screen-tools.ts";
-// Screen direct-font labels against the real WASM preview renderer: adding
-// from the Fonts group with no saved variants, live resize through the
-// renderer (font size and saved width, never CSS stretching), reload
-// persistence, bidirectional conversion with variant labels (handles and
-// grey outline follow the kind), the inert plus button, editing, duplicate
-// and undo. Nothing here measures browser glyphs; every coordinate comes
-// from the committed diagnostics.layout.editing stops.
+// Exercises direct-label editing and persistence against the real WASM renderer. Frame and handle
+// checks use DOM geometry.
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -67,8 +62,8 @@ async function addDirectLabel(
   text: string,
   fontName: string,
   waitForPaint = true,
-  // Native device spawn. The default (8, 8) edge spawn keeps boundary
-  // clipping coverage; tests exercising full handle geometry spawn interior.
+  // Spawn coordinates are native device pixels, defaulting to (8, 8). Use an interior position
+  // when a test needs every resize handle fully hittable.
   position?: { x: number; y: number },
 ): Promise<string> {
   const known = await containerIds(page);
@@ -118,9 +113,7 @@ async function inspectorValue(page: Parameters<typeof cardNames>[0], name: strin
   return page.locator(`[data-scene-inspector] [data-scene-inspector-${name}]`).inputValue();
 }
 
-// Rendered wrap width in CSS px: the label container's inline width reflects
-// the saved native wrap width through the presentation scale. Resize and
-// reload assertions read this public geometry instead of a width input.
+// Rendered saved wrap width in CSS pixels after presentation scaling.
 async function wrapWidthCss(page: Parameters<typeof cardNames>[0], id: string): Promise<string> {
   return page.evaluate((placementId) => {
     const container = document.querySelector(`[data-scene-label-container="${placementId}"]`);
@@ -129,9 +122,6 @@ async function wrapWidthCss(page: Parameters<typeof cardNames>[0], id: string): 
   }, id);
 }
 
-// Rendered stage-frame accessible name for the label: the Position panel no
-// longer repeats the text, so assertions read the frame with the placement
-// id instead of the removed inspector paragraph.
 async function frameLabel(page: Parameters<typeof cardNames>[0], id: string): Promise<string | null> {
   return page.locator(`[data-scene-label-frame="${id}"]`).getAttribute("aria-label");
 }
@@ -150,9 +140,7 @@ async function handleCenter(page: Parameters<typeof cardNames>[0], dir: string):
   }, dir);
 }
 
-// 3x3 elementFromPoint grid over one handle: every sub-point must resolve to
-// the handle itself. A handle clipped by an ancestor overflow context fails
-// here even though it still paints.
+// Sample actual handle hit testing; getBoundingClientRect alone does not reveal ancestor clipping.
 async function handleHitGrid(
   page: Parameters<typeof cardNames>[0],
   dir: string,
@@ -198,9 +186,8 @@ async function frameRect(
   }, id);
 }
 
-// The committed ink frame after the asynchronous repaint/release settles:
-// polls until two consecutive reads agree, so the measurement reflects the
-// real renderer geometry rather than a mid-repaint transient.
+// Wait for nonempty frame bounds to match across two animation-frame polls. Geometry stability is
+// not a persistence acknowledgment.
 async function settledFrameRect(
   page: Parameters<typeof cardNames>[0],
   id: string,
@@ -210,9 +197,6 @@ async function settledFrameRect(
       const frame = document.querySelector(`[data-scene-label-frame="${placementId}"]`);
       if (!(frame instanceof HTMLElement)) return false;
       const box = frame.getBoundingClientRect();
-      // A release clears the gesture size before the committed repaint lands,
-      // so the frame is briefly zero-sized; only real renderer geometry
-      // counts as settled.
       if (box.width <= 0 || box.height <= 0) return false;
       const current = [box.x, box.y, box.width, box.height].map((value) => value.toFixed(2)).join(",");
       const store = window as unknown as { __settledFrameRect?: string };
@@ -226,8 +210,7 @@ async function settledFrameRect(
   return frameRect(page, id);
 }
 
-// CSS px per native device px, recovered from the container's inline style
-// against the native inspector value. Fresh labels spawn at (8, 8).
+// Capture before the gesture: its resize save can complete before the pointer helper returns.
 async function workspaceRevision(page: Parameters<typeof cardNames>[0]): Promise<string> {
   return (await page.locator("[data-screen-workspace]").getAttribute("data-screen-revision")) ?? "";
 }
@@ -276,6 +259,7 @@ async function anchorNative(
   );
 }
 
+// CSS pixels per native pixel, inferred from rendered left / saved native x; requires nonzero x.
 async function domCssScale(page: Parameters<typeof cardNames>[0], id: string): Promise<number> {
   const left = await page.evaluate((placementId) => {
     const container = document.querySelector(`[data-scene-label-container="${placementId}"]`);
@@ -304,8 +288,6 @@ async function deleteLabel(page: Parameters<typeof cardNames>[0], id: string): P
   );
 }
 
-// Drags the resize handle nearest the control box's bottom-right corner by a
-// CSS pixel delta, the corner Moveable uses for southeast resizing.
 async function dragCornerHandle(page: Parameters<typeof cardNames>[0], dx: number, dy: number): Promise<void> {
   const start = await page
     .locator(".moveable-control-box .moveable-control.moveable-direction")
@@ -351,15 +333,12 @@ test(
     await openScreen(page, url);
     await page.locator("[data-screen-workspace]").waitFor({ timeout: 20000 });
 
-    // No saved variants exist on this fresh profile, yet the Fonts group
-    // offers every library font.
     const id = await addDirectLabel(page, "Direct", "Literata");
     await selectLabel(page, id);
     assert.equal(await typographyValue(page, "size"), "16");
     const widthBefore = Number.parseFloat(await wrapWidthCss(page, id));
     assert.ok(widthBefore > 0);
 
-    // Direct labels expose resize handles with no grey override.
     await page.waitForFunction(
       () =>
         [...document.querySelectorAll(".moveable-control-box .moveable-control.moveable-direction")].some(
@@ -371,14 +350,10 @@ test(
     assert.ok((await visibleHandleCount(page)) > 0, "direct labels show resize handles");
     assert.equal(await greyOutlineCount(page), 0);
 
-    // The plus button is inert: clicking changes nothing and raises nothing.
     await page.locator("[data-scene-typography-plus]").click();
     await page.locator(`[data-scene-inspector="${id}"]`).waitFor();
     assert.equal(await typographyValue(page, "size"), "16");
 
-    // A corner drag grows the wrap width and the renderer's own font size;
-    // the committed paint follows through the real WASM path. The revision
-    // baseline predates the gesture (see the corner test).
     const revisionBeforeResize = await workspaceRevision(page);
     await dragCornerHandle(page, 72, 48);
     await page.waitForFunction(
@@ -392,12 +367,9 @@ test(
     const widthAfter = Number.parseFloat(await wrapWidthCss(page, id));
     assert.ok(sizeAfter > 16, `font size grows with resize, got ${sizeAfter}`);
     assert.ok(widthAfter > widthBefore, `saved width grows with resize, got ${widthAfter}`);
-    // The save lands on the repaint; wait for the revision before reloading
-    // so the reload observes the committed resize rather than racing it.
     await waitForRevision(page, revisionBeforeResize);
     await settleFrames(page);
 
-    // Reload keeps the resized size, width and text.
     await page.reload({ waitUntil: "domcontentloaded" });
     await screenReady(page);
     await page.locator("[data-screen-workspace]").waitFor();
@@ -407,7 +379,6 @@ test(
     assert.equal(Number.parseFloat(await wrapWidthCss(page, id)), widthAfter);
     assert.equal(await frameLabel(page, id), "Label Direct. Press Enter to edit.");
 
-    // In-place editing still commits through the native caret path.
     await page.locator(`[data-scene-label-frame="${id}"]`).press("Enter");
     await page.locator(`[data-scene-edit-text="${id}"]`).waitFor();
     await page.keyboard.type("!");
@@ -421,10 +392,6 @@ test(
   },
 );
 
-// Direct weight override on a variable font: the typography panel edits the
-// wght axis (never the wrap width), the WASM canvas repaints through the
-// real renderer, size and wrap geometry stay put, the second label keeps
-// the font default, and undo/redo plus reload preserve the override.
 test("direct label weight edits repaint through the renderer and persist", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
   const url = await servePrefix(t, output);
@@ -457,7 +424,6 @@ test("direct label weight edits repaint through the renderer and persist", { ski
   const canvas = page.locator(`[data-scene-label="${id}"] canvas`);
   const rasterBefore = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
 
-  // A heavier override repaints without touching size or wrap geometry.
   const revisionBefore = await workspaceRevision(page);
   await weightInput.fill(String(max));
   await weightInput.press("Enter");
@@ -477,8 +443,7 @@ test("direct label weight edits repaint through the renderer and persist", { ski
     { timeout: 20000 },
   );
 
-  // Undo drops the override, redo restores it; selection clears across the
-  // snapshot restore, so each read re-selects the label.
+  // Snapshot restores clear selection, so reselect before reading the inspector.
   const revisionAfterWeight = await workspaceRevision(page);
   await page.locator("[data-screen-undo]").click();
   await waitForRevision(page, revisionAfterWeight);
@@ -490,12 +455,10 @@ test("direct label weight edits repaint through the renderer and persist", { ski
   await page.locator(`[data-scene-label-frame="${id}"]`).click();
   assert.equal(await typographyValue(page, "weight"), String(max));
 
-  // A second label on the same font keeps the default independently.
   const other = await addDirectLabel(page, "Plain", "Roboto Flex");
   await selectLabel(page, other);
   assert.equal(await typographyValue(page, "weight"), weightDefault);
 
-  // Reload persists the override on the first label only.
   await page.reload({ waitUntil: "domcontentloaded" });
   await screenReady(page);
   await page.locator("[data-screen-workspace]").waitFor();
@@ -505,9 +468,7 @@ test("direct label weight edits repaint through the renderer and persist", { ski
   assert.equal(await typographyValue(page, "size"), sizeBefore);
   assert.equal(await wrapWidthCss(page, id), wrapBefore);
 
-  // A variant-backed label shows its saved weight read-only, never editable.
-  // ensureStyle reads the library cards, so navigate to the fonts page
-  // first: the reload above leaves the workspace on the Screen page.
+  // ensureStyle needs library cards, so open Fonts before calling it.
   await page.goto(`${url}fonts/`, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(() => document.querySelectorAll("[data-font-card]").length > 0);
   await ensureStyle(page, url);
@@ -555,7 +516,6 @@ test("labels convert both ways with handles and outline following the kind", { s
   await waitPainted(page, id);
   await selectLabel(page, id);
 
-  // Variant-backed labels drag with a grey outline and no resize handles.
   await page.locator(".moveable-control-box").first().waitFor();
   assert.equal(await visibleHandleCount(page), 0, "variant labels show no resize handles");
   assert.equal(await greyOutlineCount(page), 1, "variant labels use the grey outline");
@@ -566,7 +526,6 @@ test("labels convert both ways with handles and outline following the kind", { s
     .evaluate((canvas) => (canvas as HTMLCanvasElement).toDataURL());
   assert.match(weight, /^\d+$/, `weight shows the saved variant value, got ${weight}`);
 
-  // Switching to a font keeps the painted size and wrap and enables handles.
   await selectOption(page, "[data-scene-inspector-style]", "Literata");
   await page.waitForFunction(
     () =>
@@ -603,9 +562,8 @@ test("labels convert both ways with handles and outline following the kind", { s
     savedSize,
   );
 
-  // Switching back restores the saved variant values, grey outline and no handles.
-  // The style re-resolves asynchronously, so the frame transiently unmounts;
-  // wait for the grey box itself rather than any handle absence.
+  // Style resolution can temporarily unmount the frame. Wait for the final variant control box;
+  // missing handles also matches the transient state.
   await selectOption(page, "[data-scene-inspector-style]", styleOption);
   await page.evaluate(() => {
     const gate = (
@@ -633,7 +591,6 @@ test("labels convert both ways with handles and outline following the kind", { s
   assert.equal(await typographyValue(page, "weight"), weight);
   assert.equal(await typographyValue(page, "size"), savedSize);
 
-  // Reload keeps the converted-back variant label.
   await page.reload({ waitUntil: "domcontentloaded" });
   await screenReady(page);
   await page.locator("[data-screen-workspace]").waitFor();
@@ -656,16 +613,12 @@ test("identical direct labels survive delete, undo and reload", { skip: !browser
   await openScreen(page, url);
   await page.locator("[data-screen-workspace]").waitFor({ timeout: 20000 });
 
-  // The panel no longer offers a duplicate icon, so the pair is two normal
-  // adds of the same text; undo/redo and reload cover the same history path
-  // as the removed duplication setup did.
   const id = await addDirectLabel(page, "Dupe", "Literata");
   const copy = await addDirectLabel(page, "Dupe", "Literata");
   assert.notEqual(copy, id);
   assert.equal(await page.locator("[data-scene-label-container]").count(), 2);
 
-  // Undo drops the duplicate; redo restores it with its size and width under
-  // a fresh placement id (snapshot restores never reuse expired ids).
+  // Snapshot restores assign fresh placement ids; locate the restored duplicate again.
   await page.locator("[data-screen-undo]").click();
   await page.waitForFunction(() => document.querySelectorAll("[data-scene-label-container]").length === 1);
   await page.locator("[data-screen-redo]").click();
@@ -676,7 +629,6 @@ test("identical direct labels survive delete, undo and reload", { skip: !browser
   await page.locator(`[data-scene-label-frame="${copy2}"]`).click();
   assert.equal(await typographyValue(page, "size"), "16");
 
-  // Text edits commit and survive reload on the duplicate.
   await page.locator(`[data-scene-label-frame="${copy2}"]`).press("Enter");
   await page.locator(`[data-scene-edit-text="${copy2}"]`).waitFor();
   await page.keyboard.type("2");
@@ -695,10 +647,6 @@ test("identical direct labels survive delete, undo and reload", { skip: !browser
   assert.deepEqual(errors, []);
 });
 
-// Each corner handle resizes through the renderer with the opposite ink
-// corner anchored, at the default edge spawn, a non-unit cssScale (Xteink X4,
-// 220 PPI, size 100% -> 96/220 CSS px per native px), and across reload.
-// Outward drag per corner; the fixed corner is the one opposite the drag.
 test("each corner resizes with the opposite ink corner anchored", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
   const url = await servePrefix(t, output);
@@ -711,11 +659,8 @@ test("each corner resizes with the opposite ink corner anchored", { skip: !brows
   await openScreen(page, url);
   await page.locator("[data-screen-workspace]").waitFor({ timeout: 20000 });
 
-  // Large outward drags on distinct texts: span ~2.5-3 exercises differing
-  // renderer ink offsets per text and size, which a stretched-rectangle
-  // anchor cannot survive. The save below corrects against the repaint's
-  // measured frame bounds, so the opposite corner must hold within native
-  // integer rounding.
+  // Distinct texts and resize spans exercise changes in renderer ink bearings; a CSS-stretched
+  // rectangle must not satisfy the anchor check.
   const corners = [
     { dir: "nw", dx: -48, dy: -32, fixed: "se" },
     { dir: "ne", dx: 48, dy: -32, fixed: "sw" },
@@ -739,17 +684,11 @@ test("each corner resizes with the opposite ink corner anchored", { skip: !brows
     const id = await addDirectLabel(page, `Corner${corner.dir}`, "Literata", true, { x: 160, y: 200 });
     await selectLabel(page, id);
 
-    // The default scene renders at a non-unit scale; pin it from the DOM so
-    // the resize math below is exercised at 96/220 rather than 1.
     if (index === 0) {
       scale = await domCssScale(page, id);
       assert.ok(Math.abs(scale - 96 / 220) < 1e-6, `cssScale is 96/220, got ${scale}`);
     }
 
-    // Corner handles resolve through real hit testing: the label spawns
-    // interior so deliberate aperture clipping (labels and handles clip at
-    // the device canvas edge) never covers the exercised handle. Boundary
-    // clipping itself stays covered by the edge-spawn tests.
     const grid = await handleHitGrid(page, corner.dir);
     assert.ok(grid.center, `${corner.dir} handle center resolves to the handle`);
     assert.equal(grid.hits, 9, `${corner.dir} handle is fully hittable, got ${grid.hits}/9`);
@@ -760,8 +699,6 @@ test("each corner resizes with the opposite ink corner anchored", { skip: !brows
     const xBefore = Number(await inspectorValue(page, "x"));
     const yBefore = Number(await inspectorValue(page, "y"));
     const anchorBefore = await anchorNative(page, id, scale, xBefore, yBefore, corner.fixed);
-    // The revision baseline predates the gesture: the corrected save lands
-    // within tens of milliseconds of the release.
     const revisionBefore = await workspaceRevision(page);
 
     await dragHandle(page, corner.dir, corner.dx, corner.dy);
@@ -772,8 +709,6 @@ test("each corner resizes with the opposite ink corner anchored", { skip: !brows
       sizeBefore,
       { timeout: 20000 },
     );
-    // The save lands on the repaint; the revision advance proves the commit
-    // fired before the reads below.
     await waitForRevision(page, revisionBefore);
     const sizeAfter = Number(await typographyValue(page, "size"));
     const widthAfter = Number.parseFloat(await wrapWidthCss(page, id));
@@ -792,9 +727,6 @@ test("each corner resizes with the opposite ink corner anchored", { skip: !brows
     // product invariant, not the origin.
     assertAnchored(anchorBefore, anchorAfter, `${corner.dir} drag`);
 
-    // Reload persists the resized size, width and position, and the anchor.
-    // Selection goes through the layers panel: large outward drags can
-    // leave the label hanging off-paper, where its frame is not clickable.
     await page.reload({ waitUntil: "domcontentloaded" });
     await screenReady(page);
     await page.locator("[data-screen-workspace]").waitFor();
@@ -817,8 +749,6 @@ test("each corner resizes with the opposite ink corner anchored", { skip: !brows
   assert.deepEqual(errors, []);
 });
 
-// Pointer motion along a single axis resizes: a pure-vertical drag on a
-// corner handle grows the renderer font size instead of snapping back.
 test("paint failures expose the full error and keep label creation usable", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
   const url = await servePrefix(t, output);
@@ -872,6 +802,81 @@ test("paint failures expose the full error and keep label creation usable", { sk
   assert.deepEqual(new Set(await containerIds(page)), new Set([id, second]));
 });
 
+test("resizing another label commits a release still waiting for paint", { skip: !browserAvailable }, async (t) => {
+  const output = await buildApp(t);
+  const url = await servePrefix(t, output);
+  const browser = await launch(t);
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  t.after(() => page.close());
+  await page.addInitScript(() => {
+    const holder = window as unknown as { holdRenders: boolean; resumeRenders: () => void };
+    const queued: Array<() => void> = [];
+    const post = Worker.prototype.postMessage;
+    holder.holdRenders = false;
+    holder.resumeRenders = () => {
+      holder.holdRenders = false;
+      for (const send of queued.splice(0)) send();
+    };
+    Worker.prototype.postMessage = function (message, options): void {
+      if (holder.holdRenders && message?.kind === "render") {
+        queued.push(() => Reflect.apply(post, this, [message, options]));
+      } else Reflect.apply(post, this, [message, options]);
+    };
+  });
+  await bootLibrary(page, url);
+  await openScreen(page, url);
+  await page.locator("[data-screen-workspace]").waitFor();
+  const first = await addDirectLabel(page, "First", "Literata", true, { x: 100, y: 120 });
+  const second = await addDirectLabel(page, "Second", "Literata", true, { x: 100, y: 260 });
+  await selectLabel(page, first);
+  const sizeBefore = Number(await typographyValue(page, "size"));
+  const revisionBefore = await workspaceRevision(page);
+  await page.evaluate(() => {
+    (window as unknown as { holdRenders: boolean }).holdRenders = true;
+  });
+  await dragHandle(page, "se", 28, 12);
+  const firstSize = Number(await typographyValue(page, "size"));
+  assert.ok(firstSize > sizeBefore);
+  assert.equal(await workspaceRevision(page), revisionBefore, "A still waits for its repaint");
+  await page.locator(`[data-scene-layer-handle="${second}"]`).click();
+  await page.locator(`[data-scene-inspector="${second}"]`).waitFor();
+  const secondSizeBefore = Number(await typographyValue(page, "size"));
+  await settleFrames(page);
+  const start = await handleCenter(page, "se");
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  // The first save must happen at B's gesture start, before any repaint or
+  // A's eight-second fallback can release it.
+  await page.waitForFunction(
+    (before) => document.querySelector("[data-screen-workspace]")?.getAttribute("data-screen-revision") !== before,
+    revisionBefore,
+    { timeout: 2000 },
+  );
+  await page.mouse.move(start.x + 36, start.y + 16, { steps: 8 });
+  await page.mouse.up();
+  const secondSize = Number(await typographyValue(page, "size"));
+  assert.ok(secondSize > secondSizeBefore);
+  const revisionAfterFirst = Number(revisionBefore) + 1;
+  await page.evaluate(() => (window as unknown as { resumeRenders: () => void }).resumeRenders());
+  await page.waitForFunction(
+    (before) =>
+      Number(document.querySelector("[data-screen-workspace]")?.getAttribute("data-screen-revision")) > before,
+    revisionAfterFirst,
+  );
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await screenReady(page);
+  await page.locator("[data-screen-workspace]").waitFor();
+  for (const [id, size] of [
+    [first, firstSize],
+    [second, secondSize],
+  ] as const) {
+    await waitPainted(page, id);
+    await page.locator(`[data-scene-layer-handle="${id}"]`).click();
+    await page.locator(`[data-scene-inspector="${id}"]`).waitFor();
+    assert.equal(Number(await typographyValue(page, "size")), size, `${id} resize survives reload`);
+  }
+});
+
 test("vertical-only drags resize through the renderer", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
   const url = await servePrefix(t, output);
@@ -888,9 +893,6 @@ test("vertical-only drags resize through the renderer", { skip: !browserAvailabl
   await selectLabel(page, id);
   const sizeBefore = Number(await typographyValue(page, "size"));
   const widthBefore = Number.parseFloat(await wrapWidthCss(page, id));
-  // The baseline predates the gesture: the corrected save lands within tens
-  // of milliseconds of the release, so a post-drag baseline would already
-  // contain it.
   const revisionBeforeResize = await workspaceRevision(page);
 
   await dragHandle(page, "se", 0, 72);
@@ -917,8 +919,6 @@ test("vertical-only drags resize through the renderer", { skip: !browserAvailabl
   assert.deepEqual(errors, []);
 });
 
-// Shrinking clamps at the domain minimum instead of rejecting: an inward drag
-// far past the label commits size/width >= 1 and keeps a painted label.
 test("shrinking clamps at the minimum and stays painted", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);
   const url = await servePrefix(t, output);
@@ -934,7 +934,6 @@ test("shrinking clamps at the minimum and stays painted", { skip: !browserAvaila
   const id = await addDirectLabel(page, "Shrink", "Literata");
   await selectLabel(page, id);
   const sizeBefore = Number(await typographyValue(page, "size"));
-  // The baseline predates the gesture (see the vertical test).
   const revisionBeforeResize = await workspaceRevision(page);
 
   await dragHandle(page, "se", -160, -160);

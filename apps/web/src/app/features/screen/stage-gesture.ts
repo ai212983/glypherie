@@ -1,9 +1,5 @@
-// Cohesive stage gesture core: native-pixel drag/resize math, anchored
-// resize correction and pending-preview reconciliation for the scene stage.
-// Framework-free and DOM-free: the SceneStage adapter owns Moveable binding,
-// refs, rendering and the timed exactly-once handoff, and calls into this
-// core for every calculation and outcome decision. Rendering never duplicates
-// release state: previews clear only against the matching saved render.
+// Native-pixel gesture calculations and pending-release state. SceneStage owns DOM updates, timers
+// and persistence.
 export interface InkRect {
   x: number;
   y: number;
@@ -32,9 +28,8 @@ export function dragNativeDelta(translate: readonly [number, number], cssScale: 
   return { dx: Math.round(translate[0] / scale), dy: Math.round(translate[1] / scale) };
 }
 
-// Fallback release position from the cumulative drag translation when no
-// measured repaint is available: the gesture-start position plus the rounded
-// native drag.
+// Fallback native-pixel position from the gesture-start origin and CSS-pixel drag, before measured
+// renderer geometry can anchor the release.
 export function releasedPosition(
   start: { x: number; y: number },
   drag: readonly [number, number],
@@ -103,8 +98,7 @@ export function movePreviewClears(
   return canonical.x === pending.x && canonical.y === pending.y;
 }
 
-// The pending resize clears against the label's own size, wrap width and
-// anchored position together.
+// Clear when saved size, width and position match, or when the label is absent or replaced.
 export function resizePreviewClears(
   canonical: { id: string; x: number; y: number; fontSize: number | null; width: number | null } | null | undefined,
   pending: ResizePreview,
@@ -148,10 +142,8 @@ export interface AwaitedCommit {
   y: number;
 }
 
-// A release whose save waits for the repaint of the released size. The
-// commit fires exactly once: the first fulfillment wins, so a late paint, a
-// paint failure and the bounded wait cannot write twice. The adapter owns the
-// timer and performs the commit; this core decides position and outcome.
+// Holds one pending release. fulfill and flush consume it at most once; the adapter matches paint
+// inputs and owns timeout and persistence.
 export class AwaitedResizeCommit {
   private armed: AwaitedRelease | null = null;
 
@@ -159,6 +151,8 @@ export class AwaitedResizeCommit {
     return this.armed?.id ?? null;
   }
 
+  // Before replacing a pending release, flush or cancel it and clear its adapter timer; arm does
+  // neither.
   arm(release: AwaitedRelease): void {
     this.armed = release;
   }
@@ -167,17 +161,12 @@ export class AwaitedResizeCommit {
     this.armed = null;
   }
 
-  // The currently awaited release, if any, so the adapter can match paints
-  // and timeouts against the exact inputs the release waits for.
   peek(): AwaitedRelease | null {
     return this.armed;
   }
 
-  // The repaint of the released inputs landed: correct the position against
-  // its measured bounds. An inkless paint for the awaited inputs commits the
-  // drag translation, since no later repaint of the same inputs can measure
-  // more. The caller only invokes this when the paint inputs match the
-  // awaited release.
+  // Consume the pending release using matching measured ink, or its drag fallback when ink is null.
+  // The caller must ensure the measurement belongs to the released paint inputs.
   fulfill(ink: InkRect | null): AwaitedCommit | null {
     const awaiting = this.armed;
     if (!awaiting) return null;
@@ -193,9 +182,8 @@ export class AwaitedResizeCommit {
     return { release: awaiting, x: corrected.x, y: corrected.y };
   }
 
-  // Best-effort flush when a new gesture starts on the same label, a paint
-  // fails, the stage unmounts, or the bounded wait expires: commit corrected
-  // against measured bounds when they already match, else the translation.
+  // Consume the pending release using recorded ink only when text, size and width match; otherwise
+  // return its drag-translation fallback.
   flush(recorded: { text: string; sizePx: number; width: number; ink: InkRect | null } | null): AwaitedCommit | null {
     const awaiting = this.armed;
     if (!awaiting) return null;

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-test("owner reads await an earlier async write and flush without starving timers", () => {
+test("owner reads await durable writes and recover from failed flushes without starving timers", () => {
   const worker = new URL("../../src/app/domain/worker.ts", import.meta.url).href;
   const script = `
     import assert from 'node:assert/strict';
@@ -12,11 +12,15 @@ test("owner reads await an earlier async write and flush without starving timers
     const state = { value: 'original', durable: false };
     let activeFlushes = 0;
     let maxFlushes = 0;
+    let reads = 0;
     globalThis.fixture = {
       failNext: false,
+      failFlush: false,
+      commits: [],
       backend: { flush: async () => {
         maxFlushes = Math.max(maxFlushes, ++activeFlushes);
         await pause(10);
+        if (fixture.failFlush) { activeFlushes--; throw new Error('quota failure'); }
         state.durable = true;
         activeFlushes--;
       } },
@@ -26,7 +30,7 @@ test("owner reads await an earlier async write and flush without starving timers
         state.value = 'edited'; state.durable = false;
         return state.value;
       },
-      read: async () => ({ ...state })
+      read: async () => { reads++; return { ...state }; }
     };
     const sources = {
       './backend.ts': 'export const DOMAIN_DATA_DIR = "memory://"; export const createDomainBackend = async () => globalThis.fixture.backend;',
@@ -41,7 +45,7 @@ test("owner reads await an earlier async write and flush without starving timers
     Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {
       locks: { request: (_name, _options, callback) => { void callback(); return new Promise(() => {}); } }
     }});
-    globalThis.BroadcastChannel = undefined;
+    globalThis.BroadcastChannel = class { postMessage(message) { fixture.commits.push(message); } };
     const pending = new Map();
     globalThis.self = { postMessage: response => pending.get(response.id)(response) };
     await import(worker);
@@ -62,6 +66,28 @@ test("owner reads await an earlier async write and flush without starving timers
     assert.equal(parallel[0].ok, true);
     assert.equal(parallel[1].ok, true);
     assert.deepEqual(parallel[2].result, { value: 'edited', durable: true });
+    fixture.failFlush = true;
+    const readsBeforeFailure = reads;
+    const commitsBeforeFailure = fixture.commits.length;
+    const [flushFailed, blockedRead] = await Promise.all([call(9, 'updateVariant'), call(10, 'getVariant')]);
+    assert.equal(flushFailed.ok, false);
+    assert.equal(blockedRead.ok, false, 'a failed flush cannot expose the in-memory edit');
+    assert.equal(reads, readsBeforeFailure, 'the failed durability gate never invokes a read');
+    assert.equal((await call(11, 'getVariant')).ok, false, 'later reads remain gated while storage fails');
+    assert.equal(fixture.commits.length, commitsBeforeFailure);
+    fixture.failFlush = false;
+    const [recovered, concurrentRead] = await Promise.all([call(12, 'getVariant'), call(13, 'getVariant')]);
+    assert.equal(recovered.ok, true, 'retrying a read can recover once persistence succeeds');
+    assert.deepEqual(recovered.result, { value: 'edited', durable: true });
+    assert.equal(recovered.mutated, false);
+    assert.deepEqual(concurrentRead.result, { value: 'edited', durable: true });
+    assert.equal(fixture.commits.length, commitsBeforeFailure + 1, 'recovered persistence announces the edit');
+    fixture.failFlush = true;
+    assert.equal((await call(14, 'updateVariant')).ok, false);
+    fixture.failFlush = false;
+    const [recoveredWrite, afterRecovery] = await Promise.all([call(15, 'updateVariant'), call(16, 'getVariant')]);
+    assert.equal(recoveredWrite.ok, true, 'a later mutation can also recover persistence');
+    assert.deepEqual(afterRecovery.result, { value: 'edited', durable: true });
     assert.equal(maxFlushes, 1);
   `;
   // A blocked worker cannot run its own timeout, so bound it from outside.
