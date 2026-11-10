@@ -43,3 +43,5 @@ Paths below are relative to the repository root.
   rendering for these checks.
 - Unsaved preview snapshots encode optional diagonal fitting as `diagonals=1`; omission means disabled. Saved variants
   store the same preference in their settings. Rendering and export forward it through the shared pipeline contract.
+- `npm run coverage` writes the merged main-thread LCOV report to `apps/web/coverage/lcov.info` with repository-relative
+  `SF` paths for original `src/` files; external quality tools read it with `--root apps/web`.

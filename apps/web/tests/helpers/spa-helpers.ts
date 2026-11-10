@@ -7,6 +7,12 @@ import path from "node:path";
 import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "playwright-core";
+import {
+  flushAllTrackedPages,
+  registerCoverageBuild,
+  trackBrowserCoverage,
+  trackContextCoverage,
+} from "./browser-coverage.ts";
 
 export const webRoot: string = fileURLToPath(new URL("../..", import.meta.url));
 export const repoRoot: string = path.resolve(webRoot, "..", "..");
@@ -16,7 +22,13 @@ export const sha256 = (bytes: Uint8Array | string): string => createHash("sha256
 
 export async function buildApp(t: TestContext, base = "/preview/", siteUrl = ""): Promise<string> {
   const output = await fs.mkdtemp(path.join(os.tmpdir(), "font-spa-"));
-  t.after(() => fs.rm(output, { recursive: true, force: true }));
+  t.after(async () => {
+    // After-hooks run in registration order and this one is first, while the
+    // served maps still exist: flush open pages before deleting the build.
+    // No-op unless the coverage producer enabled collection.
+    await flushAllTrackedPages();
+    await fs.rm(output, { recursive: true, force: true });
+  });
   execFileSync("npm", ["run", "build", "--", "--outDir", output], {
     cwd: webRoot,
     stdio: "pipe",
@@ -66,6 +78,7 @@ export async function servePrefix(t: TestContext, root: string, prefix = "/previ
   );
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Test server did not bind a port.");
+  registerCoverageBuild(`http://127.0.0.1:${address.port}`, root, prefix);
   return `http://127.0.0.1:${address.port}${prefix}`;
 }
 
@@ -81,6 +94,9 @@ export const browserAvailable: boolean = await fs.access(browserPath ?? chromium
 export async function launch(t: TestContext): Promise<Browser> {
   const browser = await chromium.launch({ executablePath: browserPath, headless: true });
   t.after(() => browser.close());
+  // No-op unless the coverage producer sets GLYPHERIE_COVERAGE_DIR; normal
+  // tests keep their exact close behavior.
+  trackBrowserCoverage(t, browser);
   return browser;
 }
 
@@ -126,6 +142,8 @@ export async function persistentProfile(
         headless: true,
         viewport,
       });
+      // No-op unless the coverage producer sets GLYPHERIE_COVERAGE_DIR.
+      trackContextCoverage(context);
       let closed = false;
       const close = async (): Promise<void> => {
         if (closed) return;

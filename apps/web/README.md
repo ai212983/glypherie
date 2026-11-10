@@ -34,9 +34,35 @@ npm run preview         # Serve out/web/ on port 8904
 npm run typecheck       # Strict tsc over the app, scripts, and tests
 npm run lint            # Oxlint over the app, scripts, and tests
 npm test                # Node --test over tests/unit, tests/browser, tests/build
+npm run coverage        # Merged LCOV at coverage/lcov.info (see below)
+npm run coverage:check  # Validate the existing report in place
 npm run storybook       # Component explorer (default port 6006; --port overrides)
 npm run build-storybook # Static component explorer into out/storybook/
 ```
+
+Coverage (`npm run coverage`) measures the default test selection — all of
+`tests/unit` plus `tests/browser` (`tests/build` is excluded: it exercises
+build tooling, not app runtime) — through two established lanes and merges
+them into `coverage/lcov.info` (git-ignored). Crapper reads that report with
+`--root apps/web`, automatically invoking this script when it produces
+TypeScript coverage. Node unit tests run under c8; browser tests drive the
+real Chromium main page with `page.coverage` from creation (before
+navigation) to close, and each built script resolves through its external
+sourcemap back to the original `src/` file. Pass explicit test files to bound
+a run (for example `npm run coverage -- tests/unit/screen-device-resolution.test.ts
+tests/browser/screen-pixel-grid.test.ts`); the report records its selection,
+so a focused report never masquerades as branch-wide coverage. Any failing or
+skipped selected test, missing browser, served script with an unreadable
+sourcemap, or collection failure fails the run with no report published; the
+previous report is removed first, so stale output cannot pass as fresh.
+Scripts without a sourcemap comment (document shells, vendor runtimes
+without maps) are excluded, never guessed.
+
+Measured scope is the main thread only: the SharedWorker domain owner, the
+renderer worker, WASM binaries, and bundler assets are excluded, and files
+the selection never loads are absent from the report (unmeasured, not zero).
+Coverage builds set `GLYPHERIE_COVERAGE=1` for external sourcemaps; normal
+`npm test` and `npm run build` never set it, so their bytes are unchanged.
 
 Build with `npm run build` before running `npm run preview`.
 
