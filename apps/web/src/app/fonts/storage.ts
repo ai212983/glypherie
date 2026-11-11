@@ -159,7 +159,7 @@ function validateFontMetadata(metadata: FontMetadata): void {
 
 export async function listFonts(): Promise<StoredFont[]> {
   try {
-    return (await callDomain("listFonts", [])) as StoredFont[];
+    return await callDomain("listFonts", []);
   } catch (error) {
     throw mapStorageError(error);
   }
@@ -176,7 +176,7 @@ export async function updateFontMetadata(id: string, metadata: FontMetadata): Pr
 
 export async function getFont(id: string): Promise<StoredFont | undefined> {
   try {
-    return (await callDomain("getFont", [id])) as StoredFont | undefined;
+    return await callDomain("getFont", [id]);
   } catch (error) {
     throw mapStorageError(error);
   }
@@ -197,7 +197,7 @@ export async function saveFont(input: SaveFontInput): Promise<StoredFont> {
   }
   validateFontMetadata(input.metadata);
   try {
-    return (await callDomain("saveFont", [
+    return await callDomain("saveFont", [
       {
         bytes: input.bytes,
         fileName: input.fileName,
@@ -205,7 +205,7 @@ export async function saveFont(input: SaveFontInput): Promise<StoredFont> {
         metadata: input.metadata,
         source: input.source,
       },
-    ])) as StoredFont;
+    ]);
   } catch (error) {
     throw mapStorageError(error);
   }

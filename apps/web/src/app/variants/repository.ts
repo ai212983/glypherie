@@ -51,7 +51,7 @@ function mapVariantError(error: unknown): VariantStorageError {
 
 export async function createVariant(fontId: string, input: VariantInput = {}): Promise<FontVariant> {
   try {
-    return (await callDomain("createVariant", [fontId, input])) as FontVariant;
+    return await callDomain("createVariant", [fontId, input]);
   } catch (error) {
     throw mapVariantError(error);
   }
@@ -59,7 +59,7 @@ export async function createVariant(fontId: string, input: VariantInput = {}): P
 
 export async function getVariant(id: string): Promise<FontVariant | undefined> {
   try {
-    return (await callDomain("getVariant", [id])) as FontVariant | undefined;
+    return await callDomain("getVariant", [id]);
   } catch (error) {
     throw mapVariantError(error);
   }
@@ -67,7 +67,7 @@ export async function getVariant(id: string): Promise<FontVariant | undefined> {
 
 export async function listVariants(fontId?: string): Promise<FontVariant[]> {
   try {
-    return (await callDomain("listVariants", [fontId])) as FontVariant[];
+    return await callDomain("listVariants", [fontId]);
   } catch (error) {
     throw mapVariantError(error);
   }
@@ -79,7 +79,7 @@ export async function updateVariant(
   expectedRevision: number,
 ): Promise<FontVariant> {
   try {
-    return (await callDomain("updateVariant", [id, changes, expectedRevision])) as FontVariant;
+    return await callDomain("updateVariant", [id, changes, expectedRevision]);
   } catch (error) {
     throw mapVariantError(error);
   }

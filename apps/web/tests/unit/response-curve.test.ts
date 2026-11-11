@@ -8,7 +8,7 @@ import {
   pinCurveLevel,
   resizeCurve,
   unpinCurveLevel,
-} from "../../src/app/features/grayscale/response-curve.ts";
+} from "../../src/app/domain/output-profiles/curve.ts";
 
 test("every depth starts with only paper and ink handles and an exact linear ramp", () => {
   for (const count of [2, 4, 8, 16]) {

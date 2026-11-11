@@ -24,7 +24,7 @@ import {
 } from "./backend.ts";
 import { DomainError } from "./commands.ts";
 import { IMPORT_MARKER_KEY } from "./storage-keys.ts";
-import { linearCurve } from "../features/grayscale/response-curve.ts";
+import { linearCurve } from "./output-profiles/curve.ts";
 import { domainGraph } from "./graph.ts";
 import type { LegacySnapshot } from "../legacy-database.ts";
 

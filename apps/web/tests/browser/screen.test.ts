@@ -4,6 +4,7 @@
 // shell/aperture geometry, and direct-load/reload/history navigation.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { addScreenText } from "../helpers/screen-tools.ts";
 import {
   bootLibrary,
   browserAvailable,
@@ -48,6 +49,105 @@ async function shellGeometry(page: Parameters<typeof hashPath>[0], id: string) {
     };
   }, id);
 }
+
+test(
+  "the central device header rotates the body and upright canvas, with history and persistence",
+  { skip: !browserAvailable },
+  async (t) => {
+    const output = await buildApp(t);
+    const url = await servePrefix(t, output);
+    const browser = await launch(t);
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    t.after(() => page.close());
+    await bootLibrary(page, url);
+    await page.goto(`${url}screen/`, { waitUntil: "domcontentloaded" });
+    const header = page.locator("[data-screen-center-panel] > [data-screen-device-header]");
+    await header.waitFor();
+    assert.equal(await header.getByRole("combobox", { name: "Device" }).count(), 1);
+    assert.equal(await page.locator("[data-screen-right-scroll] [data-screen-device]").count(), 0);
+    assert.equal(await header.locator("[data-screen-resolution] + [data-screen-rotate]").count(), 1);
+    const id = await addScreenText(page, "Upright", { x: 24, y: 32 });
+    const placement = () =>
+      page.locator(`[data-scene-label-container="${id}"]`).evaluate((element) => ({
+        left: (element as HTMLElement).style.left,
+        top: (element as HTMLElement).style.top,
+        transform: getComputedStyle(element).transform,
+      }));
+    const original = await placement();
+    const before = await page.locator("[data-device-preview]").boundingBox();
+    assert.ok(before);
+    const rotate = header.locator("[data-screen-rotate]");
+    assert.equal(await rotate.innerText(), "", "rotation is icon-only");
+    const icon = await rotate.locator("svg").getAttribute("style");
+    for (const angle of [90, 180, 270, 0]) {
+      await rotate.click();
+      await page.locator(`[data-device-rotation="${angle}"]`).waitFor();
+      const sideways = angle % 180 !== 0;
+      assert.equal(
+        await page.locator("[data-scene-stage]").getAttribute("aria-label"),
+        `Scene canvas, ${sideways ? 800 : 480} by ${sideways ? 480 : 800} pixels`,
+      );
+      assert.equal(
+        await header.locator("[data-screen-resolution]").innerText(),
+        `${sideways ? 800 : 480} × ${sideways ? 480 : 800} px`,
+      );
+      const bounds = await page.locator("[data-device-preview]").boundingBox();
+      assert.ok(bounds);
+      assert.ok(Math.abs(bounds.width - (sideways ? before.height : before.width)) < 1);
+      assert.ok(Math.abs(bounds.height - (sideways ? before.width : before.height)) < 1);
+      assert.deepEqual(await placement(), original, "native label position and orientation are preserved");
+      const alignment = await page.locator("[data-device-preview]").evaluate((preview) => {
+        const shell = preview.querySelector("[data-device-shell]")!.getBoundingClientRect();
+        const aperture = preview.querySelector("[data-screen-aperture]")!.getBoundingClientRect();
+        const body = preview.getBoundingClientRect();
+        return (
+          Math.abs(shell.width - body.width) < 1 &&
+          Math.abs(shell.height - body.height) < 1 &&
+          aperture.left >= body.left &&
+          aperture.top >= body.top &&
+          aperture.right <= body.right &&
+          aperture.bottom <= body.bottom
+        );
+      });
+      assert.ok(alignment, "rotated artwork fills the body and contains the aperture");
+      if (angle === 90) assert.notEqual(await rotate.locator("svg").getAttribute("style"), icon);
+    }
+    await rotate.click();
+    await page.locator('[data-device-rotation="90"]').waitFor();
+    await page.locator("[data-screen-undo]").click();
+    await page.locator('[data-device-rotation="0"]').waitFor();
+    await page.locator("[data-screen-redo]").click();
+    await page.locator('[data-device-rotation="90"]').waitFor();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator('[data-device-rotation="90"]').waitFor();
+
+    await page.getByRole("combobox", { name: "Device" }).click();
+    await page.getByRole("option", { name: "Inkplate 4 TEMPERA", exact: true }).click();
+    await page.locator('[data-device-rotation="0"]').waitFor();
+    const squareBefore = await page.locator("[data-device-preview]").boundingBox();
+    assert.ok(squareBefore);
+    await rotate.click();
+    await page.locator('[data-device-rotation="90"]').waitFor();
+    const squareAfter = await page.locator("[data-device-preview]").boundingBox();
+    assert.ok(squareAfter);
+    assert.ok(Math.abs(squareAfter.width - squareBefore.height) < 1, "even square screens rotate the asymmetric body");
+    assert.equal(await header.locator("[data-screen-resolution]").innerText(), "600 × 600 px");
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.locator('[data-device-rotation="90"]').waitFor();
+    await page.getByRole("combobox", { name: "Device" }).click();
+    await page.getByRole("option", { name: "Custom…", exact: true }).click();
+    await page.locator("[data-screen-custom-frame]").waitFor();
+    await rotate.click();
+    await page.waitForFunction(() =>
+      document.querySelector("[data-screen-rotate]")?.getAttribute("aria-label")?.includes("180°"),
+    );
+    assert.equal(
+      await page.locator("[data-device-preview]").count(),
+      0,
+      "custom rotation never adopts a catalog shell",
+    );
+  },
+);
 
 test("screen default opens a real device and switches across the catalog", { skip: !browserAvailable }, async (t) => {
   const output = await buildApp(t);

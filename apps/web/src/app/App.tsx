@@ -1,30 +1,11 @@
-import { readRoutePath } from "./navigation/location";
 import { userError } from "./user-error";
 import * as React from "react";
 import type { StoredFont } from "./fonts/storage.js";
-import type { RendererRole } from "./renderer/renderer-types.js";
 import { DisplayPreferencesProvider, useDisplayPreferences } from "./shell/DisplayPreferences";
-import {
-  canonicalPathFor,
-  hasPendingSnapshotWrite,
-  readRouteSearch,
-  readInitialSnapshot,
-  readRoleParam,
-  replaceCanonicalPath,
-  scheduleSnapshotWrite,
-  cancelSnapshotWrite,
-  writeRoleParam,
-  writeSnapshotNow,
-  type PreviewSnapshot,
-} from "./navigation/snapshot";
-import {
-  defaultFamilySnapshot,
-  parseLegacyState,
-  parseUrlSnapshot,
-  previewVariantSettings,
-} from "./features/preview/state/snapshot-codec.js";
-import { buildMetas, metaForFont } from "./features/preview/state/family-meta";
-import { indexPath, palettesPath, resolveRoute, screenPath, variantPathKeeping } from "./navigation/router";
+import { useNavigation } from "./navigation/useNavigation";
+import { previewVariantSettings } from "./features/preview/state/snapshot-codec.js";
+import { indexPath, palettesPath, screenPath } from "./navigation/router";
+import { metaForFont } from "./features/preview/state/family-meta";
 import { useFontLibrary } from "./fonts/useFontLibrary";
 import { displayName } from "./fonts/metadata";
 import { createVariant } from "./variants/repository.js";
@@ -46,17 +27,6 @@ import { SkipLink } from "./shell/SkipLink";
 import { PageMetadata, PublicPageMetadata } from "./shell/PageMetadata";
 import { PREVIEW_DESCRIPTION } from "./shell/page-metadata";
 
-type Page =
-  | { name: "home" }
-  | { name: "palettes" }
-  // The unified Screen page also serves the legacy /scenes/ and
-  // /scene/<id>/ links: they open the same default composition and the URL
-  // canonicalizes to /screen/ without scene selection.
-  | { name: "screen" }
-  | { name: "index" }
-  | { name: "preview"; font: string }
-  | { name: "variant"; font: string; variant: string };
-
 export function App(): React.JSX.Element {
   return (
     <DisplayPreferencesProvider>
@@ -71,139 +41,46 @@ function AppContent(): React.JSX.Element {
     canvas: { palette: indexPalette, inverse: indexInverse },
   } = useDisplayPreferences();
   const library = useFontLibrary();
-  const [page, setPage] = React.useState<Page | null>(null);
-  const [snapshot, setSnapshot] = React.useState<PreviewSnapshot | null>(null);
-  const [role, setRole] = React.useState<RendererRole>(() => {
-    const inner = readRouteSearch();
-    return readRoleParam(inner || window.location.search);
-  });
   const [previewStatus, setPreviewStatus] = React.useState("");
   const [importStatus, setImportStatus] = React.useState("");
-  const [detailNotice, setDetailNotice] = React.useState("");
-  const [notice, setNotice] = React.useState("");
   const [libraryPreferences, setLibraryPreferences] = React.useState(readStoredLibraryPreferences);
   const { text: indexText, baseSize: indexBaseSize } = libraryPreferences;
   const [indexFilter, setIndexFilter] = React.useState("");
   const [savingVariant, setSavingVariant] = React.useState(false);
   const [saveVariantError, setSaveVariantError] = React.useState("");
 
+  const clearFeatureStatus = React.useCallback((): void => {
+    setPreviewStatus("");
+    setSaveVariantError("");
+  }, []);
+  // Location interpretation, canonicalization, deferred snapshot writes and
+  // history changes live in the navigation owner; this composes providers
+  // and pages with feature actions and notices.
+  const navigation = useNavigation({ fonts: library.fonts, onTransition: clearFeatureStatus });
+  const {
+    page,
+    snapshot,
+    role,
+    notice,
+    detailNotice,
+    applySnapshot,
+    onPatch,
+    openPreview,
+    openVariantId,
+    openIndex,
+    openPalettes,
+    openScreen,
+    onRole,
+    removePreviewFont,
+    migrationBase,
+    provisionalRoute,
+  } = navigation;
+
   const onLibraryPreferences = (patch: Partial<LibraryPreferences>): void => {
     const next = { ...libraryPreferences, ...patch };
     setLibraryPreferences(next);
     writeStoredLibraryPreferences(next);
   };
-
-  const fontsRef = React.useRef<StoredFont[] | null>(null);
-  fontsRef.current = library.fonts;
-  const snapshotRef = React.useRef<PreviewSnapshot | null>(null);
-  snapshotRef.current = snapshot;
-  const pageRef = React.useRef<Page | null>(null);
-  pageRef.current = page;
-  const handledHref = React.useRef("");
-
-  const applySnapshot = React.useCallback((next: PreviewSnapshot, immediate = false) => {
-    setSnapshot(next);
-    const order = (fontsRef.current ?? []).map((font) => font.id);
-    if (immediate) writeSnapshotNow(next, order);
-    else scheduleSnapshotWrite(next, order);
-  }, []);
-
-  const onPatch = React.useCallback(
-    (patch: Partial<PreviewSnapshot>, immediate = false) => {
-      const current = snapshotRef.current;
-      if (!current) return;
-      applySnapshot({ ...current, ...patch }, immediate);
-    },
-    [applySnapshot],
-  );
-
-  const pushPath = React.useCallback((path: string): void => {
-    // History carries identity; IndexedDB owns saved settings so Back cannot restore stale edits.
-    window.history.pushState(null, "", path);
-    handledHref.current = window.location.href;
-  }, []);
-
-  const migrationBase = (): string => {
-    const inner = readRouteSearch();
-    return inner || window.location.search;
-  };
-
-  const openPreview = React.useCallback(
-    (id: string, knownFont?: StoredFont) => {
-      const list = fontsRef.current ?? [];
-      const target = knownFont ?? list.find((font) => font.id === id);
-      if (!target) return;
-      cancelSnapshotWrite();
-      const metas = buildMetas(list);
-      const base = snapshotRef.current ?? readInitialSnapshot(metas);
-      const next: PreviewSnapshot = { ...base, font: id };
-      if (!next.families[id]) {
-        const meta = metaForFont(target);
-        next.families = { ...next.families, [id]: defaultFamilySnapshot(meta) };
-      }
-      setSnapshot(next);
-      setPage({ name: "preview", font: id });
-      setNotice("");
-      setPreviewStatus("");
-      setDetailNotice("");
-      setSaveVariantError("");
-      pushPath(
-        canonicalPathFor(
-          { page: "font", font: id },
-          next,
-          list.map((font) => font.id),
-          migrationBase(),
-        ),
-      );
-    },
-    [pushPath],
-  );
-
-  const openVariantId = React.useCallback(
-    (fontId: string, variantId: string) => {
-      cancelSnapshotWrite();
-      setPage({ name: "variant", font: fontId, variant: variantId });
-      setNotice("");
-      setPreviewStatus("");
-      setDetailNotice("");
-      setSaveVariantError("");
-      pushPath(variantPathKeeping(fontId, variantId, migrationBase()));
-    },
-    [pushPath],
-  );
-
-  const openIndex = React.useCallback(
-    (message = "") => {
-      cancelSnapshotWrite();
-      setPage({ name: "index" });
-      setNotice(message);
-      setPreviewStatus("");
-      setDetailNotice("");
-      setSaveVariantError("");
-      pushPath(indexPath(migrationBase()));
-    },
-    [pushPath],
-  );
-
-  const openPalettes = React.useCallback(() => {
-    cancelSnapshotWrite();
-    setPage({ name: "palettes" });
-    setNotice("");
-    setPreviewStatus("");
-    setDetailNotice("");
-    setSaveVariantError("");
-    pushPath(palettesPath(migrationBase()));
-  }, [pushPath]);
-
-  const openScreen = React.useCallback(() => {
-    cancelSnapshotWrite();
-    setPage({ name: "screen" });
-    setNotice("");
-    setPreviewStatus("");
-    setDetailNotice("");
-    setSaveVariantError("");
-    pushPath(screenPath(migrationBase()));
-  }, [pushPath]);
 
   const primaryNav = (active: "fonts" | "palettes" | "screen" | null): React.JSX.Element => (
     <PrimaryNav
@@ -217,208 +94,6 @@ function AppContent(): React.JSX.Element {
     />
   );
 
-  React.useEffect(() => {
-    if (pageRef.current === null) {
-      const probe = resolveRoute(readRoutePath(), window.location.search, []);
-      if (
-        probe.page === "palettes" ||
-        probe.page === "screen" ||
-        probe.page === "home" ||
-        probe.page === "scenes" ||
-        probe.page === "scene"
-      ) {
-        const metas = buildMetas([]);
-        const snap = readInitialSnapshot(metas);
-        setPage(
-          probe.page === "home"
-            ? { name: "home" }
-            : probe.page === "screen"
-              ? { name: "screen" }
-              : probe.page === "scenes"
-                ? { name: "screen" }
-                : probe.page === "scene"
-                  ? { name: "screen" }
-                  : { name: "palettes" },
-        );
-        setNotice("");
-        const inner = readRouteSearch();
-        replaceCanonicalPath(probe, snap, [], inner || window.location.search);
-        setSnapshot(snap);
-      }
-    }
-    if (library.fonts === null) return;
-    if (pageRef.current !== null) return;
-    const list = library.fonts;
-    const metas = buildMetas(list);
-    const route = resolveRoute(
-      readRoutePath(),
-      window.location.search,
-      list.map((font) => font.id),
-    );
-    if (route.page === "variant") {
-      window.history.replaceState(null, "", variantPathKeeping(route.font, route.variant, migrationBase()));
-      setPage({ name: "variant", font: route.font, variant: route.variant });
-      setNotice("");
-      return;
-    }
-    let snap = readInitialSnapshot(metas);
-    if (!metas.some((meta) => meta.id === snap.font)) {
-      snap = { ...snap, font: metas[0]?.id ?? "" };
-    }
-    if (route.page === "font") {
-      snap = { ...snap, font: route.font };
-      if (!snap.families[route.font]) {
-        const meta = metas.find((entry) => entry.id === route.font);
-        if (meta) snap = { ...snap, families: { ...snap.families, [route.font]: defaultFamilySnapshot(meta) } };
-      }
-      setPage({ name: "preview", font: route.font });
-      setNotice("");
-    } else if (
-      route.page === "palettes" ||
-      route.page === "screen" ||
-      route.page === "home" ||
-      route.page === "scenes" ||
-      route.page === "scene"
-    ) {
-      setPage(
-        route.page === "home"
-          ? { name: "home" }
-          : route.page === "screen"
-            ? { name: "screen" }
-            : route.page === "scenes"
-              ? { name: "screen" }
-              : route.page === "scene"
-                ? { name: "screen" }
-                : { name: "palettes" },
-      );
-      setNotice("");
-    } else {
-      setPage({ name: "index" });
-      setNotice(route.notice ?? "");
-    }
-    const inner = readRouteSearch();
-    replaceCanonicalPath(
-      route.page === "index" ? { page: "index" } : route,
-      snap,
-      list.map((font) => font.id),
-      inner || window.location.search,
-    );
-    setSnapshot(snap);
-  }, [library.fonts]);
-
-  React.useEffect(() => {
-    const onRouteChange = (): void => {
-      if (window.location.href === handledHref.current) return;
-      cancelSnapshotWrite();
-      const libraryPending = fontsRef.current === null;
-      const list = fontsRef.current ?? [];
-      const metas = buildMetas(list);
-      const route = resolveRoute(
-        readRoutePath(),
-        window.location.search,
-        list.map((font) => font.id),
-      );
-      const inner = readRouteSearch();
-      setRole(readRoleParam(inner || window.location.search));
-      setPreviewStatus("");
-      setDetailNotice("");
-      setSaveVariantError("");
-      const order = list.map((font) => font.id);
-      const base = readRouteSearch() || window.location.search;
-      if (
-        route.page === "palettes" ||
-        route.page === "screen" ||
-        route.page === "home" ||
-        route.page === "scenes" ||
-        route.page === "scene"
-      ) {
-        const current = snapshotRef.current ?? readInitialSnapshot(metas);
-        replaceCanonicalPath(route, current, order, base);
-        if (!snapshotRef.current) setSnapshot(current);
-        setPage(
-          route.page === "home"
-            ? { name: "home" }
-            : route.page === "screen"
-              ? { name: "screen" }
-              : route.page === "scenes"
-                ? { name: "screen" }
-                : route.page === "scene"
-                  ? { name: "screen" }
-                  : { name: "palettes" },
-        );
-        setNotice("");
-      } else if (libraryPending) {
-        return;
-      } else if (route.page === "variant") {
-        window.history.replaceState(null, "", variantPathKeeping(route.font, route.variant, base));
-        setPage({ name: "variant", font: route.font, variant: route.variant });
-        setNotice("");
-      } else if (route.page === "font") {
-        const search = readRouteSearch();
-        const params = new URLSearchParams(search);
-        if (params.get("v") === "1") {
-          let snap =
-            parseUrlSnapshot(search, "", metas, {
-              font: route.font,
-              profile: "mono_1bit",
-            }) ?? readInitialSnapshot(metas);
-          if (!metas.some((meta) => meta.id === snap.font)) snap = { ...snap, font: metas[0]?.id ?? "" };
-          snap = { ...snap, font: route.font };
-          replaceCanonicalPath({ page: "font", font: route.font }, snap, order, base);
-          setSnapshot(snap);
-        } else {
-          const current = snapshotRef.current;
-          if (current) {
-            const legacy = parseLegacyState(window.location.search, window.location.hash, metas);
-            const next: PreviewSnapshot = { ...current, font: route.font };
-            if (legacy.profile) next.profile = legacy.profile;
-            if (!next.families[route.font]) {
-              const meta = metas.find((entry) => entry.id === route.font);
-              if (meta) next.families = { ...next.families, [route.font]: defaultFamilySnapshot(meta) };
-            }
-            replaceCanonicalPath({ page: "font", font: route.font }, next, order, base);
-            setSnapshot(next);
-          } else {
-            let snap = readInitialSnapshot(metas);
-            snap = { ...snap, font: route.font };
-            replaceCanonicalPath({ page: "font", font: route.font }, snap, order, base);
-            setSnapshot(snap);
-          }
-        }
-        setPage({ name: "preview", font: route.font });
-        setNotice("");
-      } else {
-        const current = snapshotRef.current;
-        if (current) replaceCanonicalPath({ page: "index" }, current, order, base);
-        setPage({ name: "index" });
-        setNotice(route.notice ?? "");
-      }
-      handledHref.current = window.location.href;
-    };
-    window.addEventListener("popstate", onRouteChange);
-    window.addEventListener("hashchange", onRouteChange);
-    return () => {
-      window.removeEventListener("popstate", onRouteChange);
-      window.removeEventListener("hashchange", onRouteChange);
-    };
-  }, []);
-
-  React.useEffect(() => {
-    const onHide = (): void => {
-      const current = snapshotRef.current;
-      if (current && hasPendingSnapshotWrite()) {
-        writeSnapshotNow(
-          current,
-          (fontsRef.current ?? []).map((font) => font.id),
-        );
-      }
-    };
-    window.addEventListener("pagehide", onHide);
-    return () => {
-      window.removeEventListener("pagehide", onHide);
-    };
-  }, []);
-
   const pageName = page?.name;
   const pageFont = page?.name === "preview" || page?.name === "variant" ? page.font : null;
   const ensureDetailLoaded = library.ensureLoaded;
@@ -426,11 +101,18 @@ function AppContent(): React.JSX.Element {
     if ((pageName === "preview" || pageName === "variant") && pageFont) ensureDetailLoaded(pageFont);
   }, [pageName, pageFont, ensureDetailLoaded]);
 
-  const onRole = (next: RendererRole): void => {
-    setRole(next);
-    writeRoleParam(next);
+  const onDeleteFont = (target: StoredFont): void => {
+    const name = displayName(target);
+    void (async () => {
+      try {
+        await library.removeStored(target.id);
+        removePreviewFont(target.id);
+        openIndex(`Removed ${name}.`);
+      } catch (error) {
+        setPreviewStatus(userError(error, "Couldn’t delete font."));
+      }
+    })();
   };
-
   const onImport = (files: FileList | null): void => {
     const selected = Array.from(files ?? []);
     if (selected.length === 0) return;
@@ -446,29 +128,6 @@ function AppContent(): React.JSX.Element {
         }
       }
       setImportStatus(results.join(" "));
-    })();
-  };
-
-  const onDeleteFont = (target: StoredFont): void => {
-    const name = displayName(target);
-    void (async () => {
-      try {
-        await library.removeStored(target.id);
-        const current = snapshotRef.current;
-        if (current) {
-          const families = { ...current.families };
-          delete families[target.id];
-          const remaining = (fontsRef.current ?? []).filter((font) => font.id !== target.id);
-          const next: PreviewSnapshot = { ...current, families };
-          if (!remaining.some((font) => font.id === next.font)) {
-            next.font = remaining[0]?.id ?? "";
-          }
-          setSnapshot(next);
-        }
-        openIndex(`Removed ${name}.`);
-      } catch (error) {
-        setPreviewStatus(userError(error, "Couldn’t delete font."));
-      }
     })();
   };
 
@@ -503,10 +162,12 @@ function AppContent(): React.JSX.Element {
     })();
   }, [library.fonts, openVariantId, page, role, savingVariant, snapshot]);
 
-  if (
-    page?.name === "home" ||
-    (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "home")
-  ) {
+  // Provisional boot route from the navigation owner: catalog-independent
+  // pages render before boot resolves. Render stays pure; canonicalization
+  // happens in the owner at its synchronization boundary.
+  const provisional = page === null ? provisionalRoute() : null;
+
+  if (page?.name === "home" || provisional?.page === "home") {
     return (
       <>
         <SkipLink />
@@ -516,10 +177,7 @@ function AppContent(): React.JSX.Element {
     );
   }
 
-  if (
-    page?.name === "palettes" ||
-    (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "palettes")
-  ) {
+  if (page?.name === "palettes" || provisional?.page === "palettes") {
     return (
       <>
         <SkipLink />
@@ -541,19 +199,10 @@ function AppContent(): React.JSX.Element {
   // legacy /scenes/ and /scene/<id>/ links: they open the default
   // composition, and the navigation effects canonicalize the URL directly to
   // /screen/ without scene selection, never from inside this render.
-  const legacyScenesRoute =
-    page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "scenes";
-  const legacySceneRoute =
-    page === null
-      ? resolveRoute(readRoutePath(), window.location.search, []).page === "scene"
-        ? resolveRoute(readRoutePath(), window.location.search, [])
-        : null
-      : null;
+  const legacyScenesRoute = provisional?.page === "scenes";
+  const legacySceneRoute = provisional?.page === "scene" ? provisional : null;
   const screenRoute =
-    page?.name === "screen" ||
-    legacyScenesRoute ||
-    legacySceneRoute !== null ||
-    (page === null && resolveRoute(readRoutePath(), window.location.search, []).page === "screen");
+    page?.name === "screen" || legacyScenesRoute || legacySceneRoute !== null || provisional?.page === "screen";
 
   if (screenRoute) {
     return (
@@ -624,7 +273,7 @@ function AppContent(): React.JSX.Element {
           samplePalette={indexPalette}
           sampleInverse={indexInverse}
           filter={indexFilter}
-          library={library}
+          readiness={library.readiness}
           onAddVariant={onAddVariant}
           onOpenVariant={(font, variant) => openVariantId(font.id, variant.id)}
           onDeleteFont={onDeleteFont}
@@ -649,7 +298,7 @@ function AppContent(): React.JSX.Element {
           variantId={page.variant}
           baseSize={indexBaseSize}
           rootSampleText={indexText}
-          library={library}
+          readiness={library.readiness}
           onIndex={() => openIndex()}
           onOpenVariantId={openVariantId}
           onVariantDeleted={(name) => openIndex(`Deleted variant ${name}.`)}
@@ -700,7 +349,8 @@ function AppContent(): React.JSX.Element {
           role={role}
           previewStatus={previewStatus}
           notice={detailNotice}
-          library={library}
+          readiness={library.readiness}
+          fonts={fonts}
           onSnapshot={applySnapshot}
           onPatch={onPatch}
           onRole={onRole}

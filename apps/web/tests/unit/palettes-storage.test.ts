@@ -13,12 +13,7 @@ import { getFont, saveFont, type FontMetadata } from "../../src/app/fonts/storag
 import { createPalette, deletePalette, listPalettes, updatePalette } from "../../src/app/palettes/repository.ts";
 import { MONOCHROME, resolvePalette } from "../../src/app/palettes/model.ts";
 import { PREVIEW_MONO_RASTER } from "../../src/app/renderer/render-spec.ts";
-import {
-  curveLevels,
-  editCurveLevel,
-  linearCurve,
-  pinCurveLevel,
-} from "../../src/app/features/grayscale/response-curve.ts";
+import { curveLevels, editCurveLevel, linearCurve, pinCurveLevel } from "../../src/app/domain/output-profiles/curve.ts";
 import { paletteProfile, presetColors } from "../../src/app/palettes/render.ts";
 import { toRenderSpec } from "../../src/app/renderer/render-spec.ts";
 import { defaultVariantSettings, VariantStorageError } from "../../src/app/variants/model.ts";

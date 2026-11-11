@@ -17,12 +17,13 @@ import { ResponseCurve } from "./ResponseCurve";
 import { RasterPreview } from "./RasterPreview";
 import { BitDepthSelector } from "./BitDepthSelector";
 import { PaletteDepthLabel, paletteDepthLabel } from "./PaletteDepthLabel";
-import { curveLevels, linearCurve, type GrayCurve } from "./response-curve";
+import { curveLevels, linearCurve } from "../../domain/output-profiles/curve";
+import { createOrderedPaletteWrites } from "../../palettes/ordered-writes";
 
 const DEFAULT_TEXT = "The quick brown fox jumps over 0123456789";
 import { MONOCHROME } from "../../palettes/model";
 import { usePalettes } from "../../palettes/usePalettes";
-import { createPalette, updatePalette, deletePalette } from "../../palettes/repository";
+import { createPalette, listPalettes, updatePalette, deletePalette } from "../../palettes/repository";
 
 function grayColor(value: number): string {
   return `rgb(${value} ${value} ${value})`;
@@ -113,9 +114,18 @@ export function GrayscalePage({
       setNameDraft(null);
     }
   }, [ready, presets, presetId]);
-  const save = (operation: () => Promise<unknown>): void => {
+  // Same-view edits apply in user-intent order: each save runs only after the
+  // previous one responds, so a reset always observes the level edit it follows
+  // instead of racing it into a spurious revision conflict.
+  const writes = React.useRef(createOrderedPaletteWrites({ listPalettes, updatePalette })).current;
+  const activeId = active?.id;
+  const activeRevision = active?.revision;
+  React.useLayoutEffect(() => {
+    if (activeId !== undefined && activeRevision !== undefined) writes.captureRevision(activeId, activeRevision);
+  }, [writes, activeId, activeRevision]);
+  const save = (run: Promise<unknown>): void => {
     setSaveError("");
-    void operation().catch((error: unknown) => {
+    void run.catch((error: unknown) => {
       setSaveError("Couldn’t save palette changes. Try again.");
       if (error instanceof Error && /deleted/.test(error.message)) {
         setPresetId(0);
@@ -125,13 +135,13 @@ export function GrayscalePage({
     });
   };
   // Semantic edits resolve against the latest owner row: a rename preserves the
-  // live curve, and a replacement carries the revision this view rendered so a
-  // stale snapshot is rejected instead of overwriting another tab's levels.
+  // live curve. Reset resolves at send time against the live row, counting this
+  // view's own queued bumps, so only another tab's concurrent change conflicts.
   const renamePreset = (name: string): void => {
-    if (active) save(() => updatePalette(active.id, { kind: "rename", name }));
+    if (active) save(writes.edit(active.id, () => updatePalette(active.id, { kind: "rename", name })));
   };
-  const replacePresetCurve = (curve: GrayCurve): void => {
-    if (active) save(() => updatePalette(active.id, { kind: "replace", curve, expectedRevision: active.revision }));
+  const resetPresetCurve = (): void => {
+    if (active) save(writes.resetCurve(writes.captureRevision(active.id, active.revision)));
   };
   // The input renders a local draft so live-query commits never move the
   // caret; edits persist after a pause in typing, or immediately on blur.
@@ -163,23 +173,30 @@ export function GrayscalePage({
     const target = active.id;
     nameTimer.current = setTimeout(() => {
       nameTimer.current = null;
-      save(() => updatePalette(target, { kind: "rename", name: value }));
+      save(writes.edit(target, () => updatePalette(target, { kind: "rename", name: value })));
     }, 300);
   };
   // Index edits carry the rendered depth so a resize from another tab rejects
   // the edit instead of moving a different level.
   const updateLevel = (index: number, gray: number): void => {
-    if (active) save(() => updatePalette(active.id, { kind: "setLevel", index, value: gray, depth: levels.length }));
+    if (active)
+      save(
+        writes.edit(active.id, () =>
+          updatePalette(active.id, { kind: "setLevel", index, value: gray, depth: levels.length }),
+        ),
+      );
   };
   const pinLevel = (index: number): void => {
-    if (active) save(() => updatePalette(active.id, { kind: "pinLevel", index, depth: levels.length }));
+    if (active)
+      save(writes.edit(active.id, () => updatePalette(active.id, { kind: "pinLevel", index, depth: levels.length })));
   };
   const unpinLevel = (index: number): void => {
-    if (active) save(() => updatePalette(active.id, { kind: "unpinLevel", index, depth: levels.length }));
+    if (active)
+      save(writes.edit(active.id, () => updatePalette(active.id, { kind: "unpinLevel", index, depth: levels.length })));
   };
   const changeCount = (count: number): void => {
     if (!active || !Number.isInteger(count) || ![2, 4, 8, 16].includes(count)) return;
-    save(() => updatePalette(active.id, { kind: "resize", count }));
+    save(writes.edit(active.id, () => updatePalette(active.id, { kind: "resize", count })));
     setSelectedLevel(Math.round((selected * (count - 1)) / (levels.length - 1)));
   };
 
@@ -206,11 +223,13 @@ export function GrayscalePage({
               data-add-preset
               disabled={!ready}
               onClick={() =>
-                save(async () => {
-                  const created = await createPalette();
-                  setPresetId(created);
-                  setSelectedLevel(0);
-                })
+                save(
+                  writes.run(async () => {
+                    const created = await createPalette();
+                    setPresetId(created);
+                    setSelectedLevel(0);
+                  }),
+                )
               }
             >
               Add preset
@@ -247,14 +266,16 @@ export function GrayscalePage({
                           "data-delete-preset": entry.id,
                           "aria-label": `Delete preset ${entry.name}`,
                           onClick: () =>
-                            save(async () => {
-                              await deletePalette(entry.id);
-                              if (presetId === entry.id) {
-                                setPresetId(0);
-                                setSelectedLevel(0);
-                                setNameDraft(null);
-                              }
-                            }),
+                            save(
+                              writes.run(async () => {
+                                await deletePalette(entry.id);
+                                if (presetId === entry.id) {
+                                  setPresetId(0);
+                                  setSelectedLevel(0);
+                                  setNameDraft(null);
+                                }
+                              }),
+                            ),
                         }
                   }
                 >
@@ -379,7 +400,7 @@ export function GrayscalePage({
                 level.slope === curve[index]!.slope &&
                 level.pinned === curve[index]!.pinned,
             )}
-            onReset={active ? () => replacePresetCurve(linearCurve(levels.length)) : undefined}
+            onReset={active ? resetPresetCurve : undefined}
           >
             <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_12rem]">
               <ResponseCurve

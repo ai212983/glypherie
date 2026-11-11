@@ -28,7 +28,7 @@ import { createVariant } from "../../src/app/variants/repository.ts";
 import { saveFont, type FontMetadata, type StoredFont } from "../../src/app/fonts/storage.ts";
 import { removeFont } from "../../src/app/domain/commands.ts";
 import { listOutputProfiles } from "../../src/app/domain/service.ts";
-import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
+import { linearCurve } from "../../src/app/domain/output-profiles/curve.ts";
 import {
   directExportSnapshots,
   directLabelSettings,

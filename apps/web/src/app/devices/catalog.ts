@@ -178,15 +178,36 @@ export interface DeviceLayout {
   readonly screenHeight: number;
 }
 
+// Shared body/aperture presentation: the shell artwork shows only when the
+// body is visible, otherwise the same wrapper sizes to the bare screen so
+// body swaps never remount the painted content.
+export function deviceShownLayout(
+  device: DeviceDefinition,
+  cssScale: number,
+  rotation: number,
+  bodyVisible: boolean,
+): DeviceLayout {
+  const layout = deviceLayout(device, cssScale, rotation);
+  if (bodyVisible) return layout;
+  return {
+    svgWidth: layout.screenWidth,
+    svgHeight: layout.screenHeight,
+    screenX: 0,
+    screenY: 0,
+    screenWidth: layout.screenWidth,
+    screenHeight: layout.screenHeight,
+  };
+}
+
 // CSS geometry for one device at cssScale CSS px per device pixel: the shell
 // and the screen aperture scale together from the aperture.
-export function deviceLayout(device: DeviceDefinition, cssScale: number): DeviceLayout {
+export function deviceLayout(device: DeviceDefinition, cssScale: number, rotation = 0): DeviceLayout {
   const scale = Number(cssScale);
   if (!Number.isFinite(scale) || scale <= 0) fail("cssScale must be a positive number");
   const [, , vw, vh] = device.shell.viewBox;
-  const [sx, sy, sw] = device.shell.screenRect;
-  const unit = (device.widthPx * scale) / sw;
-  return {
+  const [sx, sy, apertureWidth] = device.shell.screenRect;
+  const unit = (device.widthPx * scale) / apertureWidth;
+  const layout = {
     svgWidth: vw * unit,
     svgHeight: vh * unit,
     screenX: (sx - device.shell.viewBox[0]) * unit,
@@ -194,4 +215,19 @@ export function deviceLayout(device: DeviceDefinition, cssScale: number): Device
     screenWidth: device.widthPx * scale,
     screenHeight: device.heightPx * scale,
   };
+  const { svgWidth: w, svgHeight: h, screenX: x, screenY: y, screenWidth: sw, screenHeight: sh } = layout;
+  // Clockwise rigid rotation of the body and its aperture around the origin,
+  // translated back into positive bounds: https://www.w3.org/TR/css-transforms-1/#funcdef-transform-rotate
+  switch (rotation) {
+    case 0:
+      return layout;
+    case 90:
+      return { svgWidth: h, svgHeight: w, screenX: h - y - sh, screenY: x, screenWidth: sh, screenHeight: sw };
+    case 180:
+      return { ...layout, screenX: w - x - sw, screenY: h - y - sh };
+    case 270:
+      return { svgWidth: h, svgHeight: w, screenX: y, screenY: w - x - sw, screenWidth: sh, screenHeight: sw };
+    default:
+      return fail("rotation must be 0, 90, 180 or 270 degrees");
+  }
 }

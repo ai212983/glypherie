@@ -7,7 +7,7 @@ import { FontCard } from "./FontCard";
 import { LibrarySidebar } from "./LibrarySidebar";
 import { QuickFilter } from "./QuickFilter";
 import { SiteHeader } from "../../shell/SiteHeader";
-import type { FontLibrary } from "../../fonts/useFontLibrary";
+import type { RendererFontReadiness } from "../../fonts/renderer-readiness-core.ts";
 import type { CanvasPaletteId } from "./canvas-palettes";
 import type { LibraryBaseSize } from "./preferences";
 
@@ -36,7 +36,7 @@ interface LibraryPageProps {
   samplePalette: CanvasPaletteId;
   sampleInverse: boolean;
   filter: string;
-  library: FontLibrary;
+  readiness: RendererFontReadiness;
   onAddVariant: (font: StoredFont) => Promise<void>;
   onOpenVariant: (font: StoredFont, variant: FontVariant) => void;
   onDeleteFont: (font: StoredFont) => void;
@@ -58,7 +58,7 @@ export function LibraryPage({
   samplePalette,
   sampleInverse,
   filter,
-  library,
+  readiness,
   onAddVariant,
   onOpenVariant,
   onDeleteFont,
@@ -67,7 +67,7 @@ export function LibraryPage({
   onSampleText,
   onSampleBaseSize,
 }: LibraryPageProps): React.JSX.Element {
-  const { ensureLoaded, rendererAvailable, loadedIds } = library;
+  const { ensureLoaded, rendererAvailable, loadedIds } = readiness;
   // One reactive query for every saved variant; variant writes never touch
   // the fonts store, so the card previews below never reload binaries.
   const variantState = useAllVariants();
@@ -159,7 +159,7 @@ export function LibraryPage({
                       zoom={sampleZoom}
                       palette={samplePalette}
                       inverse={sampleInverse}
-                      library={library}
+                      readiness={readiness}
                       variants={variantState.status === "loading" ? undefined : (byFont.get(font.id) ?? [])}
                       onAddVariant={onAddVariant}
                       onOpenVariant={onOpenVariant}

@@ -46,6 +46,10 @@ export default defineConfig(({ command }) =>
         outDir: "../../out/web",
         emptyOutDir: true,
         assetsInlineLimit: 0,
+        // Coverage builds only: external maps let page V8 data resolve to
+        // original sources. Default stays false so test and release bytes
+        // never carry instrumentation or maps.
+        sourcemap: process.env.GLYPHERIE_COVERAGE === "1",
       },
       optimizeDeps: {
         exclude: ["@electric-sql/pglite"],

@@ -2,5 +2,8 @@
 # scripts/stage-wasm.ts; includes degraded dev stubs when unstaged).
 src/app/renderer/wasm/
 
+# Coverage producer output (`npm run coverage`); never committed.
+coverage/
+
 # Storybook diagnostic output.
 /debug-storybook.log

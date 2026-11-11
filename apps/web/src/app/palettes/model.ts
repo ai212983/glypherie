@@ -1,4 +1,4 @@
-import { linearCurve, type GrayCurve } from "../features/grayscale/response-curve.ts";
+import { linearCurve, type GrayCurve } from "../domain/output-profiles/curve.ts";
 import type { OutputProfile } from "../renderer/renderer-types.ts";
 
 export interface PalettePreset {

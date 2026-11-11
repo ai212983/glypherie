@@ -27,19 +27,19 @@ export type {
 export { STALE_OWNER_RECOVERY_MESSAGE } from "./runtime.ts";
 
 export async function listTextStyles(): Promise<DomainTextStyleView[]> {
-  return (await callDomain("listTextStyles", [])) as DomainTextStyleView[];
+  return callDomain("listTextStyles", []);
 }
 
 export async function listOutputProfiles(): Promise<DomainOutputProfileView[]> {
-  return (await callDomain("listOutputProfiles", [])) as DomainOutputProfileView[];
+  return callDomain("listOutputProfiles", []);
 }
 
 export async function listScenes(): Promise<DomainSceneView[]> {
-  return (await callDomain("listScenes", [])) as DomainSceneView[];
+  return callDomain("listScenes", []);
 }
 
 export async function getScene(id: string): Promise<DomainSceneView | undefined> {
-  return (await callDomain("getScene", [id])) as DomainSceneView | undefined;
+  return callDomain("getScene", [id]);
 }
 
 export async function createScene(input: {
@@ -50,7 +50,7 @@ export async function createScene(input: {
   outputProfileId: string;
   exportCoverage?: DomainSceneView["exportCoverage"];
 }): Promise<DomainSceneView> {
-  return (await callDomain("createScene", [input])) as DomainSceneView;
+  return callDomain("createScene", [input]);
 }
 
 /**
@@ -65,17 +65,17 @@ export async function ensureDefaultScene(input: {
   deviceId?: string | null;
   outputProfileId: string;
 }): Promise<DomainSceneView> {
-  return (await callDomain("ensureDefaultScene", [input])) as DomainSceneView;
+  return callDomain("ensureDefaultScene", [input]);
 }
 
 export async function updateScene(
   id: string,
   patch: Partial<
-    Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "outputProfileId" | "exportCoverage">
+    Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "rotation" | "outputProfileId" | "exportCoverage">
   >,
   expectedRevision: number,
 ): Promise<DomainSceneView> {
-  return (await callDomain("updateScene", [id, patch, expectedRevision])) as DomainSceneView;
+  return callDomain("updateScene", [id, patch, expectedRevision]);
 }
 
 export async function deleteScene(id: string, expectedRevision: number): Promise<void> {
@@ -87,7 +87,7 @@ export async function addSceneLabel(
   input: SceneLabelInput,
   expectedSceneRevision: number,
 ): Promise<DomainSceneView> {
-  return (await callDomain("addSceneLabel", [sceneId, input, expectedSceneRevision])) as DomainSceneView;
+  return callDomain("addSceneLabel", [sceneId, input, expectedSceneRevision]);
 }
 
 export async function updateSceneLabel(
@@ -96,12 +96,7 @@ export async function updateSceneLabel(
   patch: SceneLabelPatch,
   expectedSceneRevision: number,
 ): Promise<DomainSceneView> {
-  return (await callDomain("updateSceneLabel", [
-    sceneId,
-    placementId,
-    patch,
-    expectedSceneRevision,
-  ])) as DomainSceneView;
+  return callDomain("updateSceneLabel", [sceneId, placementId, patch, expectedSceneRevision]);
 }
 
 export async function removeSceneLabel(
@@ -109,7 +104,7 @@ export async function removeSceneLabel(
   placementId: string,
   expectedSceneRevision: number,
 ): Promise<DomainSceneView> {
-  return (await callDomain("removeSceneLabel", [sceneId, placementId, expectedSceneRevision])) as DomainSceneView;
+  return callDomain("removeSceneLabel", [sceneId, placementId, expectedSceneRevision]);
 }
 
 /**
@@ -122,11 +117,7 @@ export async function reorderSceneLabels(
   orderedPlacementIds: string[],
   expectedSceneRevision: number,
 ): Promise<DomainSceneView> {
-  return (await callDomain("reorderSceneLabels", [
-    sceneId,
-    orderedPlacementIds,
-    expectedSceneRevision,
-  ])) as DomainSceneView;
+  return callDomain("reorderSceneLabels", [sceneId, orderedPlacementIds, expectedSceneRevision]);
 }
 
 /**
@@ -139,19 +130,14 @@ export async function restoreSceneSnapshot(
   expectedSceneRevision: number,
   snapshot: SceneSnapshotInput,
 ): Promise<DomainSceneView> {
-  return (await callDomain("restoreSceneSnapshot", [sceneId, expectedSceneRevision, snapshot])) as DomainSceneView;
+  return callDomain("restoreSceneSnapshot", [sceneId, expectedSceneRevision, snapshot]);
 }
 
 export async function resolveTextStyle(
   textStyleId: string,
   outputProfileId: string,
 ): Promise<{ id: string; name: string; fontId: string; settings: VariantSettings }> {
-  return (await callDomain("resolveTextStyle", [textStyleId, outputProfileId])) as {
-    id: string;
-    name: string;
-    fontId: string;
-    settings: VariantSettings;
-  };
+  return callDomain("resolveTextStyle", [textStyleId, outputProfileId]);
 }
 
 /**
@@ -163,12 +149,7 @@ export async function resolveTextStyles(
   textStyleIds: string[],
   outputProfileId: string,
 ): Promise<Array<{ id: string; name: string; fontId: string; settings: VariantSettings }>> {
-  return (await callDomain("resolveTextStyles", [textStyleIds, outputProfileId])) as Array<{
-    id: string;
-    name: string;
-    fontId: string;
-    settings: VariantSettings;
-  }>;
+  return callDomain("resolveTextStyles", [textStyleIds, outputProfileId]);
 }
 
 export function subscribeDomain(listener: () => void): () => void {

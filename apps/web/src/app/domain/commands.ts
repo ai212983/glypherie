@@ -27,7 +27,7 @@ import {
   resizeCurve,
   unpinCurveLevel,
   type GrayCurve,
-} from "../features/grayscale/response-curve.ts";
+} from "./output-profiles/curve.ts";
 import type { FontMetadata, FontSource, StoredFont } from "../fonts/storage.ts";
 import {
   deleteBinary,

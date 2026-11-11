@@ -21,7 +21,9 @@ Paths below are relative to the repository root.
   with freely positioned labels, independent of the font library with no palette state in the URL. `/scenes/` and
   `/scene/<scene-id>/` are legacy aliases that render the same Screen page (a legacy scene link canonicalizes to
   `/screen/` without scene selection); saved scenes keep their width, height and versioned labels, gaining an optional
-  catalog device association that defaults to the first device for new compositions. An explicit custom choice (null
+  catalog device association that defaults to the first device for new compositions. Scene rotation is a clockwise
+  quarter turn (0, 90, 180 or 270 degrees), defaulting to zero for older scenes and snapshots; scene dimensions describe
+  the oriented canvas. An explicit custom choice (null
   device) always stays a custom screen with the scene's own dimensions, even when those dimensions match a catalog
   device. `/palettes/` shows the standalone palette lab, independent of the font library with no palette state in the
   URL. Palette presets (including the read-only Monochrome preset) live in the same browser-local domain store as output
@@ -43,3 +45,5 @@ Paths below are relative to the repository root.
   rendering for these checks.
 - Unsaved preview snapshots encode optional diagonal fitting as `diagonals=1`; omission means disabled. Saved variants
   store the same preference in their settings. Rendering and export forward it through the shared pipeline contract.
+- `npm run coverage` writes the merged main-thread LCOV report to `apps/web/coverage/lcov.info` with repository-relative
+  `SF` paths for original `src/` files; external quality tools read it with `--root apps/web`.

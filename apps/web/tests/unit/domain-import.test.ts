@@ -18,7 +18,7 @@ import { callDomain } from "../../src/app/domain/runtime.ts";
 import { getBackend, closeDomainForTests, resetDomainForTests } from "../../src/app/domain/node-backend.ts";
 import { readLegacySnapshot, type LegacySnapshot } from "../../src/app/legacy-database.ts";
 import { getFont, listFonts } from "../../src/app/fonts/storage.ts";
-import { linearCurve } from "../../src/app/features/grayscale/response-curve.ts";
+import { linearCurve } from "../../src/app/domain/output-profiles/curve.ts";
 import { getVariant, listVariants, updateVariant } from "../../src/app/variants/repository.ts";
 import { defaultVariantSettings } from "../../src/app/variants/model.ts";
 import type { FontMetadata } from "../../src/app/fonts/storage.ts";

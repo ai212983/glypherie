@@ -120,6 +120,11 @@
     "numpy",
     "fonttools",
     "PYTHONHASHSEED",
-    "pathlib"
+    "pathlib",
+    "daybrush",
+    "scena",
+    "croact",
+    "scrollport",
+    "BRDA"
   ]
 }

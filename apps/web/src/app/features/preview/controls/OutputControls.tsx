@@ -10,7 +10,7 @@ import {
 } from "../../../../components/ui/select";
 import { Label } from "../../../../components/ui/label";
 import { PaletteDepthLabel } from "../../grayscale/PaletteDepthLabel";
-import { curveLevels } from "../../grayscale/response-curve";
+import { curveLevels } from "../../../domain/output-profiles/curve";
 import "./OutputControls.css";
 
 function PaletteChoice({ preset }: { preset: PalettePreset }): React.JSX.Element {

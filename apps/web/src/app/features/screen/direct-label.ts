@@ -6,7 +6,7 @@ import { currentPreviewSettings, defaultVariantSettings, type VariantSettings } 
 import { profileForCurve } from "../../palettes/model.ts";
 import { resolveWorkingPreviewPolicy } from "../../renderer/preview-policy.ts";
 import type { StoredFont } from "../../fonts/storage.ts";
-import type { GrayCurve } from "../grayscale/response-curve.ts";
+import type { GrayCurve } from "../../domain/output-profiles/curve.ts";
 import type { FontExportStyleSnapshot } from "../../domain/font-export.ts";
 
 export const DIRECT_LABEL_DEFAULT_SIZE_PX = 16;

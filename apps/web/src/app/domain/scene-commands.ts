@@ -73,6 +73,12 @@ function checkSceneDevice(deviceId: unknown): void {
   }
 }
 
+function checkSceneRotation(rotation: unknown): void {
+  if (rotation !== undefined && rotation !== 0 && rotation !== 90 && rotation !== 180 && rotation !== 270) {
+    failInvalid("Scene rotation must be 0, 90, 180 or 270 degrees.");
+  }
+}
+
 function checkScenePatchShape(patch: unknown): void {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
     failInvalid("Scene updates need a patch object.");
@@ -343,6 +349,7 @@ async function buildSceneView(store: Store, sceneId: string): Promise<DomainScen
     // Rows written before the device field carry no value and read as a
     // custom screen rather than failing or adopting a catalog device.
     deviceId: typeof record.deviceId === "string" ? String(record.deviceId) : null,
+    rotation: (record.rotation ?? 0) as DomainSceneView["rotation"],
     revision: Number(record.revision),
     outputProfileId: String(outputEdge.toId),
     exportCoverage: normalizeCoverage(record.exportCoverage as CharacterCoverage),
@@ -523,7 +530,7 @@ async function applyLabelContent(tx: Store, label: LabelHandle, patch: SceneLabe
 // separately in setSceneOutput.
 function applySceneScalars(
   record: Record<string, unknown>,
-  patch: Partial<Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "exportCoverage">>,
+  patch: Partial<Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "rotation" | "exportCoverage">>,
   next: Record<string, unknown>,
 ): void {
   if (patch.name !== undefined) {
@@ -538,6 +545,10 @@ function applySceneScalars(
   if (patch.deviceId !== undefined) {
     checkSceneDevice(patch.deviceId);
     next.deviceId = patch.deviceId;
+  }
+  if (patch.rotation !== undefined) {
+    checkSceneRotation(patch.rotation);
+    next.rotation = patch.rotation;
   }
   if (patch.exportCoverage !== undefined) {
     next.exportCoverage = normalizeSceneCoverage(patch.exportCoverage);
@@ -725,7 +736,7 @@ export async function updateScene(
   backend: DomainBackend,
   id: string,
   patch: Partial<
-    Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "outputProfileId" | "exportCoverage">
+    Pick<DomainSceneView, "name" | "width" | "height" | "deviceId" | "rotation" | "outputProfileId" | "exportCoverage">
   >,
   expectedRevision: number,
 ): Promise<DomainSceneView> {
@@ -924,6 +935,7 @@ function checkSnapshotInput(snapshot: unknown): asserts snapshot is SceneSnapsho
   if (candidate.deviceId === undefined)
     failInvalid("Scene restore needs an explicit device selection (string or null).");
   checkSceneDevice(candidate.deviceId);
+  checkSceneRotation(candidate.rotation);
   if (typeof candidate.outputProfileId !== "string" || candidate.outputProfileId.length === 0) {
     failInvalid("Scene restore needs an output profile id.");
   }
@@ -992,6 +1004,7 @@ export async function restoreSceneSnapshot(
         width: snapshot.width,
         height: snapshot.height,
         deviceId: snapshot.deviceId,
+        rotation: snapshot.rotation ?? 0,
         exportCoverage: snapshot.exportCoverage,
       },
       next,

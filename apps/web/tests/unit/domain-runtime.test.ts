@@ -145,7 +145,9 @@ test("a committed write adopts the owner stamp exactly once", async () => {
   answerHandshake(worker.port, (worker.port.sent[0] as { id: number }).id, "epoch-9");
   await ready;
   const before = getDomainVersion();
-  const pending = callDomain("createScene", [{ name: "Card" }]);
+  const pending = callDomain("createScene", [
+    { name: "Card", width: 400, height: 300, outputProfileId: "output-monochrome" },
+  ]);
   const call = worker.port.sent.at(-1) as { id: number };
   respond(worker.port, { id: call.id, ok: true, mutated: true, epoch: "epoch-9", seq: 3, result: { ok: true } });
   assert.deepEqual(await pending, { ok: true });

@@ -1,23 +1,12 @@
-// Domain worker: owns PGlite and every graph command. Runs as a SharedWorker
-// in browsers (one instance per origin: every tab's commands execute on the
-// same engine and store) with a dedicated-worker fallback where SharedWorker
-// is unavailable. The main thread posts {id, method, params} per connection
-// and awaits a cloned result. Transaction callbacks stay inside this worker,
-// so the host never serializes them across the boundary. Each committed write
-// returns the owner's generation stamp (epoch per worker lifetime plus its
-// sequence); skipped imports report no write. Commits are announced to every
-// tab directly, so followers learn of a write even when the writing tab
-// closes before its response arrives.
+// Owns the domain backend and RPC dispatch. SharedWorker connections share this engine; the
+// dedicated-worker fallback takes the same owner lease. Transactions remain inside the worker, and
+// durable changes carry owner stamps.
 
 import { createDomainBackend, DOMAIN_DATA_DIR, type DomainBackend } from "./backend.ts";
 import * as commands from "./commands.ts";
 import { importLegacySnapshot } from "./importer.ts";
-import { MUTATING_METHODS, type DomainMethod } from "./runtime.ts";
+import { isDomainMethod, MUTATING_METHODS, type DomainDispatch } from "./operations.ts";
 import { DOMAIN_CHANNEL, DOMAIN_OWNER_LEASE, DOMAIN_PROTOCOL_VERSION, type OwnerStamp } from "./protocol.ts";
-
-// PGlite resolves its engine files relative to its own module URL, which
-// Vite fingerprints into hashed assets (dev serves them from node_modules).
-// The backend passes no overrides, so dev and build share one mechanism.
 
 // Owner epoch: random per worker lifetime. Tabs adopt any stamp from an
 // epoch they have not seen, so a restarted owner's reset sequence can never
@@ -34,9 +23,6 @@ const ownerEpoch: string =
 
 let backend: DomainBackend | null = null;
 let initializing: Promise<DomainBackend> | null = null;
-// Owner write sequence: strictly increasing per worker lifetime (per epoch),
-// adopted by every tab so equal local versions can never suppress a real
-// remote change.
 let writeSeq = 0;
 
 function currentStamp(): OwnerStamp {
@@ -57,21 +43,8 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Hold the single-owner lease for this worker's lifetime. Every worker mode
- * takes the same exclusive origin lock before opening the database: the
- * second opener gets an explicit retryable busy error and never launches a
- * second PGlite engine. Without Web Locks there is no safe single-owner
- * primitive, so the engine refuses to start instead of risking split-brain
- * persistence.
- *
- * A plain exclusive request (no try-lock flag: it is not honored across all
- * contexts) queues behind a live holder. A granted request stays pending
- * for the worker's lifetime (the grant callback pends until the worker dies,
- * which releases the lock), so a bounded race tells grant from queue: on
- * timeout this attempt is cancelled and a later grant releases immediately
- * instead of leaving a zombie holder.
- */
+// Hold the exclusive origin lease for this worker's lifetime before opening PGlite. Refuse startup
+// without Web Locks. A timed-out queued request releases immediately if granted later.
 async function acquireOwnerLease(): Promise<void> {
   if (leaseHeld) return;
   if (!leaseAttempt) {
@@ -131,8 +104,6 @@ async function acquireOwnerLease(): Promise<void> {
           }
           throw busyError();
         }
-        // A grant keeps the request pending; confirm the grant callback ran
-        // before opening the database, and fail closed if it never does.
         for (let attempt = 0; attempt < 20 && !granted; attempt += 1) {
           await delay(100);
         }
@@ -142,8 +113,6 @@ async function acquireOwnerLease(): Promise<void> {
         }
         leaseHeld = true;
       } catch (error) {
-        // A refused lease or failed open must not stick: the next attempt
-        // (for example after the owning tab closes) retries from scratch.
         cancelled = true;
         leaseAttempt = null;
         throw error;
@@ -158,7 +127,6 @@ async function ensureBackend(): Promise<DomainBackend> {
   if (!initializing) {
     initializing = (async () => {
       try {
-        // Fence before touching IndexedDB: a refused lease never opens PGlite.
         await acquireOwnerLease();
         const created = await createDomainBackend({ dataDir: DOMAIN_DATA_DIR, relaxedDurability: true });
         backend = created;
@@ -174,7 +142,7 @@ async function ensureBackend(): Promise<DomainBackend> {
   return initializing;
 }
 
-const methods: Record<DomainMethod, (backend: DomainBackend, ...args: never[]) => Promise<unknown>> = {
+const methods: DomainDispatch = {
   saveFont: commands.saveFont,
   getFont: commands.getFont,
   listFonts: commands.listFonts,
@@ -206,7 +174,7 @@ const methods: Record<DomainMethod, (backend: DomainBackend, ...args: never[]) =
   restoreSceneSnapshot: commands.restoreSceneSnapshot,
   resolveTextStyle: commands.resolveTextStyle,
   resolveTextStyles: commands.resolveTextStyles,
-  importLegacySnapshot: (active, ...args: never[]) => importLegacySnapshot(active, args[0] as never),
+  importLegacySnapshot,
 };
 
 type Responder = (message: unknown) => void;
@@ -214,6 +182,32 @@ type Responder = (message: unknown) => void;
 // Every connected SharedWorker port, for commit announcements. A failing or
 // closed port is dropped; one bad listener never breaks the write path.
 const ports = new Set<{ postMessage: (message: unknown) => void }>();
+
+// Count ordinary mutations at receipt so later reads wait for their persistence boundary. Serialize
+// filesystem flushes; after a failed flush, reads must persist successfully before returning data.
+// Boot imports do not increment this gate.
+let pendingWrites = 0;
+let writesFinished: Promise<void> = Promise.resolve();
+let finishWrites = (): void => undefined;
+let flushTail: Promise<void> = Promise.resolve();
+let flushFailed = false;
+
+function chainFlush(work: () => Promise<void>): Promise<void> {
+  const next = flushTail.then(async () => {
+    try {
+      await work();
+      flushFailed = false;
+    } catch (error) {
+      flushFailed = true;
+      throw error;
+    }
+  });
+  flushTail = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  return next;
+}
 
 let announceChannel: BroadcastChannel | null = null;
 
@@ -237,9 +231,7 @@ function announceCommit(stamp: OwnerStamp): void {
   };
   try {
     ownerBroadcastChannel()?.postMessage(message);
-  } catch {
-    // No BroadcastChannel here: fall through to the per-port announce below.
-  }
+  } catch {}
   for (const port of [...ports]) {
     try {
       port.postMessage({ commit: { epoch: stamp.epoch, seq: stamp.seq } });
@@ -252,9 +244,7 @@ function announceCommit(stamp: OwnerStamp): void {
 async function handleCall(data: unknown, respond: Responder): Promise<void> {
   const call = data as { id?: unknown; method?: unknown; params?: unknown };
   if (typeof call?.id !== "number" || typeof call.method !== "string" || !Array.isArray(call.params)) return;
-  // Handshake: version check, owner fencing, then backend readiness. Runs
-  // before any database access so a stale or second owner fails fast with a
-  // retryable error instead of hanging or splitting engines.
+  // Reject incompatible protocol generations before opening the store.
   if (call.method === "__protocol") {
     const tabProtocol = (call.params as unknown[])[0];
     if (tabProtocol !== DOMAIN_PROTOCOL_VERSION) {
@@ -289,21 +279,50 @@ async function handleCall(data: unknown, respond: Responder): Promise<void> {
     }
     return;
   }
-  const method = call.method as DomainMethod;
-  const target = methods[method];
-  if (!target) {
+  // Only methods declared in operations.ts are callable over RPC; command-only exports and
+  // prototype properties are excluded.
+  if (!isDomainMethod(call.method)) {
     respond({
       id: call.id,
       ok: false,
-      error: { code: "unavailable", message: `Unknown domain method "${call.method}".` },
+      error: { code: "unavailable", message: `Unknown domain method "${String(call.method)}".` },
     });
     return;
   }
+  const method = call.method;
+  const target = methods[method];
+  // Counted synchronously at receipt so a later-received read always observes
+  // every mutation ahead of it, closing the lost-write window deterministically.
+  const countedWrite = MUTATING_METHODS.has(method) && method !== "importLegacySnapshot";
+  if (countedWrite) {
+    if (pendingWrites === 0) {
+      writesFinished = new Promise<void>((resolve) => {
+        finishWrites = resolve;
+      });
+    }
+    pendingWrites += 1;
+  }
   try {
+    if (!countedWrite) {
+      // Yield until writes settle; polling a resolved flush tail would starve
+      // the timer and filesystem callbacks those writes need to finish.
+      await writesFinished;
+    }
     const active = await ensureBackend();
-    const result = await target(active, ...(call.params as never[]));
-    // A skipped import changed nothing: report no write so tabs neither bump
-    // versions nor rebroadcast.
+    // A failed sync leaves committed SQL in memory. Reads can recover it
+    // only by persisting first; otherwise they must fail with the write.
+    if (!countedWrite && flushFailed) {
+      await chainFlush(async () => {
+        if (!flushFailed) return;
+        await active.flush();
+        writeSeq += 1;
+        announceCommit(currentStamp());
+      });
+    }
+    // Wire arguments arrive untyped at this boundary; the per-method handler
+    // signature above still governs every typed caller of the same command.
+    const invoke = target as (backend: DomainBackend, ...args: unknown[]) => Promise<unknown>;
+    const result = await invoke(active, ...(call.params as unknown[]));
     const skippedImport =
       method === "importLegacySnapshot" &&
       typeof result === "object" &&
@@ -312,11 +331,9 @@ async function handleCall(data: unknown, respond: Responder): Promise<void> {
     const mutated = MUTATING_METHODS.has(method) && !skippedImport;
     let stamp: OwnerStamp | undefined;
     if (mutated) {
-      // PGlite skips filesystem sync during explicit transactions, including
-      // COMMIT, and under relaxed durability per-query results return before
-      // the scheduled flush. This awaited filesystem flush is the durable
-      // boundary before stamp, announce and response.
-      await active.flush();
+      // PGlite's relaxed query results and explicit COMMIT can precede filesystem persistence.
+      // Acknowledge the mutation only after the serialized filesystem flush succeeds.
+      await chainFlush(() => active.flush());
       writeSeq += 1;
       stamp = currentStamp();
       // Announce from the owner itself: followers adopt the commit even when
@@ -334,6 +351,8 @@ async function handleCall(data: unknown, respond: Responder): Promise<void> {
         message: failure instanceof Error ? failure.message : String(error),
       },
     });
+  } finally {
+    if (countedWrite && --pendingWrites === 0) finishWrites();
   }
 }
 
@@ -344,8 +363,6 @@ const scope = self as unknown as {
 };
 
 if ("onconnect" in self) {
-  // SharedWorker: one instance per origin. Every connecting tab gets its own
-  // port; commands from all ports share this engine, store and sequence.
   scope.onconnect = (event) => {
     for (const port of event.ports) {
       ports.add(port);

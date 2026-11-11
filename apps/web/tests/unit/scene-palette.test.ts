@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { presetColors } from "../../src/app/palettes/render.ts";
 import type { PalettePreset } from "../../src/app/palettes/model.ts";
-import type { GrayCurve } from "../../src/app/features/grayscale/response-curve.ts";
+import type { GrayCurve } from "../../src/app/domain/output-profiles/curve.ts";
 import { sceneLabelPalette, scenePaperCss } from "../../src/app/features/scenes/scene-palette.ts";
 
 const nonlinear: GrayCurve = [

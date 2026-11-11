@@ -12,12 +12,17 @@ import type { VariantSettings } from "../../variants/model.js";
 import type { RGBA } from "../../renderer/renderer-types.js";
 import type { DomainPlacementView } from "../scenes/service.js";
 import {
+  LabelEditSession,
+  classifyKey,
+  lineEdge,
+  moveCursor,
+  resolveCaretLine,
+  type SelectionState,
+} from "./label-edit.ts";
+import {
   caretXOnLine,
-  lineRange,
-  moveVertically,
   normalizeRange,
   offsetAtPoint,
-  resolveLineAffinity,
   selectionFromNative,
   selectionRects,
   visualLines,
@@ -68,13 +73,6 @@ export interface EditableLabelProps {
   onFrameElement: (id: string, element: HTMLDivElement | null) => void;
   onNudge: (id: string, dx: number, dy: number) => void;
   onDeleteKey: (id: string) => void;
-}
-
-interface SelectionState {
-  anchor: CaretPosition;
-  focus: CaretPosition;
-  xGoal: number;
-  xGoalActive: boolean;
 }
 
 function clampOffset(text: string, offset: number): number {
@@ -170,11 +168,12 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
   // Guards select events fired by our own setSelectionRange writes; native
   // edits still report through onSelect and are mirrored, never rewritten.
   const programmaticRef = React.useRef(false);
-  // Settles the edit exactly once per session: commit and cancel both arm it
+  // One edit session per in-place edit: commit and cancel both settle it
   // synchronously, so the blur fired by their own focus moves (or by the
   // unmount that follows) cannot resurrect a discarded draft or duplicate a
-  // commit into a revision conflict.
-  const settledRef = React.useRef(false);
+  // commit into a revision conflict. The core owns the settle rules; the
+  // textarea owns native history, selection and composition behavior.
+  const editSessionRef = React.useRef<LabelEditSession | null>(null);
   const displayText = editing && draft !== null ? draft : placement.text;
 
   // Every input that changes the WASM layout. A progressive resize paint
@@ -227,12 +226,13 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
   // when it ends; remote placement updates never overwrite an open draft.
   React.useEffect(() => {
     if (editing && draft === null) {
-      settledRef.current = false;
+      editSessionRef.current = new LabelEditSession(placement.text);
       setDraft(placement.text);
       setSelectionState(null);
       setPaintError("");
     } else if (!editing) {
       editStartPointRef.current = null;
+      editSessionRef.current = null;
       if (draft !== null) {
         setDraft(null);
         setSelectionState(null);
@@ -541,50 +541,65 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
     dragRef.current = false;
   }, []);
 
-  const commitDraft = React.useCallback(
-    async (refocus: boolean) => {
-      const text = draft;
-      if (text === null || settledRef.current) return;
-      settledRef.current = true;
+  // Post-settle commit body shared by explicit gestures and blur: the caller
+  // owns the settle decision through the edit core, this only performs the
+  // revisioned write and the recovery/focus handoff.
+  const commitSettledDraft = React.useCallback(
+    async (edit: LabelEditSession, text: string, refocus: boolean) => {
       const ok = await props.onCommitText(placement.id, text);
-      // A conflict or failure keeps the draft open for recovery, so disarm the
-      // guard and let the next gesture settle the edit instead.
-      if (!ok) settledRef.current = false;
+      // A conflict or failure keeps the draft open for recovery, so rearm
+      // the session and let the next gesture settle the edit instead.
+      if (!ok) edit.rearm();
       // A conflict keeps the draft open for recovery; only a completed edit
       // returns focus to the frame.
       if (ok && refocus && !editingRef.current) frameRef.current?.focus();
     },
-    [draft, placement.id, props],
+    [placement.id, props],
+  );
+
+  const commitDraft = React.useCallback(
+    async (refocus: boolean) => {
+      const edit = editSessionRef.current;
+      const text = draft;
+      if (edit === null || text === null || !edit.settle()) return;
+      await commitSettledDraft(edit, text, refocus);
+    },
+    [commitSettledDraft, draft],
   );
 
   const cancelDraft = React.useCallback(() => {
-    if (settledRef.current) return;
-    settledRef.current = true;
+    if (!editSessionRef.current?.settle()) return;
     props.onCancelEdit();
   }, [props]);
 
-  // Only Up/Down/Home/End need renderer geometry (browser rows follow the
-  // 12px capture box, not the wrapped WASM layout). Arrows, word jumps,
-  // select-all and native edit undo stay with the browser; onSelect mirrors
-  // them into the overlay.
+  // Only Up/Down/Home/End reach renderer geometry, and only through the
+  // core's cursor decision; every other key stays with the browser (arrows,
+  // word jumps, select-all, native edit undo, and the whole IME). onSelect
+  // mirrors native selection into the overlay. The adapter applies the
+  // core's outcomes and never reinterprets a native action.
   const onTextareaKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // IME owns every key while composing; Enter confirms the composition
-      // natively and must not commit, Escape cancels it natively.
-      if (event.nativeEvent.isComposing || composingRef.current) return;
-      const textarea = event.currentTarget;
-      if (event.key === "Escape") {
+      const action = classifyKey({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        composing: event.nativeEvent.isComposing || composingRef.current,
+      });
+      if (action.kind === "native") return;
+      if (action.kind === "cancel") {
         event.preventDefault();
         cancelDraft();
         frameRef.current?.focus();
         return;
       }
-      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      if (action.kind === "commit") {
         event.preventDefault();
         void commitDraft(true);
         return;
       }
-      if (event.key !== "ArrowUp" && event.key !== "ArrowDown" && event.key !== "Home" && event.key !== "End") return;
+      const textarea = event.currentTarget;
       const geometry = currentGeometry();
       if (!geometry) return;
       const text = textarea.value;
@@ -592,61 +607,25 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
       // from a backward caret extend the side the user sees.
       const backward = textarea.selectionDirection === "backward";
       const tracked = selectionRef.current;
-      const anchor: CaretPosition = {
-        offset: clampOffset(text, backward ? textarea.selectionEnd : textarea.selectionStart),
-        line: 0,
-      };
-      anchor.line = resolveLineAffinity(geometry, anchor.offset, tracked?.anchor.line ?? 0);
-      const focus: CaretPosition = {
-        offset: clampOffset(text, backward ? textarea.selectionStart : textarea.selectionEnd),
-        line: 0,
-      };
-      focus.line = resolveLineAffinity(geometry, focus.offset, tracked?.focus.line ?? 0);
-      const extend = event.shiftKey;
+      const focus = resolveCaretLine(
+        geometry,
+        clampOffset(text, backward ? textarea.selectionStart : textarea.selectionEnd),
+        tracked?.focus.line ?? 0,
+      );
       const current = selectionRef.current;
       const commitKeySelection = (next: SelectionState): void => {
         setSelectionState(next);
         setSelectionTick((tick) => tick + 1);
         writeSelection(textarea, next);
       };
-      if ((event.key === "ArrowUp" || event.key === "ArrowDown") && !event.altKey && !event.ctrlKey && !event.metaKey) {
-        event.preventDefault();
-        const direction = event.key === "ArrowDown" ? 1 : -1;
-        const goal = current?.xGoalActive ? current.xGoal : caretXOnLine(geometry, focus.offset, focus.line);
-        const moved = moveVertically(geometry, focus, goal, direction as 1 | -1);
-        if (!moved) return;
-        commitKeySelection(
-          extend && current
-            ? {
-                anchor: current.anchor,
-                focus: { offset: moved.offset, line: moved.line },
-                xGoal: goal,
-                xGoalActive: true,
-              }
-            : {
-                anchor: { offset: moved.offset, line: moved.line },
-                focus: { offset: moved.offset, line: moved.line },
-                xGoal: goal,
-                xGoalActive: true,
-              },
-        );
+      event.preventDefault();
+      if (action.key === "ArrowUp" || action.key === "ArrowDown") {
+        const next = moveCursor(geometry, current, focus, action.key, action.extend);
+        if (!next) return;
+        commitKeySelection(next);
         return;
       }
-      if ((event.key === "Home" || event.key === "End") && !event.ctrlKey && !event.metaKey && !event.altKey) {
-        event.preventDefault();
-        const range = lineRange(geometry, focus.line);
-        const edge = event.key === "Home" ? range.start : range.end;
-        commitKeySelection(
-          extend && current
-            ? { anchor: current.anchor, focus: { offset: edge, line: focus.line }, xGoal: 0, xGoalActive: false }
-            : {
-                anchor: { offset: edge, line: focus.line },
-                focus: { offset: edge, line: focus.line },
-                xGoal: 0,
-                xGoalActive: false,
-              },
-        );
-      }
+      commitKeySelection(lineEdge(geometry, focus, action.key, action.extend, current));
     },
     [cancelDraft, commitDraft, currentGeometry, setSelectionState, writeSelection],
   );
@@ -677,22 +656,26 @@ export function EditableLabel(props: EditableLabelProps): React.JSX.Element {
       // A clear commit gesture: leaving the field persists the draft through
       // the revisioned store instead of discarding typed text. The settled arm
       // ignores the blur that a commit/cancel focus move or unmount fires.
-      if (settledRef.current) return;
-      // A blur that ends an IME composition must not commit half the
-      // composition; the committed text arrives through change events and the
-      // next explicit gesture settles the edit.
-      if (composingRef.current) return;
-      // Focus moving to the explicit discard control skips the commit: the
-      // reload adopts the saved revision and the unmount drops the draft, so
-      // committing first would only resurrect it behind a conflict.
-      if (event.relatedTarget instanceof HTMLElement && event.relatedTarget.closest("[data-screen-reload]")) return;
-      if (draft !== null && draft !== placement.text) void commitDraft(false);
-      else if (draft !== null) {
-        settledRef.current = true;
-        void props.onCommitText(placement.id, draft);
-      }
+      const edit = editSessionRef.current;
+      if (edit === null || draft === null) return;
+      const outcome = edit.blurOutcome({
+        composing: composingRef.current,
+        focusedReload:
+          event.relatedTarget instanceof HTMLElement && event.relatedTarget.closest("[data-screen-reload]") !== null,
+        draft,
+        savedText: placement.text,
+      });
+      // A blur that ends an IME composition must not commit half of it; the
+      // committed text arrives through change events and the next explicit
+      // gesture settles the edit. Focus moving to the explicit discard
+      // control skips the commit: the reload adopts the saved revision and
+      // the unmount drops the draft, so committing first would only resurrect
+      // it behind a conflict.
+      if (outcome === "ignore" || !edit.settle()) return;
+      if (outcome === "commit") void commitSettledDraft(edit, draft, false);
+      else void props.onCommitText(placement.id, draft);
     },
-    [commitDraft, draft, placement.id, placement.text, props],
+    [commitSettledDraft, draft, placement.id, placement.text, props],
   );
 
   const onFrameKeyDown = React.useCallback(
