@@ -17,6 +17,8 @@ const builds: CoverageBuild[] = [];
 const wrappedPages = new WeakSet<object>();
 const flushedPages = new WeakSet<object>();
 const trackedPages = new Set<Page>();
+const pageStarts = new WeakMap<Page, Promise<void>>();
+const pageFlushes = new WeakMap<Page, Promise<void>>();
 let fileSequence = 0;
 
 export function coverageEnabled(): boolean {
@@ -52,8 +54,10 @@ export async function flushAllTrackedPages(): Promise<void> {
   for (const page of [...trackedPages]) await flushPage(page);
 }
 
-async function watchPage(page: Page): Promise<void> {
-  if (!coverageEnabled() || wrappedPages.has(page)) return;
+function watchPage(page: Page): Promise<void> {
+  if (!coverageEnabled()) return Promise.resolve();
+  const pending = pageStarts.get(page);
+  if (pending) return pending;
   wrappedPages.add(page);
   trackedPages.add(page);
   const originalClose = page.close.bind(page);
@@ -61,19 +65,36 @@ async function watchPage(page: Page): Promise<void> {
     await flushPage(page);
     return originalClose(...args);
   };
-  try {
-    await page.coverage.startJSCoverage({ resetOnNavigation: false });
-  } catch (error) {
-    flushedPages.add(page);
-    await recordCollectionFailure(page.url(), error);
-    throw error;
-  }
+  // Event-created pages have no awaiting caller, so a failed start is
+  // recorded for the runner (which refuses to publish) instead of thrown.
+  const start = (async () => {
+    try {
+      await page.coverage.startJSCoverage({ resetOnNavigation: false });
+    } catch (error) {
+      flushedPages.add(page);
+      await recordCollectionFailure(page.url(), error);
+      trackedPages.delete(page);
+    }
+  })();
+  pageStarts.set(page, start);
+  return start;
 }
 
-async function flushPage(page: Page): Promise<void> {
+function flushPage(page: Page): Promise<void> {
+  if (!coverageEnabled()) return Promise.resolve();
+  const pending = pageFlushes.get(page);
+  if (pending) return pending;
+  const flush = collectPage(page).finally(() => trackedPages.delete(page));
+  pageFlushes.set(page, flush);
+  return flush;
+}
+
+async function collectPage(page: Page): Promise<void> {
+  // The page event and newPage wrapper share startup; teardown must join it
+  // and the entire flush, including any failure record, before closing.
+  await pageStarts.get(page);
   if (!coverageEnabled() || flushedPages.has(page)) return;
   flushedPages.add(page);
-  trackedPages.delete(page);
   let entries: Array<{ url: string; functions: unknown[]; source: string }>;
   try {
     entries = (await page.coverage.stopJSCoverage()) as typeof entries;
@@ -147,6 +168,14 @@ async function flushContextPages(context: BrowserContext): Promise<void> {
 export function trackContextCoverage(context: BrowserContext): void {
   if (!coverageEnabled() || wrappedPages.has(context)) return;
   wrappedPages.add(context);
+  // Pages that predate tracking (persistent profiles) start late and miss
+  // earlier scripts, but still capture everything after this point.
+  for (const page of context.pages()) void watchPage(page);
+  // Popups arrive here after navigation may have started. Start collection
+  // as soon as Playwright exposes them; wrapped newPage calls join startup.
+  context.on("page", (page) => {
+    void watchPage(page);
+  });
   const originalNewPage = context.newPage.bind(context);
   (context as { newPage: BrowserContext["newPage"] }).newPage = async () => {
     const page = await originalNewPage();
@@ -160,10 +189,15 @@ export function trackContextCoverage(context: BrowserContext): void {
   };
 }
 
-// Pages created through the wrapped newPage methods start collection before navigation. Page,
-// context and browser close wrappers flush them before teardown.
+// Wrapped newPage methods start collection before navigation; pre-existing
+// pages and context "page" events (popups, target=_blank links) join through
+// the context tracker. Page, context and browser close wrappers flush them
+// before teardown.
 export function trackBrowserCoverage(t: TestContext, browser: Browser): void {
   if (!coverageEnabled()) return;
+  // Contexts (and their pages) that predate tracking join now; later ones
+  // join through the wrapped newContext below.
+  for (const context of browser.contexts()) trackContextCoverage(context);
   const originalNewPage = browser.newPage.bind(browser);
   (browser as { newPage: Browser["newPage"] }).newPage = async (...args) => {
     const page = await (originalNewPage as (...a: unknown[]) => Promise<Page>)(...args);

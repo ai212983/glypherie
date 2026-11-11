@@ -215,6 +215,10 @@ export class NavigationOwner {
   onRole(next: RendererRole): void {
     this.state.role = next;
     writeRoleParam(next);
+    // A role switch replaces the URL in place: track it like a push so a
+    // later traversal back to an identical font URL is not mistaken for a
+    // duplicate popstate/hashchange event.
+    this.handledHref = window.location.href;
     this.emit();
   }
 

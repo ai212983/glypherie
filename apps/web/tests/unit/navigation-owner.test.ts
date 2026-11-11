@@ -216,3 +216,29 @@ test("removing the last preview font leaves an empty selection", (t) => {
   assert.equal(next?.font, "");
   assert.deepEqual(owner.getSnapshot().snapshot?.families, {});
 });
+
+test("a role switch tracks its replacement so Back to an identical font URL re-reads the role", (t) => {
+  const env = installWindow("/font/alpha/");
+  t.after(env.restore);
+  const owner = createNavigationOwner();
+  t.after(() => owner.dispose());
+  owner.setCatalog([storedFont("alpha", "Alpha"), storedFont("beta", "Beta")]);
+  assert.deepEqual(owner.getSnapshot().page, { name: "preview", font: "alpha" });
+  owner.openIndex();
+  owner.openPreview("alpha");
+  const fontEntry = env.calls.filter((call) => call.kind === "push").pop()?.url;
+  assert.ok(fontEntry, "reopening the font pushes its canonical URL");
+  // Revisiting the same font with an unchanged snapshot pushes an identical
+  // URL, so the tracked href already equals the first font entry.
+  owner.onRole("baseline");
+  assert.equal(owner.getSnapshot().role, "baseline");
+  // history.go(-2): font -> index -> same font -> role switch -> back twice.
+  env.setLocation(fontEntry);
+  owner.handleHistoryChange();
+  assert.deepEqual(owner.getSnapshot().page, { name: "preview", font: "alpha" });
+  assert.equal(owner.getSnapshot().role, "candidate", "the landed URL carries no role param");
+  const writes = env.calls.length;
+  owner.handleHistoryChange();
+  assert.equal(env.calls.length, writes, "a duplicate event for the handled URL stays suppressed");
+  assert.equal(owner.getSnapshot().role, "candidate");
+});

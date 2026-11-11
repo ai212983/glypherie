@@ -40,6 +40,7 @@ test("coverage keeps scripts from every registered build regardless of the final
       const context = {
         newPage: async () => page,
         pages: () => [page],
+        on: () => undefined,
         close: async () => undefined,
       } as unknown as BrowserContext;
       trackContextCoverage(context);
